@@ -1,0 +1,16 @@
+from pydantic_ai import Agent
+from rag.retrieval.retriever import Retriever
+from rag.storage.vector_store.mongo import MongoHybridStore
+
+store = MongoHybridStore()
+retriever = Retriever(store)
+
+agent = Agent(
+    model="local",  # handled by your local runtime
+    system_prompt="Answer using the provided context only.",
+)
+
+@agent.tool
+def retrieve_context(query: str) -> str:
+    chunks = retriever.retrieve(query)
+    return "\n\n".join(c.text for c in chunks)
