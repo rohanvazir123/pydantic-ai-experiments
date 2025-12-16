@@ -1,0 +1,6 @@
+/.mypy_cache
+/data
+/fais-indexes
+/.ipynb_checkpoints
+/.env
+venv/
