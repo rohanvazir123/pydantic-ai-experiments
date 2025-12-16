@@ -1,16 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-
-
-get_ipython().run_line_magic('pip', 'install pydantic-ai pymongo docling')
-
-
-
+import traceback
 
 import asyncio
 import logging
-import traceback
 from typing import Optional, List, Dict, Any
 from pydantic_ai import RunContext
 from pydantic import BaseModel, Field
@@ -343,7 +337,7 @@ def validate_config() -> bool:
         print("1. Add documents to the ./documents/ folder")
         print("2. Run ingestion: by calling     asyncio.run(run_documents_ingestion_pipeline())")
         print("3. Create search indexes in MongoDB Atlas (after ingestion completes)")
-        
+
         return True
 
     except Exception as e:
@@ -681,7 +675,7 @@ class LLMongoAgentContextDependencies:
 
         if self._initialized is True:
             return
-        
+
         if not self.settings:
             self.settings = load_settings()
             logger.info("settings_loaded", database=self.settings.mongodb_database)
@@ -743,7 +737,7 @@ class LLMongoAgentContextDependencies:
         Raises:
             Exception: If embedding generation fails
         """
-        
+
         await self.initialize()
 
         response = await self.openai_client.embeddings.create(
@@ -1258,7 +1252,6 @@ async def search_knowledge_base(
 
 
 
-
 embedding_client = openai.AsyncOpenAI(
     api_key=settings.embedding_api_key,
     base_url=settings.embedding_base_url
@@ -1273,13 +1266,13 @@ class EmbeddingGenerator:
 
     def __init__(
         self,
-        model: str = EMBEDDING_MODEL,settings = load_settings()
-        embedding_client = openai.AsyncOpenAI(
-            api_key=settings.embedding_api_key,
-            base_url=settings.embedding_base_url
-        )
-        EMBEDDING_MODEL = settings.embedding_model
-
+        model: str = EMBEDDING_MODEL,
+        settings = load_settings(),
+        embedding_client = openai.AsyncOpenAI(),
+            api_key= settings.embedding_api_key,
+            base_url=settings.embedding_base_url,
+        ),
+        EMBEDDING_MODEL = settings.embedding_model,
         batch_size: int = 100
     ):
         """
@@ -1956,7 +1949,7 @@ class DocumentIngestionPipeline:
         Returns:
             List of ingestion results
         """
-        
+
         await self.initialize()
 
         # Clean existing data if requested

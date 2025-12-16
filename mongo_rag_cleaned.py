@@ -3,7 +3,6 @@
 
 
 
-get_ipython().run_line_magic('pip', 'install pydantic-ai pymongo docling')
 
 
 
