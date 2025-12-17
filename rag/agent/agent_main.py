@@ -176,7 +176,7 @@ def display_welcome():
     console.print()
 
 
-async def main():
+async def agent_main():
     """Main conversation loop."""
 
     # Show welcome
@@ -253,4 +253,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(agent_main())

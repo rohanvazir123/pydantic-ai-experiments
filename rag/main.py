@@ -15,6 +15,8 @@ import sys
 
 from rag.config.settings import load_settings, mask_credential
 from rag.ingestion.pipeline import run_ingestion_pipeline
+import rag.agent.agent_main as agent_main_module
+
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,12 @@ async def main() -> int:
         action="store_true",
         help="Enable verbose logging",
     )
+    parser.add_argument(
+        "--run-agent",
+        "-i",
+        action="store_true",
+        help="Run the RAG agent conversation loop after ingestion/validation",
+    )
 
     args = parser.parse_args()
 
@@ -146,13 +154,15 @@ async def main() -> int:
     setup_logging(args.verbose)
 
     # Determine what to run
-    run_validation = not args.ingest or args.validate
-    do_ingest = not args.validate or args.ingest
+    run_validation: bool = True if args.validate else False
+    run_ingestion: bool = True if args.ingest else False
+    run_agent : bool = True if args.run_agent else False
 
-    # If neither flag specified, run both
-    if not args.validate and not args.ingest:
-        run_validation = True
-        do_ingest = True
+
+    if args.no_clean:
+        sys.argv.append("--no-clean")
+    if args.verbose:
+        sys.argv.append("--verbose")
 
     # Validate configuration
     if run_validation:
@@ -161,9 +171,15 @@ async def main() -> int:
                 "Configuration validation failed. Fix errors before proceeding."
             )
             return 1
+        logger.info("=" * 60)
+        logger.info("[OK] RAG System setup complete!")
+        logger.info("=" * 60)
+        if not run_ingestion and not run_agent:
+            return 0
 
-    # Run ingestion using pipeline's run_ingestion_pipeline
-    if do_ingest:
+
+    # Ingest documents
+    if run_ingestion:
         # Modify sys.argv for run_ingestion_pipeline's argparse
         sys.argv = [
             "rag.main",
@@ -176,16 +192,12 @@ async def main() -> int:
             "--max-tokens",
             str(args.max_tokens),
         ]
-        if args.no_clean:
-            sys.argv.append("--no-clean")
-        if args.verbose:
-            sys.argv.append("--verbose")
-
         await run_ingestion_pipeline()
 
-    logger.info("=" * 60)
-    logger.info("[OK] RAG System setup complete!")
-    logger.info("=" * 60)
+    # Run the RAG agent conversation loop
+    if run_agent:
+        await agent_main_module.agent_main()
+
 
     return 0
 
