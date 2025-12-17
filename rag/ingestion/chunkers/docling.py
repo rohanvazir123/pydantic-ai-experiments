@@ -9,11 +9,11 @@ This module uses Docling's built-in HybridChunker which combines:
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any
 
-from transformers import AutoTokenizer
 from docling.chunking import HybridChunker
 from docling_core.types.doc import DoclingDocument
+from transformers import AutoTokenizer
 
 from rag.ingestion.models import ChunkData, ChunkingConfig
 
@@ -49,7 +49,7 @@ class DoclingHybridChunker:
         self.chunker = HybridChunker(
             tokenizer=self.tokenizer,
             max_tokens=config.max_tokens,
-            merge_peers=True  # Merge small adjacent chunks
+            merge_peers=True,  # Merge small adjacent chunks
         )
 
         logger.info(f"HybridChunker initialized (max_tokens={config.max_tokens})")
@@ -59,9 +59,9 @@ class DoclingHybridChunker:
         content: str,
         title: str,
         source: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        docling_doc: Optional[DoclingDocument] = None
-    ) -> List[ChunkData]:
+        metadata: dict[str, Any] | None = None,
+        docling_doc: DoclingDocument | None = None,
+    ) -> list[ChunkData]:
         """
         Chunk a document using Docling's HybridChunker.
 
@@ -82,12 +82,14 @@ class DoclingHybridChunker:
             "title": title,
             "source": source,
             "chunk_method": "hybrid",
-            **(metadata or {})
+            **(metadata or {}),
         }
 
         # If we don't have a DoclingDocument, we need to create one from markdown
         if docling_doc is None:
-            logger.warning("No DoclingDocument provided, using simple chunking fallback")
+            logger.warning(
+                "No DoclingDocument provided, using simple chunking fallback"
+            )
             return self._simple_fallback_chunk(content, base_metadata)
 
         try:
@@ -111,21 +113,23 @@ class DoclingHybridChunker:
                     **base_metadata,
                     "total_chunks": len(chunks),
                     "token_count": token_count,
-                    "has_context": True  # Flag indicating contextualized chunk
+                    "has_context": True,  # Flag indicating contextualized chunk
                 }
 
                 # Estimate character positions
                 start_char = current_pos
                 end_char = start_char + len(contextualized_text)
 
-                document_chunks.append(ChunkData(
-                    content=contextualized_text.strip(),
-                    index=i,
-                    start_char=start_char,
-                    end_char=end_char,
-                    metadata=chunk_metadata,
-                    token_count=token_count
-                ))
+                document_chunks.append(
+                    ChunkData(
+                        content=contextualized_text.strip(),
+                        index=i,
+                        start_char=start_char,
+                        end_char=end_char,
+                        metadata=chunk_metadata,
+                        token_count=token_count,
+                    )
+                )
 
                 current_pos = end_char
 
@@ -137,10 +141,8 @@ class DoclingHybridChunker:
             return self._simple_fallback_chunk(content, base_metadata)
 
     def _simple_fallback_chunk(
-        self,
-        content: str,
-        base_metadata: Dict[str, Any]
-    ) -> List[ChunkData]:
+        self, content: str, base_metadata: dict[str, Any]
+    ) -> list[ChunkData]:
         """
         Simple fallback chunking when HybridChunker can't be used.
 
@@ -172,8 +174,10 @@ class DoclingHybridChunker:
             else:
                 # Try to end at sentence boundary
                 chunk_end = end
-                for i in range(end, max(start + self.config.min_chunk_size, end - 200), -1):
-                    if i < len(content) and content[i] in '.!?\n':
+                for i in range(
+                    end, max(start + self.config.min_chunk_size, end - 200), -1
+                ):
+                    if i < len(content) and content[i] in ".!?\n":
                         chunk_end = i + 1
                         break
                 chunk_text = content[start:chunk_end]
@@ -182,18 +186,20 @@ class DoclingHybridChunker:
             if chunk_text.strip():
                 token_count = len(self.tokenizer.encode(chunk_text))
 
-                chunks.append(ChunkData(
-                    content=chunk_text.strip(),
-                    index=chunk_index,
-                    start_char=start,
-                    end_char=end,
-                    metadata={
-                        **base_metadata,
-                        "chunk_method": "simple_fallback",
-                        "total_chunks": -1  # Will update after
-                    },
-                    token_count=token_count
-                ))
+                chunks.append(
+                    ChunkData(
+                        content=chunk_text.strip(),
+                        index=chunk_index,
+                        start_char=start,
+                        end_char=end,
+                        metadata={
+                            **base_metadata,
+                            "chunk_method": "simple_fallback",
+                            "total_chunks": -1,  # Will update after
+                        },
+                        token_count=token_count,
+                    )
+                )
 
                 chunk_index += 1
 

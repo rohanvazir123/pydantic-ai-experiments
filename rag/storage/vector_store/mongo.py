@@ -2,15 +2,19 @@
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import Any
 
-from pymongo import AsyncMongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError, OperationFailure
 from bson import ObjectId
+from pymongo import AsyncMongoClient
+from pymongo.errors import (
+    ConnectionFailure,
+    OperationFailure,
+    ServerSelectionTimeoutError,
+)
 
 from rag.config.settings import load_settings
-from rag.ingestion.models import SearchResult, ChunkData
+from rag.ingestion.models import ChunkData, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ class MongoHybridStore:
     def __init__(self):
         """Initialize MongoDB connection."""
         self.settings = load_settings()
-        self.client: Optional[AsyncMongoClient] = None
+        self.client: AsyncMongoClient | None = None
         self.db = None
         self._initialized = False
 
@@ -32,8 +36,7 @@ class MongoHybridStore:
 
         try:
             self.client = AsyncMongoClient(
-                self.settings.mongodb_uri,
-                serverSelectionTimeoutMS=5000
+                self.settings.mongodb_uri, serverSelectionTimeoutMS=5000
             )
             self.db = self.client[self.settings.mongodb_database]
 
@@ -55,11 +58,7 @@ class MongoHybridStore:
             self._initialized = False
             logger.info("MongoDB connection closed")
 
-    async def add(
-        self,
-        chunks: List[ChunkData],
-        document_id: str
-    ) -> None:
+    async def add(self, chunks: list[ChunkData], document_id: str) -> None:
         """
         Store document chunks with embeddings.
 
@@ -80,7 +79,7 @@ class MongoHybridStore:
                 "chunk_index": chunk.index,
                 "metadata": chunk.metadata,
                 "token_count": chunk.token_count,
-                "created_at": datetime.now()
+                "created_at": datetime.now(),
             }
             chunk_dicts.append(chunk_dict)
 
@@ -89,10 +88,8 @@ class MongoHybridStore:
             logger.info(f"Inserted {len(chunk_dicts)} chunks")
 
     async def semantic_search(
-        self,
-        query_embedding: List[float],
-        match_count: Optional[int] = None
-    ) -> List[SearchResult]:
+        self, query_embedding: list[float], match_count: int | None = None
+    ) -> list[SearchResult]:
         """
         Perform pure semantic search using vector similarity.
 
@@ -116,7 +113,7 @@ class MongoHybridStore:
                     "queryVector": query_embedding,
                     "path": "embedding",
                     "numCandidates": 100,
-                    "limit": match_count
+                    "limit": match_count,
                 }
             },
             {
@@ -124,7 +121,7 @@ class MongoHybridStore:
                     "from": self.settings.mongodb_collection_documents,
                     "localField": "document_id",
                     "foreignField": "_id",
-                    "as": "document_info"
+                    "as": "document_info",
                 }
             },
             {"$unwind": "$document_info"},
@@ -136,9 +133,9 @@ class MongoHybridStore:
                     "similarity": {"$meta": "vectorSearchScore"},
                     "metadata": 1,
                     "document_title": "$document_info.title",
-                    "document_source": "$document_info.source"
+                    "document_source": "$document_info.source",
                 }
-            }
+            },
         ]
 
         try:
@@ -154,7 +151,7 @@ class MongoHybridStore:
                     similarity=doc["similarity"],
                     metadata=doc.get("metadata", {}),
                     document_title=doc["document_title"],
-                    document_source=doc["document_source"]
+                    document_source=doc["document_source"],
                 )
                 for doc in results
             ]
@@ -164,10 +161,8 @@ class MongoHybridStore:
             return []
 
     async def text_search(
-        self,
-        query: str,
-        match_count: Optional[int] = None
-    ) -> List[SearchResult]:
+        self, query: str, match_count: int | None = None
+    ) -> list[SearchResult]:
         """
         Perform full-text search using MongoDB Atlas Search.
 
@@ -191,11 +186,8 @@ class MongoHybridStore:
                     "text": {
                         "query": query,
                         "path": "content",
-                        "fuzzy": {
-                            "maxEdits": 2,
-                            "prefixLength": 3
-                        }
-                    }
+                        "fuzzy": {"maxEdits": 2, "prefixLength": 3},
+                    },
                 }
             },
             {"$limit": match_count * 2},
@@ -204,7 +196,7 @@ class MongoHybridStore:
                     "from": self.settings.mongodb_collection_documents,
                     "localField": "document_id",
                     "foreignField": "_id",
-                    "as": "document_info"
+                    "as": "document_info",
                 }
             },
             {"$unwind": "$document_info"},
@@ -216,15 +208,15 @@ class MongoHybridStore:
                     "similarity": {"$meta": "searchScore"},
                     "metadata": 1,
                     "document_title": "$document_info.title",
-                    "document_source": "$document_info.source"
+                    "document_source": "$document_info.source",
                 }
-            }
+            },
         ]
 
         try:
             collection = self.db[self.settings.mongodb_collection_chunks]
             cursor = collection.aggregate(pipeline)
-            results = [doc async for doc in cursor][:match_count * 2]
+            results = [doc async for doc in cursor][: match_count * 2]
 
             return [
                 SearchResult(
@@ -234,7 +226,7 @@ class MongoHybridStore:
                     similarity=doc["similarity"],
                     metadata=doc.get("metadata", {}),
                     document_title=doc["document_title"],
-                    document_source=doc["document_source"]
+                    document_source=doc["document_source"],
                 )
                 for doc in results
             ]
@@ -246,9 +238,9 @@ class MongoHybridStore:
     async def hybrid_search(
         self,
         query: str,
-        query_embedding: List[float],
-        match_count: Optional[int] = None
-    ) -> List[SearchResult]:
+        query_embedding: list[float],
+        match_count: int | None = None,
+    ) -> list[SearchResult]:
         """
         Perform hybrid search combining semantic and keyword matching.
 
@@ -275,7 +267,7 @@ class MongoHybridStore:
         semantic_results, text_results = await asyncio.gather(
             self.semantic_search(query_embedding, fetch_count),
             self.text_search(query, fetch_count),
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         # Handle errors gracefully
@@ -292,17 +284,14 @@ class MongoHybridStore:
 
         # Merge using RRF
         merged_results = self._reciprocal_rank_fusion(
-            [semantic_results, text_results],
-            k=60
+            [semantic_results, text_results], k=60
         )
 
         return merged_results[:match_count]
 
     def _reciprocal_rank_fusion(
-        self,
-        search_results_list: List[List[SearchResult]],
-        k: int = 60
-    ) -> List[SearchResult]:
+        self, search_results_list: list[list[SearchResult]], k: int = 60
+    ) -> list[SearchResult]:
         """
         Merge multiple ranked lists using Reciprocal Rank Fusion.
 
@@ -313,8 +302,8 @@ class MongoHybridStore:
         Returns:
             Unified list sorted by combined RRF score
         """
-        rrf_scores: Dict[str, float] = {}
-        chunk_map: Dict[str, SearchResult] = {}
+        rrf_scores: dict[str, float] = {}
+        chunk_map: dict[str, SearchResult] = {}
 
         for results in search_results_list:
             for rank, result in enumerate(results):
@@ -327,11 +316,7 @@ class MongoHybridStore:
                     rrf_scores[chunk_id] = rrf_score
                     chunk_map[chunk_id] = result
 
-        sorted_chunks = sorted(
-            rrf_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_chunks = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
 
         merged_results = []
         for chunk_id, rrf_score in sorted_chunks:
@@ -343,19 +328,17 @@ class MongoHybridStore:
                 similarity=rrf_score,
                 metadata=result.metadata,
                 document_title=result.document_title,
-                document_source=result.document_source
+                document_source=result.document_source,
             )
             merged_results.append(merged_result)
 
-        logger.info(f"RRF merged {len(search_results_list)} lists into {len(merged_results)} results")
+        logger.info(
+            f"RRF merged {len(search_results_list)} lists into {len(merged_results)} results"
+        )
         return merged_results
 
     async def save_document(
-        self,
-        title: str,
-        source: str,
-        content: str,
-        metadata: Dict[str, Any]
+        self, title: str, source: str, content: str, metadata: dict[str, Any]
     ) -> str:
         """
         Save a document to MongoDB.
@@ -378,7 +361,7 @@ class MongoHybridStore:
             "source": source,
             "content": content,
             "metadata": metadata,
-            "created_at": datetime.now()
+            "created_at": datetime.now(),
         }
 
         result = await collection.insert_one(document_dict)
@@ -395,4 +378,6 @@ class MongoHybridStore:
         chunks_result = await chunks_collection.delete_many({})
         docs_result = await docs_collection.delete_many({})
 
-        logger.info(f"Deleted {chunks_result.deleted_count} chunks, {docs_result.deleted_count} documents")
+        logger.info(
+            f"Deleted {chunks_result.deleted_count} chunks, {docs_result.deleted_count} documents"
+        )

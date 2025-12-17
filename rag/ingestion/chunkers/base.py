@@ -1,13 +1,14 @@
 """Base protocols for document chunkers."""
 
-from typing import Protocol, List, Dict, Any, Optional
-from rag.ingestion.models import IngestedDocument, DocumentChunk, ChunkData
+from typing import Any, Protocol
+
+from rag.ingestion.models import ChunkData, DocumentChunk, IngestedDocument
 
 
 class Chunker(Protocol):
     """Protocol defining the chunker interface."""
 
-    def chunk(self, document: IngestedDocument) -> List[DocumentChunk]:
+    def chunk(self, document: IngestedDocument) -> list[DocumentChunk]:
         """
         Chunk a document into smaller pieces.
 
@@ -28,9 +29,9 @@ class AsyncChunker(Protocol):
         content: str,
         title: str,
         source: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        docling_doc: Optional[Any] = None
-    ) -> List[ChunkData]:
+        metadata: dict[str, Any] | None = None,
+        docling_doc: Any | None = None,
+    ) -> list[ChunkData]:
         """
         Chunk a document asynchronously.
 

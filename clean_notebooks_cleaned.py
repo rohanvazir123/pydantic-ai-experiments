@@ -1,7 +1,5 @@
-import re
 import os
-
-from openai import files
+import re
 
 
 def cleanup_notebook_scripts():
@@ -11,7 +9,7 @@ def cleanup_notebook_scripts():
             continue
         input_file = file
         output_file = file.replace(".py", "_cleaned.py")
-        with open(input_file, "r") as f_orig:
+        with open(input_file) as f_orig:
             # This regex finds and removes lines starting with '# In['
             script = re.sub(r"# In\[.*\]:\n", "", f_orig.read())
 

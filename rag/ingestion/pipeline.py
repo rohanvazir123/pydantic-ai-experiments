@@ -2,19 +2,23 @@
 Document ingestion pipeline for processing documents into MongoDB vector database.
 """
 
-import os
-import glob
-import logging
 import argparse
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
+import glob
+import logging
+import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from rag.config.settings import load_settings
-from rag.ingestion.models import IngestionConfig, IngestionResult, ChunkingConfig, ChunkData
-from rag.ingestion.chunkers.docling import DoclingHybridChunker, create_chunker
-from rag.ingestion.embedder import EmbeddingGenerator, create_embedder
+from rag.ingestion.chunkers.docling import create_chunker
+from rag.ingestion.embedder import create_embedder
+from rag.ingestion.models import (
+    ChunkingConfig,
+    IngestionConfig,
+    IngestionResult,
+)
 from rag.storage.vector_store.mongo import MongoHybridStore
 
 logger = logging.getLogger(__name__)
@@ -27,7 +31,7 @@ class DocumentIngestionPipeline:
         self,
         config: IngestionConfig,
         documents_folder: str = "documents",
-        clean_before_ingest: bool = True
+        clean_before_ingest: bool = True,
     ):
         """
         Initialize ingestion pipeline.
@@ -49,7 +53,7 @@ class DocumentIngestionPipeline:
             chunk_size=config.chunk_size,
             chunk_overlap=config.chunk_overlap,
             max_chunk_size=config.max_chunk_size,
-            max_tokens=config.max_tokens
+            max_tokens=config.max_tokens,
         )
 
         self.chunker = create_chunker(self.chunker_config)
@@ -74,7 +78,7 @@ class DocumentIngestionPipeline:
             self._initialized = False
             logger.info("Ingestion pipeline closed")
 
-    def _find_document_files(self) -> List[str]:
+    def _find_document_files(self) -> list[str]:
         """
         Find all supported document files in the documents folder.
 
@@ -87,27 +91,35 @@ class DocumentIngestionPipeline:
 
         # Supported file patterns
         patterns = [
-            "*.md", "*.markdown", "*.txt",  # Text formats
+            "*.md",
+            "*.markdown",
+            "*.txt",  # Text formats
             "*.pdf",  # PDF
-            "*.docx", "*.doc",  # Word
-            "*.pptx", "*.ppt",  # PowerPoint
-            "*.xlsx", "*.xls",  # Excel
-            "*.html", "*.htm",  # HTML
-            "*.mp3", "*.wav", "*.m4a", "*.flac",  # Audio formats
+            "*.docx",
+            "*.doc",  # Word
+            "*.pptx",
+            "*.ppt",  # PowerPoint
+            "*.xlsx",
+            "*.xls",  # Excel
+            "*.html",
+            "*.htm",  # HTML
+            "*.mp3",
+            "*.wav",
+            "*.m4a",
+            "*.flac",  # Audio formats
         ]
         files = []
 
         for pattern in patterns:
             files.extend(
                 glob.glob(
-                    os.path.join(self.documents_folder, "**", pattern),
-                    recursive=True
+                    os.path.join(self.documents_folder, "**", pattern), recursive=True
                 )
             )
 
         return sorted(files)
 
-    def _read_document(self, file_path: str) -> Tuple[str, Optional[Any]]:
+    def _read_document(self, file_path: str) -> tuple[str, Any | None]:
         """
         Read document content from file.
 
@@ -120,22 +132,32 @@ class DocumentIngestionPipeline:
         file_ext = os.path.splitext(file_path)[1].lower()
 
         # Audio formats - transcribe with Whisper ASR
-        audio_formats = ['.mp3', '.wav', '.m4a', '.flac']
+        audio_formats = [".mp3", ".wav", ".m4a", ".flac"]
         if file_ext in audio_formats:
             return self._transcribe_audio(file_path)
 
         # Docling-supported formats
         docling_formats = [
-            '.pdf', '.docx', '.doc', '.pptx', '.ppt',
-            '.xlsx', '.xls', '.html', '.htm',
-            '.md', '.markdown'
+            ".pdf",
+            ".docx",
+            ".doc",
+            ".pptx",
+            ".ppt",
+            ".xlsx",
+            ".xls",
+            ".html",
+            ".htm",
+            ".md",
+            ".markdown",
         ]
 
         if file_ext in docling_formats:
             try:
                 from docling.document_converter import DocumentConverter
 
-                logger.info(f"Converting {file_ext} file using Docling: {os.path.basename(file_path)}")
+                logger.info(
+                    f"Converting {file_ext} file using Docling: {os.path.basename(file_path)}"
+                )
 
                 converter = DocumentConverter()
                 result = converter.convert(file_path)
@@ -149,21 +171,24 @@ class DocumentIngestionPipeline:
                 logger.error(f"Failed to convert {file_path} with Docling: {e}")
                 # Fall back to raw text
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, encoding="utf-8") as f:
                         return (f.read(), None)
                 except Exception:
-                    return (f"[Error: Could not read file {os.path.basename(file_path)}]", None)
+                    return (
+                        f"[Error: Could not read file {os.path.basename(file_path)}]",
+                        None,
+                    )
 
         # Text-based formats
         else:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, encoding="utf-8") as f:
                     return (f.read(), None)
             except UnicodeDecodeError:
-                with open(file_path, 'r', encoding='latin-1') as f:
+                with open(file_path, encoding="latin-1") as f:
                     return (f.read(), None)
 
-    def _transcribe_audio(self, file_path: str) -> Tuple[str, Optional[Any]]:
+    def _transcribe_audio(self, file_path: str) -> tuple[str, Any | None]:
         """
         Transcribe audio file using Whisper ASR via Docling.
 
@@ -174,10 +199,10 @@ class DocumentIngestionPipeline:
             Tuple of (content, docling_document)
         """
         try:
-            from docling.document_converter import DocumentConverter, AudioFormatOption
-            from docling.datamodel.pipeline_options import AsrPipelineOptions
             from docling.datamodel import asr_model_specs
             from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import AsrPipelineOptions
+            from docling.document_converter import AudioFormatOption, DocumentConverter
             from docling.pipeline.asr_pipeline import AsrPipeline
 
             audio_path = Path(file_path).resolve()
@@ -206,31 +231,37 @@ class DocumentIngestionPipeline:
 
         except Exception as e:
             logger.error(f"Failed to transcribe {file_path}: {e}")
-            return (f"[Error: Could not transcribe audio file {os.path.basename(file_path)}]", None)
+            return (
+                f"[Error: Could not transcribe audio file {os.path.basename(file_path)}]",
+                None,
+            )
 
     def _extract_title(self, content: str, file_path: str) -> str:
         """Extract title from document content or filename."""
-        lines = content.split('\n')
+        lines = content.split("\n")
         for line in lines[:10]:
             line = line.strip()
-            if line.startswith('# '):
+            if line.startswith("# "):
                 return line[2:].strip()
 
         return os.path.splitext(os.path.basename(file_path))[0]
 
-    def _extract_document_metadata(self, content: str, file_path: str) -> Dict[str, Any]:
+    def _extract_document_metadata(
+        self, content: str, file_path: str
+    ) -> dict[str, Any]:
         """Extract metadata from document content."""
         metadata = {
             "file_path": file_path,
             "file_size": len(content),
-            "ingestion_date": datetime.now().isoformat()
+            "ingestion_date": datetime.now().isoformat(),
         }
 
         # Try to extract YAML frontmatter
-        if content.startswith('---'):
+        if content.startswith("---"):
             try:
                 import yaml
-                end_marker = content.find('\n---\n', 4)
+
+                end_marker = content.find("\n---\n", 4)
                 if end_marker != -1:
                     frontmatter = content[4:end_marker]
                     yaml_metadata = yaml.safe_load(frontmatter)
@@ -241,9 +272,9 @@ class DocumentIngestionPipeline:
             except Exception as e:
                 logger.warning(f"Failed to parse frontmatter: {e}")
 
-        lines = content.split('\n')
-        metadata['line_count'] = len(lines)
-        metadata['word_count'] = len(content.split())
+        lines = content.split("\n")
+        metadata["line_count"] = len(lines)
+        metadata["word_count"] = len(content.split())
 
         return metadata
 
@@ -273,7 +304,7 @@ class DocumentIngestionPipeline:
             title=document_title,
             source=document_source,
             metadata=document_metadata,
-            docling_doc=docling_doc
+            docling_doc=docling_doc,
         )
 
         if not chunks:
@@ -283,7 +314,7 @@ class DocumentIngestionPipeline:
                 title=document_title,
                 chunks_created=0,
                 processing_time_ms=(datetime.now() - start_time).total_seconds() * 1000,
-                errors=["No chunks created"]
+                errors=["No chunks created"],
             )
 
         logger.info(f"Created {len(chunks)} chunks")
@@ -297,7 +328,7 @@ class DocumentIngestionPipeline:
             title=document_title,
             source=document_source,
             content=document_content,
-            metadata=document_metadata
+            metadata=document_metadata,
         )
 
         # Save chunks to MongoDB
@@ -310,13 +341,12 @@ class DocumentIngestionPipeline:
             title=document_title,
             chunks_created=len(chunks),
             processing_time_ms=processing_time,
-            errors=[]
+            errors=[],
         )
 
     async def ingest_documents(
-        self,
-        progress_callback: Optional[callable] = None
-    ) -> List[IngestionResult]:
+        self, progress_callback: callable | None = None
+    ) -> list[IngestionResult]:
         """
         Ingest all documents from the documents folder.
 
@@ -336,7 +366,9 @@ class DocumentIngestionPipeline:
         document_files = self._find_document_files()
 
         if not document_files:
-            logger.warning(f"No supported document files found in {self.documents_folder}")
+            logger.warning(
+                f"No supported document files found in {self.documents_folder}"
+            )
             return []
 
         logger.info(f"Found {len(document_files)} document files to process")
@@ -345,7 +377,9 @@ class DocumentIngestionPipeline:
 
         for i, file_path in enumerate(document_files):
             try:
-                logger.info(f"Processing file {i+1}/{len(document_files)}: {file_path}")
+                logger.info(
+                    f"Processing file {i + 1}/{len(document_files)}: {file_path}"
+                )
 
                 result = await self._ingest_single_document(file_path)
                 results.append(result)
@@ -355,13 +389,15 @@ class DocumentIngestionPipeline:
 
             except Exception as e:
                 logger.exception(f"Failed to process {file_path}: {e}")
-                results.append(IngestionResult(
-                    document_id="",
-                    title=os.path.basename(file_path),
-                    chunks_created=0,
-                    processing_time_ms=0,
-                    errors=[str(e)]
-                ))
+                results.append(
+                    IngestionResult(
+                        document_id="",
+                        title=os.path.basename(file_path),
+                        chunks_created=0,
+                        processing_time_ms=0,
+                        errors=[str(e)],
+                    )
+                )
 
         # Log summary
         total_chunks = sum(r.chunks_created for r in results)
@@ -381,37 +417,30 @@ async def run_ingestion_pipeline() -> None:
         description="Ingest documents into MongoDB vector database"
     )
     parser.add_argument(
-        "--documents", "-d",
-        default="documents",
-        help="Documents folder path"
+        "--documents", "-d", default="documents", help="Documents folder path"
     )
     parser.add_argument(
         "--no-clean",
         action="store_true",
-        help="Skip cleaning existing data before ingestion"
+        help="Skip cleaning existing data before ingestion",
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
         default=1000,
-        help="Chunk size for splitting documents"
+        help="Chunk size for splitting documents",
     )
     parser.add_argument(
-        "--chunk-overlap",
-        type=int,
-        default=200,
-        help="Chunk overlap size"
+        "--chunk-overlap", type=int, default=200, help="Chunk overlap size"
     )
     parser.add_argument(
         "--max-tokens",
         type=int,
         default=512,
-        help="Maximum tokens per chunk for embeddings"
+        help="Maximum tokens per chunk for embeddings",
     )
     parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
 
     args = parser.parse_args()
@@ -419,8 +448,7 @@ async def run_ingestion_pipeline() -> None:
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     # Create ingestion configuration
@@ -428,14 +456,14 @@ async def run_ingestion_pipeline() -> None:
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         max_chunk_size=args.chunk_size * 2,
-        max_tokens=args.max_tokens
+        max_tokens=args.max_tokens,
     )
 
     # Create and run pipeline
     pipeline = DocumentIngestionPipeline(
         config=config,
         documents_folder=args.documents,
-        clean_before_ingest=not args.no_clean
+        clean_before_ingest=not args.no_clean,
     )
 
     def progress_callback(current: int, total: int) -> None:

@@ -1,7 +1,6 @@
 """Retrieval orchestrator for RAG system."""
 
 import logging
-from typing import List, Optional
 
 from rag.config.settings import load_settings
 from rag.ingestion.embedder import EmbeddingGenerator
@@ -16,8 +15,8 @@ class Retriever:
 
     def __init__(
         self,
-        store: Optional[MongoHybridStore] = None,
-        embedder: Optional[EmbeddingGenerator] = None
+        store: MongoHybridStore | None = None,
+        embedder: EmbeddingGenerator | None = None,
     ):
         """
         Initialize retriever.
@@ -31,11 +30,8 @@ class Retriever:
         self.embedder = embedder or EmbeddingGenerator()
 
     async def retrieve(
-        self,
-        query: str,
-        match_count: Optional[int] = None,
-        search_type: str = "hybrid"
-    ) -> List[SearchResult]:
+        self, query: str, match_count: int | None = None, search_type: str = "hybrid"
+    ) -> list[SearchResult]:
         """
         Retrieve relevant documents for a query.
 
@@ -50,7 +46,9 @@ class Retriever:
         if match_count is None:
             match_count = self.settings.default_match_count
 
-        logger.info(f"Retrieving for query: '{query}', type: {search_type}, count: {match_count}")
+        logger.info(
+            f"Retrieving for query: '{query}', type: {search_type}, count: {match_count}"
+        )
 
         # Generate query embedding
         query_embedding = await self.embedder.embed_query(query)
@@ -61,16 +59,15 @@ class Retriever:
         elif search_type == "text":
             results = await self.store.text_search(query, match_count)
         else:  # hybrid (default)
-            results = await self.store.hybrid_search(query, query_embedding, match_count)
+            results = await self.store.hybrid_search(
+                query, query_embedding, match_count
+            )
 
         logger.info(f"Retrieved {len(results)} results")
         return results
 
     async def retrieve_as_context(
-        self,
-        query: str,
-        match_count: Optional[int] = None,
-        search_type: str = "hybrid"
+        self, query: str, match_count: int | None = None, search_type: str = "hybrid"
     ) -> str:
         """
         Retrieve and format results as context string for LLM.

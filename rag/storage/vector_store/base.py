@@ -1,17 +1,14 @@
 """Base protocols for vector store implementations."""
 
-from typing import Protocol, List
-from rag.ingestion.models import DocumentChunk, RetrievedChunk, SearchResult
+from typing import Protocol
+
+from rag.ingestion.models import DocumentChunk, RetrievedChunk
 
 
 class VectorStore(Protocol):
     """Protocol defining the vector store interface."""
 
-    def add(
-        self,
-        chunks: List[DocumentChunk],
-        embeddings: List[List[float]]
-    ) -> None:
+    def add(self, chunks: list[DocumentChunk], embeddings: list[list[float]]) -> None:
         """
         Store document chunks with their embeddings.
 
@@ -23,10 +20,10 @@ class VectorStore(Protocol):
 
     def query(
         self,
-        embedding: List[float],
+        embedding: list[float],
         query_text: str,
         k: int,
-    ) -> List[RetrievedChunk]:
+    ) -> list[RetrievedChunk]:
         """
         Query the vector store for similar documents.
 

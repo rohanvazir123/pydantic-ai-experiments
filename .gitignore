@@ -4,3 +4,6 @@
 /.ipynb_checkpoints
 /.env
 venv/
+.git
+\__pycache__/
+*.sqlite3

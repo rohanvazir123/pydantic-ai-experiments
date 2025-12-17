@@ -1,22 +1,21 @@
 """Main MongoDB RAG agent implementation."""
 
 import logging
-from typing import Optional
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
+from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
 from rag.retrieval.retriever import Retriever
 from rag.storage.vector_store.mongo import MongoHybridStore
-from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
-def get_llm_model(model_choice: Optional[str] = None) -> OpenAIModel:
+def get_llm_model(model_choice: str | None = None) -> OpenAIModel:
     """
     Get LLM model configuration based on environment variables.
     Supports any OpenAI-compatible API provider.
@@ -56,22 +55,20 @@ def get_model_info() -> dict:
 
 class RAGState(BaseModel):
     """Minimal shared state for the RAG agent."""
+
     pass
 
 
 # Create the RAG agent
-rag_agent = Agent(
-    get_llm_model(),
-    system_prompt=MAIN_SYSTEM_PROMPT
-)
+rag_agent = Agent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
 
 
 @rag_agent.tool
 async def search_knowledge_base(
     ctx: RunContext,
     query: str,
-    match_count: Optional[int] = 5,
-    search_type: Optional[str] = "hybrid"
+    match_count: int | None = 5,
+    search_type: str | None = "hybrid",
 ) -> str:
     """
     Search the knowledge base for relevant information.
@@ -92,9 +89,7 @@ async def search_knowledge_base(
 
         # Perform search
         result = await retriever.retrieve_as_context(
-            query=query,
-            match_count=match_count,
-            search_type=search_type
+            query=query, match_count=match_count, search_type=search_type or "hybrid"
         )
 
         # Clean up
