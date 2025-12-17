@@ -16,3 +16,4 @@ venv/
 *.log
 coverage/
 htmlcov/
+.venv

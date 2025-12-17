@@ -5,7 +5,11 @@
       "Bash(python3:*)",
       "Bash(make ruff:*)",
       "Bash(ruff check:*)",
-      "Bash(ruff format:*)"
+      "Bash(ruff format:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m rag.main:*)",
+      "Bash(dir:*)"
     ]
   }
 }

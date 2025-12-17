@@ -1,10 +1,12 @@
 """Main MongoDB RAG agent implementation."""
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel
-from pydantic_ai import Agent as PydanticAgent, RunContext as PydanticRunContext
+from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 

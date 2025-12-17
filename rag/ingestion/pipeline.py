@@ -7,6 +7,7 @@ import asyncio
 import glob
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -345,7 +346,7 @@ class DocumentIngestionPipeline:
         )
 
     async def ingest_documents(
-        self, progress_callback: callable | None = None
+        self, progress_callback: Callable | None = None
     ) -> list[IngestionResult]:
         """
         Ingest all documents from the documents folder.
@@ -467,7 +468,7 @@ async def run_ingestion_pipeline() -> None:
     )
 
     def progress_callback(current: int, total: int) -> None:
-        print(f"Progress: {current}/{total} documents processed")
+        logger.info(f"Progress: {current}/{total} documents processed")
 
     try:
         start_time = datetime.now()
@@ -477,41 +478,41 @@ async def run_ingestion_pipeline() -> None:
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
 
-        # Print summary
-        print("\n" + "=" * 50)
-        print("INGESTION SUMMARY")
-        print("=" * 50)
-        print(f"Documents processed: {len(results)}")
-        print(f"Total chunks created: {sum(r.chunks_created for r in results)}")
-        print(f"Total errors: {sum(len(r.errors) for r in results)}")
-        print(f"Total processing time: {total_time:.2f} seconds")
-        print()
+        # Log summary
+        logger.info("=" * 50)
+        logger.info("INGESTION SUMMARY")
+        logger.info("=" * 50)
+        logger.info(f"Documents processed: {len(results)}")
+        logger.info(f"Total chunks created: {sum(r.chunks_created for r in results)}")
+        logger.info(f"Total errors: {sum(len(r.errors) for r in results)}")
+        logger.info(f"Total processing time: {total_time:.2f} seconds")
+        logger.info("")
 
         # Print individual results
         for result in results:
             status = "[OK]" if not result.errors else "[FAILED]"
-            print(f"{status} {result.title}: {result.chunks_created} chunks")
+            logger.info(f"{status} {result.title}: {result.chunks_created} chunks")
 
             if result.errors:
                 for error in result.errors:
-                    print(f"  Error: {error}")
+                    logger.error(f"  Error: {error}")
 
-        # Print next steps
-        print("\n" + "=" * 50)
-        print("NEXT STEPS")
-        print("=" * 50)
-        print("1. Create vector search index in Atlas UI:")
-        print("   - Index name: vector_index")
-        print("   - Collection: chunks")
-        print("   - Field: embedding")
-        print("   - Dimensions: 1536 (for text-embedding-3-small)")
-        print("2. Create text search index in Atlas UI:")
-        print("   - Index name: text_index")
-        print("   - Collection: chunks")
-        print("   - Field: content")
+        # Log next steps
+        logger.info("=" * 50)
+        logger.info("NEXT STEPS")
+        logger.info("=" * 50)
+        logger.info("1. Create vector search index in Atlas UI:")
+        logger.info("   - Index name: vector_index")
+        logger.info("   - Collection: chunks")
+        logger.info("   - Field: embedding")
+        logger.info("   - Dimensions: 768 (for nomic-embed-text)")
+        logger.info("2. Create text search index in Atlas UI:")
+        logger.info("   - Index name: text_index")
+        logger.info("   - Collection: chunks")
+        logger.info("   - Field: content")
 
     except KeyboardInterrupt:
-        print("\nIngestion interrupted by user")
+        logger.warning("Ingestion interrupted by user")
     except Exception as e:
         logger.exception(f"Ingestion failed: {e}")
         raise

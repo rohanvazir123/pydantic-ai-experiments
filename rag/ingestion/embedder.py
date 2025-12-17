@@ -1,6 +1,7 @@
 """Embedding generation for document chunks."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 
 import openai
@@ -85,7 +86,7 @@ class EmbeddingGenerator:
         return [data.embedding for data in response.data]
 
     async def embed_chunks(
-        self, chunks: list[ChunkData], progress_callback: callable | None = None
+        self, chunks: list[ChunkData], progress_callback: Callable | None = None
     ) -> list[ChunkData]:
         """
         Generate embeddings for document chunks.
