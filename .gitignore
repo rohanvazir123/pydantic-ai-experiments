@@ -7,3 +7,12 @@ venv/
 .git
 \__pycache__/
 *.sqlite3
+.ruff_cache/
+*.pyc 
+.DS_Store
+.vscode/
+.idea/
+.envrc
+*.log
+coverage/
+htmlcov/
