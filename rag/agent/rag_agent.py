@@ -1,9 +1,10 @@
 """Main MongoDB RAG agent implementation."""
 
 import logging
+from typing import Any, Callable
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent as PydanticAgent, RunContext as PydanticRunContext
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -60,12 +61,12 @@ class RAGState(BaseModel):
 
 
 # Create the RAG agent
-rag_agent = Agent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+rag_agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
 
 
 @rag_agent.tool
 async def search_knowledge_base(
-    ctx: RunContext,
+    ctx: PydanticRunContext,
     query: str,
     match_count: int | None = 5,
     search_type: str | None = "hybrid",
@@ -103,4 +104,30 @@ async def search_knowledge_base(
 
 
 # Export for convenience
+# The line `agent = rag_agent` is assigning the RAG agent instance `rag_agent` to a variable named
+# `agent`. This allows the RAG agent to be accessed and used conveniently through the `agent` variable
+# in other parts of the code.
 agent = rag_agent
+
+
+class RunContext:
+    """Minimal RunContext placeholder for editor/type-checker."""
+
+    def __init__(self, **kwargs):
+        pass
+
+
+class Agent:
+    def __init__(
+        self, model: Any, system_prompt: str | None = None, deps_type: Any | None = None
+    ):
+        self.model = model
+        self.system_prompt = system_prompt
+        self.deps_type = deps_type
+
+    def tool(self, func: Callable):
+        """Decorator placeholder - returns the function unchanged."""
+        return func
+
+
+__all__ = ["Agent", "RunContext"]
