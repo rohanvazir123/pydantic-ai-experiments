@@ -15,8 +15,6 @@ import sys
 
 from rag.config.settings import load_settings, mask_credential
 from rag.ingestion.pipeline import run_ingestion_pipeline
-import rag.agent.agent_main as agent_main_module
-
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +141,7 @@ async def main() -> int:
     )
     parser.add_argument(
         "--run-agent",
-        "-i",
+        "-r",
         action="store_true",
         help="Run the RAG agent conversation loop after ingestion/validation",
     )
@@ -156,13 +154,7 @@ async def main() -> int:
     # Determine what to run
     run_validation: bool = True if args.validate else False
     run_ingestion: bool = True if args.ingest else False
-    run_agent : bool = True if args.run_agent else False
-
-
-    if args.no_clean:
-        sys.argv.append("--no-clean")
-    if args.verbose:
-        sys.argv.append("--verbose")
+    run_agent: bool = True if args.run_agent else False
 
     # Validate configuration
     if run_validation:
@@ -177,11 +169,10 @@ async def main() -> int:
         if not run_ingestion and not run_agent:
             return 0
 
-
     # Ingest documents
     if run_ingestion:
         # Modify sys.argv for run_ingestion_pipeline's argparse
-        sys.argv = [
+        ingestion_args = [
             "rag.main",
             "--documents",
             args.documents,
@@ -192,12 +183,17 @@ async def main() -> int:
             "--max-tokens",
             str(args.max_tokens),
         ]
+        if args.no_clean:
+            ingestion_args.append("--no-clean")
+        if args.verbose:
+            ingestion_args.append("--verbose")
+        sys.argv = ingestion_args
         await run_ingestion_pipeline()
 
     # Run the RAG agent conversation loop
     if run_agent:
-        await agent_main_module.agent_main()
-
+        from rag.agent.agent_main import agent_main
+        await agent_main()
 
     return 0
 

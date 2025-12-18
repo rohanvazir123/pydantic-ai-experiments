@@ -140,8 +140,8 @@ class MongoHybridStore:
 
         try:
             collection = self.db[self.settings.mongodb_collection_chunks]
-            cursor = collection.aggregate(pipeline)
-            results = [doc async for doc in cursor][:match_count]
+            cursor = await collection.aggregate(pipeline)
+            results = await cursor.to_list(length=match_count)
 
             return [
                 SearchResult(
@@ -215,8 +215,8 @@ class MongoHybridStore:
 
         try:
             collection = self.db[self.settings.mongodb_collection_chunks]
-            cursor = collection.aggregate(pipeline)
-            results = [doc async for doc in cursor][: match_count * 2]
+            cursor = await collection.aggregate(pipeline)
+            results = await cursor.to_list(length=match_count * 2)
 
             return [
                 SearchResult(
@@ -381,3 +381,84 @@ class MongoHybridStore:
         logger.info(
             f"Deleted {chunks_result.deleted_count} chunks, {docs_result.deleted_count} documents"
         )
+
+    async def get_document_by_source(self, source: str) -> dict[str, Any] | None:
+        """
+        Get a document by its source path.
+
+        Args:
+            source: Document source path (relative file path)
+
+        Returns:
+            Document dict if found, None otherwise
+        """
+        await self.initialize()
+
+        collection = self.db[self.settings.mongodb_collection_documents]
+        doc = await collection.find_one({"source": source})
+        return doc
+
+    async def get_document_hash(self, source: str) -> str | None:
+        """
+        Get the content hash for a document by source path.
+
+        Args:
+            source: Document source path
+
+        Returns:
+            Content hash if document exists, None otherwise
+        """
+        doc = await self.get_document_by_source(source)
+        if doc and "metadata" in doc:
+            return doc["metadata"].get("content_hash")
+        return None
+
+    async def delete_document_and_chunks(self, source: str) -> bool:
+        """
+        Delete a document and all its chunks by source path.
+
+        Args:
+            source: Document source path
+
+        Returns:
+            True if document was deleted, False if not found
+        """
+        await self.initialize()
+
+        docs_collection = self.db[self.settings.mongodb_collection_documents]
+        chunks_collection = self.db[self.settings.mongodb_collection_chunks]
+
+        # Find the document first
+        doc = await docs_collection.find_one({"source": source})
+        if not doc:
+            return False
+
+        document_id = doc["_id"]
+
+        # Delete chunks for this document
+        chunks_result = await chunks_collection.delete_many(
+            {"document_id": document_id}
+        )
+
+        # Delete the document
+        docs_result = await docs_collection.delete_one({"_id": document_id})
+
+        logger.info(
+            f"Deleted document '{source}': {docs_result.deleted_count} doc, "
+            f"{chunks_result.deleted_count} chunks"
+        )
+        return docs_result.deleted_count > 0
+
+    async def get_all_document_sources(self) -> list[str]:
+        """
+        Get all document source paths currently in the database.
+
+        Returns:
+            List of source paths
+        """
+        await self.initialize()
+
+        collection = self.db[self.settings.mongodb_collection_documents]
+        cursor = collection.find({}, {"source": 1})
+        sources = [doc["source"] async for doc in cursor]
+        return sources

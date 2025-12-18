@@ -5,6 +5,7 @@ Document ingestion pipeline for processing documents into MongoDB vector databas
 import argparse
 import asyncio
 import glob
+import hashlib
 import logging
 import os
 from collections.abc import Callable
@@ -247,14 +248,31 @@ class DocumentIngestionPipeline:
 
         return os.path.splitext(os.path.basename(file_path))[0]
 
+    def _compute_file_hash(self, file_path: str) -> str:
+        """
+        Compute MD5 hash of a file for change detection.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            MD5 hash string
+        """
+        hasher = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
     def _extract_document_metadata(
-        self, content: str, file_path: str
+        self, content: str, file_path: str, content_hash: str | None = None
     ) -> dict[str, Any]:
         """Extract metadata from document content."""
         metadata = {
             "file_path": file_path,
             "file_size": len(content),
             "ingestion_date": datetime.now().isoformat(),
+            "content_hash": content_hash or self._compute_file_hash(file_path),
         }
 
         # Try to extract YAML frontmatter
@@ -351,6 +369,11 @@ class DocumentIngestionPipeline:
         """
         Ingest all documents from the documents folder.
 
+        Supports incremental indexing when clean_before_ingest is False:
+        - New files are added
+        - Modified files are re-indexed (old version deleted first)
+        - Deleted files are removed from the database
+
         Args:
             progress_callback: Optional callback for progress updates
 
@@ -375,12 +398,54 @@ class DocumentIngestionPipeline:
         logger.info(f"Found {len(document_files)} document files to process")
 
         results = []
+        skipped_count = 0
+        updated_count = 0
+        new_count = 0
+        deleted_count = 0
+
+        # Build set of current file sources for tracking deletions
+        current_sources = set()
 
         for i, file_path in enumerate(document_files):
+            document_source = os.path.relpath(file_path, self.documents_folder)
+            current_sources.add(document_source)
+
             try:
-                logger.info(
-                    f"Processing file {i + 1}/{len(document_files)}: {file_path}"
-                )
+                # Compute hash for current file
+                current_hash = self._compute_file_hash(file_path)
+
+                # Check if document already exists (for incremental indexing)
+                if not self.clean_before_ingest:
+                    existing_hash = await self.store.get_document_hash(document_source)
+
+                    if existing_hash == current_hash:
+                        # File unchanged, skip
+                        logger.info(
+                            f"[SKIP] {i + 1}/{len(document_files)}: "
+                            f"{document_source} (unchanged)"
+                        )
+                        skipped_count += 1
+                        if progress_callback:
+                            progress_callback(i + 1, len(document_files))
+                        continue
+
+                    if existing_hash is not None:
+                        # File changed, delete old version first
+                        logger.info(
+                            f"[UPDATE] {i + 1}/{len(document_files)}: "
+                            f"{document_source} (content changed)"
+                        )
+                        await self.store.delete_document_and_chunks(document_source)
+                        updated_count += 1
+                    else:
+                        logger.info(
+                            f"[NEW] {i + 1}/{len(document_files)}: {document_source}"
+                        )
+                        new_count += 1
+                else:
+                    logger.info(
+                        f"Processing file {i + 1}/{len(document_files)}: {file_path}"
+                    )
 
                 result = await self._ingest_single_document(file_path)
                 results.append(result)
@@ -400,13 +465,29 @@ class DocumentIngestionPipeline:
                     )
                 )
 
+        # Handle deleted files (only in incremental mode)
+        if not self.clean_before_ingest:
+            existing_sources = await self.store.get_all_document_sources()
+            for source in existing_sources:
+                if source not in current_sources:
+                    logger.info(f"[DELETE] Removing deleted document: {source}")
+                    await self.store.delete_document_and_chunks(source)
+                    deleted_count += 1
+
         # Log summary
         total_chunks = sum(r.chunks_created for r in results)
         total_errors = sum(len(r.errors) for r in results)
 
+        if not self.clean_before_ingest:
+            logger.info(
+                f"Incremental ingestion complete: "
+                f"{new_count} new, {updated_count} updated, "
+                f"{skipped_count} unchanged, {deleted_count} deleted"
+            )
+
         logger.info(
-            f"Ingestion complete: {len(results)} documents, "
-            f"{total_chunks} chunks, {total_errors} errors"
+            f"Ingestion complete: {len(results)} documents processed, "
+            f"{total_chunks} chunks created, {total_errors} errors"
         )
 
         return results
