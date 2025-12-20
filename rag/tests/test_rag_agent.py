@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+
 import pytest
 import pytest_asyncio
 
@@ -31,12 +32,9 @@ def _log_test_start(test_name: str, query: str):
 
 def _log_test_result(test_name: str, query: str, status: str, details: str = ""):
     """Log test result and track for summary."""
-    _test_results.append({
-        "test": test_name,
-        "query": query,
-        "status": status,
-        "details": details
-    })
+    _test_results.append(
+        {"test": test_name, "query": query, "status": status, "details": details}
+    )
     logger.info("")
     logger.info(f"RESULT: {status}")
     if details:
@@ -53,10 +51,10 @@ def _log_results(results, max_content_len: int = 150, search_type: str = "hybrid
         logger.info("  (Note: Hybrid uses RRF scoring, values 0.01-0.03 are normal)")
     logger.info("")
     for i, r in enumerate(results):
-        logger.info(f"  [{i+1}] {r.document_title}")
+        logger.info(f"  [{i + 1}] {r.document_title}")
         logger.info(f"      Score: {r.similarity:.4f}")
         logger.info(f"      Source: {r.document_source}")
-        content_preview = r.content[:max_content_len].replace('\n', ' ')
+        content_preview = r.content[:max_content_len].replace("\n", " ")
         logger.info(f"      Content: {content_preview}...")
         logger.info("")
 
@@ -65,7 +63,7 @@ def _log_agent_response(response: str):
     """Log agent response in a formatted way."""
     logger.info("AGENT RESPONSE:")
     logger.info("-" * 40)
-    for line in response.split('\n'):
+    for line in response.split("\n"):
         logger.info(f"  {line}")
     logger.info("-" * 40)
     logger.info("")
@@ -87,7 +85,9 @@ def print_test_summary(request):
     failed = [t for t in _test_results if t["status"] == "FAILED"]
     skipped = [t for t in _test_results if t["status"] == "SKIPPED"]
 
-    logger.info(f"TOTAL: {len(_test_results)} | PASSED: {len(passed)} | FAILED: {len(failed)} | SKIPPED: {len(skipped)}")
+    logger.info(
+        f"TOTAL: {len(_test_results)} | PASSED: {len(passed)} | FAILED: {len(failed)} | SKIPPED: {len(skipped)}"
+    )
     logger.info("")
 
     if passed:
@@ -106,7 +106,7 @@ def print_test_summary(request):
         for t in failed:
             logger.info(f"  [FAIL] {t['test']}")
             logger.info(f"         Query: {t['query']}")
-            if t['details']:
+            if t["details"]:
                 logger.info(f"         Reason: {t['details']}")
         logger.info("")
 
@@ -117,7 +117,7 @@ def print_test_summary(request):
         for t in skipped:
             logger.info(f"  [SKIP] {t['test']}")
             logger.info(f"         Query: {t['query']}")
-            if t['details']:
+            if t["details"]:
                 logger.info(f"         Reason: {t['details']}")
         logger.info("")
 
@@ -156,7 +156,8 @@ class TestRetrieverQueries:
             content = " ".join([r.content.lower() for r in results])
             assert "neuralflow" in content, "Results should mention NeuralFlow"
             assert any(
-                term in content for term in ["ai", "automation", "enterprise", "workflow"]
+                term in content
+                for term in ["ai", "automation", "enterprise", "workflow"]
             ), "Results should mention AI/automation topics"
 
             top_sources = [r.document_source.lower() for r in results[:2]]
@@ -216,13 +217,14 @@ class TestRetrieverQueries:
             assert len(results) > 0, "Expected at least one result"
             content = " ".join([r.content.lower() for r in results])
             assert any(
-                term in content for term in ["pto", "time off", "vacation", "leave", "days"]
+                term in content
+                for term in ["pto", "time off", "vacation", "leave", "days"]
             ), "Results should mention PTO/time off"
 
             sources = [r.document_source.lower() for r in results]
-            assert any(
-                "handbook" in src for src in sources
-            ), f"Results should include team handbook, got: {sources}"
+            assert any("handbook" in src for src in sources), (
+                f"Results should include team handbook, got: {sources}"
+            )
 
             _log_test_result(test_name, query, "PASSED")
         except AssertionError as e:
@@ -246,12 +248,24 @@ class TestRetrieverQueries:
 
             assert len(results) > 0, "Expected at least one result"
             content = " ".join([r.content.lower() for r in results])
-            tech_terms = ["openai", "pytorch", "tensorflow", "langchain", "vector",
-                          "mongodb", "python", "aws", "azure", "api"]
+            tech_terms = [
+                "openai",
+                "pytorch",
+                "tensorflow",
+                "langchain",
+                "vector",
+                "mongodb",
+                "python",
+                "aws",
+                "azure",
+                "api",
+            ]
             found_terms = [t for t in tech_terms if t in content]
             logger.info(f"Found technology terms: {found_terms}")
 
-            assert len(found_terms) >= 2, f"Should find multiple technologies, found: {found_terms}"
+            assert len(found_terms) >= 2, (
+                f"Should find multiple technologies, found: {found_terms}"
+            )
 
             _log_test_result(test_name, query, "PASSED")
         except AssertionError as e:
@@ -274,11 +288,21 @@ class TestRetrieverQueries:
             _log_results(results, search_type="semantic")
 
             assert len(results) > 0, "Expected at least one result"
-            assert all(r.similarity > 0 for r in results), "All should have positive similarity"
+            assert all(r.similarity > 0 for r in results), (
+                "All should have positive similarity"
+            )
 
             content = " ".join([r.content.lower() for r in results])
-            culture_terms = ["culture", "values", "mission", "team", "collaboration",
-                            "innovation", "growth", "learning"]
+            culture_terms = [
+                "culture",
+                "values",
+                "mission",
+                "team",
+                "collaboration",
+                "innovation",
+                "growth",
+                "learning",
+            ]
             found_terms = [t for t in culture_terms if t in content]
             logger.info(f"Found culture-related terms: {found_terms}")
             assert len(found_terms) >= 1, "Should find culture-related content"
@@ -305,7 +329,9 @@ class TestRetrieverQueries:
 
             assert len(results) > 0, "Expected at least one result"
             content = " ".join([r.content.lower() for r in results])
-            assert "neuralflow" in content, "Text search should find exact term 'NeuralFlow'"
+            assert "neuralflow" in content, (
+                "Text search should find exact term 'NeuralFlow'"
+            )
 
             _log_test_result(test_name, query, "PASSED")
         except AssertionError as e:
@@ -329,7 +355,7 @@ class TestRetrieverQueries:
             logger.info("")
             logger.info("Context preview:")
             logger.info("-" * 40)
-            for line in context[:500].split('\n'):
+            for line in context[:500].split("\n"):
                 logger.info(f"  {line}")
             logger.info("  ...")
             logger.info("-" * 40)
@@ -337,7 +363,9 @@ class TestRetrieverQueries:
 
             assert isinstance(context, str), "Context should be a string"
             assert len(context) > 0, "Context should not be empty"
-            assert "Found" in context or "No relevant" in context, "Should indicate results status"
+            assert "Found" in context or "No relevant" in context, (
+                "Should indicate results status"
+            )
 
             if "Found" in context:
                 assert "Document" in context, "Should include document references"
@@ -360,6 +388,7 @@ class TestRAGAgentTool:
         _log_test_start(test_name, query)
 
         try:
+
             class MockContext:
                 pass
 
@@ -374,7 +403,7 @@ class TestRAGAgentTool:
             logger.info("")
             logger.info("Tool result preview:")
             logger.info("-" * 40)
-            for line in result[:500].split('\n'):
+            for line in result[:500].split("\n"):
                 logger.info(f"  {line}")
             logger.info("  ...")
             logger.info("-" * 40)
@@ -388,7 +417,13 @@ class TestRAGAgentTool:
                 result_lower = result.lower()
                 assert any(
                     term in result_lower
-                    for term in ["ai", "automation", "service", "solution", "enterprise"]
+                    for term in [
+                        "ai",
+                        "automation",
+                        "service",
+                        "solution",
+                        "enterprise",
+                    ]
                 ), "Result should contain service-related terms"
 
             _log_test_result(test_name, query, "PASSED")
@@ -404,6 +439,7 @@ class TestRAGAgentTool:
         _log_test_start(test_name, f"{query} (hybrid/semantic/text)")
 
         try:
+
             class MockContext:
                 pass
 
@@ -419,11 +455,13 @@ class TestRAGAgentTool:
                 )
 
                 logger.info(f"  Result length: {len(result)} chars")
-                preview = result[:200].replace('\n', ' ')
+                preview = result[:200].replace("\n", " ")
                 logger.info(f"  Preview: {preview}...")
                 logger.info("")
 
-                assert isinstance(result, str), f"Result should be string for {search_type}"
+                assert isinstance(result, str), (
+                    f"Result should be string for {search_type}"
+                )
                 assert len(result) > 0, f"Result should not be empty for {search_type}"
 
             _log_test_result(test_name, query, "PASSED")
@@ -453,8 +491,14 @@ class TestRAGAgentIntegration:
             output_lower = result.output.lower()
             assert any(
                 term in output_lower
-                for term in ["ai", "automation", "enterprise", "workflow", "intelligence"]
-            ), f"Response should mention AI/automation topics"
+                for term in [
+                    "ai",
+                    "automation",
+                    "enterprise",
+                    "workflow",
+                    "intelligence",
+                ]
+            ), "Response should mention AI/automation topics"
 
             _log_test_result(test_name, query, "PASSED")
         except AssertionError as e:
@@ -480,7 +524,8 @@ class TestRAGAgentIntegration:
             logger.info(f"Contains correct employee count (47): {has_correct_number}")
 
             import re
-            numbers = re.findall(r'\d+', result.output)
+
+            numbers = re.findall(r"\d+", result.output)
             logger.info(f"Numbers found: {numbers}")
             assert len(numbers) > 0 or any(
                 word in output_lower for word in ["forty", "fifty", "thirty", "twenty"]
@@ -539,7 +584,14 @@ class TestRAGAgentIntegration:
             output_lower = result.output.lower()
             assert any(
                 term in output_lower
-                for term in ["pto", "time off", "vacation", "days", "unlimited", "leave"]
+                for term in [
+                    "pto",
+                    "time off",
+                    "vacation",
+                    "days",
+                    "unlimited",
+                    "leave",
+                ]
             ), "Response should mention PTO/time off"
 
             _log_test_result(test_name, query, "PASSED")
@@ -548,7 +600,12 @@ class TestRAGAgentIntegration:
             raise
         except Exception as e:
             if "exceeded max retries" in str(e):
-                _log_test_result(test_name, query, "SKIPPED", "LLM tool call failed - intermittent issue")
+                _log_test_result(
+                    test_name,
+                    query,
+                    "SKIPPED",
+                    "LLM tool call failed - intermittent issue",
+                )
                 pytest.skip("LLM tool call failed - intermittent issue with local LLM")
             raise
 
@@ -580,7 +637,7 @@ class TestSearchResultQuality:
             assert len(results) > 0, "Expected at least one result"
 
             for i, result in enumerate(results):
-                logger.info(f"Result {i+1}:")
+                logger.info(f"Result {i + 1}:")
                 logger.info(f"  chunk_id: {result.chunk_id}")
                 logger.info(f"  document_id: {result.document_id}")
                 logger.info(f"  document_title: {result.document_title}")
@@ -621,7 +678,7 @@ class TestSearchResultQuality:
             if len(results) > 1:
                 for i in range(len(results) - 1):
                     assert results[i].similarity >= results[i + 1].similarity, (
-                        f"Not sorted: [{i}]={results[i].similarity:.4f} < [{i+1}]={results[i+1].similarity:.4f}"
+                        f"Not sorted: [{i}]={results[i].similarity:.4f} < [{i + 1}]={results[i + 1].similarity:.4f}"
                     )
 
             _log_test_result(test_name, query, "PASSED")
@@ -685,5 +742,7 @@ class TestSearchResultQuality:
 
             _log_test_result(test_name, f"{exact_query} / {vague_query}", "PASSED")
         except AssertionError as e:
-            _log_test_result(test_name, f"{exact_query} / {vague_query}", "FAILED", str(e))
+            _log_test_result(
+                test_name, f"{exact_query} / {vague_query}", "FAILED", str(e)
+            )
             raise

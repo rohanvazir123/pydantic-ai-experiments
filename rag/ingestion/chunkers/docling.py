@@ -13,11 +13,13 @@ from typing import Any
 
 from docling.chunking import HybridChunker
 from docling_core.types.doc import DoclingDocument
-from transformers import AutoTokenizer
 
 from rag.ingestion.models import ChunkData, ChunkingConfig
 
 logger = logging.getLogger(__name__)
+
+# Tokenizer model for chunking
+TOKENIZER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class DoclingHybridChunker:
@@ -40,17 +42,16 @@ class DoclingHybridChunker:
         """
         self.config = config
 
-        # Initialize tokenizer for token-aware chunking
-        model_id = "sentence-transformers/all-MiniLM-L6-v2"
-        logger.info(f"Initializing tokenizer: {model_id}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-
-        # Create HybridChunker
+        # Create HybridChunker with tokenizer model name (it wraps internally)
+        logger.info(f"Initializing HybridChunker with tokenizer: {TOKENIZER_MODEL}")
         self.chunker = HybridChunker(
-            tokenizer=self.tokenizer,
+            tokenizer=TOKENIZER_MODEL,
             max_tokens=config.max_tokens,
-            merge_peers=True,  # Merge small adjacent chunks
+            merge_peers=True,
         )
+
+        # Get the internal tokenizer for token counting
+        self.tokenizer = self.chunker.tokenizer
 
         logger.info(f"HybridChunker initialized (max_tokens={config.max_tokens})")
 
@@ -106,7 +107,7 @@ class DoclingHybridChunker:
                 contextualized_text = self.chunker.contextualize(chunk=chunk)
 
                 # Count actual tokens
-                token_count = len(self.tokenizer.encode(contextualized_text))
+                token_count = self.tokenizer.count_tokens(contextualized_text)
 
                 # Create chunk metadata
                 chunk_metadata = {
@@ -184,7 +185,7 @@ class DoclingHybridChunker:
                 end = chunk_end
 
             if chunk_text.strip():
-                token_count = len(self.tokenizer.encode(chunk_text))
+                token_count = self.tokenizer.count_tokens(chunk_text)
 
                 chunks.append(
                     ChunkData(

@@ -193,6 +193,7 @@ async def main() -> int:
     # Run the RAG agent conversation loop
     if run_agent:
         from rag.agent.agent_main import agent_main
+
         await agent_main()
 
     return 0
