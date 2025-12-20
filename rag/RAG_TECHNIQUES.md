@@ -14,7 +14,8 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 6. [Parent-Child Document Retrieval](#6-parent-child-document-retrieval)
 7. [Metadata Filtering](#7-metadata-filtering)
 8. [Multi-Vector Retrieval](#8-multi-vector-retrieval)
-9. [Implementation Roadmap](#9-implementation-roadmap)
+9. [Knowledge Graph RAG with Graphiti](#9-knowledge-graph-rag-with-graphiti)
+10. [Implementation Roadmap](#10-implementation-roadmap)
 
 ---
 
@@ -729,7 +730,573 @@ async def multi_vector_search(
 
 ---
 
-## 9. Implementation Roadmap
+## 9. Knowledge Graph RAG with Graphiti
+
+### Overview
+
+[Graphiti](https://github.com/getzep/graphiti) is a Python framework by Zep AI for building temporally-aware knowledge graphs designed for AI agents. Unlike traditional RAG which retrieves chunks of text, Knowledge Graph RAG (GraphRAG) retrieves structured facts and relationships between entities.
+
+### Why Knowledge Graphs for RAG?
+
+| Aspect | Traditional RAG | Knowledge Graph RAG |
+|--------|-----------------|---------------------|
+| **Data Structure** | Flat text chunks | Entities + Relationships (Triplets) |
+| **Query Type** | Semantic similarity | Graph traversal + Semantic |
+| **Temporal Handling** | Basic timestamps | Bi-temporal (event time + ingestion time) |
+| **Contradiction Handling** | None | Edge invalidation with history |
+| **Context** | Sliding window | Multi-hop relationships |
+| **Updates** | Re-embed chunks | Incremental graph updates |
+
+### Graphiti Key Features
+
+- **Bi-temporal data model**: Tracks both when events occurred and when they were ingested
+- **Hybrid retrieval**: Combines semantic embeddings, BM25 keyword search, and graph traversal
+- **Custom entity types**: Define entities via Pydantic models
+- **Multiple graph backends**: Neo4j, FalkorDB, Kuzu, Amazon Neptune
+- **Real-time updates**: Incremental updates without batch recomputation
+
+### Installation
+
+```bash
+# Basic installation (Neo4j backend)
+pip install graphiti-core
+
+# With FalkorDB backend
+pip install graphiti-core[falkordb]
+
+# With Ollama support (local LLM)
+pip install graphiti-core
+```
+
+### Integration Architecture
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │              Hybrid RAG System              │
+                    └─────────────────────────────────────────────┘
+                                        │
+                    ┌───────────────────┴───────────────────┐
+                    │                                       │
+            ┌───────▼───────┐                     ┌─────────▼─────────┐
+            │  Vector RAG   │                     │  Knowledge Graph  │
+            │  (MongoDB)    │                     │  RAG (Graphiti)   │
+            └───────┬───────┘                     └─────────┬─────────┘
+                    │                                       │
+            ┌───────▼───────┐                     ┌─────────▼─────────┐
+            │ Chunk-based   │                     │ Entity-based      │
+            │ Retrieval     │                     │ Retrieval         │
+            │ - Semantic    │                     │ - Facts/Triplets  │
+            │ - Keyword     │                     │ - Relationships   │
+            │ - Hybrid RRF  │                     │ - Graph Traversal │
+            └───────┬───────┘                     └─────────┬─────────┘
+                    │                                       │
+                    └───────────────────┬───────────────────┘
+                                        │
+                              ┌─────────▼─────────┐
+                              │   Merge Results   │
+                              │   (RRF Fusion)    │
+                              └─────────┬─────────┘
+                                        │
+                              ┌─────────▼─────────┐
+                              │   LLM Response    │
+                              └───────────────────┘
+```
+
+### Files to Create/Modify
+
+| File | Purpose |
+|------|---------|
+| `rag/knowledge_graph/graphiti_store.py` (new) | Graphiti wrapper for graph operations |
+| `rag/knowledge_graph/entity_types.py` (new) | Custom Pydantic entity definitions |
+| `rag/retrieval/retriever.py` | Add graph retrieval method |
+| `rag/ingestion/pipeline.py` | Add graph ingestion alongside vector ingestion |
+| `rag/agent/rag_agent.py` | Add graph search tool |
+| `rag/config/settings.py` | Add Graphiti configuration |
+
+### Implementation
+
+#### 9.1 Configuration
+
+```python
+# rag/config/settings.py
+class Settings(BaseSettings):
+    # Existing settings...
+
+    # Graphiti / Knowledge Graph
+    graphiti_enabled: bool = False
+    graph_db_type: str = "neo4j"  # neo4j, falkordb, kuzu
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+
+    # For FalkorDB
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 6379
+```
+
+#### 9.2 Graphiti Store Wrapper
+
+```python
+# rag/knowledge_graph/graphiti_store.py
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from graphiti_core import Graphiti
+from graphiti_core.nodes import EpisodeType
+from graphiti_core.search.search_config_recipes import (
+    NODE_HYBRID_SEARCH_RRF,
+    EDGE_HYBRID_SEARCH_RRF,
+)
+
+from rag.config.settings import load_settings
+
+logger = logging.getLogger(__name__)
+
+
+class GraphitiStore:
+    """Wrapper for Graphiti knowledge graph operations."""
+
+    def __init__(self):
+        self.settings = load_settings()
+        self.graphiti: Graphiti | None = None
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize Graphiti connection."""
+        if self._initialized:
+            return
+
+        if self.settings.graph_db_type == "neo4j":
+            self.graphiti = Graphiti(
+                self.settings.neo4j_uri,
+                self.settings.neo4j_user,
+                self.settings.neo4j_password,
+            )
+        elif self.settings.graph_db_type == "falkordb":
+            from graphiti_core.driver.falkordb_driver import FalkorDriver
+
+            driver = FalkorDriver(
+                host=self.settings.falkordb_host,
+                port=self.settings.falkordb_port,
+            )
+            self.graphiti = Graphiti(graph_driver=driver)
+
+        self._initialized = True
+        logger.info(f"Graphiti initialized with {self.settings.graph_db_type}")
+
+    async def close(self) -> None:
+        """Close Graphiti connection."""
+        if self.graphiti:
+            await self.graphiti.close()
+            self.graphiti = None
+            self._initialized = False
+
+    async def add_episode(
+        self,
+        content: str,
+        name: str,
+        source_description: str = "document",
+        episode_type: EpisodeType = EpisodeType.text,
+        reference_time: datetime | None = None,
+    ) -> None:
+        """
+        Add an episode (document/text) to the knowledge graph.
+
+        Graphiti will automatically:
+        - Extract entities (nodes)
+        - Extract relationships (edges)
+        - Handle temporal information
+        - Deduplicate entities
+        """
+        await self.initialize()
+
+        if reference_time is None:
+            reference_time = datetime.now(timezone.utc)
+
+        await self.graphiti.add_episode(
+            name=name,
+            episode_body=content,
+            source=episode_type,
+            source_description=source_description,
+            reference_time=reference_time,
+        )
+        logger.info(f"Added episode to graph: {name}")
+
+    async def search_edges(
+        self,
+        query: str,
+        limit: int = 10,
+        center_node_uuid: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Search for relationships (edges/facts) in the knowledge graph.
+
+        Returns triplets like: "Kamala Harris" -[WAS_ATTORNEY_GENERAL_OF]-> "California"
+        """
+        await self.initialize()
+
+        results = await self.graphiti.search(
+            query=query,
+            num_results=limit,
+            center_node_uuid=center_node_uuid,
+        )
+
+        return [
+            {
+                "uuid": r.uuid,
+                "fact": r.fact,
+                "source_node": r.source_node_uuid,
+                "target_node": r.target_node_uuid,
+                "valid_at": r.valid_at if hasattr(r, 'valid_at') else None,
+                "invalid_at": r.invalid_at if hasattr(r, 'invalid_at') else None,
+            }
+            for r in results
+        ]
+
+    async def search_nodes(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        Search for entities (nodes) in the knowledge graph.
+
+        Returns entities like: "Kamala Harris", "California", "Attorney General"
+        """
+        await self.initialize()
+
+        config = NODE_HYBRID_SEARCH_RRF.model_copy(deep=True)
+        config.limit = limit
+
+        results = await self.graphiti._search(query=query, config=config)
+
+        return [
+            {
+                "uuid": node.uuid,
+                "name": node.name,
+                "summary": node.summary,
+                "labels": node.labels,
+                "created_at": node.created_at,
+            }
+            for node in results.nodes
+        ]
+
+    async def search_as_context(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> str:
+        """
+        Search and format results as context for LLM.
+        """
+        edges = await self.search_edges(query, limit)
+
+        if not edges:
+            return "No relevant facts found in knowledge graph."
+
+        context_parts = ["## Knowledge Graph Facts\n"]
+        for i, edge in enumerate(edges, 1):
+            fact = edge["fact"]
+            validity = ""
+            if edge.get("valid_at"):
+                validity = f" (from {edge['valid_at']}"
+                if edge.get("invalid_at"):
+                    validity += f" to {edge['invalid_at']}"
+                validity += ")"
+            context_parts.append(f"{i}. {fact}{validity}")
+
+        return "\n".join(context_parts)
+```
+
+#### 9.3 Custom Entity Types (Optional)
+
+```python
+# rag/knowledge_graph/entity_types.py
+from pydantic import BaseModel, Field
+
+
+class Person(BaseModel):
+    """Custom entity type for people."""
+    name: str = Field(..., description="Full name of the person")
+    role: str | None = Field(None, description="Job title or role")
+    organization: str | None = Field(None, description="Associated organization")
+
+
+class Organization(BaseModel):
+    """Custom entity type for organizations."""
+    name: str = Field(..., description="Organization name")
+    type: str | None = Field(None, description="Type: company, government, nonprofit")
+    location: str | None = Field(None, description="Headquarters location")
+
+
+class Technology(BaseModel):
+    """Custom entity type for technologies/tools."""
+    name: str = Field(..., description="Technology name")
+    category: str | None = Field(None, description="Category: language, framework, database")
+    version: str | None = Field(None, description="Version if applicable")
+```
+
+#### 9.4 Integrated Retriever
+
+```python
+# rag/retrieval/retriever.py (additions)
+from rag.knowledge_graph.graphiti_store import GraphitiStore
+
+
+class Retriever:
+    def __init__(
+        self,
+        store: MongoHybridStore | None = None,
+        embedder: EmbeddingGenerator | None = None,
+        graph_store: GraphitiStore | None = None,  # Add this
+    ):
+        self.store = store or MongoHybridStore()
+        self.embedder = embedder or EmbeddingGenerator()
+        self.graph_store = graph_store  # Optional graph store
+
+    async def retrieve_hybrid_with_graph(
+        self,
+        query: str,
+        match_count: int = 5,
+        graph_weight: float = 0.3,
+    ) -> dict[str, Any]:
+        """
+        Retrieve from both vector store and knowledge graph.
+
+        Args:
+            query: Search query
+            match_count: Number of results per source
+            graph_weight: Weight for graph results in final ranking (0-1)
+
+        Returns:
+            Combined results with both chunks and graph facts
+        """
+        # Vector search
+        vector_results = await self.retrieve(query, match_count)
+
+        # Graph search (if enabled)
+        graph_results = []
+        if self.graph_store:
+            graph_results = await self.graph_store.search_edges(query, match_count)
+
+        return {
+            "chunks": vector_results,
+            "facts": graph_results,
+            "combined_context": self._merge_contexts(
+                vector_results, graph_results, graph_weight
+            ),
+        }
+
+    def _merge_contexts(
+        self,
+        chunks: list[SearchResult],
+        facts: list[dict],
+        graph_weight: float,
+    ) -> str:
+        """Merge vector chunks and graph facts into unified context."""
+        context_parts = []
+
+        # Add graph facts first (structured knowledge)
+        if facts:
+            context_parts.append("## Established Facts")
+            for fact in facts:
+                context_parts.append(f"- {fact['fact']}")
+            context_parts.append("")
+
+        # Add document chunks (detailed content)
+        if chunks:
+            context_parts.append("## Document Excerpts")
+            for chunk in chunks:
+                context_parts.append(f"### From: {chunk.document_title}")
+                context_parts.append(chunk.content)
+                context_parts.append("")
+
+        return "\n".join(context_parts)
+```
+
+#### 9.5 Agent Tool Integration
+
+```python
+# rag/agent/rag_agent.py (additions)
+@rag_agent.tool
+async def search_knowledge_graph(
+    ctx: RunContext[RAGState],
+    query: str,
+    limit: int = 10,
+    search_type: str = "edges",  # "edges" for facts, "nodes" for entities
+) -> str:
+    """
+    Search the knowledge graph for facts and relationships.
+
+    Use this for:
+    - Finding relationships between entities ("Who works at company X?")
+    - Getting temporal facts ("When did X happen?")
+    - Understanding entity connections ("How are X and Y related?")
+
+    Args:
+        query: Natural language query
+        limit: Maximum results to return
+        search_type: "edges" for facts/relationships, "nodes" for entities
+
+    Returns:
+        Formatted facts or entities from the knowledge graph
+    """
+    graph_store = GraphitiStore()
+
+    try:
+        if search_type == "edges":
+            results = await graph_store.search_edges(query, limit)
+            if not results:
+                return "No facts found matching your query."
+
+            formatted = ["Found the following facts:"]
+            for r in results:
+                formatted.append(f"- {r['fact']}")
+            return "\n".join(formatted)
+
+        else:  # nodes
+            results = await graph_store.search_nodes(query, limit)
+            if not results:
+                return "No entities found matching your query."
+
+            formatted = ["Found the following entities:"]
+            for r in results:
+                formatted.append(f"- {r['name']}: {r['summary'][:100]}...")
+            return "\n".join(formatted)
+
+    finally:
+        await graph_store.close()
+```
+
+#### 9.6 Ingestion Pipeline Integration
+
+```python
+# rag/ingestion/pipeline.py (additions)
+from rag.knowledge_graph.graphiti_store import GraphitiStore
+
+
+class IngestionPipeline:
+    def __init__(self, ...):
+        # Existing init...
+        self.graph_store: GraphitiStore | None = None
+        if self.settings.graphiti_enabled:
+            self.graph_store = GraphitiStore()
+
+    async def ingest_document(self, file_path: Path) -> dict[str, Any]:
+        """Ingest document into both vector store and knowledge graph."""
+
+        # Existing vector ingestion...
+        result = await self._ingest_to_vector_store(file_path)
+
+        # Knowledge graph ingestion (if enabled)
+        if self.graph_store and self.settings.graphiti_enabled:
+            content = result.get("content", "")
+            await self.graph_store.add_episode(
+                content=content,
+                name=file_path.stem,
+                source_description=f"Document: {file_path.name}",
+            )
+            result["graph_ingested"] = True
+
+        return result
+```
+
+### When to Use Knowledge Graph RAG
+
+| Scenario | Use Vector RAG | Use Graph RAG | Use Both |
+|----------|---------------|---------------|----------|
+| Document Q&A | ✓ | | |
+| Entity relationships | | ✓ | |
+| Temporal queries | | ✓ | |
+| Multi-hop reasoning | | ✓ | |
+| Detailed explanations | ✓ | | |
+| Fact verification | | ✓ | |
+| Complex enterprise data | | | ✓ |
+| Chatbot with memory | | ✓ | |
+
+### Graph Database Options
+
+| Database | Best For | Notes |
+|----------|----------|-------|
+| **Neo4j** | Production, enterprise | Most mature, requires Neo4j Desktop or cloud |
+| **FalkorDB** | Quick start, Redis-based | Simple Docker setup, good for dev |
+| **Kuzu** | Embedded, lightweight | No server needed, file-based |
+| **Amazon Neptune** | AWS deployments | Managed service, enterprise scale |
+
+### Quick Start with FalkorDB (Docker)
+
+```bash
+# Start FalkorDB
+docker run -p 6379:6379 -p 3000:3000 -it --rm falkordb/falkordb:latest
+
+# Install with FalkorDB support
+pip install graphiti-core[falkordb]
+```
+
+```python
+# Quick test
+import asyncio
+from graphiti_core import Graphiti
+from graphiti_core.driver.falkordb_driver import FalkorDriver
+
+async def test_graphiti():
+    driver = FalkorDriver(host="localhost", port=6379)
+    graphiti = Graphiti(graph_driver=driver)
+
+    # Add some data
+    await graphiti.add_episode(
+        name="test",
+        episode_body="Alice is an engineer at TechCorp. Bob is her manager.",
+        source=EpisodeType.text,
+        source_description="test data",
+    )
+
+    # Search
+    results = await graphiti.search("Who works at TechCorp?")
+    for r in results:
+        print(f"Fact: {r.fact}")
+
+    await graphiti.close()
+
+asyncio.run(test_graphiti())
+```
+
+### Using with Ollama (Local LLM)
+
+```python
+from graphiti_core import Graphiti
+from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
+from graphiti_core.llm_client.config import LLMConfig
+from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
+
+# Configure for Ollama
+llm_config = LLMConfig(
+    api_key="ollama",
+    model="llama3.1:8b",
+    small_model="llama3.1:8b",
+    base_url="http://localhost:11434/v1",
+)
+
+graphiti = Graphiti(
+    "bolt://localhost:7687",
+    "neo4j",
+    "password",
+    llm_client=OpenAIGenericClient(config=llm_config),
+    embedder=OpenAIEmbedder(
+        config=OpenAIEmbedderConfig(
+            api_key="ollama",
+            embedding_model="nomic-embed-text",
+            embedding_dim=768,
+            base_url="http://localhost:11434/v1",
+        )
+    ),
+)
+```
+
+---
+
+## 10. Implementation Roadmap
 
 ### Phase 1: Reranking (High Impact, Medium Effort)
 1. Create `rag/retrieval/rerankers.py` with `CrossEncoderReranker`
@@ -785,6 +1352,7 @@ async def multi_vector_search(
 | Parent-Child | `mongo.py`, `pipeline.py` | `chunkers/`, `retriever.py` |
 | Metadata Filtering | `mongo.py` | `rag_agent.py` |
 | Multi-Vector | `embedder.py`, `mongo.py` | `pipeline.py` |
+| Knowledge Graph | `knowledge_graph/graphiti_store.py` (new) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
 
 ---
 
@@ -818,4 +1386,13 @@ class Settings(BaseSettings):
     # Hierarchical
     hierarchical_retrieval_enabled: bool = False
     hierarchy_levels: list[int] = [2000, 500]
+
+    # Knowledge Graph (Graphiti)
+    graphiti_enabled: bool = False
+    graph_db_type: str = "neo4j"  # neo4j, falkordb, kuzu
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 6379
 ```
