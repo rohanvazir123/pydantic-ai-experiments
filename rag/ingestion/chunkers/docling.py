@@ -13,6 +13,7 @@ from typing import Any
 
 from docling.chunking import HybridChunker
 from docling_core.types.doc import DoclingDocument
+from transformers import AutoTokenizer
 
 from rag.ingestion.models import ChunkData, ChunkingConfig
 
@@ -42,16 +43,18 @@ class DoclingHybridChunker:
         """
         self.config = config
 
-        # Create HybridChunker with tokenizer model name (it wraps internally)
+        # Create HybridChunker with tokenizer object
+        # Note: max_tokens is a valid param per docs, but missing from type stubs
         logger.info(f"Initializing HybridChunker with tokenizer: {TOKENIZER_MODEL}")
+        tokenizer_obj = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)
         self.chunker = HybridChunker(
-            tokenizer=TOKENIZER_MODEL,
-            max_tokens=config.max_tokens,
+            tokenizer=tokenizer_obj,
+            max_tokens=config.max_tokens,  # type: ignore[call-arg]
             merge_peers=True,
         )
 
-        # Get the internal tokenizer for token counting
-        self.tokenizer = self.chunker.tokenizer
+        # Store the tokenizer for token counting
+        self.tokenizer = tokenizer_obj
 
         logger.info(f"HybridChunker initialized (max_tokens={config.max_tokens})")
 
