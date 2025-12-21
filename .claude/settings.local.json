@@ -11,7 +11,9 @@
       "Bash(python -m rag.main:*)",
       "Bash(dir:*)",
       "Bash(pip show:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(streamlit run:*)",
+      "WebFetch(domain:localhost)"
     ]
   }
 }

@@ -92,6 +92,24 @@ class Settings(BaseSettings):
         default=0.3, description="Default text weight for hybrid search (0-1)"
     )
 
+    # Langfuse Observability Configuration
+    langfuse_enabled: bool = Field(
+        default=False, description="Enable Langfuse tracing and observability"
+    )
+
+    langfuse_public_key: str | None = Field(
+        default=None, description="Langfuse public key"
+    )
+
+    langfuse_secret_key: str | None = Field(
+        default=None, description="Langfuse secret key"
+    )
+
+    langfuse_host: str = Field(
+        default="https://cloud.langfuse.com",
+        description="Langfuse host URL (use https://cloud.langfuse.com for cloud)",
+    )
+
 
 def load_settings() -> Settings:
     """Load settings with proper error handling."""
