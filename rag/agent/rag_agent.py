@@ -1,6 +1,7 @@
 """Main MongoDB RAG agent implementation."""
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -12,10 +13,14 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
+from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
 from rag.storage.vector_store.mongo import MongoHybridStore
 
 logger = logging.getLogger(__name__)
+
+# Global trace reference for tool calls (set by traced_agent_run)
+_current_trace = None
 
 
 def get_llm_model(model_choice: str | None = None) -> OpenAIModel:
@@ -85,15 +90,38 @@ async def search_knowledge_base(
     Returns:
         String containing the retrieved information formatted for the LLM
     """
+    global _current_trace
+    start_time = time.time()
+
     try:
         # Initialize components
         store = MongoHybridStore()
         retriever = Retriever(store=store)
 
         # Perform search
+        actual_search_type = search_type or "hybrid"
+        actual_match_count = match_count or 5
+
         result = await retriever.retrieve_as_context(
-            query=query, match_count=match_count, search_type=search_type or "hybrid"
+            query=query, match_count=actual_match_count, search_type=actual_search_type
         )
+
+        # Calculate duration
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Trace the tool call if Langfuse is enabled
+        if _current_trace is not None:
+            trace_tool_call(
+                trace=_current_trace,
+                tool_name="search_knowledge_base",
+                tool_input={
+                    "query": query,
+                    "match_count": actual_match_count,
+                    "search_type": actual_search_type,
+                },
+                tool_output=result[:500] + "..." if len(result) > 500 else result,
+                duration_ms=duration_ms,
+            )
 
         # Clean up
         await store.close()
@@ -132,4 +160,77 @@ class Agent:
         return func
 
 
-__all__ = ["Agent", "RunContext"]
+__all__ = ["Agent", "RunContext", "traced_agent_run"]
+
+
+async def traced_agent_run(
+    query: str,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    message_history: list | None = None,
+) -> Any:
+    """
+    Run the RAG agent with Langfuse tracing enabled.
+
+    This is a convenience wrapper that sets up tracing for the agent run,
+    including all tool calls made during execution.
+
+    Args:
+        query: The user's query
+        user_id: Optional user identifier for grouping traces
+        session_id: Optional session identifier for conversation tracking
+        message_history: Optional list of previous messages for context
+
+    Returns:
+        The agent's response
+
+    Example:
+        result = await traced_agent_run(
+            "What is RAG?",
+            user_id="user123",
+            session_id="session456"
+        )
+        print(result.output)
+    """
+    global _current_trace
+
+    langfuse = get_langfuse()
+
+    if langfuse is not None:
+        # Create a trace for this run
+        _current_trace = langfuse.trace(
+            name="rag_agent_run",
+            input={"query": query},
+            user_id=user_id,
+            session_id=session_id,
+            metadata={"has_history": message_history is not None},
+        )
+
+    try:
+        # Run the agent
+        if message_history:
+            result = await rag_agent.run(query, message_history=message_history)
+        else:
+            result = await rag_agent.run(query)
+
+        # Update trace with output
+        if _current_trace is not None:
+            _current_trace.update(
+                output={"response": str(result.output)[:1000]},
+            )
+
+        return result
+
+    except Exception as e:
+        if _current_trace is not None:
+            _current_trace.update(
+                output={"error": str(e)},
+                level="ERROR",
+            )
+        raise
+
+    finally:
+        # Flush trace
+        if langfuse is not None:
+            langfuse.flush()
+        _current_trace = None

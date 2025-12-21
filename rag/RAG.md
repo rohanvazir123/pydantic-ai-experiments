@@ -7,15 +7,17 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 ## Table of Contents
 
 1. [Current Architecture](#1-current-architecture)
-2. [Chunking Strategies](#2-chunking-strategies)
-3. [Reranking](#3-reranking)
-4. [Query Expansion & Transformation](#4-query-expansion--transformation)
-5. [Contextual Retrieval](#5-contextual-retrieval)
-6. [Parent-Child Document Retrieval](#6-parent-child-document-retrieval)
-7. [Metadata Filtering](#7-metadata-filtering)
-8. [Multi-Vector Retrieval](#8-multi-vector-retrieval)
-9. [Knowledge Graph RAG with Graphiti](#9-knowledge-graph-rag-with-graphiti)
-10. [Implementation Roadmap](#10-implementation-roadmap)
+2. [Streamlit Web UI](#2-streamlit-web-ui)
+3. [Chunking Strategies](#3-chunking-strategies)
+4. [Reranking](#4-reranking)
+5. [Query Expansion & Transformation](#5-query-expansion--transformation)
+6. [Contextual Retrieval](#6-contextual-retrieval)
+7. [Parent-Child Document Retrieval](#7-parent-child-document-retrieval)
+8. [Metadata Filtering](#8-metadata-filtering)
+9. [Multi-Vector Retrieval](#9-multi-vector-retrieval)
+10. [Knowledge Graph RAG with Graphiti](#10-knowledge-graph-rag-with-graphiti)
+11. [Langfuse Tracing & Observability](#11-langfuse-tracing--observability)
+12. [Implementation Roadmap](#12-implementation-roadmap)
 
 ---
 
@@ -48,7 +50,174 @@ Documents → Ingestion Pipeline → Chunking → Embedding → MongoDB → Retr
 
 ---
 
-## 2. Chunking Strategies
+## 2. Streamlit Web UI
+
+The RAG agent includes a Streamlit-based web interface for interactive chat with the knowledge base.
+
+### Features
+
+- **Real-time Streaming**: See responses as they're generated token-by-token
+- **Tool Call Visibility**: Watch the agent search the knowledge base in real-time
+- **Conversation History**: Multi-turn conversations with full context
+- **Configuration Display**: View current LLM and embedding settings
+- **Session Management**: Clear conversation and start fresh
+
+### Screenshot
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  🔍 MongoDB RAG Agent          │  💬 Chat with RAG Agent            │
+│  ─────────────────────         │  ───────────────────────           │
+│  Configuration                 │                                     │
+│  LLM Provider: ollama          │  User: What is the PTO policy?     │
+│  LLM Model: llama3.1:8b        │                                     │
+│  Embedding: nomic-embed-text   │  🔧 Calling: search_knowledge_base │
+│                                │     Query: PTO policy               │
+│  [🗑️ Clear Conversation]       │     Type: hybrid                    │
+│                                │  ✅ Search completed                │
+│  ℹ️ Help                        │                                     │
+│  ────────                      │  Assistant: The PTO policy allows  │
+│  How to use:                   │  employees to take...               │
+│  1. Type your question...      │                                     │
+│                                │  ────────────────────────────────   │
+│                                │  [Ask a question...]                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Running the App
+
+#### Prerequisites
+
+1. Ensure MongoDB Atlas is configured with vector and text indexes
+2. Ensure Ollama is running (or configure another LLM provider)
+3. Install Streamlit:
+
+```bash
+pip install streamlit>=1.40.0
+```
+
+#### Start the App
+
+From the project root directory:
+
+```bash
+streamlit run rag/agent/streamlit_app.py
+```
+
+Or with specific options:
+
+```bash
+# Run on a different port
+streamlit run rag/agent/streamlit_app.py --server.port 8502
+
+# Run in headless mode (no browser auto-open)
+streamlit run rag/agent/streamlit_app.py --server.headless true
+
+# Run with specific address binding
+streamlit run rag/agent/streamlit_app.py --server.address 0.0.0.0
+```
+
+The app will be available at: **http://localhost:8501**
+
+### File Structure
+
+| File | Purpose |
+|------|---------|
+| `rag/agent/streamlit_app.py` | Main Streamlit application |
+| `rag/agent/rag_agent.py` | RAG agent with search tool |
+| `rag/agent/agent_main.py` | CLI version (alternative interface) |
+
+### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `init_session_state()` | Initialize chat history and agent state |
+| `stream_agent_response()` | Stream agent response with real-time updates |
+| `render_sidebar()` | Display configuration and controls |
+| `render_chat()` | Main chat interface with message history |
+| `extract_tool_info()` | Parse tool call events for display |
+
+### Example Queries
+
+Once the app is running, try these queries:
+
+```
+What does NeuralFlow AI do?
+What is the PTO policy?
+What technologies does the company use?
+How many engineers work at the company?
+What is the learning budget for employees?
+```
+
+### Customization
+
+#### Changing the Page Title
+
+Edit `streamlit_app.py`:
+
+```python
+st.set_page_config(
+    page_title="Your Custom Title",
+    page_icon="🤖",  # Change emoji
+    layout="wide",
+)
+```
+
+#### Adding Custom Sidebar Content
+
+```python
+def render_sidebar():
+    with st.sidebar:
+        st.title("Your App Name")
+        # Add custom widgets
+        st.slider("Temperature", 0.0, 1.0, 0.7)
+```
+
+#### Styling with Custom CSS
+
+```python
+st.markdown("""
+<style>
+    .stChat { background-color: #f0f2f6; }
+    .stChatMessage { border-radius: 10px; }
+</style>
+""", unsafe_allow_html=True)
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `ModuleNotFoundError: No module named 'rag'` | Run from project root, not `rag/agent/` |
+| App won't start | Check if port 8501 is in use: `lsof -i :8501` |
+| No response from agent | Verify Ollama is running: `ollama list` |
+| MongoDB connection error | Check `MONGODB_URI` in `.env` file |
+| Slow responses | Consider using a faster model or reducing `match_count` |
+
+### Running with Docker (Optional)
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY . .
+
+RUN pip install -e .
+RUN pip install streamlit>=1.40.0
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "rag/agent/streamlit_app.py", "--server.headless", "true"]
+```
+
+```bash
+docker build -t rag-streamlit .
+docker run -p 8501:8501 --env-file .env rag-streamlit
+```
+
+---
+
+## 3. Chunking Strategies
 
 ### Current Implementation
 - **Method**: Docling HybridChunker
@@ -180,7 +349,7 @@ def _get_chunker(self, strategy: str):
 
 ---
 
-## 3. Reranking
+## 4. Reranking
 
 ### Current State
 Only RRF (Reciprocal Rank Fusion) scoring, no dedicated reranker.
@@ -298,7 +467,7 @@ class Retriever:
 
 ---
 
-## 4. Query Expansion & Transformation
+## 5. Query Expansion & Transformation
 
 ### Current State
 Direct query search, no processing.
@@ -382,7 +551,7 @@ async def retrieve_multi_query(
 
 ---
 
-## 5. Contextual Retrieval
+## 6. Contextual Retrieval
 
 ### Current State
 Returns only matched chunks, no surrounding context.
@@ -459,7 +628,7 @@ async def get_chunks_by_document(
 
 ---
 
-## 6. Parent-Child Document Retrieval
+## 7. Parent-Child Document Retrieval
 
 ### Current State
 Flat chunk structure, no hierarchical relationships.
@@ -552,7 +721,7 @@ async def retrieve_hierarchical(
 
 ---
 
-## 7. Metadata Filtering
+## 8. Metadata Filtering
 
 ### Current State
 No filtering, returns all matching chunks.
@@ -639,7 +808,7 @@ async def search_knowledge_base(
 
 ---
 
-## 8. Multi-Vector Retrieval
+## 9. Multi-Vector Retrieval
 
 ### Current State
 Single embedding per chunk.
@@ -730,7 +899,7 @@ async def multi_vector_search(
 
 ---
 
-## 9. Knowledge Graph RAG with Graphiti
+## 10. Knowledge Graph RAG with Graphiti
 
 ### Overview
 
@@ -1296,7 +1465,208 @@ graphiti = Graphiti(
 
 ---
 
-## 10. Implementation Roadmap
+## 11. Langfuse Tracing & Observability
+
+### Overview
+
+[Langfuse](https://langfuse.com) is an open-source LLM observability platform that provides tracing, analytics, and evaluation for LLM applications. This integration enables real-time monitoring of RAG agent performance, including:
+
+- **Trace Visualization**: See the complete execution flow of agent runs
+- **Latency Tracking**: Monitor response times for LLM calls and tool executions
+- **Cost Analysis**: Track token usage and associated costs
+- **Error Monitoring**: Identify and debug failed requests
+- **User Analytics**: Group traces by user and session for behavioral insights
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     RAG Agent Request                        │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Langfuse Trace                            │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Span: Agent Run                                     │    │
+│  │  ├── input: user query                               │    │
+│  │  ├── Span: Tool Call (search_knowledge_base)         │    │
+│  │  │   ├── input: query, search_type, match_count      │    │
+│  │  │   ├── output: retrieved context                   │    │
+│  │  │   └── duration: 150ms                             │    │
+│  │  ├── Generation: LLM Response                        │    │
+│  │  │   ├── model: llama3.1:8b                          │    │
+│  │  │   ├── tokens: 450 input, 280 output               │    │
+│  │  │   └── duration: 2.3s                              │    │
+│  │  └── output: final response                          │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Setup
+
+#### 1. Install Langfuse
+
+```bash
+pip install langfuse>=2.0.0
+```
+
+#### 2. Get API Keys
+
+1. Sign up at [cloud.langfuse.com](https://cloud.langfuse.com) (free tier available)
+2. Create a new project
+3. Copy your **Public Key** and **Secret Key** from Settings → API Keys
+
+#### 3. Configure Environment Variables
+
+Add to your `.env` file:
+
+```bash
+# Langfuse Configuration
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+LANGFUSE_SECRET_KEY=sk-lf-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+LANGFUSE_HOST=https://cloud.langfuse.com  # or your self-hosted URL
+```
+
+### Usage
+
+#### Basic Usage with Traced Agent Run
+
+The simplest way to enable tracing is to use the `traced_agent_run` function:
+
+```python
+from rag.agent.rag_agent import traced_agent_run
+
+# Run with automatic tracing
+result = await traced_agent_run(
+    query="What is RAG?",
+    user_id="user_123",        # Optional: group traces by user
+    session_id="session_456",  # Optional: group traces by session
+)
+
+print(result.output)
+```
+
+#### Manual Trace Control
+
+For more control over tracing, use the observability module directly:
+
+```python
+from rag.observability import (
+    get_langfuse,
+    trace_agent_run,
+    trace_retrieval,
+    trace_tool_call,
+    shutdown_langfuse,
+)
+
+# Get Langfuse instance
+langfuse = get_langfuse()
+
+# Use context manager for tracing
+with trace_agent_run("What is the PTO policy?", user_id="user_123") as trace:
+    # Your agent logic here
+    result = await agent.run(query)
+
+    # Add custom spans
+    trace_retrieval(
+        trace=trace,
+        query="PTO policy",
+        search_type="hybrid",
+        results_count=5,
+    )
+
+# Graceful shutdown
+shutdown_langfuse()
+```
+
+#### Using the @observe Decorator
+
+For custom functions that should be traced:
+
+```python
+from rag.observability import observe
+
+@observe("custom_processing")
+async def process_documents(docs: list) -> list:
+    # Your processing logic
+    processed = [transform(doc) for doc in docs]
+    return processed
+```
+
+### Files Structure
+
+| File | Purpose |
+|------|---------|
+| `rag/observability/__init__.py` | Module exports |
+| `rag/observability/langfuse_integration.py` | Core Langfuse wrapper and utilities |
+| `rag/config/settings.py` | Langfuse configuration settings |
+| `rag/agent/rag_agent.py` | Integrated tracing in agent and tools |
+
+### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `get_langfuse()` | Get or create the global Langfuse instance |
+| `trace_agent_run()` | Context manager for tracing agent runs |
+| `trace_retrieval()` | Add retrieval span to a trace |
+| `trace_tool_call()` | Add tool call span to a trace |
+| `trace_llm_call()` | Add LLM generation span to a trace |
+| `observe()` | Decorator for tracing function execution |
+| `shutdown_langfuse()` | Gracefully flush and close Langfuse |
+| `is_langfuse_enabled()` | Check if Langfuse is enabled and configured |
+
+### Viewing Traces
+
+Once configured, traces appear in your Langfuse dashboard:
+
+1. Go to [cloud.langfuse.com](https://cloud.langfuse.com)
+2. Select your project
+3. Navigate to **Traces** to see all agent runs
+4. Click on a trace to see:
+   - Full execution timeline
+   - Input/output for each step
+   - Latency breakdown
+   - Token usage and costs
+
+### Self-Hosting Langfuse
+
+For production or data privacy requirements, you can self-host Langfuse:
+
+```bash
+# Docker Compose
+git clone https://github.com/langfuse/langfuse.git
+cd langfuse
+docker compose up -d
+```
+
+Then update your `.env`:
+
+```bash
+LANGFUSE_HOST=http://localhost:3000
+```
+
+### Best Practices
+
+1. **Use User IDs**: Always pass `user_id` to group traces by user for analytics
+2. **Use Session IDs**: Pass `session_id` for multi-turn conversations
+3. **Add Metadata**: Include relevant context in trace metadata
+4. **Graceful Shutdown**: Call `shutdown_langfuse()` on application exit
+5. **Error Handling**: Traces automatically capture errors with stack traces
+
+### Configuration Reference
+
+| Setting | Environment Variable | Default | Description |
+|---------|---------------------|---------|-------------|
+| `langfuse_enabled` | `LANGFUSE_ENABLED` | `false` | Enable/disable Langfuse |
+| `langfuse_public_key` | `LANGFUSE_PUBLIC_KEY` | `None` | Your Langfuse public key |
+| `langfuse_secret_key` | `LANGFUSE_SECRET_KEY` | `None` | Your Langfuse secret key |
+| `langfuse_host` | `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse API host |
+
+---
+
+## 12. Implementation Roadmap
 
 ### Phase 1: Reranking (High Impact, Medium Effort)
 1. Create `rag/retrieval/rerankers.py` with `CrossEncoderReranker`
@@ -1353,6 +1723,8 @@ graphiti = Graphiti(
 | Metadata Filtering | `mongo.py` | `rag_agent.py` |
 | Multi-Vector | `embedder.py`, `mongo.py` | `pipeline.py` |
 | Knowledge Graph | `knowledge_graph/graphiti_store.py` (new) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
+| Langfuse Tracing | `observability/langfuse_integration.py` | `rag_agent.py`, `settings.py` |
+| Streamlit Web UI | `agent/streamlit_app.py` | `rag_agent.py` |
 
 ---
 
@@ -1395,4 +1767,10 @@ class Settings(BaseSettings):
     neo4j_password: str = ""
     falkordb_host: str = "localhost"
     falkordb_port: int = 6379
+
+    # Langfuse Observability (Already Implemented)
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
 ```
