@@ -117,16 +117,20 @@ async def search_knowledge_base(
     # Check if we have a shared store/retriever from deps (better performance)
     # or fall back to creating new instances (backwards compatible)
     deps = ctx.deps
-    use_shared = deps is not None and hasattr(deps, 'retriever') and deps.retriever is not None
+    logger.info(f"[PROFILE] deps type: {type(deps)}, deps: {deps}")
+
+    # deps could be RAGState directly or wrapped - check both
+    state = deps if isinstance(deps, RAGState) else getattr(deps, 'state', None)
+    use_shared = state is not None and hasattr(state, 'retriever') and state.retriever is not None
 
     try:
         if use_shared:
             # Use shared retriever from deps (no connection overhead)
-            retriever = deps.retriever
-            logger.debug("Using shared retriever from deps")
+            retriever = state.retriever
+            logger.info("[PROFILE] Using SHARED retriever from deps (fast)")
         else:
             # Fall back to creating new instances (slower, but works without deps)
-            logger.debug("Creating new store/retriever (no shared deps)")
+            logger.info("[PROFILE] Creating NEW store/retriever (slow)")
             store = MongoHybridStore()
             retriever = Retriever(store=store)
 

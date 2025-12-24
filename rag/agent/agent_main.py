@@ -2,7 +2,11 @@
 """Conversational CLI with real-time streaming and tool call visibility."""
 
 import asyncio
+import logging
+import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Import our agent and dependencies
 from rag.agent.rag_agent import agent
@@ -207,6 +211,7 @@ async def _handle_model_request_node(node: Any, ctx: Any) -> str:
     """
     response_text = ""
     event_count = 0
+    start_time = time.time()
 
     # Display the assistant label before the streaming content
     console.print("[bold blue]Assistant:[/bold blue] ", end="")
@@ -255,7 +260,9 @@ async def _handle_model_request_node(node: Any, ctx: Any) -> str:
                         val = getattr(event, attr)
                         _debug_print(f"          {attr}: {repr(str(val)[:100])}")
 
+    elapsed_ms = (time.time() - start_time) * 1000
     _debug_print(f"      Total events: {event_count}")
+    logger.info(f"[PROFILE] ModelRequestNode: {elapsed_ms:.0f}ms ({event_count} events, {len(response_text)} chars)")
 
     # Add newline after the complete response for proper formatting
     console.print()
@@ -291,6 +298,7 @@ async def _handle_tool_call_node(node: Any, ctx: Any) -> None:
         Search completed successfully
     """
     event_count = 0
+    start_time = time.time()
 
     # Stream tool execution events in real-time
     async with node.stream(ctx) as tool_stream:
@@ -321,7 +329,9 @@ async def _handle_tool_call_node(node: Any, ctx: Any) -> None:
                 # The tool has finished executing
                 console.print("  [green]Search completed successfully[/green]")
 
+    elapsed_ms = (time.time() - start_time) * 1000
     _debug_print(f"      Total tool events: {event_count}")
+    logger.info(f"[PROFILE] CallToolsNode: {elapsed_ms:.0f}ms ({event_count} tool events)")
 
 
 # =============================================================================
@@ -374,7 +384,9 @@ async def _stream_agent(
     """
     response_text = ""
     node_count = 0
+    total_start_time = time.time()
 
+    logger.info(f"[PROFILE] Starting agent execution for: {user_input[:50]}...")
     _debug_print(f"\n{'='*70}")
     _debug_print(f"QUERY: {user_input}")
     _debug_print(f"{'='*70}")
@@ -383,11 +395,9 @@ async def _stream_agent(
     # Stream the agent execution using Pydantic AI's iter() context manager.
     # This provides access to the execution graph as a series of nodes.
     #
-    # NOTE: deps (StateDeps[RAGState]) is passed to the agent but currently
-    # NOT USED by tools. The search_knowledge_base tool creates its own
-    # MongoHybridStore and Retriever instances. deps is available for future
-    # use if shared state between tool calls is needed (e.g., pre-initialized
-    # store, conversation context, user preferences).
+    # PERFORMANCE: deps (StateDeps[RAGState]) contains a shared store/retriever.
+    # When RAGState.create() is used, the search_knowledge_base tool reuses
+    # the pre-initialized connection instead of creating a new one per call.
     # -------------------------------------------------------------------------
     async with agent.iter(
         user_input, deps=deps, message_history=message_history
@@ -457,6 +467,7 @@ async def _stream_agent(
     )
     response = response_text.strip() or final_output
 
+    total_elapsed_ms = (time.time() - total_start_time) * 1000
     _debug_print(f"\n{'='*70}")
     _debug_print(f"EXECUTION SUMMARY")
     _debug_print(f"{'='*70}")
@@ -464,6 +475,8 @@ async def _stream_agent(
     _debug_print(f"Response length: {len(response)} chars")
     _debug_print(f"New messages: {len(new_messages)}")
     _debug_print(f"{'='*70}\n")
+
+    logger.info(f"[PROFILE] Total execution: {total_elapsed_ms:.0f}ms ({node_count} nodes, {len(response)} chars)")
 
     return (response, new_messages)
 

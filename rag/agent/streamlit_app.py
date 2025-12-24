@@ -31,7 +31,7 @@ from pydantic_ai.messages import (
 )
 
 # Import our agent and dependencies (after path setup)
-from rag.agent.rag_agent import RAGState, rag_agent
+from rag.agent.rag_agent import RAGState, agent
 from rag.config.settings import load_settings
 
 # Load environment variables
@@ -66,9 +66,11 @@ def init_session_state() -> None:
         st.session_state.message_history: list[ModelMessage] = []
 
     if "deps" not in st.session_state:
-        # Create the state and deps for the agent
-        state = RAGState()
+        # Create the state with pre-initialized store/retriever for better performance
+        # This avoids creating new MongoDB connections on every query
+        state = asyncio.run(RAGState.create())
         st.session_state.deps = StateDeps[RAGState](state=state)
+        st.session_state.rag_state = state  # Keep reference for cleanup
 
 
 # =============================================================================
@@ -161,7 +163,7 @@ async def stream_agent_response(
     response_text = ""
     tool_calls: list[str] = []
 
-    async with rag_agent.iter(
+    async with agent.iter(
         user_input, deps=deps, message_history=message_history
     ) as run:
         async for node in run:

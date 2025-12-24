@@ -42,9 +42,11 @@ class TestAgentFlow:
         # Enable verbose debugging
         set_verbose_debug(True)
 
+        # Create shared state with pre-initialized store (better performance)
+        state = await RAGState.create()
+
         try:
             query = "What does NeuralFlow AI do?"
-            state = RAGState()
             deps = StateDeps(state)
 
             response, new_messages = await stream_agent_interaction(
@@ -59,7 +61,8 @@ class TestAgentFlow:
             assert len(new_messages) > 0, "Should have new messages"
 
         finally:
-            # Always disable verbose debugging after test
+            # Clean up resources
+            await state.close()
             set_verbose_debug(False)
 
     @pytest.mark.asyncio
@@ -72,9 +75,11 @@ class TestAgentFlow:
         """
         set_verbose_debug(True)
 
+        # Create shared state with pre-initialized store (better performance)
+        state = await RAGState.create()
+
         try:
             query = "What is the PTO policy at NeuralFlow?"
-            state = RAGState()
             deps = StateDeps(state)
 
             response, new_messages = await stream_agent_interaction(
@@ -92,6 +97,7 @@ class TestAgentFlow:
             ), f"Response should mention PTO-related terms: {response[:200]}"
 
         finally:
+            await state.close()
             set_verbose_debug(False)
 
     @pytest.mark.asyncio
@@ -107,15 +113,21 @@ class TestAgentFlow:
         # Ensure verbose is disabled
         set_verbose_debug(False)
 
-        query = "Hello, how are you?"
-        state = RAGState()
-        deps = StateDeps(state)
+        # Create shared state with pre-initialized store (better performance)
+        state = await RAGState.create()
 
-        response, new_messages = await stream_agent_interaction(
-            user_input=query,
-            message_history=[],
-            deps=deps,
-        )
+        try:
+            query = "Hello, how are you?"
+            deps = StateDeps(state)
 
-        assert response is not None
-        assert isinstance(response, str)
+            response, new_messages = await stream_agent_interaction(
+                user_input=query,
+                message_history=[],
+                deps=deps,
+            )
+
+            assert response is not None
+            assert isinstance(response, str)
+
+        finally:
+            await state.close()

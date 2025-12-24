@@ -1805,6 +1805,8 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short 
 
 ### Debug Agent Flow
 
+python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s --log-cli-level=INFO 2>&1 > sample_run.txt
+
 #### Execution Flow Summary
 
 ```
@@ -1851,18 +1853,31 @@ test_agent_flow_verbose (test_agent_flow.py)
                                             --> _debug_print("Execution complete")
 ```
 
-#### Note on `deps` (StateDeps)
+#### Note on `deps` (StateDeps) - Performance Optimization
 
-`deps` is passed through the call chain but **currently not used** by tools:
+`deps` shares a pre-initialized store/retriever across tool calls for better performance:
 
 | Location | What Happens |
 |----------|--------------|
-| `test_agent_flow.py` | Creates `StateDeps(RAGState())` |
+| `test_agent_flow.py` | Creates `await RAGState.create()` with shared store/retriever |
 | `stream_agent_interaction()` | Receives `deps`, passes to `_stream_agent()` |
 | `_stream_agent()` | Passes `deps` to `agent.iter(..., deps=deps)` |
-| `search_knowledge_base()` | Has access via `ctx.deps` but **creates own store/retriever** |
+| `search_knowledge_base()` | Uses `ctx.deps.retriever` if available (no connection overhead) |
 
-**Future use:** `deps` could share a pre-initialized `MongoHybridStore` instance between tool calls for better performance, or pass user preferences/conversation context.
+**Performance benefit:** Without shared deps, each tool call creates a new `MongoHybridStore` connection. With shared deps, the connection is reused.
+
+```python
+# Good: Shared store (fast - connection reused)
+state = await RAGState.create()  # Initialize once
+deps = StateDeps(state)
+# ... multiple tool calls reuse state.retriever ...
+await state.close()  # Clean up once
+
+# Without shared deps (slower - new connection per tool call)
+state = RAGState()  # Empty state
+deps = StateDeps(state)
+# ... each tool call creates new MongoHybridStore() ...
+```
 
 #### Running the Tests
 
