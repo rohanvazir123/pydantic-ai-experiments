@@ -7,7 +7,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 ## Table of Contents
 
 1. [Current Architecture](#1-current-architecture)
-2. [Streamlit Web UI](#2-streamlit-web-ui)
+2. [Streamlit Web UI](#2-streamlit-wei)
 3. [Chunking Strategies](#3-chunking-strategies)
 4. [Reranking](#4-reranking)
 5. [Query Expansion & Transformation](#5-query-expansion--transformation)
@@ -18,6 +18,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 10. [Knowledge Graph RAG with Graphiti](#10-knowledge-graph-rag-with-graphiti)
 11. [Langfuse Tracing & Observability](#11-langfuse-tracing--observability)
 12. [Implementation Roadmap](#12-implementation-roadmap)
+13. [Testing](#13-testing)
 
 ---
 
@@ -1774,3 +1775,64 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 ```
+
+---
+
+## 13. Testing
+
+### Run All Tests
+
+```bash
+python -m pytest rag/tests/ -v
+```
+
+### Run Specific Test Categories
+
+```bash
+# Configuration tests (fast, no external deps)
+python -m pytest rag/tests/test_config.py -v
+
+# Ingestion model tests (fast, no external deps)
+python -m pytest rag/tests/test_ingestion.py -v
+
+# MongoDB connection & index tests (requires MongoDB)
+python -m pytest rag/tests/test_mongo_store.py -v
+
+# RAG agent integration tests (requires MongoDB + Ollama)
+python -m pytest rag/tests/test_rag_agent.py -v
+python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
+```
+
+### Test Categories
+
+| Test File | What It Tests | Requirements |
+|-----------|--------------|--------------|
+| `test_config.py` | Settings loading, credential masking | None |
+| `test_ingestion.py` | Data models, chunking config validation | None |
+| `test_mongo_store.py` | MongoDB connection, vector/text indexes | MongoDB Atlas |
+| `test_rag_agent.py` | Retriever queries, agent integration | MongoDB + Ollama |
+
+### Sample Test Queries (from test_rag_agent.py)
+
+The tests query the ingested NeuralFlow AI documents:
+
+```python
+# Company information
+"What does NeuralFlow AI do?"
+"How many engineers work at the company?"
+
+# Employee benefits
+"What is the PTO policy?"
+"What is the learning budget for employees?"
+
+# Technology
+"What technologies and tools does the company use?"
+```
+
+### Expected Test Results
+
+After successful ingestion of `rag/documents/`:
+- `test_config.py`: 13 tests pass
+- `test_ingestion.py`: 14 tests pass
+- `test_mongo_store.py`: 5+ tests pass (some may skip if indexes not created)
+- `test_rag_agent.py`: All tests pass (requires indexes + Ollama running)

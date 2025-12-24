@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext as PydanticRunContext
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIModel, OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 _current_trace = None
 
 
-def get_llm_model(model_choice: str | None = None) -> OpenAIModel:
+def get_llm_model(model_choice: str | None = None) -> OpenAIChatModel:
     """
     Get LLM model configuration based on environment variables.
     Supports any OpenAI-compatible API provider.
@@ -41,7 +41,7 @@ def get_llm_model(model_choice: str | None = None) -> OpenAIModel:
     api_key = settings.llm_api_key
 
     provider = OpenAIProvider(base_url=base_url, api_key=api_key)
-    return OpenAIModel(llm_choice, provider=provider)
+    return OpenAIChatModel(llm_choice, provider=provider)
 
 
 def get_model_info() -> dict:

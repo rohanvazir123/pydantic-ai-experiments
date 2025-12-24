@@ -322,6 +322,7 @@ async def _stream_agent(
             # No action needed - the prompt is already set up.
             # -----------------------------------------------------------------
             if Agent.is_user_prompt_node(node):
+                print("  [dim]User prompt received[/dim]")  # Debugging info    
                 pass  # Clean start, nothing to display
 
             # -----------------------------------------------------------------
@@ -330,6 +331,7 @@ async def _stream_agent(
             # so the user sees tokens as they're generated.
             # -----------------------------------------------------------------
             elif Agent.is_model_request_node(node):
+                print("  [dim]Model request received[/dim]")  # Debugging info
                 response_text = await _handle_model_request_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -338,6 +340,7 @@ async def _stream_agent(
             # Display tool calls and results for transparency.
             # -----------------------------------------------------------------
             elif Agent.is_call_tools_node(node):
+                print("  [dim]Tool call received[/dim]")  # Debugging info  
                 await _handle_tool_call_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -346,6 +349,7 @@ async def _stream_agent(
             # handle the results after the loop.
             # -----------------------------------------------------------------
             elif Agent.is_end_node(node):
+                print("  [dim]Execution complete[/dim]")  # Debugging info
                 pass  # Execution complete
 
     # -------------------------------------------------------------------------
