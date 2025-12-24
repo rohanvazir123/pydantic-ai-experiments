@@ -5,8 +5,8 @@ import asyncio
 from typing import Any
 
 # Import our agent and dependencies
-import rag_agent
-from config.settings import load_settings
+from rag.agent.rag_agent import agent
+from rag.config.settings import load_settings
 from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import StateDeps
@@ -16,7 +16,7 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPartDelta,
 )
-from rag_agent import RAGState
+from rag.agent.rag_agent import RAGState
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -25,6 +25,33 @@ from rich.prompt import Prompt
 load_dotenv(override=True)
 
 console = Console()
+
+# =============================================================================
+# VERBOSE DEBUGGING
+# =============================================================================
+# When enabled, prints all Pydantic AI events for debugging:
+# - Node types (UserPromptNode, ModelRequestNode, CallToolsNode, End)
+# - Streaming events (PartStartEvent, PartDeltaEvent, PartEndEvent)
+# - Tool events (FunctionToolCallEvent, FunctionToolResultEvent)
+# =============================================================================
+_verbose_debug = False
+
+
+def set_verbose_debug(enabled: bool) -> None:
+    """Enable or disable verbose debug output for agent events."""
+    global _verbose_debug
+    _verbose_debug = enabled
+
+
+def is_verbose_debug() -> bool:
+    """Check if verbose debug is enabled."""
+    return _verbose_debug
+
+
+def _debug_print(message: str) -> None:
+    """Print debug message if verbose mode is enabled."""
+    if _verbose_debug:
+        print(message)
 
 
 async def stream_agent_interaction(
@@ -179,6 +206,7 @@ async def _handle_model_request_node(node: Any, ctx: Any) -> str:
         - Prints a newline after streaming completes
     """
     response_text = ""
+    event_count = 0
 
     # Display the assistant label before the streaming content
     console.print("[bold blue]Assistant:[/bold blue] ", end="")
@@ -186,24 +214,48 @@ async def _handle_model_request_node(node: Any, ctx: Any) -> str:
     # Open a streaming context to receive real-time events from the model
     async with node.stream(ctx) as request_stream:
         async for event in request_stream:
+            event_count += 1
+            event_type = type(event).__name__
+
             # PartStartEvent: Fired when a new part (text, tool call, etc.) begins
-            # We only care about text parts here
-            if isinstance(event, PartStartEvent) and event.part.part_kind == "text":
-                initial_text = event.part.content
-                if initial_text:
-                    console.print(initial_text, end="")
-                    response_text += initial_text
+            if isinstance(event, PartStartEvent):
+                part_kind = getattr(event.part, 'part_kind', 'unknown')
+                content = getattr(event.part, 'content', '')
+                _debug_print(f"      [{event_count}] {event_type}")
+                _debug_print(f"          part_kind: {part_kind}")
+                if content:
+                    _debug_print(f"          content: {repr(content[:100])}...")
+
+                # We only stream text parts
+                if part_kind == "text" and content:
+                    console.print(content, end="")
+                    response_text += content
 
             # PartDeltaEvent with TextPartDelta: Incremental text updates
             # This is the main streaming mechanism - each delta contains a small
             # chunk of the response (usually a few tokens)
-            elif isinstance(event, PartDeltaEvent) and isinstance(
-                event.delta, TextPartDelta
-            ):
-                delta_text = event.delta.content_delta
-                if delta_text:
-                    console.print(delta_text, end="")
-                    response_text += delta_text
+            elif isinstance(event, PartDeltaEvent):
+                if isinstance(event.delta, TextPartDelta):
+                    delta_text = event.delta.content_delta
+                    _debug_print(f"      [{event_count}] {event_type} (TextPartDelta)")
+                    if delta_text:
+                        _debug_print(f"          delta: {repr(delta_text[:50])}...")
+                        console.print(delta_text, end="")
+                        response_text += delta_text
+                else:
+                    delta_type = type(event.delta).__name__
+                    _debug_print(f"      [{event_count}] {event_type} ({delta_type})")
+
+            # Other events (PartEndEvent, FinalResultEvent, etc.)
+            else:
+                _debug_print(f"      [{event_count}] {event_type}")
+                # Print relevant attributes for debugging
+                for attr in ['part', 'result', 'tool_name']:
+                    if hasattr(event, attr):
+                        val = getattr(event, attr)
+                        _debug_print(f"          {attr}: {repr(str(val)[:100])}")
+
+    _debug_print(f"      Total events: {event_count}")
 
     # Add newline after the complete response for proper formatting
     console.print()
@@ -238,13 +290,26 @@ async def _handle_tool_call_node(node: Any, ctx: Any) -> None:
           Results: 5
         Search completed successfully
     """
+    event_count = 0
+
     # Stream tool execution events in real-time
     async with node.stream(ctx) as tool_stream:
         async for event in tool_stream:
+            event_count += 1
             # Get the event type name for comparison
             # We use string comparison because the event classes may not be
             # directly importable in all contexts
             event_type = type(event).__name__
+
+            # Verbose debug: print all event details
+            _debug_print(f"      [{event_count}] {event_type}")
+            if _verbose_debug:
+                for attr in ['tool_call_id', 'tool_name', 'part', 'result', 'content']:
+                    if hasattr(event, attr):
+                        val = getattr(event, attr)
+                        if val is not None:
+                            val_str = str(val)[:200]
+                            _debug_print(f"          {attr}: {val_str}")
 
             if event_type == "FunctionToolCallEvent":
                 # A tool is being invoked - extract and display its information
@@ -255,6 +320,8 @@ async def _handle_tool_call_node(node: Any, ctx: Any) -> None:
             elif event_type == "FunctionToolResultEvent":
                 # The tool has finished executing
                 console.print("  [green]Search completed successfully[/green]")
+
+    _debug_print(f"      Total tool events: {event_count}")
 
 
 # =============================================================================
@@ -306,23 +373,35 @@ async def _stream_agent(
         "RAG (Retrieval-Augmented Generation) is..."
     """
     response_text = ""
+    node_count = 0
+
+    _debug_print(f"\n{'='*70}")
+    _debug_print(f"QUERY: {user_input}")
+    _debug_print(f"{'='*70}")
 
     # -------------------------------------------------------------------------
     # Stream the agent execution using Pydantic AI's iter() context manager.
     # This provides access to the execution graph as a series of nodes.
     # -------------------------------------------------------------------------
-    async with rag_agent.iter(
+    async with agent.iter(
         user_input, deps=deps, message_history=message_history
     ) as run:
         # Iterate through each node in the agent's execution graph
         async for node in run:
+            node_count += 1
+            node_type = type(node).__name__
+
+            _debug_print(f"\n{'-'*70}")
+            _debug_print(f"NODE #{node_count}: {node_type}")
+            _debug_print(f"{'-'*70}")
+
             # -----------------------------------------------------------------
             # USER PROMPT NODE
             # Represents the initial user input being processed.
             # No action needed - the prompt is already set up.
             # -----------------------------------------------------------------
             if Agent.is_user_prompt_node(node):
-                print("  [dim]User prompt received[/dim]")  # Debugging info    
+                _debug_print(f"  > User prompt: {user_input}")
                 pass  # Clean start, nothing to display
 
             # -----------------------------------------------------------------
@@ -331,7 +410,8 @@ async def _stream_agent(
             # so the user sees tokens as they're generated.
             # -----------------------------------------------------------------
             elif Agent.is_model_request_node(node):
-                print("  [dim]Model request received[/dim]")  # Debugging info
+                _debug_print(f"  > Model generating response...")
+                _debug_print(f"  > Streaming events:")
                 response_text = await _handle_model_request_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -340,7 +420,8 @@ async def _stream_agent(
             # Display tool calls and results for transparency.
             # -----------------------------------------------------------------
             elif Agent.is_call_tools_node(node):
-                print("  [dim]Tool call received[/dim]")  # Debugging info  
+                _debug_print(f"  > Tool execution...")
+                _debug_print(f"  > Tool events:")
                 await _handle_tool_call_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -349,7 +430,9 @@ async def _stream_agent(
             # handle the results after the loop.
             # -----------------------------------------------------------------
             elif Agent.is_end_node(node):
-                print("  [dim]Execution complete[/dim]")  # Debugging info
+                _debug_print(f"  > Execution complete")
+                if hasattr(node, 'data'):
+                    _debug_print(f"  > Result data type: {type(node.data).__name__}")
                 pass  # Execution complete
 
     # -------------------------------------------------------------------------
@@ -367,6 +450,14 @@ async def _stream_agent(
         run.result.output if hasattr(run.result, "output") else str(run.result)
     )
     response = response_text.strip() or final_output
+
+    _debug_print(f"\n{'='*70}")
+    _debug_print(f"EXECUTION SUMMARY")
+    _debug_print(f"{'='*70}")
+    _debug_print(f"Total nodes: {node_count}")
+    _debug_print(f"Response length: {len(response)} chars")
+    _debug_print(f"New messages: {len(new_messages)}")
+    _debug_print(f"{'='*70}\n")
 
     return (response, new_messages)
 

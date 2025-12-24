@@ -1803,6 +1803,93 @@ python -m pytest rag/tests/test_rag_agent.py -v
 python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
 ```
 
+### Debug Agent Flow
+
+#### Execution Flow Summary
+
+```
+test_agent_flow_verbose (test_agent_flow.py)
+    |
+    +--> set_verbose_debug(True)
+    |
+    +--> stream_agent_interaction() (agent_main.py:57)
+              |
+              +--> _stream_agent() (agent_main.py:331)
+                        |
+                        +--> agent.iter(query) --> yields nodes
+                                  |
+                                  +--> NODE: UserPromptNode
+                                  |         --> _debug_print()
+                                  |
+                                  +--> NODE: ModelRequestNode
+                                  |         --> _handle_model_request_node() (agent_main.py:185)
+                                  |                   |
+                                  |                   +--> node.stream() --> yields events
+                                  |                             |
+                                  |                             +--> PartStartEvent (tool-call or text)
+                                  |                             +--> PartDeltaEvent (TextPartDelta)
+                                  |                             +--> FinalResultEvent
+                                  |                             +--> PartEndEvent
+                                  |
+                                  +--> NODE: CallToolsNode
+                                  |         --> _handle_tool_call_node() (agent_main.py:266)
+                                  |                   |
+                                  |                   +--> node.stream() --> yields events
+                                  |                             |
+                                  |                             +--> FunctionToolCallEvent
+                                  |                             |         --> _extract_tool_info()
+                                  |                             |         --> _display_tool_args()
+                                  |                             |
+                                  |                             +--> FunctionToolResultEvent
+                                  |
+                                  +--> NODE: End
+                                            --> _debug_print("Execution complete")
+```
+
+#### Running the Tests
+
+To verify the agent execution flow and see all Pydantic AI events:
+
+```bash
+# Run all agent flow tests
+python -m pytest rag/tests/test_agent_flow.py -v -s
+
+# Run a single test by full path
+python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s
+python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_with_tool_call -v -s
+python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_no_verbose -v -s
+
+# Run tests matching a pattern
+python -m pytest rag/tests/test_agent_flow.py -k "verbose" -v -s
+```
+
+The test enables verbose debugging via `set_verbose_debug(True)` from `agent_main.py`, which prints:
+
+**Node Types:**
+- `NODE #1: UserPromptNode` - Initial user input
+- `NODE #2: ModelRequestNode` - LLM generating response
+- `NODE #3: CallToolsNode` - Tool execution (search_knowledge_base)
+- `NODE #N: End` - Execution complete
+
+**Streaming Events (ModelRequestNode):**
+- `PartStartEvent` - Start of text/tool-call part with initial content
+- `PartDeltaEvent (TextPartDelta)` - Incremental text updates
+- `FinalResultEvent` - Final result ready
+- `PartEndEvent` - Part complete
+
+**Tool Events (CallToolsNode):**
+- `FunctionToolCallEvent` - Tool invocation with args (query, match_count, search_type)
+- `FunctionToolResultEvent` - Tool result with search results
+
+**Enabling Verbose Debug Programmatically:**
+```python
+from rag.agent.agent_main import set_verbose_debug, stream_agent_interaction
+
+set_verbose_debug(True)  # Enable verbose output
+# ... run agent ...
+set_verbose_debug(False)  # Disable when done
+```
+
 ### Test Categories
 
 | Test File | What It Tests | Requirements |
@@ -1811,6 +1898,7 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short 
 | `test_ingestion.py` | Data models, chunking config validation | None |
 | `test_mongo_store.py` | MongoDB connection, vector/text indexes | MongoDB Atlas |
 | `test_rag_agent.py` | Retriever queries, agent integration | MongoDB + Ollama |
+| `test_agent_flow.py` | Agent flow execution, debug prints | MongoDB + Ollama |
 
 ### Sample Test Queries (from test_rag_agent.py)
 

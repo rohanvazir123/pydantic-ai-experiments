@@ -68,10 +68,10 @@ class RAGState(BaseModel):
 
 
 # Create the RAG agent
-rag_agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
 
 
-@rag_agent.tool
+@agent.tool
 async def search_knowledge_base(
     ctx: PydanticRunContext,
     query: str,
@@ -131,13 +131,6 @@ async def search_knowledge_base(
     except Exception as e:
         logger.exception(f"Error searching knowledge base: {e}")
         return f"Error searching knowledge base: {str(e)}"
-
-
-# Export for convenience
-# The line `agent = rag_agent` is assigning the RAG agent instance `rag_agent` to a variable named
-# `agent`. This allows the RAG agent to be accessed and used conveniently through the `agent` variable
-# in other parts of the code.
-agent = rag_agent
 
 
 class RunContext:
@@ -209,9 +202,9 @@ async def traced_agent_run(
     try:
         # Run the agent
         if message_history:
-            result = await rag_agent.run(query, message_history=message_history)
+            result = await agent.run(query, message_history=message_history)
         else:
-            result = await rag_agent.run(query)
+            result = await agent.run(query)
 
         # Update trace with output
         if _current_trace is not None:
