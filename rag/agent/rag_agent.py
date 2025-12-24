@@ -62,9 +62,30 @@ def get_model_info() -> dict:
 
 
 class RAGState(BaseModel):
-    """Minimal shared state for the RAG agent."""
+    """
+    Shared state for the RAG agent.
 
-    pass
+    Holds pre-initialized store and retriever for better performance.
+    These are reused across tool calls instead of creating new instances each time.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    store: MongoHybridStore | None = None
+    retriever: Retriever | None = None
+
+    @classmethod
+    async def create(cls) -> "RAGState":
+        """Create RAGState with initialized store and retriever."""
+        store = MongoHybridStore()
+        await store.initialize()
+        retriever = Retriever(store=store)
+        return cls(store=store, retriever=retriever)
+
+    async def close(self) -> None:
+        """Clean up resources."""
+        if self.store:
+            await self.store.close()
 
 
 # Create the RAG agent
@@ -93,13 +114,21 @@ async def search_knowledge_base(
     global _current_trace
     start_time = time.time()
 
+    # Check if we have a shared store/retriever from deps (better performance)
+    # or fall back to creating new instances (backwards compatible)
+    deps = ctx.deps
+    use_shared = deps is not None and hasattr(deps, 'retriever') and deps.retriever is not None
+
     try:
-        # Initialize components
-        # NOTE: Currently creating new store/retriever per call. ctx.deps could be
-        # used to pass a shared store instance for better performance, e.g.:
-        #   store = ctx.deps.store if hasattr(ctx.deps, 'store') else MongoHybridStore()
-        store = MongoHybridStore()
-        retriever = Retriever(store=store)
+        if use_shared:
+            # Use shared retriever from deps (no connection overhead)
+            retriever = deps.retriever
+            logger.debug("Using shared retriever from deps")
+        else:
+            # Fall back to creating new instances (slower, but works without deps)
+            logger.debug("Creating new store/retriever (no shared deps)")
+            store = MongoHybridStore()
+            retriever = Retriever(store=store)
 
         # Perform search
         actual_search_type = search_type or "hybrid"
@@ -126,8 +155,9 @@ async def search_knowledge_base(
                 duration_ms=duration_ms,
             )
 
-        # Clean up
-        await store.close()
+        # Only close if we created a new store (don't close shared store)
+        if not use_shared:
+            await store.close()
 
         return result
 
