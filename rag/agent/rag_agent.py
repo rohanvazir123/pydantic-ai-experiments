@@ -82,7 +82,7 @@ async def search_knowledge_base(
     Search the knowledge base for relevant information.
 
     Args:
-        ctx: Agent runtime context
+        ctx: Agent runtime context (NOTE: ctx.deps is available but not currently used)
         query: Search query text
         match_count: Number of results to return (default: 5)
         search_type: Type of search - "semantic", "text", or "hybrid" (default)
@@ -95,6 +95,9 @@ async def search_knowledge_base(
 
     try:
         # Initialize components
+        # NOTE: Currently creating new store/retriever per call. ctx.deps could be
+        # used to pass a shared store instance for better performance, e.g.:
+        #   store = ctx.deps.store if hasattr(ctx.deps, 'store') else MongoHybridStore()
         store = MongoHybridStore()
         retriever = Retriever(store=store)
 

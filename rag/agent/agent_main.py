@@ -382,6 +382,12 @@ async def _stream_agent(
     # -------------------------------------------------------------------------
     # Stream the agent execution using Pydantic AI's iter() context manager.
     # This provides access to the execution graph as a series of nodes.
+    #
+    # NOTE: deps (StateDeps[RAGState]) is passed to the agent but currently
+    # NOT USED by tools. The search_knowledge_base tool creates its own
+    # MongoHybridStore and Retriever instances. deps is available for future
+    # use if shared state between tool calls is needed (e.g., pre-initialized
+    # store, conversation context, user preferences).
     # -------------------------------------------------------------------------
     async with agent.iter(
         user_input, deps=deps, message_history=message_history

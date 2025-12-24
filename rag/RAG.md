@@ -1812,11 +1812,16 @@ test_agent_flow_verbose (test_agent_flow.py)
     |
     +--> set_verbose_debug(True)
     |
-    +--> stream_agent_interaction() (agent_main.py:57)
+    +--> stream_agent_interaction(user_input, message_history, deps)
+              |                                                  |
+              |                            StateDeps[RAGState] --+
               |
-              +--> _stream_agent() (agent_main.py:331)
+              +--> _stream_agent() (agent_main.py:332)
                         |
-                        +--> agent.iter(query) --> yields nodes
+                        +--> agent.iter(query, deps=deps, ...) --> yields nodes
+                        |              |
+                        |              +-- NOTE: deps passed but NOT USED by tools
+                        |                  Tools create their own store/retriever
                                   |
                                   +--> NODE: UserPromptNode
                                   |         --> _debug_print()
@@ -1845,6 +1850,19 @@ test_agent_flow_verbose (test_agent_flow.py)
                                   +--> NODE: End
                                             --> _debug_print("Execution complete")
 ```
+
+#### Note on `deps` (StateDeps)
+
+`deps` is passed through the call chain but **currently not used** by tools:
+
+| Location | What Happens |
+|----------|--------------|
+| `test_agent_flow.py` | Creates `StateDeps(RAGState())` |
+| `stream_agent_interaction()` | Receives `deps`, passes to `_stream_agent()` |
+| `_stream_agent()` | Passes `deps` to `agent.iter(..., deps=deps)` |
+| `search_knowledge_base()` | Has access via `ctx.deps` but **creates own store/retriever** |
+
+**Future use:** `deps` could share a pre-initialized `MongoHybridStore` instance between tool calls for better performance, or pass user preferences/conversation context.
 
 #### Running the Tests
 
