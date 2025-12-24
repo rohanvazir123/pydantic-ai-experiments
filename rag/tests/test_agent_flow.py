@@ -42,8 +42,8 @@ class TestAgentFlow:
         # Enable verbose debugging
         set_verbose_debug(True)
 
-        # Create shared state with pre-initialized store (better performance)
-        state = await RAGState.create()
+        # Create state - retriever is lazy-initialized on first use (same event loop)
+        state = RAGState()
 
         try:
             query = "What does NeuralFlow AI do?"
@@ -75,8 +75,8 @@ class TestAgentFlow:
         """
         set_verbose_debug(True)
 
-        # Create shared state with pre-initialized store (better performance)
-        state = await RAGState.create()
+        # Create state - retriever is lazy-initialized on first use (same event loop)
+        state = RAGState()
 
         try:
             query = "What is the PTO policy at NeuralFlow?"
@@ -113,8 +113,8 @@ class TestAgentFlow:
         # Ensure verbose is disabled
         set_verbose_debug(False)
 
-        # Create shared state with pre-initialized store (better performance)
-        state = await RAGState.create()
+        # Create state - retriever is lazy-initialized on first use (same event loop)
+        state = RAGState()
 
         try:
             query = "Hello, how are you?"

@@ -65,27 +65,33 @@ class RAGState(BaseModel):
     """
     Shared state for the RAG agent.
 
-    Holds pre-initialized store and retriever for better performance.
-    These are reused across tool calls instead of creating new instances each time.
+    Holds a store and retriever that are lazily initialized on first use.
+    This avoids event loop issues when created in one loop (e.g., Streamlit startup)
+    but used in another (agent execution).
     """
 
     model_config = {"arbitrary_types_allowed": True}
 
-    store: MongoHybridStore | None = None
-    retriever: Retriever | None = None
+    # Internal storage - lazily initialized
+    _store: MongoHybridStore | None = None
+    _retriever: Retriever | None = None
+    _initialized: bool = False
 
-    @classmethod
-    async def create(cls) -> "RAGState":
-        """Create RAGState with initialized store and retriever."""
-        store = MongoHybridStore()
-        await store.initialize()
-        retriever = Retriever(store=store)
-        return cls(store=store, retriever=retriever)
+    async def get_retriever(self) -> Retriever:
+        """Get or create the retriever (lazy initialization in current event loop)."""
+        if not self._initialized:
+            self._store = MongoHybridStore()
+            await self._store.initialize()
+            self._retriever = Retriever(store=self._store)
+            self._initialized = True
+            logger.info("[PROFILE] Lazy-initialized store/retriever in current event loop")
+        return self._retriever
 
     async def close(self) -> None:
         """Clean up resources."""
-        if self.store:
-            await self.store.close()
+        if self._store:
+            await self._store.close()
+            self._initialized = False
 
 
 # Create the RAG agent
@@ -114,25 +120,25 @@ async def search_knowledge_base(
     global _current_trace
     start_time = time.time()
 
-    # Check if we have a shared store/retriever from deps (better performance)
-    # or fall back to creating new instances (backwards compatible)
+    # Check if we have RAGState from deps for shared/lazy-initialized retriever
     deps = ctx.deps
-    logger.info(f"[PROFILE] deps type: {type(deps)}, deps: {deps}")
 
-    # deps could be RAGState directly or wrapped - check both
+    # deps could be RAGState directly or wrapped in StateDeps
     state = deps if isinstance(deps, RAGState) else getattr(deps, 'state', None)
-    use_shared = state is not None and hasattr(state, 'retriever') and state.retriever is not None
+
+    # Track if we created a local store (need to close it later)
+    local_store = None
 
     try:
-        if use_shared:
-            # Use shared retriever from deps (no connection overhead)
-            retriever = state.retriever
-            logger.info("[PROFILE] Using SHARED retriever from deps (fast)")
+        if state is not None and isinstance(state, RAGState):
+            # Use lazy-initialized retriever from RAGState (same event loop, reused)
+            retriever = await state.get_retriever()
+            logger.info("[PROFILE] Using shared retriever from RAGState")
         else:
             # Fall back to creating new instances (slower, but works without deps)
-            logger.info("[PROFILE] Creating NEW store/retriever (slow)")
-            store = MongoHybridStore()
-            retriever = Retriever(store=store)
+            logger.info("[PROFILE] Creating NEW store/retriever (no RAGState)")
+            local_store = MongoHybridStore()
+            retriever = Retriever(store=local_store)
 
         # Perform search
         actual_search_type = search_type or "hybrid"
@@ -159,9 +165,9 @@ async def search_knowledge_base(
                 duration_ms=duration_ms,
             )
 
-        # Only close if we created a new store (don't close shared store)
-        if not use_shared:
-            await store.close()
+        # Only close if we created a local store (don't close shared store)
+        if local_store is not None:
+            await local_store.close()
 
         return result
 

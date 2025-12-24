@@ -66,9 +66,9 @@ def init_session_state() -> None:
         st.session_state.message_history: list[ModelMessage] = []
 
     if "deps" not in st.session_state:
-        # Create the state with pre-initialized store/retriever for better performance
-        # This avoids creating new MongoDB connections on every query
-        state = asyncio.run(RAGState.create())
+        # Create the state - retriever is lazy-initialized on first use
+        # This avoids event loop issues (created in Streamlit loop, used in agent loop)
+        state = RAGState()
         st.session_state.deps = StateDeps[RAGState](state=state)
         st.session_state.rag_state = state  # Keep reference for cleanup
 
