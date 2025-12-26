@@ -19,6 +19,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 11. [Langfuse Tracing & Observability](#11-langfuse-tracing--observability)
 12. [Implementation Roadmap](#12-implementation-roadmap)
 13. [Testing](#13-testing)
+14. [Performance Tuning](#14-performance-tuning)
 
 ---
 
@@ -1957,3 +1958,144 @@ After successful ingestion of `rag/documents/`:
 - `test_ingestion.py`: 14 tests pass
 - `test_mongo_store.py`: 5+ tests pass (some may skip if indexes not created)
 - `test_rag_agent.py`: All tests pass (requires indexes + Ollama running)
+
+---
+
+## 14. Performance Tuning
+
+### Current Performance Profile
+
+Run with profiling enabled to see timing breakdown:
+```bash
+python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s --log-cli-level=INFO
+```
+
+**Typical timing breakdown (with local Ollama llama3.1:8b):**
+
+| Phase | Time | Description |
+|-------|------|-------------|
+| ModelRequestNode (decide) | ~3-5s | LLM deciding to call search tool |
+| CallToolsNode (search) | ~2-3s | MongoDB search + embedding generation |
+| **ModelRequestNode (response)** | **~10-17s** | **LLM generating final response (BOTTLENECK)** |
+| Total | ~15-25s | End-to-end query time |
+
+### Bottleneck: Local LLM Response Generation
+
+The main bottleneck is the local LLM generating responses. With `llama3.1:8b` on partial GPU:
+```
+ollama ps
+NAME           SIZE      PROCESSOR
+llama3.1:8b    6.3 GB    28%/72% CPU/GPU  <- Most inference on slow CPU!
+```
+
+### Performance Improvement Options
+
+#### 1. Use a Smaller/Quantized Model (Recommended)
+
+Smaller models fit entirely in GPU VRAM = 100% GPU inference = much faster.
+
+```bash
+# Pull smaller models
+ollama pull llama3.2:3b          # ~2GB, fast
+ollama pull qwen2.5:3b           # ~2GB, fast
+ollama pull phi3:mini            # ~2GB, very fast
+ollama pull mistral:7b-instruct-q4_0  # ~4GB, good quality
+
+# Or quantized version of current model
+ollama pull llama3.1:8b-instruct-q4_0  # ~4.5GB, fits better
+```
+
+Update `.env`:
+```bash
+LLM_MODEL=llama3.2:3b
+```
+
+**Expected improvement:** 3-5x faster response generation
+
+#### 2. Ensure Full GPU Utilization
+
+Check GPU usage:
+```bash
+ollama ps  # Should show ~100% GPU, 0% CPU for best performance
+```
+
+If model doesn't fit in VRAM:
+```bash
+# Restart Ollama to free memory
+taskkill /IM ollama.exe /F   # Windows
+# killall ollama             # Linux/Mac
+ollama serve
+```
+
+Set GPU layers (if needed):
+```bash
+set OLLAMA_NUM_GPU=99  # Windows
+# export OLLAMA_NUM_GPU=99  # Linux/Mac
+ollama serve
+```
+
+#### 3. Reduce Search Context (Less for LLM to Process)
+
+Fewer search results = smaller context = faster LLM response.
+
+In `rag/agent/rag_agent.py`, change default `match_count`:
+```python
+async def search_knowledge_base(
+    ctx: PydanticRunContext,
+    query: str,
+    match_count: int | None = 3,  # Reduced from 5
+    search_type: str | None = "hybrid",
+) -> str:
+```
+
+**Trade-off:** Fewer results may miss relevant information.
+
+#### 4. Use Cloud LLM (Fastest, but costs money)
+
+For production or when speed is critical:
+
+```bash
+# In .env
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini        # Fast and cheap
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-...
+```
+
+**Expected improvement:** ~10x faster (sub-second responses)
+
+#### 5. Lazy Initialization (Already Implemented)
+
+The `RAGState` uses lazy initialization to avoid event loop issues and reuse connections:
+
+```python
+# Good: Connection reused across queries
+state = RAGState()  # Empty, lazy-initialized
+deps = StateDeps(state)
+# First query: initializes store/retriever in correct event loop
+# Subsequent queries: reuses the same connection
+```
+
+This avoids creating new MongoDB connections per query.
+
+### Profiling Commands
+
+```bash
+# Full profiling output
+python -m pytest rag/tests/test_agent_flow.py -v -s --log-cli-level=INFO
+
+# Quick check - just timing lines
+python -m pytest rag/tests/test_agent_flow.py -v -s --log-cli-level=INFO 2>&1 | grep PROFILE
+
+# Save full output to file
+python -m pytest rag/tests/test_agent_flow.py -v -s --log-cli-level=INFO > profile_output.txt 2>&1
+```
+
+### Performance Improvement Checklist
+
+- [ ] Check `ollama ps` - is model using 100% GPU?
+- [ ] Try smaller model: `llama3.2:3b` or `qwen2.5:3b`
+- [ ] Try quantized model: `llama3.1:8b-instruct-q4_0`
+- [ ] Reduce `match_count` from 5 to 3
+- [ ] Consider cloud LLM for production use
+- [ ] Run profiling to verify improvements
