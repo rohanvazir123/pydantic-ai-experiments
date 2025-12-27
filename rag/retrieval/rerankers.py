@@ -66,15 +66,15 @@ class CrossEncoderReranker(BaseReranker):
         """Lazy load the cross-encoder model."""
         if self._model is None:
             try:
-                from sentence_transformers import CrossEncoder
+                from sentence_transformers import CrossEncoder  # type: ignore
 
                 logger.info(f"Loading cross-encoder model: {self.model_name}")
                 self._model = CrossEncoder(self.model_name)
-            except ImportError:
+            except ImportError as e:
                 raise ImportError(
                     "sentence-transformers is required for CrossEncoderReranker. "
                     "Install with: pip install sentence-transformers"
-                )
+                ) from e
         return self._model
 
     async def rerank(
@@ -154,8 +154,8 @@ class ColBERTReranker(BaseReranker):
         """Lazy load the ColBERT model."""
         if self._model is None:
             try:
-                from colbert import Searcher
-                from colbert.infra import ColBERTConfig
+                from colbert import Searcher  # type: ignore
+                from colbert.infra import ColBERTConfig  # type: ignore
 
                 logger.info(f"Loading ColBERT model: {self.model_name}")
                 config = ColBERTConfig(checkpoint=self.model_name)
