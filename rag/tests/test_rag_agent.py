@@ -390,7 +390,7 @@ class TestRAGAgentTool:
         try:
 
             class MockContext:
-                pass
+                deps = None  # No shared state, tool will create its own
 
             result = await search_knowledge_base(
                 MockContext(),
@@ -441,7 +441,7 @@ class TestRAGAgentTool:
         try:
 
             class MockContext:
-                pass
+                deps = None  # No shared state, tool will create its own
 
             for search_type in ["hybrid", "semantic", "text"]:
                 logger.info(f"Testing search type: {search_type}")

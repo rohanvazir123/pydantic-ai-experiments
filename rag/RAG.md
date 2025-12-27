@@ -20,6 +20,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 12. [Implementation Roadmap](#12-implementation-roadmap)
 13. [Testing](#13-testing)
 14. [Performance Tuning](#14-performance-tuning)
+15. [Caching](#15-caching)
 
 ---
 
@@ -2099,3 +2100,171 @@ python -m pytest rag/tests/test_agent_flow.py -v -s --log-cli-level=INFO > profi
 - [ ] Reduce `match_count` from 5 to 3
 - [ ] Consider cloud LLM for production use
 - [ ] Run profiling to verify improvements
+
+---
+
+## 15. Caching
+
+The RAG system implements two levels of caching to improve response times for repeated queries:
+
+### Cache Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      User Query                              │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Result Cache (Retriever)                  │
+│  Key: (query, search_type, match_count)                     │
+│  TTL: 5 minutes                                             │
+│  Max size: 100 entries                                      │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  CACHE HIT  → Return cached SearchResult list       │    │
+│  │  CACHE MISS → Continue to embedding...              │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────┬───────────────────────────────┘
+                              │ (miss)
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Embedding Cache (EmbeddingGenerator)         │
+│  Key: (query_text, model_name)                              │
+│  No TTL (embeddings are deterministic)                      │
+│  Max size: 1000 entries                                     │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  CACHE HIT  → Return cached embedding vector        │    │
+│  │  CACHE MISS → Call embedding API (~500-700ms)       │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    MongoDB Search                            │
+│  Uses embedding to find similar documents                   │
+│  Results cached in Result Cache for next time               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Cache Types
+
+| Cache | Location | Key | TTL | Max Size | Purpose |
+|-------|----------|-----|-----|----------|---------|
+| **Embedding Cache** | `rag/ingestion/embedder.py` | `(text, model)` | None | 1000 | Cache query embeddings |
+| **Result Cache** | `rag/retrieval/retriever.py` | `(query, type, count)` | 5 min | 100 | Cache search results |
+
+### Performance Impact
+
+| Query Type | Cold Cache | Warm Cache | Improvement |
+|------------|------------|------------|-------------|
+| Embedding generation | ~600-800ms | ~0ms | **100%** |
+| Full search (same params) | ~700-1000ms | ~0ms | **100%** |
+| Full search (diff params) | ~700-1000ms | ~100-200ms | **80%** (embedding cached) |
+
+### Usage
+
+Caching is **enabled by default**. No configuration needed.
+
+#### Check Cache Statistics
+
+```python
+from rag.ingestion.embedder import EmbeddingGenerator
+from rag.retrieval.retriever import Retriever
+
+# Get embedding cache stats
+print(EmbeddingGenerator.get_cache_stats())
+# {'size': 5, 'max_size': 1000, 'hits': 3, 'misses': 2, 'hit_rate': '60.0%'}
+
+# Get result cache stats
+print(Retriever.get_cache_stats())
+# {'size': 3, 'max_size': 100, 'ttl_seconds': 300, 'hits': 2, 'misses': 1, 'hit_rate': '66.7%'}
+```
+
+#### Clear Caches
+
+```python
+from rag.ingestion.embedder import EmbeddingGenerator
+from rag.retrieval.retriever import Retriever
+
+# Clear embedding cache
+EmbeddingGenerator.clear_cache()
+
+# Clear result cache
+Retriever.clear_cache()
+```
+
+#### Disable Caching for Specific Queries
+
+```python
+from rag.retrieval.retriever import Retriever
+
+retriever = Retriever(store=store)
+
+# Bypass cache for this specific query
+results = await retriever.retrieve(
+    query="What is RAG?",
+    use_cache=False  # Skip result cache
+)
+```
+
+### Implementation Details
+
+#### Embedding Cache (`embedder.py`)
+
+Uses `@alru_cache` from `async-lru` for simple async caching:
+
+```python
+from async_lru import alru_cache
+
+@alru_cache(maxsize=1000)
+async def _cached_embed(text: str, model: str) -> tuple[float, ...]:
+    """Cached embedding generation."""
+    client = _get_client()
+    response = await client.embeddings.create(model=model, input=text)
+    return tuple(response.data[0].embedding)
+```
+
+The `@alru_cache` decorator handles LRU eviction automatically. Stats available via `_cached_embed.cache_info()`.
+
+#### ResultCache Class (`retriever.py`)
+
+```python
+class ResultCache:
+    """LRU cache for search results with TTL."""
+
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        self._cache: OrderedDict[str, tuple[float, list[SearchResult]]] = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+
+    def get(self, query: str, search_type: str, match_count: int) -> list[SearchResult] | None:
+        # Check TTL before returning
+        ...
+
+    def set(self, query: str, search_type: str, match_count: int, results: list[SearchResult]) -> None:
+        # Evict oldest if over limit
+        ...
+```
+
+### Cache Design Decisions
+
+1. **Embedding cache uses `@alru_cache`**: Simple async LRU cache from `async-lru` package
+2. **Result cache is custom**: Needs TTL support (not available in `@alru_cache`)
+3. **No TTL for embeddings**: Embeddings are deterministic - same text always produces same embedding
+4. **5-minute TTL for results**: Balances freshness with performance (data may change)
+5. **Global caches**: Shared across all instances for maximum reuse
+
+### When to Clear Caches
+
+- **After re-ingesting documents**: Result cache may have stale results
+- **After changing embedding model**: Embedding cache will have wrong vectors
+- **For debugging**: To ensure fresh queries during development
+
+```python
+# Clear both caches after re-ingestion
+from rag.ingestion.embedder import EmbeddingGenerator
+from rag.retrieval.retriever import Retriever
+
+EmbeddingGenerator.clear_cache()
+Retriever.clear_cache()
+```

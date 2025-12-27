@@ -1,15 +1,50 @@
 """Embedding generation for document chunks."""
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 
 import openai
+from async_lru import alru_cache
 
 from rag.config.settings import load_settings
 from rag.ingestion.models import ChunkData
 
 logger = logging.getLogger(__name__)
+
+
+# Module-level client (lazy initialized)
+_client: openai.AsyncOpenAI | None = None
+_settings = None
+
+
+def _get_client() -> openai.AsyncOpenAI:
+    """Get or create the shared OpenAI client."""
+    global _client, _settings
+    if _client is None:
+        _settings = load_settings()
+        _client = openai.AsyncOpenAI(
+            api_key=_settings.embedding_api_key,
+            base_url=_settings.embedding_base_url,
+        )
+    return _client
+
+
+@alru_cache(maxsize=1000)
+async def _cached_embed(text: str, model: str) -> tuple[float, ...]:
+    """
+    Cached embedding generation.
+
+    Uses @alru_cache for async LRU caching. Returns tuple (hashable) instead of list.
+    """
+    client = _get_client()
+    start_time = time.time()
+    response = await client.embeddings.create(model=model, input=text)
+    elapsed_ms = (time.time() - start_time) * 1000
+    logger.info(f"[CACHE MISS] Generated embedding in {elapsed_ms:.0f}ms")
+    # Return as tuple (hashable, required by alru_cache)
+    return tuple(response.data[0].embedding)
 
 
 class EmbeddingGenerator:
@@ -46,7 +81,7 @@ class EmbeddingGenerator:
 
     async def generate_embedding(self, text: str) -> list[float]:
         """
-        Generate embedding for a single text.
+        Generate embedding for a single text (no caching).
 
         Args:
             text: Text to embed
@@ -59,7 +94,6 @@ class EmbeddingGenerator:
             text = text[: self.config["max_tokens"] * 4]
 
         response = await self.client.embeddings.create(model=self.model, input=text)
-
         return response.data[0].embedding
 
     async def generate_embeddings_batch(self, texts: list[str]) -> list[list[float]]:
@@ -141,17 +175,48 @@ class EmbeddingGenerator:
         logger.info(f"Generated embeddings for {len(embedded_chunks)} chunks")
         return embedded_chunks
 
-    async def embed_query(self, query: str) -> list[float]:
+    async def embed_query(self, query: str, use_cache: bool = True) -> list[float]:
         """
-        Generate embedding for a search query.
+        Generate embedding for a search query with caching.
 
         Args:
             query: Search query
+            use_cache: Whether to use embedding cache (default: True)
 
         Returns:
             Query embedding
         """
-        return await self.generate_embedding(query)
+        # Truncate if needed
+        if len(query) > self.config["max_tokens"] * 4:
+            query = query[: self.config["max_tokens"] * 4]
+
+        if use_cache:
+            # Use cached function (returns tuple, convert to list)
+            result = await _cached_embed(query, self.model)
+            return list(result)
+        else:
+            # Bypass cache
+            return await self.generate_embedding(query)
+
+    @staticmethod
+    def get_cache_stats() -> dict:
+        """Get embedding cache statistics."""
+        info = _cached_embed.cache_info()
+        total = info.hits + info.misses
+        hit_rate = (info.hits / total * 100) if total > 0 else 0
+        return {
+            "size": info.currsize,
+            "max_size": info.maxsize,
+            "hits": info.hits,
+            "misses": info.misses,
+            "hit_rate": f"{hit_rate:.1f}%",
+        }
+
+    @staticmethod
+    def clear_cache() -> None:
+        """Clear the embedding cache."""
+        _cached_embed.cache_clear()
+        logger.info("Embedding cache cleared")
 
     def get_embedding_dimension(self) -> int:
         """Get the dimension of embeddings for this model."""
