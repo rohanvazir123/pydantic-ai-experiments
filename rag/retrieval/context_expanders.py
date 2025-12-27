@@ -57,20 +57,21 @@ class AdjacentChunkExpander(BaseContextExpander):
     async def expand(
         self,
         result: SearchResult,
-        context_before: int = 1,
-        context_after: int = 1,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Expand result with adjacent chunks.
 
         Args:
             result: Search result to expand
-            context_before: Number of chunks to fetch before
-            context_after: Number of chunks to fetch after
+            **kwargs: Additional parameters (context_before, context_after)
 
         Returns:
             Dictionary with main result and surrounding context
         """
+        context_before = kwargs.get("context_before", 1)
+        context_after = kwargs.get("context_after", 1)
+
         # Get the matched chunk's details
         chunk = await self.store.get_chunk_by_id(result.chunk_id)
         if not chunk:
@@ -155,16 +156,22 @@ class AdjacentChunkExpander(BaseContextExpander):
         seen_chunks: set[str] = set()
 
         for result in results:
-            expansion = await self.expand(result, context_before, context_after)
+            expansion = await self.expand(
+                result,
+                context_before=context_before,
+                context_after=context_after,
+            )
 
             if deduplicate:
                 # Filter out already-seen chunks from context
                 expansion["context_before"] = [
-                    c for c in expansion["context_before"]
+                    c
+                    for c in expansion["context_before"]
                     if str(c.get("_id", "")) not in seen_chunks
                 ]
                 expansion["context_after"] = [
-                    c for c in expansion["context_after"]
+                    c
+                    for c in expansion["context_after"]
                     if str(c.get("_id", "")) not in seen_chunks
                 ]
 
@@ -198,18 +205,20 @@ class SectionExpander(BaseContextExpander):
     async def expand(
         self,
         result: SearchResult,
-        max_chunks: int = 10,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Expand result with entire section content.
 
         Args:
             result: Search result to expand
-            max_chunks: Maximum chunks to include
+            **kwargs: Additional parameters (max_chunks)
 
         Returns:
             Dictionary with section context
         """
+        max_chunks = kwargs.get("max_chunks", 10)
+
         chunk = await self.store.get_chunk_by_id(result.chunk_id)
         if not chunk:
             return {
@@ -312,20 +321,21 @@ class DocumentSummaryExpander(BaseContextExpander):
     async def expand(
         self,
         result: SearchResult,
-        include_summary: bool = True,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """
         Expand result with document summary.
 
         Args:
             result: Search result to expand
-            include_summary: Whether to generate/include summary
+            **kwargs: Additional parameters (include_summary)
 
         Returns:
             Dictionary with document context
         """
         document = await self.store.get_document_by_id(result.document_id)
 
+        include_summary = kwargs.get("include_summary", True)
         document_summary = ""
         if include_summary and document:
             # Check cache first

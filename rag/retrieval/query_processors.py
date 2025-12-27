@@ -335,13 +335,14 @@ class MultiQueryProcessor(BaseQueryProcessor):
                     logger.warning(f"{name} processing failed: {task_result}")
                     continue
 
-                if name == "expansion" and "all_queries" in task_result:
-                    result["queries"].extend(task_result["expansions"])
-                    result["expansion_result"] = task_result
+                if isinstance(task_result, dict):
+                    if name == "expansion" and "all_queries" in task_result:
+                        result["queries"].extend(task_result["expansions"])
+                        result["expansion_result"] = task_result
 
-                elif name == "hyde":
-                    result["hyde_result"] = task_result
-                    result["embeddings"]["hyde"] = task_result.get("hyde_embedding")
+                    elif name == "hyde":
+                        result["hyde_result"] = task_result
+                        result["embeddings"]["hyde"] = task_result.get("hyde_embedding")
 
         # Deduplicate queries
         result["queries"] = list(dict.fromkeys(result["queries"]))
