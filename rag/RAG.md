@@ -31,6 +31,204 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 Documents → Ingestion Pipeline → Chunking → Embedding → MongoDB → Retrieval → Agent
 ```
 
+#### Ingestion Pipeline Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        INGESTION PIPELINE WORKFLOW                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+python -m rag.main --ingest --documents rag/documents
+    │
+    ▼
+run_ingestion_pipeline() [pipeline.py:496]
+    │
+    ├──► argparse.ArgumentParser()
+    ├──► IngestionConfig(chunk_size, chunk_overlap, max_tokens)
+    │
+    ▼
+DocumentIngestionPipeline.__init__() [pipeline.py:32]
+    │
+    ├──► load_settings()                        [settings.py]
+    ├──► ChunkingConfig()                       [models.py]
+    ├──► create_chunker(config)                 [docling.py]
+    │       └──► DoclingHybridChunker()
+    │               ├──► AutoTokenizer.from_pretrained()
+    │               └──► HybridChunker()
+    ├──► create_embedder()                      [embedder.py]
+    │       └──► EmbeddingGenerator()
+    │               └──► openai.AsyncOpenAI()
+    └──► MongoHybridStore()                     [mongo.py]
+            └──► load_settings()
+    │
+    ▼
+pipeline.ingest_documents() [pipeline.py:366]
+    │
+    ├──► pipeline.initialize()
+    │       └──► store.initialize()
+    │               └──► AsyncMongoClient()
+    │               └──► client.admin.command("ping")
+    │
+    ├──► [if clean_before_ingest]:
+    │       └──► store.clean_collections()
+    │               ├──► chunks.delete_many({})
+    │               └──► documents.delete_many({})
+    │
+    ├──► _find_document_files()
+    │       └──► glob.glob("**/*.{md,pdf,docx,...}")
+    │
+    ▼
+[FOR EACH FILE] ─────────────────────────────────────────────────────────────┐
+    │                                                                         │
+    ├──► _compute_file_hash()                                                 │
+    │       └──► hashlib.md5()                                                │
+    │                                                                         │
+    ├──► [INCREMENTAL MODE - if not clean_before_ingest]:                     │
+    │       ├──► store.get_document_hash(source)                              │
+    │       │       └──► [UNCHANGED?] ──► SKIP file                           │
+    │       │       └──► [CHANGED?] ──► store.delete_document_and_chunks()    │
+    │       └──► [NEW?] ──► continue to ingest                                │
+    │                                                                         │
+    ▼                                                                         │
+_ingest_single_document(file_path) [pipeline.py:300]                          │
+    │                                                                         │
+    ├──► _read_document()                                                     │
+    │       │                                                                 │
+    │       ├──► [AUDIO: .mp3, .wav, .m4a, .flac]:                            │
+    │       │       └──► _transcribe_audio()                                  │
+    │       │               └──► DocumentConverter() with AsrPipeline         │
+    │       │                       └──► Whisper ASR transcription            │
+    │       │                                                                 │
+    │       ├──► [DOCLING: .pdf, .docx, .pptx, .xlsx, .html, .md]:            │
+    │       │       └──► DocumentConverter.convert()                          │
+    │       │               └──► result.document.export_to_markdown()         │
+    │       │                                                                 │
+    │       └──► [TEXT: .txt, other]:                                         │
+    │               └──► open(file_path).read()                               │
+    │                                                                         │
+    ├──► _extract_title()                                                     │
+    │       └──► [Find "# " heading or use filename]                          │
+    │                                                                         │
+    ├──► _extract_document_metadata()                                         │
+    │       ├──► _compute_file_hash()                                         │
+    │       └──► [Parse YAML frontmatter if present]                          │
+    │                                                                         │
+    ▼                                                                         │
+chunker.chunk_document() [docling.py:61]                                      │
+    │                                                                         │
+    ├──► [WITH DoclingDocument]:                                              │
+    │       ├──► self.chunker.chunk(dl_doc)     ──► yields chunks             │
+    │       ├──► self.chunker.contextualize(chunk)  ──► adds heading context  │
+    │       ├──► self.tokenizer.count_tokens()                                │
+    │       └──► ChunkData(content, index, metadata, token_count)             │
+    │                                                                         │
+    └──► [WITHOUT DoclingDocument - fallback]:                                │
+            └──► _simple_fallback_chunk()                                     │
+                    └──► [Sliding window with sentence boundary detection]    │
+    │                                                                         │
+    ▼                                                                         │
+embedder.embed_chunks(chunks) [embedder.py:122]                               │
+    │                                                                         │
+    ├──► [FOR EACH BATCH of batch_size]:                                      │
+    │       ├──► generate_embeddings_batch(texts)                             │
+    │       │       └──► client.embeddings.create(model, input=texts)         │
+    │       │               └──► [Ollama/OpenAI API call]                     │
+    │       │                                                                 │
+    │       └──► ChunkData(content, embedding, metadata)                      │
+    │                                                                         │
+    ▼                                                                         │
+store.save_document() [mongo.py:340]                                          │
+    │                                                                         │
+    └──► documents.insert_one({                                               │
+            title, source, content, metadata, created_at                      │
+        })                                                                    │
+        └──► Returns document_id (ObjectId)                                   │
+    │                                                                         │
+    ▼                                                                         │
+store.add(chunks, document_id) [mongo.py:61]                                  │
+    │                                                                         │
+    └──► chunks.insert_many([{                                                │
+            document_id, content, embedding, chunk_index,                     │
+            metadata, token_count, created_at                                 │
+        }, ...])                                                              │
+    │                                                                         │
+    ▼                                                                         │
+IngestionResult(document_id, title, chunks_created, processing_time_ms)       │
+    │                                                                         │
+◄─────────────────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+[INCREMENTAL MODE - handle deleted files]:
+    ├──► store.get_all_document_sources()
+    └──► [For each source not in current files]:
+            └──► store.delete_document_and_chunks(source)
+    │
+    ▼
+pipeline.close()
+    └──► store.close()
+            └──► client.close()
+    │
+    ▼
+INGESTION COMPLETE
+    ├──► Log: "{N} documents processed, {M} chunks created"
+    └──► Next: Create vector_index and text_index in MongoDB Atlas UI
+```
+
+#### Ingestion Modes
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| **Full** (default) | `--ingest` | Deletes all existing data, re-ingests everything |
+| **Incremental** | `--ingest --no-clean` | Only processes new/changed files, removes deleted files |
+
+#### Supported File Formats
+
+| Category | Extensions | Processing Method |
+|----------|------------|-------------------|
+| **Text** | `.md`, `.markdown`, `.txt` | Direct read / Docling |
+| **Documents** | `.pdf`, `.docx`, `.doc`, `.pptx`, `.xlsx`, `.html` | Docling DocumentConverter |
+| **Audio** | `.mp3`, `.wav`, `.m4a`, `.flac` | Whisper ASR via Docling (requires additional setup) |
+
+> **Audio Transcription Prerequisites**
+>
+> Audio file processing requires:
+> 1. **FFmpeg** - System-level audio decoder
+>    - Windows: `winget install ffmpeg` or download from https://ffmpeg.org/download.html
+>    - macOS: `brew install ffmpeg`
+>    - Linux: `sudo apt install ffmpeg`
+> 2. **OpenAI Whisper** - Speech recognition model
+>    ```bash
+>    pip install openai-whisper
+>    ```
+>
+> Without these dependencies, audio files will be ingested with an error placeholder instead of transcribed content.
+
+#### Chunking Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HYBRID CHUNKER FLOW                           │
+└─────────────────────────────────────────────────────────────────┘
+
+DoclingDocument (structured)
+    │
+    ▼
+HybridChunker.chunk(dl_doc)
+    │
+    ├──► Respects document structure (sections, tables, lists)
+    ├──► Token-aware splitting (max_tokens=512)
+    ├──► Merges small peer sections (merge_peers=True)
+    │
+    ▼
+HybridChunker.contextualize(chunk)
+    │
+    └──► Prepends heading hierarchy to chunk
+         Example: "## Company Overview\n### Mission\nOur mission is..."
+    │
+    ▼
+ChunkData(content, index, metadata, token_count, embedding=None)
+```
+
 ### Key Components
 
 | Component | File | Description |
@@ -50,6 +248,452 @@ Documents → Ingestion Pipeline → Chunking → Embedding → MongoDB → Retr
 | Semantic | 0.0 - 1.0 | Conceptual queries, paraphrases |
 | Text | 0.0 - 10.0+ | Exact matches, keywords, acronyms |
 | Hybrid (RRF) | 0.01 - 0.03 | Balanced retrieval (default) |
+
+### Component Call Graphs
+
+Detailed call graphs showing how class methods interact within each component.
+
+#### 1. Settings (`rag/config/settings.py`)
+
+```
+Class: Settings(BaseSettings)
+├── model_config (class var)
+└── [Fields: mongodb_uri, mongodb_database, llm_model, etc.]
+
+Functions:
+┌──────────────────────┐
+│  load_settings()     │ ──────────► Settings()
+└──────────────────────┘                │
+                                        └──► BaseSettings.__init__()
+                                             └──► load_dotenv()
+
+┌──────────────────────┐
+│  mask_credential()   │ ──────────► str[:4] + "..." + str[-4:]
+└──────────────────────┘
+
+Module-level:
+settings = load_settings()   # Singleton instance
+```
+
+#### 2. Ingestion Pipeline (`rag/ingestion/pipeline.py`)
+
+```
+Class: DocumentIngestionPipeline
+
+__init__(config, documents_folder, clean_before_ingest)
+    ├──► load_settings()                    [settings.py]
+    ├──► ChunkingConfig()                   [models.py]
+    ├──► create_chunker(config)             [chunkers/docling.py]
+    ├──► create_embedder()                  [embedder.py]
+    └──► MongoHybridStore()                 [mongo.py]
+
+initialize()
+    └──► self.store.initialize()            [mongo.py]
+
+close()
+    └──► self.store.close()                 [mongo.py]
+
+ingest_documents(progress_callback)
+    ├──► self.initialize()
+    ├──► self.store.clean_collections()     (if clean_before_ingest)
+    ├──► self._find_document_files()
+    │       └──► glob.glob()
+    ├──► [For each file]:
+    │       ├──► self._compute_file_hash()
+    │       │       └──► hashlib.md5()
+    │       ├──► self.store.get_document_hash()      (incremental mode)
+    │       ├──► self.store.delete_document_and_chunks()  (if updated)
+    │       └──► self._ingest_single_document()
+    ├──► self.store.get_all_document_sources()       (incremental mode)
+    └──► self.store.delete_document_and_chunks()     (for deleted files)
+
+_ingest_single_document(file_path)
+    ├──► self._read_document()
+    │       ├──► self._transcribe_audio()           (for audio files)
+    │       │       └──► DocumentConverter.convert()
+    │       └──► DocumentConverter.convert()        (for docling formats)
+    ├──► self._extract_title()
+    ├──► self._extract_document_metadata()
+    │       └──► self._compute_file_hash()
+    ├──► self.chunker.chunk_document()              [docling.py]
+    ├──► self.embedder.embed_chunks()               [embedder.py]
+    ├──► self.store.save_document()                 [mongo.py]
+    └──► self.store.add()                           [mongo.py]
+
+run_ingestion_pipeline() [async main]
+    ├──► argparse.ArgumentParser()
+    ├──► IngestionConfig()
+    ├──► DocumentIngestionPipeline()
+    ├──► pipeline.ingest_documents()
+    └──► pipeline.close()
+```
+
+#### 3. Chunker (`rag/ingestion/chunkers/docling.py`)
+
+```
+Class: DoclingHybridChunker
+
+__init__(config: ChunkingConfig)
+    ├──► AutoTokenizer.from_pretrained(TOKENIZER_MODEL)  [transformers]
+    └──► HybridChunker(tokenizer, max_tokens, merge_peers)  [docling]
+
+chunk_document(content, title, source, metadata, docling_doc)
+    ├──► [if no docling_doc]:
+    │       └──► self._simple_fallback_chunk()
+    │
+    └──► [with docling_doc]:
+            ├──► self.chunker.chunk(dl_doc)             [docling]
+            ├──► self.chunker.contextualize(chunk)      [docling]
+            ├──► self.tokenizer.count_tokens()          [transformers]
+            └──► ChunkData()                            [models.py]
+
+            [on exception]:
+            └──► self._simple_fallback_chunk()
+
+_simple_fallback_chunk(content, base_metadata)
+    ├──► [sliding window loop]:
+    │       ├──► self.tokenizer.count_tokens()
+    │       └──► ChunkData()
+    └──► [update total_chunks in metadata]
+
+create_chunker(config) ──────────► DoclingHybridChunker(config)
+```
+
+#### 4. Embedder (`rag/ingestion/embedder.py`)
+
+```
+Module-level:
+_client: AsyncOpenAI | None
+_settings = None
+
+_get_client()
+    ├──► load_settings()                    [settings.py]
+    └──► openai.AsyncOpenAI()               [openai]
+
+@alru_cache(maxsize=1000)
+_cached_embed(text, model)
+    ├──► _get_client()
+    └──► client.embeddings.create()         [openai]
+
+Class: EmbeddingGenerator
+
+__init__(model, batch_size)
+    ├──► load_settings()                    [settings.py]
+    └──► openai.AsyncOpenAI()               [openai]
+
+generate_embedding(text)
+    └──► self.client.embeddings.create()    [openai]
+
+generate_embeddings_batch(texts)
+    └──► self.client.embeddings.create()    [openai]
+
+embed_chunks(chunks, progress_callback)
+    └──► [For each batch]:
+            ├──► self.generate_embeddings_batch()
+            └──► ChunkData()                [models.py]
+
+embed_query(query, use_cache)
+    ├──► [if use_cache]:
+    │       └──► _cached_embed()            ──► [CACHE HIT or MISS]
+    └──► [else]:
+            └──► self.generate_embedding()
+
+get_cache_stats() [static]
+    └──► _cached_embed.cache_info()         [@alru_cache]
+
+clear_cache() [static]
+    └──► _cached_embed.cache_clear()        [@alru_cache]
+
+get_embedding_dimension()
+    └──► self.config["dimensions"]
+
+create_embedder(model, **kwargs) ──────────► EmbeddingGenerator(model, **kwargs)
+```
+
+#### 5. MongoDB Store (`rag/storage/vector_store/mongo.py`)
+
+```
+Class: MongoHybridStore
+
+__init__()
+    └──► load_settings()                    [settings.py]
+
+initialize()
+    ├──► AsyncMongoClient()                 [pymongo]
+    └──► client.admin.command("ping")       [pymongo]
+
+close()
+    └──► self.client.close()                [pymongo]
+
+add(chunks, document_id)
+    ├──► self.initialize()
+    └──► collection.insert_many()           [pymongo]
+
+semantic_search(query_embedding, match_count)
+    ├──► self.initialize()
+    ├──► collection.aggregate([             [pymongo]
+    │       $vectorSearch,
+    │       $lookup,
+    │       $unwind,
+    │       $project
+    │   ])
+    └──► SearchResult()                     [models.py]
+
+text_search(query, match_count)
+    ├──► self.initialize()
+    ├──► collection.aggregate([             [pymongo]
+    │       $search,
+    │       $limit,
+    │       $lookup,
+    │       $unwind,
+    │       $project
+    │   ])
+    └──► SearchResult()                     [models.py]
+
+hybrid_search(query, query_embedding, match_count)
+    ├──► self.initialize()
+    ├──► asyncio.gather(
+    │       self.semantic_search(),
+    │       self.text_search()
+    │   )
+    └──► self._reciprocal_rank_fusion()
+
+_reciprocal_rank_fusion(search_results_list, k=60)
+    ├──► [calculate RRF scores]
+    ├──► sorted()
+    └──► SearchResult()                     [models.py]
+
+save_document(title, source, content, metadata)
+    ├──► self.initialize()
+    └──► collection.insert_one()            [pymongo]
+
+clean_collections()
+    ├──► self.initialize()
+    └──► collection.delete_many()           [pymongo]
+
+get_document_by_source(source)
+    ├──► self.initialize()
+    └──► collection.find_one()              [pymongo]
+
+get_document_hash(source)
+    └──► self.get_document_by_source()
+
+delete_document_and_chunks(source)
+    ├──► self.initialize()
+    ├──► collection.find_one()              [pymongo]
+    ├──► collection.delete_many()           (chunks)
+    └──► collection.delete_one()            (document)
+
+get_all_document_sources()
+    ├──► self.initialize()
+    └──► collection.find()                  [pymongo]
+```
+
+#### 6. Retriever (`rag/retrieval/retriever.py`)
+
+```
+Class: ResultCache
+
+__init__(max_size, ttl_seconds)
+
+_get_key(query, search_type, match_count)
+    └──► hashlib.sha256()
+
+get(query, search_type, match_count)
+    ├──► self._get_key()
+    ├──► [Check TTL]
+    └──► [Return cached results or None]
+
+set(query, search_type, match_count, results)
+    ├──► self._get_key()
+    └──► [LRU eviction if over max_size]
+
+stats()
+    └──► [Return hit/miss statistics]
+
+clear()
+
+Module-level:
+_result_cache = ResultCache(max_size=100, ttl_seconds=300)
+
+─────────────────────────────────────────────────────────────────
+
+Class: Retriever
+
+__init__(store, embedder)
+    ├──► load_settings()                    [settings.py]
+    ├──► MongoHybridStore()                 (if store not provided)
+    └──► EmbeddingGenerator()               (if embedder not provided)
+
+retrieve(query, match_count, search_type, use_cache)
+    ├──► [if use_cache]:
+    │       └──► _result_cache.get()
+    │               └──► [CACHE HIT] ──► return cached results
+    │
+    ├──► self.embedder.embed_query()        [embedder.py]
+    │
+    ├──► [based on search_type]:
+    │       ├──► self.store.semantic_search()   [mongo.py]
+    │       ├──► self.store.text_search()       [mongo.py]
+    │       └──► self.store.hybrid_search()     [mongo.py] (default)
+    │
+    └──► [if use_cache]:
+            └──► _result_cache.set()
+
+get_cache_stats() [static]
+    └──► _result_cache.stats()
+
+clear_cache() [static]
+    └──► _result_cache.clear()
+
+retrieve_as_context(query, match_count, search_type)
+    ├──► self.retrieve()
+    └──► [Format results as string]
+
+close()
+    └──► self.store.close()                 [mongo.py]
+```
+
+#### 7. RAG Agent (`rag/agent/rag_agent.py`)
+
+```
+Module-level:
+_current_trace = None
+
+get_llm_model(model_choice)
+    ├──► load_settings()                    [settings.py]
+    ├──► OpenAIProvider()                   [pydantic_ai]
+    └──► OpenAIChatModel()                  [pydantic_ai]
+
+get_model_info()
+    └──► load_settings()                    [settings.py]
+
+agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+
+─────────────────────────────────────────────────────────────────
+
+Class: RAGState(BaseModel)
+
+get_retriever()
+    ├──► [if not initialized]:
+    │       ├──► MongoHybridStore()         [mongo.py]
+    │       ├──► store.initialize()
+    │       └──► Retriever(store)           [retriever.py]
+    └──► return self._retriever
+
+close()
+    └──► self._store.close()                [mongo.py]
+
+─────────────────────────────────────────────────────────────────
+
+@agent.tool
+search_knowledge_base(ctx, query, match_count, search_type)
+    │
+    ├──► [Get deps from ctx]
+    │       ├──► RAGState.get_retriever()       (if RAGState in deps)
+    │       └──► MongoHybridStore() + Retriever() (fallback)
+    │
+    ├──► retriever.retrieve_as_context()        [retriever.py]
+    │
+    ├──► [if _current_trace]:
+    │       └──► trace_tool_call()              [observability]
+    │
+    └──► [close local_store if created]
+
+─────────────────────────────────────────────────────────────────
+
+traced_agent_run(query, user_id, session_id, message_history)
+    │
+    ├──► get_langfuse()                         [observability]
+    │
+    ├──► [if langfuse enabled]:
+    │       └──► langfuse.trace()
+    │
+    ├──► agent.run(query, message_history)      [pydantic_ai]
+    │       │
+    │       └──► [Internally calls]:
+    │               └──► search_knowledge_base()
+    │
+    ├──► [update trace with output]
+    │
+    └──► langfuse.flush()
+```
+
+### Complete System Call Flow
+
+End-to-end flow when a user query is processed:
+
+```
+USER QUERY
+    │
+    ▼
+traced_agent_run() [rag_agent.py]
+    │
+    ├──► get_langfuse() [observability]
+    │
+    ▼
+agent.run() [pydantic_ai]
+    │
+    ├──► LLM decides to use tool
+    │
+    ▼
+search_knowledge_base() [rag_agent.py:101]
+    │
+    ├──► RAGState.get_retriever() ─────────────────────────────┐
+    │       ├──► MongoHybridStore() [mongo.py]                  │
+    │       │       └──► load_settings() [settings.py]          │
+    │       ├──► store.initialize()                             │
+    │       │       └──► AsyncMongoClient()                     │
+    │       └──► Retriever(store) [retriever.py]                │
+    │               ├──► load_settings()                        │
+    │               └──► EmbeddingGenerator() [embedder.py]     │
+    │                       └──► load_settings()                │
+    │                                                           │
+    ▼◄──────────────────────────────────────────────────────────┘
+retriever.retrieve_as_context() [retriever.py:189]
+    │
+    ├──► retriever.retrieve()
+    │       │
+    │       ├──► _result_cache.get() ──► [CACHE HIT?] ──► return cached
+    │       │
+    │       ├──► embedder.embed_query() [embedder.py:178]
+    │       │       └──► _cached_embed() ──► [CACHE HIT?] ──► return cached
+    │       │               └──► client.embeddings.create() [openai]
+    │       │
+    │       └──► store.hybrid_search() [mongo.py:238]
+    │               │
+    │               ├──► asyncio.gather(
+    │               │       semantic_search(),
+    │               │       text_search()
+    │               │   )
+    │               │
+    │               ├──► semantic_search() ──► $vectorSearch pipeline
+    │               ├──► text_search() ──► $search pipeline
+    │               │
+    │               └──► _reciprocal_rank_fusion()
+    │
+    └──► [Format results as context string]
+            │
+            ▼
+    Return to LLM for response generation
+            │
+            ▼
+    LLM generates final response
+            │
+            ▼
+    RESPONSE TO USER
+```
+
+### Key Design Patterns
+
+| Pattern | Where Used | Purpose |
+|---------|------------|---------|
+| **Lazy Initialization** | `RAGState.get_retriever()`, `MongoHybridStore.initialize()` | Avoid event loop issues, defer connection until needed |
+| **Two-Level Caching** | `@alru_cache` (embeddings), `ResultCache` (search results) | Reduce API calls and DB queries |
+| **Dependency Injection** | `Retriever(store, embedder)` | Testability, flexibility |
+| **Factory Functions** | `create_chunker()`, `create_embedder()` | Encapsulate instantiation logic |
+| **Singleton** | `settings = load_settings()`, `_result_cache` | Share configuration and cache globally |
+| **RRF Fusion** | `_reciprocal_rank_fusion()` | Combine semantic + text search results |
 
 ---
 
@@ -2268,3 +2912,143 @@ from rag.retrieval.retriever import Retriever
 EmbeddingGenerator.clear_cache()
 Retriever.clear_cache()
 ```
+
+---
+
+## 8. Test Queries by Document Type
+
+This section provides sample queries for testing the RAG system against different document types in the `rag/documents/` folder. These queries are designed to validate that ingestion and retrieval work correctly for each file format.
+
+### Document Inventory
+
+| File Type | Files | Content Focus |
+|-----------|-------|---------------|
+| **Markdown** | company-overview.md, team-handbook.md, mission-and-goals.md, implementation-playbook.md | Company info, employee policies, goals, best practices |
+| **PDF** | client-review-globalfinance.pdf, q4-2024-business-review.pdf, technical-architecture-guide.pdf | Client case studies, financials, technical architecture |
+| **DOCX** | meeting-notes-2025-01-08.docx, meeting-notes-2025-01-15.docx | Meeting discussions and decisions |
+| **Audio** | Recording1.mp3, Recording2.mp3, Recording3.mp3, Recording4.mp3 | Transcribed meeting/discussion content |
+
+### Markdown File Queries (company-overview.md, team-handbook.md, mission-and-goals.md)
+
+| # | Query | Expected Source | Expected Answer Contains |
+|---|-------|-----------------|-------------------------|
+| 1 | What does NeuralFlow AI do? | company-overview.md | AI/ML solutions, enterprise, automation |
+| 2 | How many employees work at the company? | company-overview.md | 47 employees |
+| 3 | Where is NeuralFlow AI headquartered? | company-overview.md | San Francisco |
+| 4 | What is the PTO policy? | team-handbook.md | Unlimited PTO, 15-day minimum |
+| 5 | What is the learning budget for employees? | team-handbook.md | $2,500 per year |
+| 6 | What are the company's core products? | company-overview.md | DocFlow AI, ConversePro, AnalyticsMind |
+
+### PDF File Queries (client-review-globalfinance.pdf, q4-2024-business-review.pdf, technical-architecture-guide.pdf)
+
+| # | Query | Expected Source | Expected Answer Contains |
+|---|-------|-----------------|-------------------------|
+| 7 | How much did GlobalFinance save by implementing NeuralFlow? | client-review-globalfinance.pdf | $2.4 million savings |
+| 8 | What was the processing time reduction for GlobalFinance? | client-review-globalfinance.pdf | 94% reduction |
+| 9 | What was Q4 2024 revenue? | q4-2024-business-review.pdf | $2.8 million |
+| 10 | What was the quarter-over-quarter growth rate? | q4-2024-business-review.pdf | 47% QoQ growth |
+| 11 | What is the 2025 ARR target? | mission-and-goals.md / q4-2024 | $12 million ARR |
+| 12 | What database is used for vector storage? | technical-architecture-guide.pdf | MongoDB Atlas, vector database |
+| 13 | Describe the technical architecture | technical-architecture-guide.pdf | Microservices, RAG system, APIs |
+
+### DOCX File Queries (meeting-notes-*.docx)
+
+| # | Query | Expected Source | Expected Answer Contains |
+|---|-------|-----------------|-------------------------|
+| 14 | What was discussed in the January 8th meeting? | meeting-notes-2025-01-08.docx | Meeting topics, decisions |
+| 15 | What decisions were made in the January 15th meeting? | meeting-notes-2025-01-15.docx | Action items, decisions |
+| 16 | What are the recent meeting action items? | meeting-notes-*.docx | Tasks, assignments, deadlines |
+
+### Audio File Queries (Recording*.mp3)
+
+> **Note**: These queries require FFmpeg and `openai-whisper` to be installed. See [Audio Transcription Prerequisites](#supported-file-formats) for setup instructions. Without these dependencies, audio files are stored with error placeholders.
+
+| # | Query | Expected Source | Expected Answer Contains |
+|---|-------|-----------------|-------------------------|
+| 17 | What was discussed in the audio recordings? | Recording*.mp3 | Transcribed discussion topics |
+| 18 | Are there any action items from the recordings? | Recording*.mp3 | Tasks mentioned in transcription |
+
+### Cross-Document Queries (Tests Hybrid Search)
+
+| # | Query | Expected Sources | Purpose |
+|---|-------|------------------|---------|
+| 19 | What technologies and tools does the company use? | technical-architecture-guide.pdf, company-overview.md | Multi-source retrieval |
+| 20 | Summarize all employee benefits | team-handbook.md, possibly others | Comprehensive policy query |
+
+### Running Test Queries
+
+#### Programmatic Testing
+
+```python
+import asyncio
+from rag.retrieval.retriever import Retriever
+from rag.storage.vector_store.mongo import MongoHybridStore
+
+TEST_QUERIES = [
+    "What does NeuralFlow AI do?",
+    "How many employees work at the company?",
+    "What is the PTO policy?",
+    "What is the learning budget for employees?",
+    "How much did GlobalFinance save?",
+    "What was Q4 2024 revenue?",
+    "What is the 2025 ARR target?",
+    "What was discussed in the January meetings?",
+    "What technologies does the company use?",
+]
+
+async def run_test_queries():
+    store = MongoHybridStore()
+    retriever = Retriever(store=store)
+
+    for query in TEST_QUERIES:
+        print(f"\n{'='*60}")
+        print(f"Query: {query}")
+        print('='*60)
+
+        results = await retriever.retrieve(query, match_count=3)
+
+        for i, r in enumerate(results, 1):
+            print(f"\n[{i}] {r.document_title} (score: {r.similarity:.3f})")
+            print(f"    {r.content[:150]}...")
+
+    await store.close()
+
+asyncio.run(run_test_queries())
+```
+
+#### Using pytest
+
+```bash
+# Run the RAG agent integration tests
+python -m pytest rag/tests/test_rag_agent.py -v
+
+# With logging to see retrieved content
+python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO
+```
+
+### Expected Behavior
+
+1. **Markdown queries**: Should return high-relevance matches from .md files
+2. **PDF queries**: Should extract and match content from PDF documents
+3. **DOCX queries**: Should find content from Word documents
+4. **Audio queries**: Should match transcribed content from Whisper ASR output
+5. **Cross-document queries**: Should return results from multiple sources, demonstrating hybrid search
+
+### Debugging Failed Queries
+
+If a query doesn't return expected results:
+
+1. **Verify ingestion**: Run `python -m rag.main --ingest --documents rag/documents --verbose`
+2. **Check document count**: Query MongoDB to verify chunk count
+3. **Test search types separately**:
+   ```python
+   # Try semantic-only search
+   results = await retriever.retrieve(query, search_type="semantic")
+
+   # Try text-only search
+   results = await retriever.retrieve(query, search_type="text")
+
+   # Compare with hybrid (default)
+   results = await retriever.retrieve(query, search_type="hybrid")
+   ```
+4. **Inspect embeddings**: Ensure embedding dimension matches index configuration (768 for nomic-embed-text)

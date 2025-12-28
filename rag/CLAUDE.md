@@ -295,10 +295,17 @@ def func(callback: Callable | None = None): ...
 ```
 
 ### 3. Audio transcription fails
-Install Whisper ASR:
+Audio transcription requires both FFmpeg and Whisper:
 ```bash
+# Install FFmpeg (system-level)
+# Windows: winget install ffmpeg
+# macOS: brew install ffmpeg
+# Linux: sudo apt install ffmpeg
+
+# Install Whisper
 pip install openai-whisper
 ```
+If dependencies are missing, audio files are stored with `[Error: Could not transcribe audio file ...]` placeholder.
 
 ### 4. Ollama connection refused
 Start Ollama server:

@@ -14,7 +14,11 @@
       "WebSearch",
       "Bash(streamlit run:*)",
       "WebFetch(domain:localhost)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(winget install:*)",
+      "Bash(where:*)",
+      "Bash(export PATH:*)"
     ]
   }
 }

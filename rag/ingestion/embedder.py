@@ -235,3 +235,4 @@ def create_embedder(model: str | None = None, **kwargs) -> EmbeddingGenerator:
         EmbeddingGenerator instance
     """
     return EmbeddingGenerator(model=model, **kwargs)
+
