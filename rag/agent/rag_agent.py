@@ -1,4 +1,82 @@
-"""Main MongoDB RAG agent implementation."""
+"""
+Main MongoDB RAG agent implementation.
+
+Module: rag.agent.rag_agent
+===========================
+
+This module provides the Pydantic AI-based RAG agent that uses the knowledge
+base to answer questions. Supports Langfuse tracing for observability.
+
+Classes
+-------
+RAGState(BaseModel)
+    Shared state for lazy-initialized store/retriever.
+
+    Methods:
+        async get_retriever() -> Retriever
+            Get or create retriever (lazy init in current event loop).
+
+        async close() -> None
+            Clean up resources.
+
+Agent (placeholder)
+    Minimal placeholder class for type hints.
+
+RunContext (placeholder)
+    Minimal placeholder class for type hints.
+
+Functions
+---------
+get_llm_model(model_choice: str | None = None) -> OpenAIChatModel
+    Get LLM model configuration from environment settings.
+
+get_model_info() -> dict
+    Get information about current model configuration.
+
+search_knowledge_base(ctx, query, match_count, search_type) -> str
+    Agent tool: Search knowledge base and return formatted results.
+
+traced_agent_run(
+    query: str,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    message_history: list | None = None
+) -> Any
+    Run RAG agent with Langfuse tracing enabled.
+
+Module Attributes
+-----------------
+agent: PydanticAgent
+    Pre-configured Pydantic AI agent with search tool.
+
+_current_trace: Langfuse trace
+    Global trace reference for tool calls (set by traced_agent_run).
+
+Agent Tools
+-----------
+@agent.tool search_knowledge_base(ctx, query, match_count, search_type)
+    Search the knowledge base using hybrid/semantic/text search.
+
+Usage
+-----
+    from rag.agent.rag_agent import agent, traced_agent_run, RAGState
+
+    # Simple agent run
+    result = await agent.run("What does NeuralFlow AI do?")
+    print(result.output)
+
+    # With tracing (Langfuse)
+    result = await traced_agent_run(
+        query="What is the PTO policy?",
+        user_id="user123",
+        session_id="session456"
+    )
+
+    # With shared state (for reuse in loops)
+    state = RAGState()
+    result = await agent.run("Query here", deps=state)
+    await state.close()
+"""
 
 import logging
 import time
@@ -8,7 +86,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext as PydanticRunContext
-from pydantic_ai.models.openai import OpenAIModel, OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
@@ -196,7 +274,7 @@ class Agent:
         return func
 
 
-__all__ = ["Agent", "RunContext", "traced_agent_run"]
+__all__ = ["Agent", "RunContext", "traced_agent_run", "agent", "RAGState", "get_model_info"]
 
 
 async def traced_agent_run(
@@ -270,3 +348,73 @@ async def traced_agent_run(
         if langfuse is not None:
             langfuse.flush()
         _current_trace = None
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        print("=" * 60)
+        print("RAG Agent Module Test")
+        print("=" * 60)
+
+        # Display model info
+        print("\n--- Model Configuration ---")
+        info = get_model_info()
+        for key, value in info.items():
+            print(f"  {key}: {value}")
+
+        # Test queries
+        test_queries = [
+            "What does NeuralFlow AI do? Keep your answer brief.",
+            "How many employees does the company have?",
+            "What is the learning budget for employees?",
+        ]
+
+        # Run agent for each query
+        for query in test_queries:
+            print("\n--- Query ---")
+            print(f"  {query}")
+            print("-" * 40)
+
+            try:
+                start = time.time()
+                result = await agent.run(query)
+                elapsed = (time.time() - start) * 1000
+
+                # Display response
+                response = result.output
+                print(f"\n  Response ({elapsed:.0f}ms):")
+                # Word wrap at 60 chars
+                words = response.split()
+                line = "    "
+                for word in words:
+                    if len(line) + len(word) > 64:
+                        print(line)
+                        line = "    "
+                    line += word + " "
+                if line.strip():
+                    print(line)
+
+            except Exception as e:
+                print(f"  Error: {e}")
+
+        # Test with shared state (RAGState)
+        print("\n--- RAGState Test ---")
+        state = RAGState()
+        try:
+            result = await agent.run(
+                "What is the PTO policy? One sentence.",
+                deps=state,
+            )
+            print(f"  With RAGState: {result.output[:100]}...")
+        except Exception as e:
+            print(f"  Error with RAGState: {e}")
+        finally:
+            await state.close()
+
+        print("\n" + "=" * 60)
+        print("RAG agent test completed!")
+        print("=" * 60)
+
+    asyncio.run(main())

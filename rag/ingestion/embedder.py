@@ -1,4 +1,72 @@
-"""Embedding generation for document chunks."""
+"""
+Embedding generation for document chunks.
+
+Module: rag.ingestion.embedder
+==============================
+
+This module provides embedding generation using OpenAI-compatible APIs.
+Supports local (Ollama) and cloud providers. Includes async LRU caching
+for query embeddings to avoid redundant API calls.
+
+Classes
+-------
+EmbeddingGenerator
+    Generates embeddings for document chunks and queries.
+
+    Methods:
+        __init__(model: str | None, batch_size: int = 100)
+            Initialize with optional model override.
+
+        async generate_embedding(text: str) -> list[float]
+            Generate embedding for single text (no caching).
+
+        async generate_embeddings_batch(texts: list[str]) -> list[list[float]]
+            Generate embeddings for multiple texts in one API call.
+
+        async embed_chunks(chunks: list[ChunkData], progress_callback) -> list[ChunkData]
+            Embed all chunks, adding embeddings to each ChunkData object.
+
+        async embed_query(query: str, use_cache: bool = True) -> list[float]
+            Generate query embedding with optional caching.
+
+        get_cache_stats() -> dict (static)
+            Return cache statistics (hits, misses, hit_rate).
+
+        clear_cache() -> None (static)
+            Clear the embedding cache.
+
+        get_embedding_dimension() -> int
+            Return embedding dimension for current model.
+
+Functions
+---------
+create_embedder(model: str | None = None, **kwargs) -> EmbeddingGenerator
+    Factory function to create EmbeddingGenerator instance.
+
+Module-Level Functions
+----------------------
+_cached_embed(text: str, model: str) -> tuple[float, ...]
+    Cached async embedding function (internal, uses @alru_cache).
+
+_get_client() -> openai.AsyncOpenAI
+    Get or create shared OpenAI client (lazy initialized).
+
+Usage
+-----
+    from rag.ingestion.embedder import EmbeddingGenerator, create_embedder
+
+    # Create embedder
+    embedder = create_embedder()  # Uses settings defaults
+
+    # Embed a query (cached)
+    embedding = await embedder.embed_query("What is RAG?")
+
+    # Embed chunks
+    embedded_chunks = await embedder.embed_chunks(chunks)
+
+    # Check cache stats
+    print(EmbeddingGenerator.get_cache_stats())
+"""
 
 import logging
 import time
@@ -235,4 +303,103 @@ def create_embedder(model: str | None = None, **kwargs) -> EmbeddingGenerator:
         EmbeddingGenerator instance
     """
     return EmbeddingGenerator(model=model, **kwargs)
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        print("=" * 60)
+        print("RAG Embedder Module Test")
+        print("=" * 60)
+
+        # Create embedder
+        embedder = create_embedder()
+        print("\n[Embedder Created]")
+        print(f"  Model: {embedder.model}")
+        print(f"  Batch Size: {embedder.batch_size}")
+        print(f"  Dimension: {embedder.get_embedding_dimension()}")
+
+        # Test single embedding
+        print("\n--- Single Embedding ---")
+        test_text = "What is Retrieval Augmented Generation?"
+        start = time.time()
+        embedding = await embedder.embed_query(test_text, use_cache=False)
+        elapsed = (time.time() - start) * 1000
+        print(f"  Text: '{test_text}'")
+        print(f"  Dimension: {len(embedding)}")
+        print(f"  First 5 values: {embedding[:5]}")
+        print(f"  Time: {elapsed:.0f}ms")
+
+        # Test caching
+        print("\n--- Cache Test ---")
+        EmbeddingGenerator.clear_cache()
+        print("  Cache cleared")
+
+        # First call (cache miss)
+        start = time.time()
+        _ = await embedder.embed_query("test query", use_cache=True)
+        first_time = (time.time() - start) * 1000
+        print(f"  First call (miss): {first_time:.0f}ms")
+
+        # Second call (cache hit)
+        start = time.time()
+        _ = await embedder.embed_query("test query", use_cache=True)
+        second_time = (time.time() - start) * 1000
+        print(f"  Second call (hit): {second_time:.0f}ms")
+
+        # Cache stats
+        stats = EmbeddingGenerator.get_cache_stats()
+        print(f"  Cache stats: {stats}")
+
+        # Test batch embedding
+        print("\n--- Batch Embedding ---")
+        texts = [
+            "First document about AI",
+            "Second document about machine learning",
+            "Third document about neural networks",
+        ]
+        start = time.time()
+        embeddings = await embedder.generate_embeddings_batch(texts)
+        elapsed = (time.time() - start) * 1000
+        print(f"  Texts: {len(texts)}")
+        print(f"  Embeddings: {len(embeddings)}")
+        print(f"  Each dimension: {len(embeddings[0])}")
+        print(f"  Total time: {elapsed:.0f}ms")
+        print(f"  Per embedding: {elapsed/len(texts):.0f}ms")
+
+        # Test ChunkData embedding
+        print("\n--- ChunkData Embedding ---")
+        from rag.ingestion.models import ChunkData
+
+        chunks = [
+            ChunkData(
+                content="Sample chunk one content",
+                index=0,
+                start_char=0,
+                end_char=24,
+                metadata={"source": "test"},
+            ),
+            ChunkData(
+                content="Sample chunk two content",
+                index=1,
+                start_char=25,
+                end_char=49,
+                metadata={"source": "test"},
+            ),
+        ]
+
+        def progress(current, total):
+            print(f"  Progress: {current}/{total}")
+
+        embedded = await embedder.embed_chunks(chunks, progress_callback=progress)
+        print(f"  Chunks embedded: {len(embedded)}")
+        print(f"  First chunk has embedding: {embedded[0].embedding is not None}")
+        print(f"  Embedding dimension: {len(embedded[0].embedding)}")
+
+        print("\n" + "=" * 60)
+        print("Embedder test completed successfully!")
+        print("=" * 60)
+
+    asyncio.run(main())
 

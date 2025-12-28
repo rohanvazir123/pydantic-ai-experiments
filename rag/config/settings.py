@@ -1,4 +1,60 @@
-"""Settings configuration for MongoDB RAG Agent."""
+"""
+Settings configuration for MongoDB RAG Agent.
+
+Module: rag.config.settings
+===========================
+
+This module provides configuration management using Pydantic Settings with
+environment variable support. All configuration is loaded from .env file.
+
+Classes
+-------
+Settings(BaseSettings)
+    Main configuration class with all application settings.
+
+    Attributes:
+        mongodb_uri: str              - MongoDB Atlas connection string
+        mongodb_database: str         - Database name (default: "rag_db")
+        mongodb_collection_documents: str - Documents collection (default: "documents")
+        mongodb_collection_chunks: str    - Chunks collection (default: "chunks")
+        mongodb_vector_index: str     - Vector index name (default: "vector_index")
+        mongodb_text_index: str       - Text index name (default: "text_index")
+        llm_provider: str             - LLM provider (default: "ollama")
+        llm_api_key: str              - LLM API key
+        llm_model: str                - LLM model name (default: "llama3.1:8b")
+        llm_base_url: str | None      - LLM API base URL
+        embedding_provider: str       - Embedding provider (default: "ollama")
+        embedding_api_key: str        - Embedding API key
+        embedding_model: str          - Embedding model (default: "nomic-embed-text:latest")
+        embedding_base_url: str | None - Embedding API base URL
+        embedding_dimension: int      - Vector dimension (default: 768)
+        default_match_count: int      - Default search results (default: 10)
+        langfuse_enabled: bool        - Enable Langfuse tracing (default: False)
+
+Functions
+---------
+load_settings() -> Settings
+    Load and return Settings instance with error handling.
+
+mask_credential(value: str) -> str
+    Mask sensitive strings for safe logging (shows first/last 4 chars).
+
+Module Attributes
+-----------------
+settings: Settings
+    Singleton Settings instance for convenience import.
+
+Usage
+-----
+    from rag.config.settings import settings, load_settings, mask_credential
+
+    # Use singleton
+    print(settings.mongodb_database)
+
+    # Or load fresh instance
+    s = load_settings()
+    print(mask_credential(s.mongodb_uri))
+"""
 
 from dotenv import load_dotenv
 from pydantic import ConfigDict, Field
@@ -131,3 +187,49 @@ def mask_credential(value: str) -> str:
 
 # Singleton instance for convenience
 settings = load_settings()
+
+
+if __name__ == "__main__":
+    # Standalone test for settings module
+    print("=" * 60)
+    print("RAG Settings Module Test")
+    print("=" * 60)
+
+    # Load settings
+    s = load_settings()
+    print("\n[Settings Loaded Successfully]")
+
+    # Display configuration (with masked credentials)
+    print("\n--- MongoDB Configuration ---")
+    print(f"  URI: {mask_credential(s.mongodb_uri)}")
+    print(f"  Database: {s.mongodb_database}")
+    print(f"  Documents Collection: {s.mongodb_collection_documents}")
+    print(f"  Chunks Collection: {s.mongodb_collection_chunks}")
+    print(f"  Vector Index: {s.mongodb_vector_index}")
+    print(f"  Text Index: {s.mongodb_text_index}")
+
+    print("\n--- LLM Configuration ---")
+    print(f"  Provider: {s.llm_provider}")
+    print(f"  Model: {s.llm_model}")
+    print(f"  Base URL: {s.llm_base_url}")
+    print(f"  API Key: {mask_credential(s.llm_api_key)}")
+
+    print("\n--- Embedding Configuration ---")
+    print(f"  Provider: {s.embedding_provider}")
+    print(f"  Model: {s.embedding_model}")
+    print(f"  Base URL: {s.embedding_base_url}")
+    print(f"  Dimension: {s.embedding_dimension}")
+
+    print("\n--- Search Configuration ---")
+    print(f"  Default Match Count: {s.default_match_count}")
+    print(f"  Max Match Count: {s.max_match_count}")
+    print(f"  Default Text Weight: {s.default_text_weight}")
+
+    print("\n--- Observability ---")
+    print(f"  Langfuse Enabled: {s.langfuse_enabled}")
+    if s.langfuse_enabled:
+        print(f"  Langfuse Host: {s.langfuse_host}")
+
+    print("\n" + "=" * 60)
+    print("Settings test completed successfully!")
+    print("=" * 60)

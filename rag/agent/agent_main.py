@@ -9,8 +9,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Import our agent and dependencies
-from rag.agent.rag_agent import agent
-from rag.config.settings import load_settings
 from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.ag_ui import StateDeps
@@ -20,10 +18,12 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPartDelta,
 )
-from rag.agent.rag_agent import RAGState
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
+
+from rag.agent.rag_agent import RAGState, agent
+from rag.config.settings import load_settings
 
 # Load environment variables
 load_dotenv(override=True)
@@ -426,8 +426,8 @@ async def _stream_agent(
             # so the user sees tokens as they're generated.
             # -----------------------------------------------------------------
             elif Agent.is_model_request_node(node):
-                _debug_print(f"  > Model generating response...")
-                _debug_print(f"  > Streaming events:")
+                _debug_print("  > Model generating response...")
+                _debug_print("  > Streaming events:")
                 response_text = await _handle_model_request_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -436,8 +436,8 @@ async def _stream_agent(
             # Display tool calls and results for transparency.
             # -----------------------------------------------------------------
             elif Agent.is_call_tools_node(node):
-                _debug_print(f"  > Tool execution...")
-                _debug_print(f"  > Tool events:")
+                _debug_print("  > Tool execution...")
+                _debug_print("  > Tool events:")
                 await _handle_tool_call_node(node, run.ctx)
 
             # -----------------------------------------------------------------
@@ -446,7 +446,7 @@ async def _stream_agent(
             # handle the results after the loop.
             # -----------------------------------------------------------------
             elif Agent.is_end_node(node):
-                _debug_print(f"  > Execution complete")
+                _debug_print("  > Execution complete")
                 if hasattr(node, 'data'):
                     _debug_print(f"  > Result data type: {type(node.data).__name__}")
                 pass  # Execution complete
@@ -469,7 +469,7 @@ async def _stream_agent(
 
     total_elapsed_ms = (time.time() - total_start_time) * 1000
     _debug_print(f"\n{'='*70}")
-    _debug_print(f"EXECUTION SUMMARY")
+    _debug_print("EXECUTION SUMMARY")
     _debug_print(f"{'='*70}")
     _debug_print(f"Total nodes: {node_count}")
     _debug_print(f"Response length: {len(response)} chars")

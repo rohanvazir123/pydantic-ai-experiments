@@ -1,4 +1,100 @@
-"""Retrieval orchestrator for RAG system."""
+"""
+Retrieval orchestrator for RAG system.
+
+Module: rag.retrieval.retriever
+===============================
+
+This module provides the high-level retrieval interface for the RAG system.
+It coordinates embedding generation and search operations with result caching.
+
+Classes
+-------
+ResultCache
+    LRU cache for search results with TTL expiration.
+
+    Methods:
+        __init__(max_size: int = 100, ttl_seconds: int = 300)
+            Initialize cache with size limit and TTL.
+
+        get(query, search_type, match_count) -> list[SearchResult] | None
+            Get cached results if available and not expired.
+
+        set(query, search_type, match_count, results) -> None
+            Cache search results.
+
+        stats() -> dict
+            Return cache statistics.
+
+        clear() -> None
+            Clear all cached results.
+
+Retriever
+    Main retrieval interface orchestrating embeddings and search.
+
+    Methods:
+        __init__(store: MongoHybridStore | None, embedder: EmbeddingGenerator | None)
+            Initialize with optional store and embedder (creates defaults).
+
+        async retrieve(
+            query: str,
+            match_count: int | None = None,
+            search_type: str = "hybrid",
+            use_cache: bool = True
+        ) -> list[SearchResult]
+            Retrieve documents matching query with caching.
+
+        async retrieve_as_context(
+            query: str,
+            match_count: int | None = None,
+            search_type: str = "hybrid"
+        ) -> str
+            Retrieve and format results as LLM context string.
+
+        get_cache_stats() -> dict (static)
+            Return result cache statistics.
+
+        clear_cache() -> None (static)
+            Clear the result cache.
+
+        async close() -> None
+            Close store connection.
+
+Module Attributes
+-----------------
+_result_cache: ResultCache
+    Global result cache instance (shared across Retriever instances).
+
+Search Types
+------------
+- "hybrid": Combined vector + text search with RRF (default)
+- "semantic": Pure vector similarity search
+- "text": Full-text keyword search
+
+Usage
+-----
+    from rag.retrieval.retriever import Retriever
+    from rag.storage.vector_store.mongo import MongoHybridStore
+
+    # Create retriever
+    store = MongoHybridStore()
+    retriever = Retriever(store=store)
+
+    # Retrieve documents
+    results = await retriever.retrieve(
+        query="What is RAG?",
+        match_count=5,
+        search_type="hybrid"
+    )
+
+    # Get formatted context for LLM
+    context = await retriever.retrieve_as_context("employee benefits")
+
+    # Check cache stats
+    print(Retriever.get_cache_stats())
+
+    # Cleanup
+    await retriever.close()
+"""
 
 import hashlib
 import logging
@@ -220,3 +316,85 @@ class Retriever:
     async def close(self) -> None:
         """Close connections."""
         await self.store.close()
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        print("=" * 60)
+        print("RAG Retriever Module Test")
+        print("=" * 60)
+
+        # Create retriever
+        store = MongoHybridStore()
+        retriever = Retriever(store=store)
+        print("\n[Retriever Created]")
+        print(f"  Default match count: {retriever.settings.default_match_count}")
+
+        # Clear cache for testing
+        Retriever.clear_cache()
+        EmbeddingGenerator.clear_cache()
+        print("  Caches cleared")
+
+        # Test queries
+        test_queries = [
+            ("What does NeuralFlow AI do?", "hybrid"),
+            ("employee benefits", "semantic"),
+            ("PTO policy", "text"),
+        ]
+
+        for query, search_type in test_queries:
+            print(f"\n--- Query: '{query}' ({search_type}) ---")
+
+            # First call (cache miss)
+            start = time.time()
+            results = await retriever.retrieve(
+                query=query,
+                match_count=3,
+                search_type=search_type,
+                use_cache=True,
+            )
+            first_time = (time.time() - start) * 1000
+
+            print(f"  Results: {len(results)}")
+            print(f"  Time (miss): {first_time:.0f}ms")
+
+            for i, r in enumerate(results):
+                print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
+
+            # Second call (cache hit)
+            start = time.time()
+            _ = await retriever.retrieve(
+                query=query,
+                match_count=3,
+                search_type=search_type,
+                use_cache=True,
+            )
+            second_time = (time.time() - start) * 1000
+            print(f"  Time (hit): {second_time:.0f}ms")
+
+        # Test retrieve_as_context
+        print("\n--- Context Retrieval ---")
+        context = await retriever.retrieve_as_context(
+            query="What is the company mission?",
+            match_count=2,
+        )
+        print(f"  Context length: {len(context)} chars")
+        print(f"  Preview: {context[:200]}...")
+
+        # Cache statistics
+        print("\n--- Cache Statistics ---")
+        result_stats = Retriever.get_cache_stats()
+        embed_stats = EmbeddingGenerator.get_cache_stats()
+        print(f"  Result cache: {result_stats}")
+        print(f"  Embedding cache: {embed_stats}")
+
+        # Cleanup
+        await retriever.close()
+
+        print("\n" + "=" * 60)
+        print("Retriever test completed successfully!")
+        print("=" * 60)
+
+    asyncio.run(main())

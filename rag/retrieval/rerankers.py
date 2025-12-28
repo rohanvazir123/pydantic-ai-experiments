@@ -191,8 +191,8 @@ class ColBERTReranker(BaseReranker):
         )
 
         try:
-            from sentence_transformers import SentenceTransformer
             import numpy as np
+            from sentence_transformers import SentenceTransformer
 
             model = SentenceTransformer("colbert-ir/colbertv2.0")
 

@@ -1,11 +1,79 @@
 """
 Docling HybridChunker implementation for intelligent document splitting.
 
-This module uses Docling's built-in HybridChunker which combines:
-- Token-aware chunking (uses actual tokenizer)
+Module: rag.ingestion.chunkers.docling
+======================================
+
+This module provides intelligent document chunking using Docling's HybridChunker.
+Combines token-aware splitting with document structure preservation.
+
+Features
+--------
+- Token-aware chunking (uses HuggingFace tokenizer)
 - Document structure preservation (headings, sections, tables)
 - Semantic boundary respect (paragraphs, code blocks)
 - Contextualized output (chunks include heading hierarchy)
+- Fallback to simple chunking when DoclingDocument unavailable
+
+Classes
+-------
+DoclingHybridChunker
+    Wrapper around Docling's HybridChunker for document splitting.
+
+    Methods:
+        __init__(config: ChunkingConfig)
+            Initialize with chunking configuration.
+
+        async chunk_document(
+            content: str,
+            title: str,
+            source: str,
+            metadata: dict | None = None,
+            docling_doc: DoclingDocument | None = None
+        ) -> list[ChunkData]
+            Chunk a document using HybridChunker or fallback.
+
+        _simple_fallback_chunk(content: str, base_metadata: dict) -> list[ChunkData]
+            Simple sliding window chunking (used when no DoclingDocument).
+
+    Attributes:
+        config: ChunkingConfig      - Chunking configuration
+        chunker: HybridChunker      - Docling HybridChunker instance
+        tokenizer: AutoTokenizer    - HuggingFace tokenizer for token counting
+
+Functions
+---------
+create_chunker(config: ChunkingConfig) -> DoclingHybridChunker
+    Factory function to create DoclingHybridChunker instance.
+
+Constants
+---------
+TOKENIZER_MODEL: str
+    HuggingFace tokenizer model (default: "sentence-transformers/all-MiniLM-L6-v2")
+
+Usage
+-----
+    from rag.ingestion.chunkers.docling import create_chunker
+    from rag.ingestion.models import ChunkingConfig
+
+    # Create chunker with config
+    config = ChunkingConfig(max_tokens=512)
+    chunker = create_chunker(config)
+
+    # Chunk document (with DoclingDocument for best results)
+    chunks = await chunker.chunk_document(
+        content="Document text...",
+        title="My Document",
+        source="doc.pdf",
+        docling_doc=dl_doc  # From Docling converter
+    )
+
+    # Fallback chunking (without DoclingDocument)
+    chunks = await chunker.chunk_document(
+        content="Plain text...",
+        title="Text File",
+        source="file.txt"
+    )
 """
 
 import logging
@@ -229,3 +297,95 @@ def create_chunker(config: ChunkingConfig) -> DoclingHybridChunker:
         DoclingHybridChunker instance
     """
     return DoclingHybridChunker(config)
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        print("=" * 60)
+        print("RAG Docling Chunker Module Test")
+        print("=" * 60)
+
+        # Create chunker with config
+        config = ChunkingConfig(
+            chunk_size=500,
+            chunk_overlap=100,
+            max_tokens=256,
+        )
+        chunker = create_chunker(config)
+
+        print("\n[Chunker Created]")
+        print(f"  Tokenizer: {TOKENIZER_MODEL}")
+        print(f"  Max Tokens: {config.max_tokens}")
+        print(f"  Chunk Size: {config.chunk_size}")
+        print(f"  Chunk Overlap: {config.chunk_overlap}")
+
+        # Test fallback chunking (no DoclingDocument)
+        print("\n--- Fallback Chunking Test ---")
+        sample_text = """
+# Introduction to RAG
+
+Retrieval-Augmented Generation (RAG) is a technique that combines retrieval
+and generation for better AI responses.
+
+## How RAG Works
+
+RAG systems first retrieve relevant documents from a knowledge base,
+then use those documents as context for generating responses.
+
+### Key Components
+
+1. **Document Store**: Where documents are indexed and stored
+2. **Retriever**: Finds relevant documents for a query
+3. **Generator**: Creates responses using retrieved context
+
+## Benefits of RAG
+
+- Reduces hallucinations
+- Enables knowledge updates without retraining
+- Provides source attribution
+- Improves factual accuracy
+"""
+
+        chunks = await chunker.chunk_document(
+            content=sample_text,
+            title="RAG Introduction",
+            source="test.md",
+            metadata={"type": "markdown"},
+        )
+
+        print(f"  Input length: {len(sample_text)} chars")
+        print(f"  Chunks created: {len(chunks)}")
+        print(f"  Chunk method: {chunks[0].metadata.get('chunk_method', 'unknown')}")
+
+        for i, chunk in enumerate(chunks):
+            print(f"\n  Chunk {i}:")
+            print(f"    Token count: {chunk.token_count}")
+            print(f"    Char range: {chunk.start_char}-{chunk.end_char}")
+            content_preview = chunk.content[:80].replace("\n", " ")
+            print(f"    Content: {content_preview}...")
+
+        # Test with very short content
+        print("\n--- Short Content Test ---")
+        short_chunks = await chunker.chunk_document(
+            content="Just a short sentence.",
+            title="Short Doc",
+            source="short.txt",
+        )
+        print(f"  Short content chunks: {len(short_chunks)}")
+
+        # Test with empty content
+        print("\n--- Empty Content Test ---")
+        empty_chunks = await chunker.chunk_document(
+            content="   ",
+            title="Empty Doc",
+            source="empty.txt",
+        )
+        print(f"  Empty content chunks: {len(empty_chunks)}")
+
+        print("\n" + "=" * 60)
+        print("Docling chunker test completed successfully!")
+        print("=" * 60)
+
+    asyncio.run(main())

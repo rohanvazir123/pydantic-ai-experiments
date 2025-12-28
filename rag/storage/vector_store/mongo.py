@@ -1,4 +1,101 @@
-"""MongoDB Atlas vector store implementation with hybrid search."""
+"""
+MongoDB Atlas vector store implementation with hybrid search.
+
+Module: rag.storage.vector_store.mongo
+======================================
+
+This module provides MongoDB Atlas integration for storing and searching
+document chunks with embeddings. Supports semantic (vector), text, and
+hybrid (RRF fusion) search modes.
+
+Classes
+-------
+MongoHybridStore
+    MongoDB Atlas store with hybrid vector + text search capabilities.
+
+    Methods:
+        __init__()
+            Initialize store (lazy connection).
+
+        async initialize() -> None
+            Establish MongoDB connection (call before operations).
+
+        async close() -> None
+            Close MongoDB connection.
+
+        async add(chunks: list[ChunkData], document_id: str) -> None
+            Store document chunks with embeddings.
+
+        async add_document(title, source, content, metadata) -> str
+            Add a full document, returns document ObjectId.
+
+        async semantic_search(query_embedding, match_count) -> list[SearchResult]
+            Pure vector similarity search using $vectorSearch.
+
+        async text_search(query, match_count) -> list[SearchResult]
+            Full-text search using MongoDB Atlas Search.
+
+        async hybrid_search(query, query_embedding, match_count) -> list[SearchResult]
+            Combined search using Reciprocal Rank Fusion (RRF).
+
+        async delete_all() -> tuple[int, int]
+            Delete all chunks and documents, returns counts.
+
+        async get_chunk_count() -> int
+            Return total number of chunks.
+
+        async get_document_count() -> int
+            Return total number of documents.
+
+        async check_indexes() -> dict
+            Check status of vector and text search indexes.
+
+    Internal Methods:
+        _reciprocal_rank_fusion(result_lists, k=60) -> list[SearchResult]
+            Merge ranked lists using RRF algorithm.
+
+        _enrich_with_document_info(results) -> list[SearchResult]
+            Add document title/source to search results.
+
+Collections
+-----------
+- documents: Full document metadata (title, source, content)
+- chunks: Document chunks with embeddings for search
+
+Required Indexes (create in Atlas UI)
+-------------------------------------
+- vector_index: Vector search index on chunks.embedding
+- text_index: Full-text search index on chunks.content
+
+Usage
+-----
+    from rag.storage.vector_store.mongo import MongoHybridStore
+
+    # Create and initialize store
+    store = MongoHybridStore()
+    await store.initialize()
+
+    # Add document
+    doc_id = await store.add_document(
+        title="My Doc",
+        source="doc.pdf",
+        content="Full text...",
+        metadata={}
+    )
+
+    # Add chunks
+    await store.add(chunks, doc_id)
+
+    # Search
+    results = await store.hybrid_search(
+        query="search text",
+        query_embedding=[0.1, 0.2, ...],
+        match_count=5
+    )
+
+    # Cleanup
+    await store.close()
+"""
 
 import asyncio
 import logging
@@ -462,3 +559,90 @@ class MongoHybridStore:
         cursor = collection.find({}, {"source": 1})
         sources = [doc["source"] async for doc in cursor]
         return sources
+
+
+if __name__ == "__main__":
+    import time
+
+    async def main():
+        print("=" * 60)
+        print("RAG MongoDB Store Module Test")
+        print("=" * 60)
+
+        # Create and initialize store
+        store = MongoHybridStore()
+        print("\n[Initializing MongoDB connection...]")
+        await store.initialize()
+        print(f"  Database: {store.settings.mongodb_database}")
+        print("  Connected successfully!")
+
+        # Get counts
+        print("\n--- Database Stats ---")
+        doc_count = await store.get_document_count()
+        chunk_count = await store.get_chunk_count()
+        print(f"  Documents: {doc_count}")
+        print(f"  Chunks: {chunk_count}")
+
+        # Check indexes
+        print("\n--- Index Status ---")
+        indexes = await store.check_indexes()
+        print(f"  Vector index: {'OK' if indexes.get('vector_index') else 'MISSING'}")
+        print(f"  Text index: {'OK' if indexes.get('text_index') else 'MISSING'}")
+
+        # Get document sources
+        print("\n--- Document Sources ---")
+        sources = await store.get_all_document_sources()
+        for source in sources[:5]:
+            print(f"  - {source}")
+        if len(sources) > 5:
+            print(f"  ... and {len(sources) - 5} more")
+
+        # Test search if we have data
+        if chunk_count > 0 and indexes.get("vector_index"):
+            print("\n--- Search Test ---")
+            from rag.ingestion.embedder import EmbeddingGenerator
+
+            embedder = EmbeddingGenerator()
+            test_query = "What does the company do?"
+            print(f"  Query: '{test_query}'")
+
+            # Generate embedding
+            query_embedding = await embedder.embed_query(test_query)
+
+            # Semantic search
+            start = time.time()
+            semantic_results = await store.semantic_search(query_embedding, 3)
+            semantic_time = (time.time() - start) * 1000
+            print(f"\n  Semantic Search ({semantic_time:.0f}ms):")
+            for i, r in enumerate(semantic_results):
+                print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
+
+            # Text search
+            if indexes.get("text_index"):
+                start = time.time()
+                text_results = await store.text_search(test_query, 3)
+                text_time = (time.time() - start) * 1000
+                print(f"\n  Text Search ({text_time:.0f}ms):")
+                for i, r in enumerate(text_results):
+                    print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
+
+                # Hybrid search
+                start = time.time()
+                hybrid_results = await store.hybrid_search(
+                    test_query, query_embedding, 3
+                )
+                hybrid_time = (time.time() - start) * 1000
+                print(f"\n  Hybrid Search ({hybrid_time:.0f}ms):")
+                for i, r in enumerate(hybrid_results):
+                    print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
+        else:
+            print("\n[Skipping search test - no data or missing indexes]")
+
+        # Close connection
+        await store.close()
+
+        print("\n" + "=" * 60)
+        print("MongoDB store test completed successfully!")
+        print("=" * 60)
+
+    asyncio.run(main())

@@ -1,5 +1,92 @@
 """
 Document ingestion pipeline for processing documents into MongoDB vector database.
+
+Module: rag.ingestion.pipeline
+==============================
+
+This module provides the main document ingestion pipeline that:
+- Discovers documents in a folder (PDF, DOCX, MD, audio, etc.)
+- Converts and extracts text using Docling
+- Transcribes audio files using Whisper ASR
+- Chunks documents using HybridChunker
+- Generates embeddings using OpenAI-compatible API
+- Stores documents and chunks in MongoDB
+
+Classes
+-------
+DocumentIngestionPipeline
+    Main ingestion pipeline orchestrating all components.
+
+    Methods:
+        __init__(config, documents_folder, clean_before_ingest)
+            Initialize pipeline with configuration.
+
+        async initialize() -> None
+            Initialize all components (store, chunker, embedder).
+
+        async close() -> None
+            Close all connections.
+
+        async ingest_documents(verbose: bool = False) -> list[IngestionResult]
+            Ingest all documents from the configured folder.
+
+        async _ingest_single_document(file_path: str) -> IngestionResult
+            Ingest a single document (internal).
+
+    Internal Methods:
+        _read_document(file_path) -> tuple[str, DoclingDocument | None]
+            Read document content using Docling.
+
+        _transcribe_audio(file_path) -> tuple[str, DoclingDocument | None]
+            Transcribe audio using Whisper ASR.
+
+        _find_document_files(folder) -> list[str]
+            Find all supported documents in folder.
+
+        _compute_content_hash(content) -> str
+            Compute hash for incremental updates.
+
+Supported File Formats
+----------------------
+- Text: .md, .markdown, .txt
+- Documents: .pdf, .docx, .doc, .pptx, .ppt, .xlsx, .xls, .html
+- Audio: .mp3, .wav, .m4a, .flac (requires FFmpeg + openai-whisper)
+
+Functions
+---------
+create_pipeline(
+    documents_folder: str = "documents",
+    clean: bool = True,
+    **config_kwargs
+) -> DocumentIngestionPipeline
+    Factory function to create configured pipeline.
+
+Usage
+-----
+    from rag.ingestion.pipeline import create_pipeline
+
+    # Create pipeline
+    pipeline = create_pipeline(
+        documents_folder="rag/documents",
+        clean=True,
+        chunk_size=1000,
+        max_tokens=512
+    )
+
+    # Initialize and run
+    await pipeline.initialize()
+    results = await pipeline.ingest_documents(verbose=True)
+
+    # Check results
+    for r in results:
+        print(f"{r.title}: {r.chunks_created} chunks")
+
+    # Cleanup
+    await pipeline.close()
+
+CLI Usage
+---------
+    python -m rag.ingestion.pipeline --folder rag/documents --verbose
 """
 
 import argparse
@@ -491,6 +578,39 @@ class DocumentIngestionPipeline:
         )
 
         return results
+
+
+def create_pipeline(
+    documents_folder: str = "documents",
+    clean: bool = True,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 200,
+    max_tokens: int = 512,
+) -> DocumentIngestionPipeline:
+    """
+    Factory function to create a configured ingestion pipeline.
+
+    Args:
+        documents_folder: Folder containing documents to ingest
+        clean: Whether to clean existing data before ingestion
+        chunk_size: Target chunk size in characters
+        chunk_overlap: Overlap between chunks
+        max_tokens: Maximum tokens per chunk for embeddings
+
+    Returns:
+        Configured DocumentIngestionPipeline instance
+    """
+    config = IngestionConfig(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        max_chunk_size=chunk_size * 2,
+        max_tokens=max_tokens,
+    )
+    return DocumentIngestionPipeline(
+        config=config,
+        documents_folder=documents_folder,
+        clean_before_ingest=clean,
+    )
 
 
 async def run_ingestion_pipeline() -> None:
