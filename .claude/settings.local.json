@@ -18,7 +18,8 @@
       "Bash(ffmpeg:*)",
       "Bash(winget install:*)",
       "Bash(where:*)",
-      "Bash(export PATH:*)"
+      "Bash(export PATH:*)",
+      "Bash(export PATH=\"/c/ProgramData/chocolatey/lib/ffmpeg/tools/ffmpeg/bin:$PATH\":*)"
     ]
   }
 }

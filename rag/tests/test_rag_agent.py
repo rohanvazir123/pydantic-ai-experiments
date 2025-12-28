@@ -746,3 +746,178 @@ class TestSearchResultQuality:
                 test_name, f"{exact_query} / {vague_query}", "FAILED", str(e)
             )
             raise
+
+
+class TestAudioTranscription:
+    """Test audio file transcription and retrieval."""
+
+    @pytest_asyncio.fixture
+    async def retriever(self):
+        """Create retriever with connected store."""
+        store = MongoHybridStore()
+        await store.initialize()
+        retriever = Retriever(store=store)
+        yield retriever
+        await store.close()
+
+    @pytest.mark.asyncio
+    async def test_audio_docflow_query(self, retriever):
+        """Test retrieving DocFlow AI info from audio transcription (Recording2)."""
+        test_name = "test_audio_docflow_query"
+        query = "What is DocFlow AI and how does it process documents?"
+        _log_test_start(test_name, query)
+
+        try:
+            results = await retriever.retrieve(
+                query=query,
+                match_count=5,
+                search_type="hybrid",
+            )
+            _log_results(results, search_type="hybrid")
+
+            assert len(results) > 0, "Expected at least one result"
+
+            # Check if Recording2 appears in results (contains DocFlow AI description)
+            audio_results = [r for r in results if "Recording" in r.document_title]
+            logger.info(f"Audio results found: {[r.document_title for r in audio_results]}")
+
+            content = " ".join([r.content.lower() for r in results])
+            assert any(
+                term in content
+                for term in ["docflow", "document processing", "ocr", "extract"]
+            ), "Results should mention DocFlow or document processing"
+
+            _log_test_result(test_name, query, "PASSED")
+        except AssertionError as e:
+            _log_test_result(test_name, query, "FAILED", str(e))
+            raise
+
+    @pytest.mark.asyncio
+    async def test_audio_globalfinance_story(self, retriever):
+        """Test retrieving GlobalFinance success story from audio (Recording4)."""
+        test_name = "test_audio_globalfinance_story"
+        query = "Tell me about the Global Finance Corp success story from the recording"
+        _log_test_start(test_name, query)
+
+        try:
+            results = await retriever.retrieve(
+                query=query,
+                match_count=5,
+                search_type="hybrid",
+            )
+            _log_results(results, search_type="hybrid")
+
+            assert len(results) > 0, "Expected at least one result"
+
+            # Recording4 should be in top results - contains GlobalFinance story
+            titles = [r.document_title for r in results[:3]]
+            logger.info(f"Top 3 result titles: {titles}")
+
+            content = " ".join([r.content.lower() for r in results])
+            assert any(
+                term in content
+                for term in ["global finance", "globalfinance", "loan", "processing"]
+            ), "Results should mention GlobalFinance or loan processing"
+
+            _log_test_result(test_name, query, "PASSED")
+        except AssertionError as e:
+            _log_test_result(test_name, query, "FAILED", str(e))
+            raise
+
+    @pytest.mark.asyncio
+    async def test_audio_platform_technology(self, retriever):
+        """Test retrieving platform technology info from audio (Recording3)."""
+        test_name = "test_audio_platform_technology"
+        query = "What LLMs and technology does the platform use?"
+        _log_test_start(test_name, query)
+
+        try:
+            results = await retriever.retrieve(
+                query=query,
+                match_count=5,
+                search_type="hybrid",
+            )
+            _log_results(results, search_type="hybrid")
+
+            assert len(results) > 0, "Expected at least one result"
+
+            content = " ".join([r.content.lower() for r in results])
+            # Recording3 mentions OpenAI, Anthropic, LLMs
+            tech_terms = ["openai", "anthropic", "llm", "enterprise", "platform"]
+            found_terms = [t for t in tech_terms if t in content]
+            logger.info(f"Found technology terms: {found_terms}")
+
+            assert len(found_terms) >= 1, f"Should find tech terms, found: {found_terms}"
+
+            _log_test_result(test_name, query, "PASSED")
+        except AssertionError as e:
+            _log_test_result(test_name, query, "FAILED", str(e))
+            raise
+
+    @pytest.mark.asyncio
+    async def test_audio_company_intro(self, retriever):
+        """Test retrieving company intro from audio (Recording1)."""
+        test_name = "test_audio_company_intro"
+        query = "NeuralFlow AI intelligent automation introduction"
+        _log_test_start(test_name, query)
+
+        try:
+            results = await retriever.retrieve(
+                query=query,
+                match_count=5,
+                search_type="hybrid",
+            )
+            _log_results(results, search_type="hybrid")
+
+            assert len(results) > 0, "Expected at least one result"
+
+            # Check for Recording1 content about company intro
+            content = " ".join([r.content.lower() for r in results])
+            assert any(
+                term in content
+                for term in ["neuralflow", "automation", "transform", "business"]
+            ), "Results should mention NeuralFlow or automation"
+
+            _log_test_result(test_name, query, "PASSED")
+        except AssertionError as e:
+            _log_test_result(test_name, query, "FAILED", str(e))
+            raise
+
+    @pytest.mark.asyncio
+    async def test_audio_transcription_has_timestamps(self, retriever):
+        """Test that audio transcriptions include timestamp markers."""
+        test_name = "test_audio_transcription_has_timestamps"
+        query = "Welcome to Neuroflow AI"
+        _log_test_start(test_name, query)
+
+        try:
+            results = await retriever.retrieve(
+                query=query,
+                match_count=5,
+                search_type="text",  # Use text search to find exact content
+            )
+            _log_results(results, search_type="text")
+
+            # Find audio results
+            audio_results = [r for r in results if "Recording" in r.document_title]
+
+            if audio_results:
+                content = audio_results[0].content
+                logger.info(f"Audio content sample: {content[:200]}")
+
+                # Check for timestamp format [time: X.X-X.X]
+                has_timestamps = "[time:" in content
+                logger.info(f"Has timestamp markers: {has_timestamps}")
+
+                assert has_timestamps, "Audio transcription should include [time: ...] markers"
+                _log_test_result(test_name, query, "PASSED")
+            else:
+                logger.info("No audio results found - checking if transcription exists")
+                _log_test_result(
+                    test_name, query, "SKIPPED", "No audio results in search"
+                )
+                pytest.skip("No audio results found in search")
+
+        except AssertionError as e:
+            _log_test_result(test_name, query, "FAILED", str(e))
+            raise

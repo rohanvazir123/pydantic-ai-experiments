@@ -295,12 +295,17 @@ def func(callback: Callable | None = None): ...
 ```
 
 ### 3. Audio transcription fails
-Audio transcription requires both FFmpeg and Whisper:
+Audio transcription requires both FFmpeg (in PATH) and Whisper:
 ```bash
-# Install FFmpeg (system-level)
-# Windows: winget install ffmpeg
+# Install FFmpeg (system-level) - must be in PATH
+# Windows (Chocolatey): choco install ffmpeg
+#   Default path: C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin
+# Windows (WinGet): winget install ffmpeg
 # macOS: brew install ffmpeg
 # Linux: sudo apt install ffmpeg
+
+# Verify FFmpeg is in PATH
+ffmpeg -version
 
 # Install Whisper
 pip install openai-whisper

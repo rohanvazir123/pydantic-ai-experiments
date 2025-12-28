@@ -192,10 +192,15 @@ INGESTION COMPLETE
 > **Audio Transcription Prerequisites**
 >
 > Audio file processing requires:
-> 1. **FFmpeg** - System-level audio decoder
->    - Windows: `winget install ffmpeg` or download from https://ffmpeg.org/download.html
+> 1. **FFmpeg** - System-level audio decoder (must be in PATH)
+>    - Windows (Chocolatey): `choco install ffmpeg`
+>      - Default path: `C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin`
+>    - Windows (WinGet): `winget install ffmpeg`
 >    - macOS: `brew install ffmpeg`
 >    - Linux: `sudo apt install ffmpeg`
+>
+>    **Important**: Ensure FFmpeg is in your system PATH. Verify with: `ffmpeg -version`
+>
 > 2. **OpenAI Whisper** - Speech recognition model
 >    ```bash
 >    pip install openai-whisper

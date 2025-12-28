@@ -110,7 +110,7 @@ class DoclingHybridChunker:
                 contextualized_text = self.chunker.contextualize(chunk=chunk)
 
                 # Count actual tokens
-                token_count = self.tokenizer.count_tokens(contextualized_text)
+                token_count = len(self.tokenizer.encode(contextualized_text))
 
                 # Create chunk metadata
                 chunk_metadata = {
@@ -188,7 +188,7 @@ class DoclingHybridChunker:
                 end = chunk_end
 
             if chunk_text.strip():
-                token_count = self.tokenizer.count_tokens(chunk_text)
+                token_count = len(self.tokenizer.encode(chunk_text))
 
                 chunks.append(
                     ChunkData(
