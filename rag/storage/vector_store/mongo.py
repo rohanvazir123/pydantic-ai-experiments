@@ -562,49 +562,56 @@ class MongoHybridStore:
 
 
 if __name__ == "__main__":
+    import logging
     import time
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
+
     async def main():
-        print("=" * 60)
-        print("RAG MongoDB Store Module Test")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG MongoDB Store Module Test")
+        _logger.info("=" * 60)
 
         # Create and initialize store
         store = MongoHybridStore()
-        print("\n[Initializing MongoDB connection...]")
+        _logger.info("[Initializing MongoDB connection...]")
         await store.initialize()
-        print(f"  Database: {store.settings.mongodb_database}")
-        print("  Connected successfully!")
+        _logger.info(f"  Database: {store.settings.mongodb_database}")
+        _logger.info("  Connected successfully!")
 
         # Get counts
-        print("\n--- Database Stats ---")
+        _logger.info("--- Database Stats ---")
         doc_count = await store.get_document_count()
         chunk_count = await store.get_chunk_count()
-        print(f"  Documents: {doc_count}")
-        print(f"  Chunks: {chunk_count}")
+        _logger.info(f"  Documents: {doc_count}")
+        _logger.info(f"  Chunks: {chunk_count}")
 
         # Check indexes
-        print("\n--- Index Status ---")
+        _logger.info("--- Index Status ---")
         indexes = await store.check_indexes()
-        print(f"  Vector index: {'OK' if indexes.get('vector_index') else 'MISSING'}")
-        print(f"  Text index: {'OK' if indexes.get('text_index') else 'MISSING'}")
+        _logger.info(f"  Vector index: {'OK' if indexes.get('vector_index') else 'MISSING'}")
+        _logger.info(f"  Text index: {'OK' if indexes.get('text_index') else 'MISSING'}")
 
         # Get document sources
-        print("\n--- Document Sources ---")
+        _logger.info("--- Document Sources ---")
         sources = await store.get_all_document_sources()
         for source in sources[:5]:
-            print(f"  - {source}")
+            _logger.info(f"  - {source}")
         if len(sources) > 5:
-            print(f"  ... and {len(sources) - 5} more")
+            _logger.info(f"  ... and {len(sources) - 5} more")
 
         # Test search if we have data
         if chunk_count > 0 and indexes.get("vector_index"):
-            print("\n--- Search Test ---")
+            _logger.info("--- Search Test ---")
             from rag.ingestion.embedder import EmbeddingGenerator
 
             embedder = EmbeddingGenerator()
             test_query = "What does the company do?"
-            print(f"  Query: '{test_query}'")
+            _logger.info(f"  Query: '{test_query}'")
 
             # Generate embedding
             query_embedding = await embedder.embed_query(test_query)
@@ -613,18 +620,18 @@ if __name__ == "__main__":
             start = time.time()
             semantic_results = await store.semantic_search(query_embedding, 3)
             semantic_time = (time.time() - start) * 1000
-            print(f"\n  Semantic Search ({semantic_time:.0f}ms):")
+            _logger.info(f"  Semantic Search ({semantic_time:.0f}ms):")
             for i, r in enumerate(semantic_results):
-                print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
+                _logger.info(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
 
             # Text search
             if indexes.get("text_index"):
                 start = time.time()
                 text_results = await store.text_search(test_query, 3)
                 text_time = (time.time() - start) * 1000
-                print(f"\n  Text Search ({text_time:.0f}ms):")
+                _logger.info(f"  Text Search ({text_time:.0f}ms):")
                 for i, r in enumerate(text_results):
-                    print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
+                    _logger.info(f"    [{i+1}] {r.document_title} (score: {r.similarity:.3f})")
 
                 # Hybrid search
                 start = time.time()
@@ -632,17 +639,17 @@ if __name__ == "__main__":
                     test_query, query_embedding, 3
                 )
                 hybrid_time = (time.time() - start) * 1000
-                print(f"\n  Hybrid Search ({hybrid_time:.0f}ms):")
+                _logger.info(f"  Hybrid Search ({hybrid_time:.0f}ms):")
                 for i, r in enumerate(hybrid_results):
-                    print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
+                    _logger.info(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
         else:
-            print("\n[Skipping search test - no data or missing indexes]")
+            _logger.info("[Skipping search test - no data or missing indexes]")
 
         # Close connection
         await store.close()
 
-        print("\n" + "=" * 60)
-        print("MongoDB store test completed successfully!")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("MongoDB store test completed successfully!")
+        _logger.info("=" * 60)
 
     asyncio.run(main())

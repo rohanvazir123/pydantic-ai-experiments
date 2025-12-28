@@ -301,11 +301,18 @@ def create_chunker(config: ChunkingConfig) -> DoclingHybridChunker:
 
 if __name__ == "__main__":
     import asyncio
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
 
     async def main():
-        print("=" * 60)
-        print("RAG Docling Chunker Module Test")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG Docling Chunker Module Test")
+        _logger.info("=" * 60)
 
         # Create chunker with config
         config = ChunkingConfig(
@@ -315,14 +322,14 @@ if __name__ == "__main__":
         )
         chunker = create_chunker(config)
 
-        print("\n[Chunker Created]")
-        print(f"  Tokenizer: {TOKENIZER_MODEL}")
-        print(f"  Max Tokens: {config.max_tokens}")
-        print(f"  Chunk Size: {config.chunk_size}")
-        print(f"  Chunk Overlap: {config.chunk_overlap}")
+        _logger.info("[Chunker Created]")
+        _logger.info(f"  Tokenizer: {TOKENIZER_MODEL}")
+        _logger.info(f"  Max Tokens: {config.max_tokens}")
+        _logger.info(f"  Chunk Size: {config.chunk_size}")
+        _logger.info(f"  Chunk Overlap: {config.chunk_overlap}")
 
         # Test fallback chunking (no DoclingDocument)
-        print("\n--- Fallback Chunking Test ---")
+        _logger.info("--- Fallback Chunking Test ---")
         sample_text = """
 # Introduction to RAG
 
@@ -355,37 +362,37 @@ then use those documents as context for generating responses.
             metadata={"type": "markdown"},
         )
 
-        print(f"  Input length: {len(sample_text)} chars")
-        print(f"  Chunks created: {len(chunks)}")
-        print(f"  Chunk method: {chunks[0].metadata.get('chunk_method', 'unknown')}")
+        _logger.info(f"  Input length: {len(sample_text)} chars")
+        _logger.info(f"  Chunks created: {len(chunks)}")
+        _logger.info(f"  Chunk method: {chunks[0].metadata.get('chunk_method', 'unknown')}")
 
         for i, chunk in enumerate(chunks):
-            print(f"\n  Chunk {i}:")
-            print(f"    Token count: {chunk.token_count}")
-            print(f"    Char range: {chunk.start_char}-{chunk.end_char}")
+            _logger.info(f"  Chunk {i}:")
+            _logger.info(f"    Token count: {chunk.token_count}")
+            _logger.info(f"    Char range: {chunk.start_char}-{chunk.end_char}")
             content_preview = chunk.content[:80].replace("\n", " ")
-            print(f"    Content: {content_preview}...")
+            _logger.info(f"    Content: {content_preview}...")
 
         # Test with very short content
-        print("\n--- Short Content Test ---")
+        _logger.info("--- Short Content Test ---")
         short_chunks = await chunker.chunk_document(
             content="Just a short sentence.",
             title="Short Doc",
             source="short.txt",
         )
-        print(f"  Short content chunks: {len(short_chunks)}")
+        _logger.info(f"  Short content chunks: {len(short_chunks)}")
 
         # Test with empty content
-        print("\n--- Empty Content Test ---")
+        _logger.info("--- Empty Content Test ---")
         empty_chunks = await chunker.chunk_document(
             content="   ",
             title="Empty Doc",
             source="empty.txt",
         )
-        print(f"  Empty content chunks: {len(empty_chunks)}")
+        _logger.info(f"  Empty content chunks: {len(empty_chunks)}")
 
-        print("\n" + "=" * 60)
-        print("Docling chunker test completed successfully!")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("Docling chunker test completed successfully!")
+        _logger.info("=" * 60)
 
     asyncio.run(main())

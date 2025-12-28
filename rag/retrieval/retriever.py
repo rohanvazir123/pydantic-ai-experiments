@@ -320,22 +320,29 @@ class Retriever:
 
 if __name__ == "__main__":
     import asyncio
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
 
     async def main():
-        print("=" * 60)
-        print("RAG Retriever Module Test")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG Retriever Module Test")
+        _logger.info("=" * 60)
 
         # Create retriever
         store = MongoHybridStore()
         retriever = Retriever(store=store)
-        print("\n[Retriever Created]")
-        print(f"  Default match count: {retriever.settings.default_match_count}")
+        _logger.info("[Retriever Created]")
+        _logger.info(f"  Default match count: {retriever.settings.default_match_count}")
 
         # Clear cache for testing
         Retriever.clear_cache()
         EmbeddingGenerator.clear_cache()
-        print("  Caches cleared")
+        _logger.info("  Caches cleared")
 
         # Test queries
         test_queries = [
@@ -345,7 +352,7 @@ if __name__ == "__main__":
         ]
 
         for query, search_type in test_queries:
-            print(f"\n--- Query: '{query}' ({search_type}) ---")
+            _logger.info(f"--- Query: '{query}' ({search_type}) ---")
 
             # First call (cache miss)
             start = time.time()
@@ -357,11 +364,11 @@ if __name__ == "__main__":
             )
             first_time = (time.time() - start) * 1000
 
-            print(f"  Results: {len(results)}")
-            print(f"  Time (miss): {first_time:.0f}ms")
+            _logger.info(f"  Results: {len(results)}")
+            _logger.info(f"  Time (miss): {first_time:.0f}ms")
 
             for i, r in enumerate(results):
-                print(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
+                _logger.info(f"    [{i+1}] {r.document_title} (score: {r.similarity:.4f})")
 
             # Second call (cache hit)
             start = time.time()
@@ -372,29 +379,29 @@ if __name__ == "__main__":
                 use_cache=True,
             )
             second_time = (time.time() - start) * 1000
-            print(f"  Time (hit): {second_time:.0f}ms")
+            _logger.info(f"  Time (hit): {second_time:.0f}ms")
 
         # Test retrieve_as_context
-        print("\n--- Context Retrieval ---")
+        _logger.info("--- Context Retrieval ---")
         context = await retriever.retrieve_as_context(
             query="What is the company mission?",
             match_count=2,
         )
-        print(f"  Context length: {len(context)} chars")
-        print(f"  Preview: {context[:200]}...")
+        _logger.info(f"  Context length: {len(context)} chars")
+        _logger.info(f"  Preview: {context[:200]}...")
 
         # Cache statistics
-        print("\n--- Cache Statistics ---")
+        _logger.info("--- Cache Statistics ---")
         result_stats = Retriever.get_cache_stats()
         embed_stats = EmbeddingGenerator.get_cache_stats()
-        print(f"  Result cache: {result_stats}")
-        print(f"  Embedding cache: {embed_stats}")
+        _logger.info(f"  Result cache: {result_stats}")
+        _logger.info(f"  Embedding cache: {embed_stats}")
 
         # Cleanup
         await retriever.close()
 
-        print("\n" + "=" * 60)
-        print("Retriever test completed successfully!")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("Retriever test completed successfully!")
+        _logger.info("=" * 60)
 
     asyncio.run(main())

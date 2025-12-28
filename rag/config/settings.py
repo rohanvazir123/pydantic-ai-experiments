@@ -190,46 +190,54 @@ settings = load_settings()
 
 
 if __name__ == "__main__":
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
+
     # Standalone test for settings module
-    print("=" * 60)
-    print("RAG Settings Module Test")
-    print("=" * 60)
+    _logger.info("=" * 60)
+    _logger.info("RAG Settings Module Test")
+    _logger.info("=" * 60)
 
     # Load settings
     s = load_settings()
-    print("\n[Settings Loaded Successfully]")
+    _logger.info("[Settings Loaded Successfully]")
 
     # Display configuration (with masked credentials)
-    print("\n--- MongoDB Configuration ---")
-    print(f"  URI: {mask_credential(s.mongodb_uri)}")
-    print(f"  Database: {s.mongodb_database}")
-    print(f"  Documents Collection: {s.mongodb_collection_documents}")
-    print(f"  Chunks Collection: {s.mongodb_collection_chunks}")
-    print(f"  Vector Index: {s.mongodb_vector_index}")
-    print(f"  Text Index: {s.mongodb_text_index}")
+    _logger.info("--- MongoDB Configuration ---")
+    _logger.info(f"  URI: {mask_credential(s.mongodb_uri)}")
+    _logger.info(f"  Database: {s.mongodb_database}")
+    _logger.info(f"  Documents Collection: {s.mongodb_collection_documents}")
+    _logger.info(f"  Chunks Collection: {s.mongodb_collection_chunks}")
+    _logger.info(f"  Vector Index: {s.mongodb_vector_index}")
+    _logger.info(f"  Text Index: {s.mongodb_text_index}")
 
-    print("\n--- LLM Configuration ---")
-    print(f"  Provider: {s.llm_provider}")
-    print(f"  Model: {s.llm_model}")
-    print(f"  Base URL: {s.llm_base_url}")
-    print(f"  API Key: {mask_credential(s.llm_api_key)}")
+    _logger.info("--- LLM Configuration ---")
+    _logger.info(f"  Provider: {s.llm_provider}")
+    _logger.info(f"  Model: {s.llm_model}")
+    _logger.info(f"  Base URL: {s.llm_base_url}")
+    _logger.info(f"  API Key: {mask_credential(s.llm_api_key)}")
 
-    print("\n--- Embedding Configuration ---")
-    print(f"  Provider: {s.embedding_provider}")
-    print(f"  Model: {s.embedding_model}")
-    print(f"  Base URL: {s.embedding_base_url}")
-    print(f"  Dimension: {s.embedding_dimension}")
+    _logger.info("--- Embedding Configuration ---")
+    _logger.info(f"  Provider: {s.embedding_provider}")
+    _logger.info(f"  Model: {s.embedding_model}")
+    _logger.info(f"  Base URL: {s.embedding_base_url}")
+    _logger.info(f"  Dimension: {s.embedding_dimension}")
 
-    print("\n--- Search Configuration ---")
-    print(f"  Default Match Count: {s.default_match_count}")
-    print(f"  Max Match Count: {s.max_match_count}")
-    print(f"  Default Text Weight: {s.default_text_weight}")
+    _logger.info("--- Search Configuration ---")
+    _logger.info(f"  Default Match Count: {s.default_match_count}")
+    _logger.info(f"  Max Match Count: {s.max_match_count}")
+    _logger.info(f"  Default Text Weight: {s.default_text_weight}")
 
-    print("\n--- Observability ---")
-    print(f"  Langfuse Enabled: {s.langfuse_enabled}")
+    _logger.info("--- Observability ---")
+    _logger.info(f"  Langfuse Enabled: {s.langfuse_enabled}")
     if s.langfuse_enabled:
-        print(f"  Langfuse Host: {s.langfuse_host}")
+        _logger.info(f"  Langfuse Host: {s.langfuse_host}")
 
-    print("\n" + "=" * 60)
-    print("Settings test completed successfully!")
-    print("=" * 60)
+    _logger.info("=" * 60)
+    _logger.info("Settings test completed successfully!")
+    _logger.info("=" * 60)

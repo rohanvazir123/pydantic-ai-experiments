@@ -192,28 +192,36 @@ class RetrievedChunk(DocumentChunk):
 
 
 if __name__ == "__main__":
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
+
     # Standalone test for models module
-    print("=" * 60)
-    print("RAG Models Module Test")
-    print("=" * 60)
+    _logger.info("=" * 60)
+    _logger.info("RAG Models Module Test")
+    _logger.info("=" * 60)
 
     # Test ChunkingConfig
-    print("\n--- ChunkingConfig ---")
+    _logger.info("--- ChunkingConfig ---")
     config = ChunkingConfig(chunk_size=500, chunk_overlap=100, max_tokens=256)
-    print(f"  chunk_size: {config.chunk_size}")
-    print(f"  chunk_overlap: {config.chunk_overlap}")
-    print(f"  max_tokens: {config.max_tokens}")
+    _logger.info(f"  chunk_size: {config.chunk_size}")
+    _logger.info(f"  chunk_overlap: {config.chunk_overlap}")
+    _logger.info(f"  max_tokens: {config.max_tokens}")
 
     # Test invalid config
-    print("\n  Testing validation (overlap >= size should fail)...")
+    _logger.info("  Testing validation (overlap >= size should fail)...")
     try:
         invalid = ChunkingConfig(chunk_size=100, chunk_overlap=150)
-        print("  ERROR: Should have raised ValueError")
+        _logger.error("  ERROR: Should have raised ValueError")
     except ValueError as e:
-        print(f"  OK: Caught expected error: {e}")
+        _logger.info(f"  OK: Caught expected error: {e}")
 
     # Test ChunkData
-    print("\n--- ChunkData ---")
+    _logger.info("--- ChunkData ---")
     chunk = ChunkData(
         content="This is sample content for testing the chunk data model.",
         index=0,
@@ -221,31 +229,33 @@ if __name__ == "__main__":
         end_char=55,
         metadata={"source": "test.pdf", "page": 1},
     )
-    print(f"  content: {chunk.content[:40]}...")
-    print(f"  index: {chunk.index}")
-    print(f"  token_count (auto): {chunk.token_count}")
-    print(f"  embedding: {chunk.embedding}")
+    _logger.info(f"  content: {chunk.content[:40]}...")
+    _logger.info(f"  index: {chunk.index}")
+    _logger.info(f"  token_count (auto): {chunk.token_count}")
+    _logger.info(f"  embedding: {chunk.embedding}")
 
     # Add embedding
     chunk.embedding = [0.1] * 768
-    print(f"  embedding (after set): [{chunk.embedding[0]}...] ({len(chunk.embedding)} dims)")
+    _logger.info(
+        f"  embedding (after set): [{chunk.embedding[0]}...] ({len(chunk.embedding)} dims)"
+    )
 
     # Test IngestionResult
-    print("\n--- IngestionResult ---")
+    _logger.info("--- IngestionResult ---")
     result = IngestionResult(
         document_id="abc123",
         title="Test Document",
         chunks_created=5,
         processing_time_ms=123.45,
     )
-    print(f"  document_id: {result.document_id}")
-    print(f"  title: {result.title}")
-    print(f"  chunks_created: {result.chunks_created}")
-    print(f"  processing_time_ms: {result.processing_time_ms}")
-    print(f"  errors: {result.errors}")
+    _logger.info(f"  document_id: {result.document_id}")
+    _logger.info(f"  title: {result.title}")
+    _logger.info(f"  chunks_created: {result.chunks_created}")
+    _logger.info(f"  processing_time_ms: {result.processing_time_ms}")
+    _logger.info(f"  errors: {result.errors}")
 
     # Test SearchResult
-    print("\n--- SearchResult ---")
+    _logger.info("--- SearchResult ---")
     search_result = SearchResult(
         chunk_id="chunk789",
         document_id="doc456",
@@ -255,16 +265,16 @@ if __name__ == "__main__":
         document_title="Important Report",
         document_source="report.pdf",
     )
-    print(f"  chunk_id: {search_result.chunk_id}")
-    print(f"  document_title: {search_result.document_title}")
-    print(f"  similarity: {search_result.similarity}")
-    print(f"  content: {search_result.content[:30]}...")
+    _logger.info(f"  chunk_id: {search_result.chunk_id}")
+    _logger.info(f"  document_title: {search_result.document_title}")
+    _logger.info(f"  similarity: {search_result.similarity}")
+    _logger.info(f"  content: {search_result.content[:30]}...")
 
     # Test JSON serialization
-    print("\n--- JSON Serialization ---")
+    _logger.info("--- JSON Serialization ---")
     json_str = search_result.model_dump_json(indent=2)
-    print(f"  SearchResult as JSON:\n{json_str}")
+    _logger.info(f"  SearchResult as JSON:\n{json_str}")
 
-    print("\n" + "=" * 60)
-    print("Models test completed successfully!")
-    print("=" * 60)
+    _logger.info("=" * 60)
+    _logger.info("Models test completed successfully!")
+    _logger.info("=" * 60)

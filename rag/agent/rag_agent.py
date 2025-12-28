@@ -352,17 +352,24 @@ async def traced_agent_run(
 
 if __name__ == "__main__":
     import asyncio
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
 
     async def main():
-        print("=" * 60)
-        print("RAG Agent Module Test")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG Agent Module Test")
+        _logger.info("=" * 60)
 
         # Display model info
-        print("\n--- Model Configuration ---")
+        _logger.info("--- Model Configuration ---")
         info = get_model_info()
         for key, value in info.items():
-            print(f"  {key}: {value}")
+            _logger.info(f"  {key}: {value}")
 
         # Test queries
         test_queries = [
@@ -373,9 +380,9 @@ if __name__ == "__main__":
 
         # Run agent for each query
         for query in test_queries:
-            print("\n--- Query ---")
-            print(f"  {query}")
-            print("-" * 40)
+            _logger.info("--- Query ---")
+            _logger.info(f"  {query}")
+            _logger.info("-" * 40)
 
             try:
                 start = time.time()
@@ -384,37 +391,37 @@ if __name__ == "__main__":
 
                 # Display response
                 response = result.output
-                print(f"\n  Response ({elapsed:.0f}ms):")
+                _logger.info(f"  Response ({elapsed:.0f}ms):")
                 # Word wrap at 60 chars
                 words = response.split()
                 line = "    "
                 for word in words:
                     if len(line) + len(word) > 64:
-                        print(line)
+                        _logger.info(line)
                         line = "    "
                     line += word + " "
                 if line.strip():
-                    print(line)
+                    _logger.info(line)
 
             except Exception as e:
-                print(f"  Error: {e}")
+                _logger.error(f"  Error: {e}")
 
         # Test with shared state (RAGState)
-        print("\n--- RAGState Test ---")
+        _logger.info("--- RAGState Test ---")
         state = RAGState()
         try:
             result = await agent.run(
                 "What is the PTO policy? One sentence.",
                 deps=state,
             )
-            print(f"  With RAGState: {result.output[:100]}...")
+            _logger.info(f"  With RAGState: {result.output[:100]}...")
         except Exception as e:
-            print(f"  Error with RAGState: {e}")
+            _logger.error(f"  Error with RAGState: {e}")
         finally:
             await state.close()
 
-        print("\n" + "=" * 60)
-        print("RAG agent test completed!")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG agent test completed!")
+        _logger.info("=" * 60)
 
     asyncio.run(main())

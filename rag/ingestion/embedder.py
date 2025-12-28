@@ -307,53 +307,60 @@ def create_embedder(model: str | None = None, **kwargs) -> EmbeddingGenerator:
 
 if __name__ == "__main__":
     import asyncio
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
 
     async def main():
-        print("=" * 60)
-        print("RAG Embedder Module Test")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("RAG Embedder Module Test")
+        _logger.info("=" * 60)
 
         # Create embedder
         embedder = create_embedder()
-        print("\n[Embedder Created]")
-        print(f"  Model: {embedder.model}")
-        print(f"  Batch Size: {embedder.batch_size}")
-        print(f"  Dimension: {embedder.get_embedding_dimension()}")
+        _logger.info("[Embedder Created]")
+        _logger.info(f"  Model: {embedder.model}")
+        _logger.info(f"  Batch Size: {embedder.batch_size}")
+        _logger.info(f"  Dimension: {embedder.get_embedding_dimension()}")
 
         # Test single embedding
-        print("\n--- Single Embedding ---")
+        _logger.info("--- Single Embedding ---")
         test_text = "What is Retrieval Augmented Generation?"
         start = time.time()
         embedding = await embedder.embed_query(test_text, use_cache=False)
         elapsed = (time.time() - start) * 1000
-        print(f"  Text: '{test_text}'")
-        print(f"  Dimension: {len(embedding)}")
-        print(f"  First 5 values: {embedding[:5]}")
-        print(f"  Time: {elapsed:.0f}ms")
+        _logger.info(f"  Text: '{test_text}'")
+        _logger.info(f"  Dimension: {len(embedding)}")
+        _logger.info(f"  First 5 values: {embedding[:5]}")
+        _logger.info(f"  Time: {elapsed:.0f}ms")
 
         # Test caching
-        print("\n--- Cache Test ---")
+        _logger.info("--- Cache Test ---")
         EmbeddingGenerator.clear_cache()
-        print("  Cache cleared")
+        _logger.info("  Cache cleared")
 
         # First call (cache miss)
         start = time.time()
         _ = await embedder.embed_query("test query", use_cache=True)
         first_time = (time.time() - start) * 1000
-        print(f"  First call (miss): {first_time:.0f}ms")
+        _logger.info(f"  First call (miss): {first_time:.0f}ms")
 
         # Second call (cache hit)
         start = time.time()
         _ = await embedder.embed_query("test query", use_cache=True)
         second_time = (time.time() - start) * 1000
-        print(f"  Second call (hit): {second_time:.0f}ms")
+        _logger.info(f"  Second call (hit): {second_time:.0f}ms")
 
         # Cache stats
         stats = EmbeddingGenerator.get_cache_stats()
-        print(f"  Cache stats: {stats}")
+        _logger.info(f"  Cache stats: {stats}")
 
         # Test batch embedding
-        print("\n--- Batch Embedding ---")
+        _logger.info("--- Batch Embedding ---")
         texts = [
             "First document about AI",
             "Second document about machine learning",
@@ -362,14 +369,14 @@ if __name__ == "__main__":
         start = time.time()
         embeddings = await embedder.generate_embeddings_batch(texts)
         elapsed = (time.time() - start) * 1000
-        print(f"  Texts: {len(texts)}")
-        print(f"  Embeddings: {len(embeddings)}")
-        print(f"  Each dimension: {len(embeddings[0])}")
-        print(f"  Total time: {elapsed:.0f}ms")
-        print(f"  Per embedding: {elapsed/len(texts):.0f}ms")
+        _logger.info(f"  Texts: {len(texts)}")
+        _logger.info(f"  Embeddings: {len(embeddings)}")
+        _logger.info(f"  Each dimension: {len(embeddings[0])}")
+        _logger.info(f"  Total time: {elapsed:.0f}ms")
+        _logger.info(f"  Per embedding: {elapsed/len(texts):.0f}ms")
 
         # Test ChunkData embedding
-        print("\n--- ChunkData Embedding ---")
+        _logger.info("--- ChunkData Embedding ---")
         from rag.ingestion.models import ChunkData
 
         chunks = [
@@ -390,16 +397,16 @@ if __name__ == "__main__":
         ]
 
         def progress(current, total):
-            print(f"  Progress: {current}/{total}")
+            _logger.info(f"  Progress: {current}/{total}")
 
         embedded = await embedder.embed_chunks(chunks, progress_callback=progress)
-        print(f"  Chunks embedded: {len(embedded)}")
-        print(f"  First chunk has embedding: {embedded[0].embedding is not None}")
-        print(f"  Embedding dimension: {len(embedded[0].embedding)}")
+        _logger.info(f"  Chunks embedded: {len(embedded)}")
+        _logger.info(f"  First chunk has embedding: {embedded[0].embedding is not None}")
+        _logger.info(f"  Embedding dimension: {len(embedded[0].embedding)}")
 
-        print("\n" + "=" * 60)
-        print("Embedder test completed successfully!")
-        print("=" * 60)
+        _logger.info("=" * 60)
+        _logger.info("Embedder test completed successfully!")
+        _logger.info("=" * 60)
 
     asyncio.run(main())
 
