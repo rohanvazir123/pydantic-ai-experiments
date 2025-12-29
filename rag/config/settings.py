@@ -57,8 +57,8 @@ Usage
 """
 
 from dotenv import load_dotenv
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
@@ -66,12 +66,12 @@ load_dotenv()
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
     # MongoDB Configuration
-    mongodb_uri: str = Field(..., description="MongoDB Atlas connection string")
+    mongodb_uri: str = Field(default="", description="MongoDB Atlas connection string")
 
     mongodb_database: str = Field(default="rag_db", description="MongoDB database name")
 
