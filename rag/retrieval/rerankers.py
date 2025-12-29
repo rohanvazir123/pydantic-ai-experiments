@@ -1,9 +1,82 @@
-"""Reranking implementations for improved retrieval relevance.
+"""
+Reranking implementations for improved retrieval relevance.
 
-This module provides different reranking strategies:
-- CrossEncoderReranker: Uses cross-encoder models for semantic reranking
-- ColBERTReranker: Uses ColBERT for token-level matching
-- LLMReranker: Uses LLM to judge relevance
+Module: rag.retrieval.rerankers
+===============================
+
+This module provides different reranking strategies to improve search result
+quality by re-scoring initial retrieval results with more sophisticated models.
+
+Classes
+-------
+BaseReranker (ABC)
+    Abstract base class for all rerankers.
+
+    Methods:
+        async rerank(query, results, top_k) -> list[SearchResult]
+            Rerank search results based on relevance to query.
+
+CrossEncoderReranker(BaseReranker)
+    Uses cross-encoder models for semantic reranking.
+    Processes query-document pairs together for deep interaction.
+
+    Recommended models:
+        - BAAI/bge-reranker-large (best quality)
+        - BAAI/bge-reranker-base (good balance)
+        - cross-encoder/ms-marco-MiniLM-L-6-v2 (fastest)
+
+    Methods:
+        __init__(model_name: str = "BAAI/bge-reranker-base")
+        async rerank(query, results, top_k) -> list[SearchResult]
+
+    Requirements:
+        pip install sentence-transformers
+
+ColBERTReranker(BaseReranker)
+    Uses ColBERT late interaction for token-level matching.
+    Note: Simplified implementation - full ColBERT requires pre-indexing.
+
+    Methods:
+        __init__(model_name: str = "colbert-ir/colbertv2.0")
+        async rerank(query, results, top_k) -> list[SearchResult]
+
+    Requirements:
+        pip install colbert-ai sentence-transformers
+
+LLMReranker(BaseReranker)
+    Uses LLM to judge relevance by scoring each document.
+    Works with any OpenAI-compatible API (Ollama, OpenAI, etc.)
+
+    Methods:
+        __init__(model, base_url, api_key)
+        async rerank(query, results, top_k) -> list[SearchResult]
+
+Functions
+---------
+create_reranker(reranker_type: str, **kwargs) -> BaseReranker
+    Factory function to create a reranker instance.
+    Types: "cross_encoder", "colbert", "llm"
+
+Usage
+-----
+    from rag.retrieval.rerankers import create_reranker, CrossEncoderReranker
+
+    # Using factory function
+    reranker = create_reranker("cross_encoder")
+    reranked = await reranker.rerank(query, results, top_k=5)
+
+    # Direct instantiation
+    reranker = CrossEncoderReranker(model_name="BAAI/bge-reranker-base")
+    reranked = await reranker.rerank("What is RAG?", search_results, top_k=3)
+
+    # LLM reranker with Ollama
+    llm_reranker = create_reranker(
+        "llm",
+        model="llama3.1:8b",
+        base_url="http://localhost:11434/v1",
+        api_key="ollama"
+    )
+    reranked = await llm_reranker.rerank(query, results, top_k=5)
 """
 
 import logging
@@ -160,11 +233,11 @@ class ColBERTReranker(BaseReranker):
                 logger.info(f"Loading ColBERT model: {self.model_name}")
                 config = ColBERTConfig(checkpoint=self.model_name)
                 self._model = Searcher(config=config)
-            except ImportError:
+            except ImportError as e:
                 raise ImportError(
                     "colbert-ai is required for ColBERTReranker. "
                     "Install with: pip install colbert-ai"
-                )
+                ) from e
         return self._model
 
     async def rerank(
@@ -321,7 +394,9 @@ class LLMReranker(BaseReranker):
                 )
             )
 
-        logger.info(f"LLM reranked {len(results)} results, returning top {len(reranked)}")
+        logger.info(
+            f"LLM reranked {len(results)} results, returning top {len(reranked)}"
+        )
         return reranked
 
     async def _score_document(self, client: Any, query: str, content: str) -> float:
@@ -389,3 +464,146 @@ def create_reranker(
         )
 
     return rerankers[reranker_type](**kwargs)
+
+
+if __name__ == "__main__":
+    import asyncio
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    _logger = logging.getLogger(__name__)
+
+    async def main():
+        _logger.info("=" * 60)
+        _logger.info("RAG Rerankers Module Test")
+        _logger.info("=" * 60)
+
+        # Create mock search results for testing
+        mock_results = [
+            SearchResult(
+                chunk_id="chunk1",
+                document_id="doc1",
+                content="NeuralFlow AI is a technology company specializing in "
+                "machine learning and artificial intelligence solutions.",
+                similarity=0.85,
+                metadata={},
+                document_title="Company Overview",
+                document_source="overview.md",
+            ),
+            SearchResult(
+                chunk_id="chunk2",
+                document_id="doc1",
+                content="The company offers 20 days of paid time off per year "
+                "for full-time employees.",
+                similarity=0.72,
+                metadata={},
+                document_title="Employee Benefits",
+                document_source="benefits.md",
+            ),
+            SearchResult(
+                chunk_id="chunk3",
+                document_id="doc2",
+                content="Our engineering team uses Python, TypeScript, and Go "
+                "for backend development with MongoDB and PostgreSQL.",
+                similarity=0.68,
+                metadata={},
+                document_title="Tech Stack",
+                document_source="tech.md",
+            ),
+            SearchResult(
+                chunk_id="chunk4",
+                document_id="doc3",
+                content="The weather forecast for tomorrow shows sunny skies "
+                "with temperatures around 75 degrees.",
+                similarity=0.45,
+                metadata={},
+                document_title="Weather Report",
+                document_source="weather.md",
+            ),
+        ]
+
+        test_query = "What does the company do?"
+        _logger.info(f"\nTest Query: '{test_query}'")
+        _logger.info(f"Mock Results: {len(mock_results)}")
+
+        # Show original order
+        _logger.info("\n--- Original Order ---")
+        for i, r in enumerate(mock_results):
+            _logger.info(f"  [{i + 1}] {r.document_title} (score: {r.similarity:.3f})")
+            _logger.info(f"       {r.content[:60]}...")
+
+        # Test LLM Reranker (most likely to work without extra deps)
+        _logger.info("\n--- LLM Reranker Test ---")
+        try:
+            from rag.config.settings import load_settings
+
+            settings = load_settings()
+            llm_reranker = create_reranker(
+                "llm",
+                model=settings.llm_model,
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key,
+            )
+            _logger.info(f"  Model: {settings.llm_model}")
+
+            reranked = await llm_reranker.rerank(test_query, mock_results, top_k=3)
+            _logger.info("  Reranked Results:")
+            for i, r in enumerate(reranked):
+                orig_score = r.metadata.get("original_score", "N/A")
+                _logger.info(
+                    f"    [{i + 1}] {r.document_title} "
+                    f"(LLM: {r.similarity:.3f}, orig: {orig_score})"
+                )
+        except Exception as e:
+            _logger.error(f"  LLM Reranker failed: {e}")
+
+        # Test CrossEncoder Reranker
+        _logger.info("\n--- CrossEncoder Reranker Test ---")
+        try:
+            ce_reranker = create_reranker(
+                "cross_encoder",
+                model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+            )
+            _logger.info("  Model: cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+            reranked = await ce_reranker.rerank(test_query, mock_results, top_k=3)
+            _logger.info("  Reranked Results:")
+            for i, r in enumerate(reranked):
+                orig_score = r.metadata.get("original_score", "N/A")
+                _logger.info(
+                    f"    [{i + 1}] {r.document_title} "
+                    f"(CE: {r.similarity:.3f}, orig: {orig_score})"
+                )
+        except ImportError:
+            _logger.warning(
+                "  Skipped - sentence-transformers not installed. "
+                "Install with: pip install sentence-transformers"
+            )
+        except Exception as e:
+            _logger.error(f"  CrossEncoder Reranker failed: {e}")
+
+        # Test factory function
+        _logger.info("\n--- Factory Function Test ---")
+        _logger.info("  Available reranker types: cross_encoder, colbert, llm")
+        try:
+            for rtype in ["cross_encoder", "llm"]:
+                reranker = create_reranker(rtype)
+                _logger.info(f"  Created {rtype}: {type(reranker).__name__}")
+        except Exception as e:
+            _logger.error(f"  Factory test failed: {e}")
+
+        # Test invalid reranker type
+        _logger.info("\n--- Error Handling Test ---")
+        try:
+            create_reranker("invalid_type")
+        except ValueError as e:
+            _logger.info(f"  Caught expected error: {e}")
+
+        _logger.info("\n" + "=" * 60)
+        _logger.info("Rerankers test completed!")
+        _logger.info("=" * 60)
+
+    asyncio.run(main())
