@@ -92,8 +92,7 @@ TOKENIZER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class DoclingHybridChunker:
-    """
-    Docling HybridChunker wrapper for intelligent document splitting.
+    """Docling HybridChunker wrapper for intelligent document splitting.
 
     This chunker uses Docling's built-in HybridChunker which:
     - Respects document structure (sections, paragraphs, tables)

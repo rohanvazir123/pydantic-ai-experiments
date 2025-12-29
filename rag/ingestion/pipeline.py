@@ -89,16 +89,21 @@ CLI Usage
     python -m rag.ingestion.pipeline --folder rag/documents --verbose
 """
 
-import argparse
+import argparse  # noqa: I001
 import asyncio
 import glob
 import hashlib
 import logging
 import os
+import yaml
+
+
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
 
 from rag.config.settings import load_settings
 from rag.ingestion.chunkers.docling import create_chunker
@@ -365,8 +370,6 @@ class DocumentIngestionPipeline:
         # Try to extract YAML frontmatter
         if content.startswith("---"):
             try:
-                import yaml
-
                 end_marker = content.find("\n---\n", 4)
                 if end_marker != -1:
                     frontmatter = content[4:end_marker]

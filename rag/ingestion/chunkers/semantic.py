@@ -5,12 +5,13 @@ low similarity between adjacent sentences. This creates more
 coherent chunks that preserve meaning better than fixed-size chunking.
 """
 
-import logging
+import logging  # noqa: I001
 from typing import Any
 
 import numpy as np
 
 from rag.ingestion.models import ChunkData, ChunkingConfig
+from sentence_transformers import SentenceTransformer  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +57,13 @@ class SemanticChunker:
         """Lazy load the sentence transformer model."""
         if self._model is None:
             try:
-                from sentence_transformers import SentenceTransformer
-
                 logger.info(f"Loading sentence transformer: {self.embedding_model}")
                 self._model = SentenceTransformer(self.embedding_model)
-            except ImportError:
+            except ImportError as err:
                 raise ImportError(
                     "sentence-transformers is required for SemanticChunker. "
                     "Install with: pip install sentence-transformers"
-                )
+                ) from err
         return self._model
 
     async def chunk_document(
@@ -451,15 +450,14 @@ def create_semantic_chunker(
     Returns:
         Semantic chunker instance
     """
-    chunkers = {
+    chunkers: dict[str, type[SemanticChunker | GradientSemanticChunker]] = {
         "basic": SemanticChunker,
         "gradient": GradientSemanticChunker,
     }
 
     if chunker_type not in chunkers:
         raise ValueError(
-            f"Unknown chunker type: {chunker_type}. "
-            f"Available: {list(chunkers.keys())}"
+            f"Unknown chunker type: {chunker_type}. Available: {list(chunkers.keys())}"
         )
 
     return chunkers[chunker_type](config, **kwargs)
