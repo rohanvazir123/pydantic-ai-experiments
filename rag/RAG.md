@@ -3191,107 +3191,160 @@ All future queries:
 pip install mem0ai
 ```
 
-### Configuration
+### MongoDB Atlas Setup
 
-Add to `.env`:
+Mem0 uses **MongoDB Atlas** as its vector store (same database as RAG). You need to create a vector search index on the `mem0_memories` collection.
+
+#### Step 1: Enable Mem0 in `.env`
+
 ```bash
-# Mem0 Configuration (uses same LLM/embedder as RAG by default)
+# Mem0 Configuration
 MEM0_ENABLED=true
 
-# Optional: Use different models for Mem0
-# MEM0_LLM_MODEL=llama3.1:8b
-# MEM0_EMBEDDER_MODEL=nomic-embed-text:latest
+# Uses existing MongoDB connection (MONGODB_URI, MONGODB_DATABASE)
+# Uses existing Ollama models (LLM_MODEL, EMBEDDING_MODEL)
 ```
 
-Add to `rag/config/settings.py`:
-```python
-class Settings(BaseSettings):
-    # ... existing settings ...
+#### Step 2: Create Vector Search Index in MongoDB Atlas
 
-    # Mem0 Configuration
-    mem0_enabled: bool = Field(
-        default=False,
-        description="Enable Mem0 memory layer for personalization"
-    )
+1. Go to **MongoDB Atlas** → Your Cluster → **Atlas Search**
+2. Click **Create Search Index**
+3. Select **JSON Editor** and choose the `mem0_memories` collection
+4. Use index name: `vector_index`
+5. Paste this configuration:
+
+```json
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "embedding",
+      "numDimensions": 768,
+      "similarity": "cosine"
+    }
+  ]
+}
+```
+
+> **Note**: `numDimensions` must match your embedding model (768 for `nomic-embed-text`).
+
+#### Step 3: Verify Setup
+
+```bash
+# Test Mem0 standalone
+python -m rag.memory.mem0_store
+```
+
+### Configuration Reference
+
+| Setting | Environment Variable | Default | Description |
+|---------|---------------------|---------|-------------|
+| `mem0_enabled` | `MEM0_ENABLED` | `false` | Enable/disable Mem0 |
+| `mem0_collection_name` | `MEM0_COLLECTION_NAME` | `mem0_memories` | MongoDB collection for memories |
+
+Mem0 automatically uses these existing settings:
+- `MONGODB_URI` - MongoDB Atlas connection string
+- `MONGODB_DATABASE` - Database name (default: `rag_db`)
+- `LLM_MODEL` - For fact extraction (default: `llama3.1:8b`)
+- `EMBEDDING_MODEL` - For memory vectors (default: `nomic-embed-text:latest`)
+
+### Database Architecture
+
+```
+MongoDB Atlas (rag_db)
+├── documents        ← RAG source documents
+├── chunks           ← RAG chunks with embeddings
+└── mem0_memories    ← Mem0 user memories with embeddings
 ```
 
 ### Basic Usage
 
 ```python
-from mem0 import Memory
+from rag.memory import Mem0Store, create_mem0_store
 
-# Initialize with Ollama (same as RAG)
-config = {
-    "llm": {
-        "provider": "ollama",
-        "config": {
-            "model": "llama3.1:8b",
-            "ollama_base_url": "http://localhost:11434",
-        }
-    },
-    "embedder": {
-        "provider": "ollama",
-        "config": {
-            "model": "nomic-embed-text:latest",
-            "ollama_base_url": "http://localhost:11434",
-        }
-    },
-}
+# Create store (uses settings from .env)
+mem0 = create_mem0_store()
 
-memory = Memory.from_config(config)
-
-# Store a memory
-memory.add(
+# Store a memory (LLM extracts facts automatically)
+mem0.add(
     "User prefers concise answers and works in engineering",
     user_id="john_doe",
     metadata={"source": "user_preference"}
 )
 
+# Store raw memory (no LLM processing)
+mem0.add(
+    "User is on the ML team",
+    user_id="john_doe",
+    infer=False  # Skip LLM fact extraction
+)
+
 # Search memories
-results = memory.search(
+results = mem0.search(
     "communication preferences",
     user_id="john_doe",
     limit=5
 )
 
-# Get all memories for user
-all_memories = memory.get_all(user_id="john_doe")
+# Get formatted context for LLM
+context = mem0.get_context_string(
+    "What benefits do I get?",
+    user_id="john_doe"
+)
 
-# Delete a specific memory
-memory.delete(memory_id="abc123")
+# Get all memories for user
+all_memories = mem0.get_all(user_id="john_doe")
+
+# Delete all user memories
+mem0.delete_all(user_id="john_doe")
 ```
 
 ### Integration with RAG Agent
 
+Mem0 is automatically integrated into the RAG agent. To enable personalization:
+
 ```python
-# In rag_agent.py - Enhanced search with memory context
+from rag.agent.rag_agent import agent, RAGState
+from rag.memory import create_mem0_store
 
+# 1. Add user memories (one-time setup or during conversation)
+mem0 = create_mem0_store()
+mem0.add("I'm a senior engineer on the ML team", user_id="john")
+mem0.add("I prefer brief, technical answers", user_id="john")
+
+# 2. Query with user_id for personalized responses
+state = RAGState(user_id="john")
+result = await agent.run("What training budget do I get?", deps=state)
+await state.close()
+
+# The agent will:
+# - Recall: "senior engineer, ML team" + "prefers brief answers"
+# - Retrieve: Training policy from documents
+# - Generate: Personalized response for senior engineers
+```
+
+### How It Works (Implementation)
+
+The `search_knowledge_base` tool automatically combines Mem0 and RAG:
+
+```python
 @agent.tool
-async def search_knowledge_base(
-    ctx: PydanticRunContext,
-    query: str,
-    match_count: int = 5,
-    search_type: str = "hybrid",
-) -> str:
-    # Get user_id from context (if available)
-    user_id = getattr(ctx.deps, 'user_id', None)
+async def search_knowledge_base(ctx, query, match_count=5, search_type="hybrid"):
+    # Get user_id from RAGState
+    user_id = state.user_id if state else None
 
-    # 1. Recall relevant user memories
+    # 1. Get RAG results from MongoDB
+    rag_result = await retriever.retrieve_as_context(query, match_count, search_type)
+
+    # 2. Get Mem0 user context (if enabled and user_id provided)
     user_context = ""
-    if user_id and mem0_enabled:
-        memories = memory.search(query, user_id=user_id, limit=3)
-        if memories:
-            user_context = "User Context:\n" + "\n".join(
-                f"- {m['memory']}" for m in memories
-            )
+    if mem0.is_enabled() and user_id:
+        user_context = mem0.get_context_string(query, user_id, limit=3)
 
-    # 2. Retrieve from knowledge base (existing RAG)
-    results = await retriever.retrieve(query, match_count, search_type)
-
-    # 3. Combine contexts
+    # 3. Combine contexts for LLM
     if user_context:
-        return f"{user_context}\n\nKnowledge Base:\n{format_results(results)}"
-    return format_results(results)
+        return f"{user_context}\n\n{rag_result}"
+    return rag_result
 ```
 
 ### Memory Types

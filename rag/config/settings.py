@@ -31,8 +31,7 @@ Settings(BaseSettings)
         default_match_count: int      - Default search results (default: 10)
         langfuse_enabled: bool        - Enable Langfuse tracing (default: False)
         mem0_enabled: bool            - Enable Mem0 memory layer (default: False)
-        mem0_collection_name: str     - Mem0 collection name (default: "rag_memories")
-        mem0_history_db_path: str     - Mem0 history DB path (default: ".mem0/history.db")
+        mem0_collection_name: str     - MongoDB collection for Mem0 (default: "mem0_memories")
 
 Functions
 ---------
@@ -175,11 +174,7 @@ class Settings(BaseSettings):
     )
 
     mem0_collection_name: str = Field(
-        default="rag_memories", description="Mem0 vector store collection name"
-    )
-
-    mem0_history_db_path: str = Field(
-        default=".mem0/history.db", description="Path to Mem0 history database"
+        default="mem0_memories", description="MongoDB collection for Mem0 memories"
     )
 
 

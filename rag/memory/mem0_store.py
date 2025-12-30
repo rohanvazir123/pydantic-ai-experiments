@@ -98,44 +98,46 @@ class Mem0Store:
         if self._memory is None:
             from mem0 import Memory
 
+            # Get Ollama base URL without /v1 suffix
+            ollama_base = (
+                self.settings.llm_base_url.replace("/v1", "")
+                if self.settings.llm_base_url
+                else "http://localhost:11434"
+            )
+
             # Configure Mem0 to use same LLM/embedder as RAG
+            # and MongoDB Atlas as vector store (same as RAG)
             config = {
                 "llm": {
                     "provider": "ollama",
                     "config": {
                         "model": self.settings.llm_model,
-                        "ollama_base_url": self.settings.llm_base_url.replace("/v1", "")
-                        if self.settings.llm_base_url
-                        else "http://localhost:11434",
+                        "ollama_base_url": ollama_base,
                     },
                 },
                 "embedder": {
                     "provider": "ollama",
                     "config": {
                         "model": self.settings.embedding_model,
-                        "ollama_base_url": self.settings.embedding_base_url.replace(
-                            "/v1", ""
-                        )
-                        if self.settings.embedding_base_url
-                        else "http://localhost:11434",
+                        "ollama_base_url": ollama_base,
                     },
                 },
                 "vector_store": {
-                    "provider": "qdrant",
+                    "provider": "mongodb",
                     "config": {
                         "collection_name": self.settings.mem0_collection_name,
                         "embedding_model_dims": self.settings.embedding_dimension,
-                        "path": ".mem0/qdrant",  # Local storage
+                        "mongo_uri": self.settings.mongodb_uri,
+                        "db_name": self.settings.mongodb_database,
                     },
                 },
-                "history_db_path": self.settings.mem0_history_db_path,
                 "version": "v1.1",
             }
 
             self._memory = Memory.from_config(config)
             self._initialized = True
             logger.info(
-                f"Mem0 initialized with collection: {self.settings.mem0_collection_name}"
+                f"Mem0 initialized with MongoDB collection: {self.settings.mem0_collection_name}"
             )
 
         return self._memory
