@@ -5,16 +5,22 @@ Module: rag.agent.rag_agent
 ===========================
 
 This module provides the Pydantic AI-based RAG agent that uses the knowledge
-base to answer questions. Supports Langfuse tracing for observability.
+base to answer questions. Supports Langfuse tracing and Mem0 personalization.
 
 Classes
 -------
 RAGState(BaseModel)
-    Shared state for lazy-initialized store/retriever.
+    Shared state for lazy-initialized store/retriever/mem0.
+
+    Attributes:
+        user_id: str | None     - User identifier for Mem0 personalization
 
     Methods:
         async get_retriever() -> Retriever
             Get or create retriever (lazy init in current event loop).
+
+        get_mem0() -> Mem0Store
+            Get or create Mem0 store for user memories.
 
         async close() -> None
             Clean up resources.
@@ -35,6 +41,7 @@ get_model_info() -> dict
 
 search_knowledge_base(ctx, query, match_count, search_type) -> str
     Agent tool: Search knowledge base and return formatted results.
+    Combines RAG retrieval with Mem0 user context when available.
 
 traced_agent_run(
     query: str,
@@ -56,6 +63,8 @@ Agent Tools
 -----------
 @agent.tool search_knowledge_base(ctx, query, match_count, search_type)
     Search the knowledge base using hybrid/semantic/text search.
+    If user_id is set in RAGState and Mem0 is enabled, prepends
+    relevant user context to the search results.
 
 Usage
 -----
@@ -72,10 +81,15 @@ Usage
         session_id="session456"
     )
 
-    # With shared state (for reuse in loops)
-    state = RAGState()
+    # With shared state and Mem0 personalization
+    state = RAGState(user_id="john_doe")
     result = await agent.run("Query here", deps=state)
     await state.close()
+
+    # Add user memory (for personalization)
+    from rag.memory import create_mem0_store
+    mem0 = create_mem0_store()
+    mem0.add("User prefers concise answers", user_id="john_doe")
 """
 
 import logging
@@ -91,6 +105,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
+from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
 from rag.storage.vector_store.mongo import MongoHybridStore
@@ -143,16 +158,23 @@ class RAGState(BaseModel):
     """
     Shared state for the RAG agent.
 
-    Holds a store and retriever that are lazily initialized on first use.
+    Holds a store, retriever, and mem0 that are lazily initialized on first use.
     This avoids event loop issues when created in one loop (e.g., Streamlit startup)
     but used in another (agent execution).
+
+    Attributes:
+        user_id: Optional user identifier for Mem0 personalization
     """
 
     model_config = {"arbitrary_types_allowed": True}
 
+    # User identifier for Mem0 personalization
+    user_id: str | None = None
+
     # Internal storage - lazily initialized
     _store: MongoHybridStore | None = None
     _retriever: Retriever | None = None
+    _mem0: Mem0Store | None = None
     _initialized: bool = False
 
     async def get_retriever(self) -> Retriever:
@@ -161,9 +183,18 @@ class RAGState(BaseModel):
             self._store = MongoHybridStore()
             await self._store.initialize()
             self._retriever = Retriever(store=self._store)
+            self._mem0 = Mem0Store()
             self._initialized = True
-            logger.info("[PROFILE] Lazy-initialized store/retriever in current event loop")
+            logger.info(
+                "[PROFILE] Lazy-initialized store/retriever/mem0 in current event loop"
+            )
         return self._retriever
+
+    def get_mem0(self) -> Mem0Store:
+        """Get or create the Mem0 store."""
+        if self._mem0 is None:
+            self._mem0 = Mem0Store()
+        return self._mem0
 
     async def close(self) -> None:
         """Clean up resources."""
@@ -186,6 +217,8 @@ async def search_knowledge_base(
     """
     Search the knowledge base for relevant information.
 
+    Combines RAG retrieval with Mem0 user context (if enabled and user_id provided).
+
     Args:
         ctx: Agent runtime context (NOTE: ctx.deps is available but not currently used)
         query: Search query text
@@ -193,7 +226,8 @@ async def search_knowledge_base(
         search_type: Type of search - "semantic", "text", or "hybrid" (default)
 
     Returns:
-        String containing the retrieved information formatted for the LLM
+        String containing the retrieved information formatted for the LLM,
+        optionally prefixed with user context from Mem0
     """
     global _current_trace
     start_time = time.time()
@@ -202,29 +236,50 @@ async def search_knowledge_base(
     deps = ctx.deps
 
     # deps could be RAGState directly or wrapped in StateDeps
-    state = deps if isinstance(deps, RAGState) else getattr(deps, 'state', None)
+    state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
 
     # Track if we created a local store (need to close it later)
     local_store = None
+    mem0_store = None
 
     try:
         if state is not None and isinstance(state, RAGState):
             # Use lazy-initialized retriever from RAGState (same event loop, reused)
             retriever = await state.get_retriever()
+            mem0_store = state.get_mem0()
+            user_id = state.user_id
             logger.info("[PROFILE] Using shared retriever from RAGState")
         else:
             # Fall back to creating new instances (slower, but works without deps)
             logger.info("[PROFILE] Creating NEW store/retriever (no RAGState)")
             local_store = MongoHybridStore()
             retriever = Retriever(store=local_store)
+            mem0_store = Mem0Store()
+            user_id = None
 
         # Perform search
         actual_search_type = search_type or "hybrid"
         actual_match_count = match_count or 5
 
-        result = await retriever.retrieve_as_context(
+        # Get RAG results
+        rag_result = await retriever.retrieve_as_context(
             query=query, match_count=actual_match_count, search_type=actual_search_type
         )
+
+        # Get Mem0 user context if available
+        user_context = ""
+        if mem0_store and user_id and mem0_store.is_enabled():
+            user_context = mem0_store.get_context_string(
+                query=query, user_id=user_id, limit=3
+            )
+            if user_context:
+                logger.info(f"[PROFILE] Added Mem0 context for user: {user_id}")
+
+        # Combine contexts
+        if user_context:
+            result = f"{user_context}\n\n{rag_result}"
+        else:
+            result = rag_result
 
         # Calculate duration
         duration_ms = (time.time() - start_time) * 1000
@@ -238,6 +293,7 @@ async def search_knowledge_base(
                     "query": query,
                     "match_count": actual_match_count,
                     "search_type": actual_search_type,
+                    "user_id": user_id,
                 },
                 tool_output=result[:500] + "..." if len(result) > 500 else result,
                 duration_ms=duration_ms,
@@ -274,7 +330,14 @@ class Agent:
         return func
 
 
-__all__ = ["Agent", "RunContext", "traced_agent_run", "agent", "RAGState", "get_model_info"]
+__all__ = [
+    "Agent",
+    "RunContext",
+    "traced_agent_run",
+    "agent",
+    "RAGState",
+    "get_model_info",
+]
 
 
 async def traced_agent_run(

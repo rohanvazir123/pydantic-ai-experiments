@@ -21,6 +21,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 13. [Testing](#13-testing)
 14. [Performance Tuning](#14-performance-tuning)
 15. [Caching](#15-caching)
+16. [Mem0 Memory Layer](#16-mem0-memory-layer)
 
 ---
 
@@ -2377,6 +2378,7 @@ LANGFUSE_HOST=http://localhost:3000
 | Knowledge Graph | `knowledge_graph/graphiti_store.py` (new) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
 | Langfuse Tracing | `observability/langfuse_integration.py` | `rag_agent.py`, `settings.py` |
 | Streamlit Web UI | `agent/streamlit_app.py` | `rag_agent.py` |
+| Mem0 Memory | `memory/mem0_store.py` (new) | `rag_agent.py`, `settings.py` |
 
 ---
 
@@ -3057,3 +3059,326 @@ If a query doesn't return expected results:
    results = await retriever.retrieve(query, search_type="hybrid")
    ```
 4. **Inspect embeddings**: Ensure embedding dimension matches index configuration (768 for nomic-embed-text)
+
+---
+
+## 16. Mem0 Memory Layer
+
+Mem0 is a **persistent memory layer** for AI applications that remembers user-specific context across sessions. While RAG retrieves from a document knowledge base, Mem0 remembers things about **users and conversations**.
+
+### Why Mem0 + RAG?
+
+| Feature | RAG Alone | RAG + Mem0 |
+|---------|-----------|------------|
+| **Knowledge Source** | Static documents | Documents + user memories |
+| **Personalization** | Same for all users | Adapts to each user |
+| **Context** | Retrieved docs only | Docs + user preferences/history |
+| **Session Continuity** | Stateless | Remembers across sessions |
+
+### How It Helps
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      User Query                              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌───────────────┐   ┌─────────────────┐   ┌───────────────────┐
+│    Mem0       │   │      RAG        │   │    LLM Agent      │
+│  Recall user  │   │  Retrieve docs  │   │  Generate answer  │
+│  preferences  │   │  from knowledge │   │  using both       │
+│  & context    │   │  base           │   │  contexts         │
+└───────────────┘   └─────────────────┘   └───────────────────┘
+        │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              ▼
+                   ┌─────────────────────┐
+                   │   Store new facts   │
+                   │   learned about     │
+                   │   user in Mem0      │
+                   └─────────────────────┘
+```
+
+### Practical Examples
+
+**Example 1: User Context**
+```
+User: "I'm a senior engineer in the ML team"
+→ Mem0 stores: {user_id: "john", fact: "senior engineer, ML team"}
+
+Later...
+User: "What training budget do I get?"
+→ Mem0 recalls: "senior engineer, ML team"
+→ RAG retrieves: General training policy
+→ Agent: Combines both for personalized answer about senior-level budget
+```
+
+**Example 2: Conversation Continuity**
+```
+Session 1:
+  User: "What's the PTO policy?"
+  Agent: "Unlimited PTO with 15-day minimum..."
+  → Mem0 stores: "User asked about PTO policy"
+
+Session 2 (days later):
+  User: "What else should I know about benefits?"
+  → Mem0 recalls: "Previously discussed PTO policy"
+  → Agent: Focuses on OTHER benefits, avoiding repetition
+```
+
+**Example 3: Preferences**
+```
+User: "Give me shorter answers please"
+→ Mem0 stores: {user_id: "john", preference: "concise responses"}
+
+All future queries:
+→ Mem0 recalls: "prefers concise responses"
+→ Agent: Adjusts response length automatically
+```
+
+### Key Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **91% Faster** | Retrieves only relevant memories vs. full history |
+| **90% Fewer Tokens** | No need to send entire conversation history |
+| **Personalization** | Improves with each interaction |
+| **Multi-Level Memory** | User, Session, and Agent-level retention |
+| **Graph Memory** | Connects entities (people, places, events) |
+
+### Architecture with Current RAG System
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     rag/memory/                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  mem0_store.py                                       │    │
+│  │  ├── Mem0Store                                       │    │
+│  │  │   ├── add_memory(text, user_id, metadata)        │    │
+│  │  │   ├── search_memories(query, user_id, limit)     │    │
+│  │  │   ├── get_all_memories(user_id)                  │    │
+│  │  │   └── delete_memory(memory_id)                   │    │
+│  │  └── create_mem0_store() -> Mem0Store               │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   rag/agent/rag_agent.py                    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  RAGState                                            │    │
+│  │  ├── _store: MongoHybridStore                       │    │
+│  │  ├── _retriever: Retriever                          │    │
+│  │  └── _mem0: Mem0Store  ← NEW                        │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  @agent.tool                                                │
+│  async def search_knowledge_base(...)                       │
+│      # 1. Recall user memories from Mem0                    │
+│      # 2. Retrieve documents from RAG                       │
+│      # 3. Combine contexts for LLM                          │
+│                                                             │
+│  @agent.tool                                                │
+│  async def remember_user_context(...)  ← NEW                │
+│      # Store facts about user in Mem0                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Installation
+
+```bash
+pip install mem0ai
+```
+
+### Configuration
+
+Add to `.env`:
+```bash
+# Mem0 Configuration (uses same LLM/embedder as RAG by default)
+MEM0_ENABLED=true
+
+# Optional: Use different models for Mem0
+# MEM0_LLM_MODEL=llama3.1:8b
+# MEM0_EMBEDDER_MODEL=nomic-embed-text:latest
+```
+
+Add to `rag/config/settings.py`:
+```python
+class Settings(BaseSettings):
+    # ... existing settings ...
+
+    # Mem0 Configuration
+    mem0_enabled: bool = Field(
+        default=False,
+        description="Enable Mem0 memory layer for personalization"
+    )
+```
+
+### Basic Usage
+
+```python
+from mem0 import Memory
+
+# Initialize with Ollama (same as RAG)
+config = {
+    "llm": {
+        "provider": "ollama",
+        "config": {
+            "model": "llama3.1:8b",
+            "ollama_base_url": "http://localhost:11434",
+        }
+    },
+    "embedder": {
+        "provider": "ollama",
+        "config": {
+            "model": "nomic-embed-text:latest",
+            "ollama_base_url": "http://localhost:11434",
+        }
+    },
+}
+
+memory = Memory.from_config(config)
+
+# Store a memory
+memory.add(
+    "User prefers concise answers and works in engineering",
+    user_id="john_doe",
+    metadata={"source": "user_preference"}
+)
+
+# Search memories
+results = memory.search(
+    "communication preferences",
+    user_id="john_doe",
+    limit=5
+)
+
+# Get all memories for user
+all_memories = memory.get_all(user_id="john_doe")
+
+# Delete a specific memory
+memory.delete(memory_id="abc123")
+```
+
+### Integration with RAG Agent
+
+```python
+# In rag_agent.py - Enhanced search with memory context
+
+@agent.tool
+async def search_knowledge_base(
+    ctx: PydanticRunContext,
+    query: str,
+    match_count: int = 5,
+    search_type: str = "hybrid",
+) -> str:
+    # Get user_id from context (if available)
+    user_id = getattr(ctx.deps, 'user_id', None)
+
+    # 1. Recall relevant user memories
+    user_context = ""
+    if user_id and mem0_enabled:
+        memories = memory.search(query, user_id=user_id, limit=3)
+        if memories:
+            user_context = "User Context:\n" + "\n".join(
+                f"- {m['memory']}" for m in memories
+            )
+
+    # 2. Retrieve from knowledge base (existing RAG)
+    results = await retriever.retrieve(query, match_count, search_type)
+
+    # 3. Combine contexts
+    if user_context:
+        return f"{user_context}\n\nKnowledge Base:\n{format_results(results)}"
+    return format_results(results)
+```
+
+### Memory Types
+
+| Type | Scope | Use Case | Example |
+|------|-------|----------|---------|
+| **User Memory** | Persists across all sessions | Preferences, role, department | "User is senior engineer" |
+| **Session Memory** | Single conversation | Current topic context | "Discussing Q4 financials" |
+| **Agent Memory** | Shared across users | Learned facts | "Company has 47 employees" |
+
+### Graph Memory (Advanced)
+
+Mem0's Graph Memory connects entities and relationships:
+
+```python
+# Configure with graph memory
+config = {
+    "graph_store": {
+        "provider": "neo4j",
+        "config": {
+            "url": "bolt://localhost:7687",
+            "username": "neo4j",
+            "password": "password"
+        }
+    },
+    # ... llm and embedder config ...
+}
+
+# Memories now include entity relationships
+memory.add(
+    "John works with Sarah on the ML team. They report to Mike.",
+    user_id="system"
+)
+
+# Query understands relationships
+memory.search("Who does John work with?")
+# Returns: Sarah, Mike, ML team connections
+```
+
+### Performance Comparison
+
+| Metric | Without Mem0 | With Mem0 |
+|--------|--------------|-----------|
+| Context tokens per query | ~4000 (full history) | ~500 (relevant only) |
+| Response latency | Increases with history | Constant (~100ms extra) |
+| Personalization | None | Improves over time |
+| Storage | Conversation in session | Persistent memories |
+
+### When to Use Mem0
+
+**Good Fit:**
+- Multi-session applications (users return over time)
+- Personalized assistants (adapt to user preferences)
+- Role-based access (remember user's department/role)
+- Conversation continuity (avoid repetition)
+
+**Not Needed:**
+- Single-query applications
+- Anonymous users
+- Stateless API endpoints
+- When all context fits in prompt
+
+### Files to Modify for Integration
+
+| File | Changes |
+|------|---------|
+| `rag/memory/mem0_store.py` | New - Mem0 wrapper class |
+| `rag/config/settings.py` | Add mem0_enabled setting |
+| `rag/agent/rag_agent.py` | Integrate memory into RAGState and tools |
+| `requirements.txt` | Add mem0ai dependency |
+
+### References
+
+- [Mem0 Documentation](https://docs.mem0.ai/)
+- [Mem0 GitHub](https://github.com/mem0ai/mem0)
+- [Mem0 with Ollama Guide](https://docs.mem0.ai/open-source/llms/ollama)
+
+
+
+### Do we still need query cache?
+
+We still need the query cache - they serve different purposes:
+
+| Cache              | Purpose                                                 |
+|--------------------|---------------------------------------------------------|
+| Query/Result Cache | Avoids repeated MongoDB searches for identical queries  |
+| Embedding Cache    | Avoids repeated embedding API calls                     |
+| Mem0               | Stores user-specific memories/preferences (not a cache) |
+
+However, with Mem0 the result cache key should include user_id since the same query may return different context for different users.
