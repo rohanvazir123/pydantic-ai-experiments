@@ -177,6 +177,15 @@ class Settings(BaseSettings):
         default="mem0_memories", description="MongoDB collection for Mem0 memories"
     )
 
+    # Neo4j Configuration
+    neo4j_uri: str = Field(
+        default="bolt://localhost:7687", description="Neo4j connection URI"
+    )
+
+    neo4j_username: str = Field(default="neo4j", description="Neo4j username")
+
+    neo4j_password: str = Field(default="", description="Neo4j password")
+
 
 def load_settings() -> Settings:
     """Load settings with proper error handling."""

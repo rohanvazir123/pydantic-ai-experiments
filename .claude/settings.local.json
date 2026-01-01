@@ -20,7 +20,9 @@
       "Bash(where:*)",
       "Bash(export PATH:*)",
       "Bash(export PATH=\"/c/ProgramData/chocolatey/lib/ffmpeg/tools/ffmpeg/bin:$PATH\":*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(conda activate:*)",
+      "Bash(C:/Users/rohan/anaconda3/Scripts/activate.bat pydantic_ai_agents)"
     ]
   }
 }
