@@ -4,9 +4,10 @@ import re
 
 def cleanup_notebook_scripts():
     for file in os.listdir("."):
-        if not file.endswith(".py") or file.endswith("_cleaned.py") or "rag" not in file:
-            print(f"Skipping non-Python/already cleaned file: {file}")
+        if not file.endswith(".py") or file.endswith("_cleaned.py") or file == os.path.basename(__file__):
+            # print(f"Skipping non-Python/already cleaned file: {file}")
             continue
+        print(f"Cleaning file: {file}")
         input_file = file
         output_file = file.replace(".py", "_cleaned.py")
         with open(input_file) as f_orig:
