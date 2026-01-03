@@ -22,6 +22,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 14. [Performance Tuning](#14-performance-tuning)
 15. [Caching](#15-caching)
 16. [Mem0 Memory Layer](#16-mem0-memory-layer)
+17. [RAG-Anything Modal Processors](#17-rag-anything-modal-processors)
 
 ---
 
@@ -3435,3 +3436,231 @@ We still need the query cache - they serve different purposes:
 | Mem0               | Stores user-specific memories/preferences (not a cache) |
 
 However, with Mem0 the result cache key should include user_id since the same query may return different context for different users.
+
+---
+
+## 17. RAG-Anything Modal Processors
+
+### Overview
+
+[RAG-Anything](https://github.com/HKUDS/RAG-Anything) is an all-in-one multimodal RAG framework built on LightRAG. It provides specialized modal processors for handling images, tables, and equations in documents.
+
+### Installation
+
+```bash
+# Basic installation
+pip install raganything
+
+# With all optional features
+pip install 'raganything[all]'
+```
+
+### Installation Troubleshooting
+
+#### Python 3.13 + numpy Issue
+
+On Python 3.13, `pip install 'raganything[all]'` may fail with:
+
+```
+error: metadata-generation-failed
+numpy<2.0.0,>=1.24.0 ... Unknown compiler(s): [['icl'], ['cl'], ['cc'], ['gcc']]
+```
+
+**Cause**: `lightrag-hku` requires `numpy<2.0.0`, but numpy 1.x has no pre-built wheels for Python 3.13 and requires Visual Studio Build Tools to compile from source.
+
+**Solution**: Install with `--no-deps` to skip strict version constraints:
+
+```bash
+# Install numpy 2.x (has pre-built wheels)
+pip install numpy>=2.0.0
+
+# Install raganything and lightrag without dependency resolution
+pip install raganything --no-deps
+pip install lightrag-hku --no-deps
+
+# Verify installation
+python -c "from raganything import RAGAnything; print('OK')"
+python -c "from raganything.modalprocessors import ImageModalProcessor; print('OK')"
+```
+
+#### Missing pypinyin Warning
+
+```
+WARNING: pypinyin is not installed. Chinese pinyin sorting will use simple string sorting.
+```
+
+This is harmless unless you need Chinese text sorting. To fix:
+
+```bash
+pip install pypinyin
+```
+
+### Modal Processors
+
+RAG-Anything provides three specialized modal processors:
+
+| Processor | Purpose | Input Fields |
+|-----------|---------|--------------|
+| `ImageModalProcessor` | Process images with vision models | `img_path`, `image_caption`, `image_footnote` |
+| `TableModalProcessor` | Extract structured info from tables | `table_body`, `table_caption`, `table_footnote` |
+| `EquationModalProcessor` | Process mathematical equations | `text` (LaTeX), `text_format` |
+
+#### ImageModalProcessor
+
+```python
+from raganything.modalprocessors import ImageModalProcessor
+
+processor = ImageModalProcessor(
+    lightrag=lightrag_instance,
+    modal_caption_func=vision_model_func
+)
+
+image_content = {
+    "img_path": "/absolute/path/to/image.jpg",
+    "image_caption": ["Figure 1: System Architecture"],
+    "image_footnote": ["Source: Original design"]
+}
+
+result = await processor.process_multimodal_content(
+    modal_content=image_content,
+    content_type="image",
+    file_path="research_paper.pdf",
+    entity_name="Architecture Diagram"
+)
+```
+
+#### TableModalProcessor
+
+```python
+from raganything.modalprocessors import TableModalProcessor
+
+processor = TableModalProcessor(
+    lightrag=lightrag_instance,
+    modal_caption_func=llm_model_func
+)
+
+table_content = {
+    "table_body": """
+    | Method | Accuracy | F1-Score |
+    |--------|----------|----------|
+    | Ours   | 95.2%    | 0.94     |
+    | Base   | 87.3%    | 0.85     |
+    """,
+    "table_caption": ["Performance Comparison"],
+    "table_footnote": ["Results on test dataset"]
+}
+
+result = await processor.process_multimodal_content(
+    modal_content=table_content,
+    content_type="table",
+    file_path="research_paper.pdf",
+    entity_name="Performance Results"
+)
+```
+
+#### EquationModalProcessor
+
+```python
+from raganything.modalprocessors import EquationModalProcessor
+
+processor = EquationModalProcessor(
+    lightrag=lightrag_instance,
+    modal_caption_func=llm_model_func
+)
+
+equation_content = {
+    "text": r"L(\theta) = -\frac{1}{N}\sum_{i=1}^{N}[y_i \log(p_i) + (1-y_i)\log(1-p_i)]",
+    "text_format": "LaTeX"
+}
+
+result = await processor.process_multimodal_content(
+    modal_content=equation_content,
+    content_type="equation",
+    file_path="ml_paper.pdf",
+    entity_name="Binary Cross-Entropy Loss"
+)
+```
+
+### Testing Modal Processors
+
+A test script is provided at `rag/ingestion/processors/test_raganything.py` to verify the modal processors work correctly.
+
+#### Running Tests
+
+```bash
+# Test with Ollama (default, no API key needed)
+python -m rag.ingestion.processors.test_raganything
+
+# Test with Ollama explicitly
+python -m rag.ingestion.processors.test_raganything --use-ollama
+
+# Test with OpenAI
+python -m rag.ingestion.processors.test_raganything --api-key YOUR_OPENAI_KEY
+
+# Test with custom base URL
+python -m rag.ingestion.processors.test_raganything --api-key KEY --base-url URL
+```
+
+#### What Gets Tested
+
+| Processor | Test Content | Description |
+|-----------|--------------|-------------|
+| `TableModalProcessor` | LLM benchmark table | Processes markdown table with performance metrics |
+| `EquationModalProcessor` | Cross-entropy loss formula | Processes LaTeX equation |
+| `ImageModalProcessor` | Caption-only test | Processes image metadata without actual image file |
+
+#### Expected Output
+
+```
+Testing TableModalProcessor
+Description: {'table_body': '| Model | Accuracy |...
+Entity Info: {'entity_name': 'LLM Performance Table', 'entity_type': 'table', ...}
+TableModalProcessor: SUCCESS
+
+Testing EquationModalProcessor
+Description: {'text': 'L(\\theta) = -\\frac{1}{N}...
+Entity Info: {'entity_name': 'Binary Cross-Entropy Loss', 'entity_type': 'equation', ...}
+EquationModalProcessor: SUCCESS
+
+Testing ImageModalProcessor
+Description: {'img_path': '', 'image_caption': [...
+Entity Info: {'entity_name': 'RAG Architecture Diagram', 'entity_type': 'image', ...}
+ImageModalProcessor: SUCCESS
+
+TEST SUMMARY
+  TableProcessor: PASS
+  EquationProcessor: PASS
+  ImageProcessor: PASS
+
+Total: 3/3 passed
+```
+
+### Integration with Our Processors
+
+Our framework has equivalent implementations that can be used alongside or instead of RAG-Anything's processors:
+
+| RAG-Anything API | Our Equivalent | Location |
+|------------------|----------------|----------|
+| `ImageModalProcessor` | `ImageProcessor` | `rag/ingestion/processors/image.py` |
+| `TableModalProcessor` | `TableProcessor` | `rag/ingestion/processors/table.py` |
+| `EquationModalProcessor` | `EquationProcessor` | `rag/ingestion/processors/equation.py` |
+
+#### Testing Our Processors
+
+```bash
+# Test TableProcessor
+python -m rag.ingestion.processors.table
+
+# Test EquationProcessor
+python -m rag.ingestion.processors.equation
+
+# Test EquationProcessor with custom equation
+python -m rag.ingestion.processors.equation "F = ma" "Newton's second law"
+```
+
+### References
+
+- [RAG-Anything GitHub](https://github.com/HKUDS/RAG-Anything)
+- [RAG-Anything Paper](https://arxiv.org/abs/2510.12323)
+- [LightRAG GitHub](https://github.com/HKUDS/LightRAG)
+- [Full RAG-Anything API Reference](../RAG_anything.md)

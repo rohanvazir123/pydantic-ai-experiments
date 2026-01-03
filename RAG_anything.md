@@ -20,6 +20,46 @@ pip install raganything
 pip install 'raganything[all]'
 ```
 
+### Troubleshooting Installation Issues
+
+#### Python 3.13 + numpy Issue
+
+On Python 3.13, `pip install 'raganything[all]'` may fail with:
+
+```
+error: metadata-generation-failed
+numpy<2.0.0,>=1.24.0 ... Unknown compiler(s): [['icl'], ['cl'], ['cc'], ['gcc']]
+```
+
+**Cause**: `lightrag-hku` requires `numpy<2.0.0`, but numpy 1.x has no pre-built wheels for Python 3.13 and requires Visual Studio Build Tools to compile from source.
+
+**Solution**: Install with `--no-deps` to skip strict version constraints:
+
+```bash
+# Install numpy 2.x (has pre-built wheels)
+pip install numpy>=2.0.0
+
+# Install raganything and lightrag without dependency resolution
+pip install raganything --no-deps
+pip install lightrag-hku --no-deps
+
+# Verify installation
+python -c "from raganything import RAGAnything; print('OK')"
+python -c "from raganything.modalprocessors import ImageModalProcessor; print('OK')"
+```
+
+#### Missing pypinyin Warning
+
+```
+WARNING: pypinyin is not installed. Chinese pinyin sorting will use simple string sorting.
+```
+
+This is harmless unless you need Chinese text sorting. To fix:
+
+```bash
+pip install pypinyin
+```
+
 ---
 
 ## Core APIs
@@ -499,6 +539,114 @@ embedding_func = EmbeddingFunc(
 |------------------|---------|-------------------|
 | `insert_content_list()` | Direct content injection | Integrate with ingestion pipeline |
 | `openai_complete_if_cache()` | LLM caching | Consider for performance |
+
+---
+
+## Testing RAG-Anything Modal Processors
+
+A test script is provided to verify RAG-Anything modal processors work correctly.
+
+### Running Tests
+
+```bash
+# Test with Ollama (default, no API key needed)
+python -m rag.ingestion.processors.test_raganything
+
+# Test with Ollama explicitly
+python -m rag.ingestion.processors.test_raganything --use-ollama
+
+# Test with OpenAI
+python -m rag.ingestion.processors.test_raganything --api-key YOUR_OPENAI_KEY
+
+# Test with custom base URL
+python -m rag.ingestion.processors.test_raganything --api-key KEY --base-url URL
+```
+
+### What Gets Tested
+
+| Processor | Test Content | Description |
+|-----------|--------------|-------------|
+| `TableModalProcessor` | LLM benchmark table | Processes markdown table with performance metrics |
+| `EquationModalProcessor` | Cross-entropy loss formula | Processes LaTeX equation |
+| `ImageModalProcessor` | Caption-only test | Processes image metadata without actual image file |
+
+### Expected Output
+
+```
+Testing TableModalProcessor
+Description: This table compares performance metrics...
+Entity Info: {'entity_name': 'LLM Performance Table', ...}
+TableModalProcessor: SUCCESS
+
+Testing EquationModalProcessor
+Description: Binary cross-entropy loss function...
+Entity Info: {'entity_name': 'Binary Cross-Entropy Loss', ...}
+EquationModalProcessor: SUCCESS
+
+Testing ImageModalProcessor
+Description: Architecture diagram showing...
+Entity Info: {'entity_name': 'RAG Architecture Diagram', ...}
+ImageModalProcessor: SUCCESS
+
+TEST SUMMARY
+  TableProcessor: PASS
+  EquationProcessor: PASS
+  ImageProcessor: PASS
+
+Total: 3/3 passed
+```
+
+### Test Script Location
+
+`rag/ingestion/processors/test_raganything.py`
+
+---
+
+## Our Multimodal Processors
+
+In addition to using RAG-Anything's processors, we have our own implementations:
+
+### Usage
+
+```python
+from rag.ingestion.processors import (
+    ImageProcessor,
+    TableProcessor,
+    EquationProcessor,
+)
+
+# Process an image
+image_proc = ImageProcessor()
+result = await image_proc.process("image.png", context="Document context")
+print(result.description)
+print(result.entities)
+
+# Process a table
+table_proc = TableProcessor()
+result = await table_proc.process(
+    "| A | B |\n|---|---|\n| 1 | 2 |",
+    context="Sales data"
+)
+print(result.metadata["key_insights"])
+
+# Process an equation
+eq_proc = EquationProcessor()
+result = await eq_proc.process("E = mc^2", context="Physics")
+print(result.metadata["variables"])
+```
+
+### Testing Our Processors
+
+```bash
+# Test TableProcessor
+python -m rag.ingestion.processors.table
+
+# Test EquationProcessor
+python -m rag.ingestion.processors.equation
+
+# Test EquationProcessor with custom equation
+python -m rag.ingestion.processors.equation "F = ma" "Newton's second law"
+```
 
 ---
 
