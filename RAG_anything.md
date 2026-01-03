@@ -301,7 +301,168 @@ class CustomModalProcessor(GenericModalProcessor):
 
 ---
 
-### 3. LightRAG Integration
+### 3. ContextExtractor
+
+The `ContextExtractor` provides surrounding document context to LLMs when processing multimodal content (images, tables, equations). This helps generate more accurate and contextually relevant descriptions.
+
+> **Important**: ContextExtractor does **NOT** do chunking. Chunking is handled by LightRAG. The ContextExtractor only extracts surrounding text to provide context for multimodal analysis.
+
+#### How It Works
+
+```
+Document → MinerU Parser → content_list → ContextExtractor extracts surrounding text → LLM gets context for better analysis
+```
+
+When processing an image on page 5:
+1. ContextExtractor looks at the configured `context_window` (e.g., 2 pages)
+2. Collects text from pages 3, 4, 6, 7
+3. Truncates to `max_context_tokens` limit
+4. Passes this context to the vision/LLM model along with the content
+
+#### Context Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `page` | Extracts text from N pages before/after current item | Document-structured content with clear page boundaries |
+| `chunk` | Extracts N content items before/after current position | Fine-grained control for sequential content |
+
+#### Configuration
+
+```python
+from raganything import RAGAnythingConfig
+
+config = RAGAnythingConfig(
+    # Context extraction settings
+    context_window=2,                    # Pages/chunks before and after
+    context_mode="page",                 # "page" or "chunk"
+    max_context_tokens=2000,             # Maximum tokens for context
+    include_headers=True,                # Include document headers
+    include_captions=True,               # Include image/table captions
+    context_filter_content_types=["text"],  # Content types to include
+    content_format="minerU",             # Content format hint
+)
+```
+
+#### Environment Variables
+
+```bash
+CONTEXT_WINDOW=2
+CONTEXT_MODE=page
+MAX_CONTEXT_TOKENS=2000
+INCLUDE_HEADERS=true
+INCLUDE_CAPTIONS=true
+CONTEXT_FILTER_CONTENT_TYPES=text,image
+CONTENT_FORMAT=minerU
+```
+
+#### Direct Usage
+
+```python
+from raganything.modalprocessors import ContextExtractor, ContextConfig
+
+# Configure context extraction
+config = ContextConfig(
+    context_window=1,
+    context_mode="page",
+    max_context_tokens=2000,
+    include_headers=True,
+    include_captions=True,
+    filter_content_types=["text"]
+)
+
+# Initialize context extractor
+context_extractor = ContextExtractor(config)
+
+# Extract context for a specific item
+item_info = {"page_idx": 5, "index": 10, "type": "image"}
+context = context_extractor.extract_context(
+    content_source=content_list,      # From MinerU parser
+    current_item_info=item_info,
+    content_format="minerU"
+)
+```
+
+#### Integration with Modal Processors
+
+```python
+from raganything.modalprocessors import ImageModalProcessor, ContextExtractor, ContextConfig
+
+# Create context extractor
+context_config = ContextConfig(context_window=2, max_context_tokens=1500)
+context_extractor = ContextExtractor(context_config)
+
+# Initialize processor with context support
+processor = ImageModalProcessor(
+    lightrag=lightrag_instance,
+    modal_caption_func=vision_func,
+    context_extractor=context_extractor
+)
+
+# Set content source for context extraction
+processor.set_content_source(content_list, "minerU")
+
+# Process with automatic context extraction
+result = await processor.process_multimodal_content(
+    modal_content=image_data,
+    content_type="image",
+    file_path="document.pdf",
+    entity_name="Figure 1",
+    item_info={"page_idx": 5, "index": 10, "type": "image"}
+)
+```
+
+#### Automatic Integration
+
+When using `RAGAnything.process_document_complete()`, context extraction is automatically enabled:
+
+```python
+rag = RAGAnything(config=config, ...)
+
+# Context is automatically set up during document processing
+await rag.process_document_complete("document.pdf")
+```
+
+#### Configuration Examples
+
+**High-Precision Context** (minimal context, focused analysis):
+```python
+config = RAGAnythingConfig(
+    context_window=1,
+    context_mode="page",
+    max_context_tokens=1000,
+    include_headers=True,
+    include_captions=False,
+    context_filter_content_types=["text"]
+)
+```
+
+**Comprehensive Context** (broad analysis, rich context):
+```python
+config = RAGAnythingConfig(
+    context_window=2,
+    context_mode="page",
+    max_context_tokens=3000,
+    include_headers=True,
+    include_captions=True,
+    context_filter_content_types=["text", "image", "table"]
+)
+```
+
+**Chunk-Based Analysis** (fine-grained sequential context):
+```python
+config = RAGAnythingConfig(
+    context_window=5,
+    context_mode="chunk",
+    max_context_tokens=2000,
+    include_headers=False,
+    include_captions=False,
+    context_filter_content_types=["text"]
+)
+```
+
+---
+
+### 4. LightRAG Integration
 
 RAG-Anything is built on LightRAG. You can use LightRAG directly for more control.
 
