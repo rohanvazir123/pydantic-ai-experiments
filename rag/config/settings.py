@@ -200,6 +200,43 @@ class Settings(BaseSettings):
 
     neo4j_password: str = Field(default="", description="Neo4j password")
 
+    # Vision Model Configuration (for multimodal processing)
+    vision_model_provider: str = Field(
+        default="openai",
+        description="Vision model provider (openai, ollama, anthropic)",
+    )
+
+    vision_model: str = Field(
+        default="gpt-4o",
+        description="Vision model name (gpt-4o, gpt-4-vision-preview, llava, etc.)",
+    )
+
+    vision_model_base_url: str | None = Field(
+        default="https://api.openai.com/v1",
+        description="Base URL for vision model API",
+    )
+
+    vision_model_api_key: str = Field(
+        default="",
+        description="API key for vision model (defaults to LLM_API_KEY if empty)",
+    )
+
+    vision_max_tokens: int = Field(
+        default=1024,
+        description="Maximum tokens for vision model response",
+    )
+
+    # Multimodal Processing Configuration
+    multimodal_processing_enabled: bool = Field(
+        default=True,
+        description="Enable multimodal content processing (images, tables, etc.)",
+    )
+
+    image_description_detail: str = Field(
+        default="high",
+        description="Detail level for image descriptions (low, high, auto)",
+    )
+
 
 def load_settings() -> Settings:
     """Load settings with proper error handling."""
