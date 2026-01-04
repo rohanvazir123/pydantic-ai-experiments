@@ -199,6 +199,106 @@ from raganything.modalprocessors import (
 )
 ```
 
+#### Class Hierarchy
+
+All modal processors inherit from `BaseModalProcessor` and implement the `process_multimodal_content()` method:
+
+```
+BaseModalProcessor (abstract base class)
+    │
+    │   # Shared infrastructure (set in __init__)
+    ├── lightrag                    → LightRAG instance
+    ├── text_chunks_db              → KV store for chunks
+    ├── chunks_vdb                  → Vector DB for chunk retrieval
+    ├── entities_vdb                → Vector DB for entity search
+    ├── relationships_vdb           → Vector DB for relationship search
+    ├── knowledge_graph_inst        → Graph DB (NetworkX/Neo4j)
+    ├── context_extractor           → ContextExtractor instance
+    │
+    │   # Shared methods
+    ├── process_multimodal_content()    ← Main entry point (abstract)
+    ├── generate_description_only()     ← LLM description generation (abstract)
+    ├── _create_entity_and_chunk()      ← Storage logic (inherited)
+    ├── _process_chunk_for_extraction() ← Entity extraction (inherited)
+    ├── _get_context_for_item()         ← Context extraction (inherited)
+    │
+    │   # Concrete implementations
+    ├── ImageModalProcessor       → Vision model for images
+    ├── TableModalProcessor       → LLM for table analysis
+    ├── EquationModalProcessor    → LLM for equation interpretation
+    └── GenericModalProcessor     → LLM for any other content type
+
+ContextExtractor (utility class - NOT a processor)
+    │
+    └── Used BY processors via _get_context_for_item()
+```
+
+#### The `process_multimodal_content()` Method
+
+This is the main entry point that triggers all storage operations. Every processor implements this method:
+
+```python
+async def process_multimodal_content(
+    self,
+    modal_content,           # Raw content (table body, image path, LaTeX, etc.)
+    content_type: str,       # "image", "table", "equation", or custom type
+    file_path: str = "manual_creation",  # Source document path
+    entity_name: str = None, # Optional name for the entity (auto-generated if None)
+    item_info: dict = None,  # Page/index info for context extraction
+    batch_mode: bool = False,# If True, defers merge_nodes_and_edges()
+    doc_id: str = None,      # Document ID for chunk association
+    chunk_order_index: int = 0,  # Position in document
+) -> Tuple[str, dict, list]:
+    """
+    Returns:
+        - description: Enhanced text description of the content
+        - entity_info: Dict with entity_name, entity_type, description, chunk_id
+        - chunk_results: List of (nodes, edges) for batch processing
+    """
+```
+
+#### Processing Flow
+
+Each processor follows the same pattern:
+
+```python
+# Internal flow of process_multimodal_content():
+
+async def process_multimodal_content(self, modal_content, content_type, ...):
+
+    # Step 1: Generate description using LLM (processor-specific)
+    # - ImageModalProcessor: Uses vision model + image encoding
+    # - TableModalProcessor: Parses markdown table + LLM analysis
+    # - EquationModalProcessor: Parses LaTeX + LLM interpretation
+    description, entity_info = await self.generate_description_only(
+        modal_content, content_type, item_info, entity_name
+    )
+
+    # Step 2: Build formatted chunk content using prompt templates
+    modal_chunk = PROMPTS["table_chunk"].format(...)  # or image_chunk, equation_chunk
+
+    # Step 3: Create entity and chunk in storage (inherited from BaseModalProcessor)
+    # This triggers all the storage operations:
+    # - text_chunks.upsert()
+    # - chunks_vdb.upsert()
+    # - knowledge_graph.upsert_node()
+    # - entities_vdb.upsert()
+    # - extract_entities() → relationships
+    # - merge_nodes_and_edges() (if not batch_mode)
+    return await self._create_entity_and_chunk(
+        modal_chunk, entity_info, file_path, batch_mode, doc_id, chunk_order_index
+    )
+```
+
+#### Processor-Specific Behavior
+
+| Processor | `modal_caption_func` | Content Parsing | Special Handling |
+|-----------|---------------------|-----------------|------------------|
+| `ImageModalProcessor` | Vision model (e.g., GPT-4V) | Encodes image to base64 | Handles `img_path`, `image_caption`, `image_footnote` |
+| `TableModalProcessor` | LLM (e.g., GPT-4) | Parses markdown table | Handles `table_body`, `table_caption`, `table_footnote` |
+| `EquationModalProcessor` | LLM (e.g., GPT-4) | Parses LaTeX/text | Handles `text`, `text_format` |
+| `GenericModalProcessor` | LLM (e.g., GPT-4) | String conversion | Handles any `content` field |
+
 #### ImageModalProcessor
 
 Process images with vision models to generate descriptions and entity information.
@@ -327,6 +427,141 @@ When processing an image on page 5:
 | ------- | ------------------------------------------------------ | ------------------------------------------------------ |
 | `page`  | Extracts text from N pages before/after current item   | Document-structured content with clear page boundaries |
 | `chunk` | Extracts N content items before/after current position | Fine-grained control for sequential content            |
+
+#### MinerU Content List Format
+
+The `_extract_from_content_list()` method is designed to work with MinerU-style content lists. MinerU parser outputs a flat list where each item has:
+
+```python
+# MinerU content_list structure
+[
+    {"type": "text", "text": "Chapter 1: Introduction", "text_level": 1, "page_idx": 0},
+    {"type": "text", "text": "This paper presents...", "text_level": 0, "page_idx": 0},
+    {"type": "image", "img_path": "/path/to/fig1.jpg", "image_caption": ["Figure 1"], "page_idx": 1},
+    {"type": "text", "text": "As shown in Figure 1...", "text_level": 0, "page_idx": 1},
+    {"type": "table", "table_body": "| A | B |...", "table_caption": ["Table 1"], "page_idx": 2},
+    {"type": "equation", "text": "E = mc^2", "text_format": "LaTeX", "page_idx": 3},
+    # ...
+]
+```
+
+| Field | Description |
+|-------|-------------|
+| `type` | Content type: `"text"`, `"image"`, `"table"`, `"equation"` |
+| `page_idx` | Page number (0-indexed) |
+| `text` | Text content (for text items) or equation LaTeX |
+| `text_level` | Header level: 0=paragraph, 1=H1, 2=H2, etc. |
+| `img_path` | Absolute path to image file |
+| `image_caption` / `img_caption` | List of caption strings |
+| `table_body` | Markdown table content |
+| `table_caption` | List of table caption strings |
+
+#### Internal Extraction Logic
+
+##### Page Mode Extraction
+
+Extracts text from N pages before/after the current item:
+
+```
+Document Pages:    [Page 3] [Page 4] [Page 5] [Page 6] [Page 7]
+                      ↑        ↑        ↑        ↑        ↑
+                   context  context  CURRENT  context  context
+                                      IMAGE
+
+context_window=2 → extracts text from pages 3, 4, 6, 7
+```
+
+```python
+def _extract_page_context(self, content_list, current_item_info):
+    current_page = current_item_info.get("page_idx", 0)  # e.g., 5
+    window_size = self.config.context_window             # e.g., 2
+
+    start_page = max(0, current_page - window_size)      # 3
+    end_page = current_page + window_size + 1            # 8
+
+    context_texts = []
+    for item in content_list:
+        item_page = item.get("page_idx", 0)
+        item_type = item.get("type", "")
+
+        # Include if: within page range AND matches filter (default: ["text"])
+        if start_page <= item_page < end_page and item_type in self.config.filter_content_types:
+            text_content = self._extract_text_from_item(item)
+            if text_content:
+                if item_page != current_page:
+                    context_texts.append(f"[Page {item_page}] {text_content}")
+                else:
+                    context_texts.append(text_content)
+
+    return self._truncate_context("\n".join(context_texts))
+```
+
+##### Chunk Mode Extraction
+
+Extracts N content items before/after by list index (ignoring page boundaries):
+
+```python
+def _extract_chunk_context(self, content_list, current_item_info):
+    current_index = current_item_info.get("index", 0)  # e.g., 10
+    window_size = self.config.context_window           # e.g., 3
+
+    start_idx = max(0, current_index - window_size)    # 7
+    end_idx = min(len(content_list), current_index + window_size + 1)  # 14
+
+    # Extracts items 7, 8, 9, 11, 12, 13 (skipping 10 = current item)
+```
+
+##### Text Extraction from Items
+
+```python
+def _extract_text_from_item(self, item: Dict) -> str:
+    item_type = item.get("type", "")
+
+    if item_type == "text":
+        text = item.get("text", "")
+        text_level = item.get("text_level", 0)
+
+        # MinerU uses text_level for headers: 1=H1, 2=H2, etc.
+        if self.config.include_headers and text_level > 0:
+            return f"{'#' * text_level} {text}"  # "## Section Title"
+        return text
+
+    elif item_type == "image" and self.config.include_captions:
+        captions = item.get("image_caption", item.get("img_caption", []))
+        return f"[Image: {', '.join(captions)}]" if captions else ""
+
+    elif item_type == "table" and self.config.include_captions:
+        captions = item.get("table_caption", [])
+        return f"[Table: {', '.join(captions)}]" if captions else ""
+
+    return ""
+```
+
+#### Context Extraction Example
+
+Processing an image on page 5 with `context_window=1`:
+
+```python
+content_list = [
+    {"type": "text", "text": "Results", "text_level": 1, "page_idx": 4},
+    {"type": "text", "text": "The experiment showed significant improvement.", "page_idx": 4},
+    {"type": "image", "img_path": "fig1.jpg", "image_caption": ["Performance Graph"], "page_idx": 5},  # ← CURRENT
+    {"type": "text", "text": "Figure 1 demonstrates the performance gain.", "page_idx": 5},
+    {"type": "text", "text": "Discussion", "text_level": 1, "page_idx": 6},
+]
+
+current_item_info = {"page_idx": 5, "index": 2, "type": "image"}
+
+# Extracted context (page mode, filter_content_types=["text"]):
+"""
+[Page 4] # Results
+[Page 4] The experiment showed significant improvement.
+Figure 1 demonstrates the performance gain.
+[Page 6] # Discussion
+"""
+```
+
+This context is passed to the vision/LLM model along with the image for better description generation.
 
 #### Configuration
 
@@ -964,6 +1199,254 @@ result = await rag.aquery("What is...?")
 # 4. Finalize storages (persist and close connections)
 await rag.finalize_storages()
 ```
+
+#### RAG-Anything Storage Integration
+
+RAG-Anything's modal processors directly integrate with LightRAG's storage components. Here's how each processor uses the storage architecture:
+
+##### BaseModalProcessor Storage Access
+
+All modal processors (`ImageModalProcessor`, `TableModalProcessor`, `EquationModalProcessor`, `GenericModalProcessor`) extend `BaseModalProcessor`, which connects to LightRAG's storage in its constructor:
+
+```python
+# From raganything/modalprocessors.py (BaseModalProcessor.__init__)
+class BaseModalProcessor:
+    def __init__(self, lightrag: LightRAG, modal_caption_func, ...):
+        self.lightrag = lightrag
+
+        # KV Store access
+        self.text_chunks_db = lightrag.text_chunks       # Chunk text + metadata
+
+        # Vector DB access
+        self.chunks_vdb = lightrag.chunks_vdb            # Chunk embeddings
+        self.entities_vdb = lightrag.entities_vdb        # Entity embeddings
+        self.relationships_vdb = lightrag.relationships_vdb  # Relationship embeddings
+
+        # Graph DB access
+        self.knowledge_graph_inst = lightrag.chunk_entity_relation_graph  # NetworkX/Neo4j
+
+        # Other LightRAG components
+        self.embedding_func = lightrag.embedding_func    # Embedding generation
+        self.llm_model_func = lightrag.llm_model_func    # LLM calls
+        self.hashing_kv = lightrag.llm_response_cache    # LLM response caching
+        self.tokenizer = lightrag.tokenizer              # Token counting
+```
+
+##### Multimodal Content Storage Flow
+
+When processing a multimodal item (image, table, equation), the storage flow is:
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                   MULTIMODAL CONTENT PROCESSING FLOW                          │
+├───────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  1. DESCRIPTION GENERATION                                                    │
+│     ┌─────────────────────────────────────────────────────────────────────┐   │
+│     │ modal_content (table/image/equation)                                │   │
+│     │         │                                                           │   │
+│     │         ▼                                                           │   │
+│     │ ┌─────────────────────────────────────────────────────────────────┐ │   │
+│     │ │ ContextExtractor.extract_context()                              │ │   │
+│     │ │ - Extracts surrounding text from content_list                   │ │   │
+│     │ └──────────────────────────┬──────────────────────────────────────┘ │   │
+│     │                            │                                        │   │
+│     │                            ▼                                        │   │
+│     │ ┌─────────────────────────────────────────────────────────────────┐ │   │
+│     │ │ modal_caption_func (LLM/Vision)                                 │ │   │
+│     │ │ - Generates enhanced description with context                   │ │   │
+│     │ └──────────────────────────┬──────────────────────────────────────┘ │   │
+│     │                            │                                        │   │
+│     │                            ▼                                        │   │
+│     │               (description, entity_info)                            │   │
+│     └─────────────────────────────────────────────────────────────────────┘   │
+│                                  │                                            │
+│  2. CHUNK CREATION & STORAGE     │                                            │
+│     ┌────────────────────────────▼────────────────────────────────────────┐   │
+│     │ _create_entity_and_chunk()                                          │   │
+│     │         │                                                           │   │
+│     │         ├─────────┬─────────────────────────────────────────────────┤   │
+│     │         │         │                                                 │   │
+│     │         ▼         ▼                                                 │   │
+│     │  ┌──────────┐  ┌──────────────────────────────────────────────────┐ │   │
+│     │  │text_chunks│ │                 chunks_vdb                        │ │   │
+│     │  │ KV Store  │ │              (Vector DB)                          │ │   │
+│     │  │           │ │                                                   │ │   │
+│     │  │chunk_id:{ │ │ chunk_id: {content, full_doc_id, tokens,          │ │   │
+│     │  │  content, │ │            chunk_order_index, file_path}          │ │   │
+│     │  │  tokens,  │ │                                                   │ │   │
+│     │  │  doc_id,  │ │ └─→ Embedding generated & stored                  │ │   │
+│     │  │  file_path│ │                                                   │ │   │
+│     │  │}          │ │                                                   │ │   │
+│     │  └──────────┘  └──────────────────────────────────────────────────┘ │   │
+│     └─────────────────────────────────────────────────────────────────────┘   │
+│                                  │                                            │
+│  3. ENTITY CREATION              │                                            │
+│     ┌────────────────────────────▼────────────────────────────────────────┐   │
+│     │         │                                                           │   │
+│     │         ├─────────┬─────────────────────────────────────────────────┤   │
+│     │         │         │                                                 │   │
+│     │         ▼         ▼                                                 │   │
+│     │  ┌────────────────────┐  ┌────────────────────────────────────────┐ │   │
+│     │  │ knowledge_graph_inst│ │            entities_vdb                 │ │   │
+│     │  │     (Graph DB)      │ │          (Vector DB)                    │ │   │
+│     │  │                     │ │                                         │ │   │
+│     │  │ upsert_node(        │ │ ent-xxx: {entity_name, entity_type,     │ │   │
+│     │  │   entity_name, {    │ │           content, source_id,           │ │   │
+│     │  │     entity_type,    │ │           file_path}                    │ │   │
+│     │  │     description,    │ │                                         │ │   │
+│     │  │     source_id,      │ │ └─→ Embedding generated & stored        │ │   │
+│     │  │     file_path       │ │                                         │ │   │
+│     │  │   })                │ │                                         │ │   │
+│     │  └────────────────────┘  └────────────────────────────────────────┘ │   │
+│     └─────────────────────────────────────────────────────────────────────┘   │
+│                                  │                                            │
+│  4. ENTITY EXTRACTION & RELATIONS│                                            │
+│     ┌────────────────────────────▼────────────────────────────────────────┐   │
+│     │ _process_chunk_for_extraction()                                     │   │
+│     │         │                                                           │   │
+│     │         ▼                                                           │   │
+│     │ ┌─────────────────────────────────────────────────────────────────┐ │   │
+│     │ │ extract_entities() [from LightRAG]                              │ │   │
+│     │ │ - Extracts entities mentioned in the multimodal chunk           │ │   │
+│     │ │ - Uses LLM to identify entities and relationships               │ │   │
+│     │ └──────────────────────────┬──────────────────────────────────────┘ │   │
+│     │                            │                                        │   │
+│     │                            ▼                                        │   │
+│     │ ┌─────────────────────────────────────────────────────────────────┐ │   │
+│     │ │ Add "belongs_to" relationships                                  │ │   │
+│     │ │ - Links extracted entities to the modal entity                  │ │   │
+│     │ │ - e.g., "Python" belongs_to "LLM Performance Table"             │ │   │
+│     │ └──────────────────────────┬──────────────────────────────────────┘ │   │
+│     │                            │                                        │   │
+│     │         ├─────────────────────────────────────────────────────────┤ │   │
+│     │         │                  │                                      │ │   │
+│     │         ▼                  ▼                                      │ │   │
+│     │  ┌────────────────────┐  ┌────────────────────────────────────┐   │ │   │
+│     │  │ knowledge_graph_inst│ │       relationships_vdb            │   │ │   │
+│     │  │     (Graph DB)      │ │        (Vector DB)                 │   │ │   │
+│     │  │                     │ │                                    │   │ │   │
+│     │  │ upsert_edge(        │ │ rel-xxx: {src_id, tgt_id,          │   │ │   │
+│     │  │   src_entity,       │ │           keywords, content,       │   │ │   │
+│     │  │   tgt_entity, {     │ │           source_id, file_path}    │   │ │   │
+│     │  │     description,    │ │                                    │   │ │   │
+│     │  │     keywords,       │ │ └─→ Embedding generated & stored   │   │ │   │
+│     │  │     weight,         │ │                                    │   │ │   │
+│     │  │     source_id       │ │                                    │   │ │   │
+│     │  │   })                │ │                                    │   │ │   │
+│     │  └────────────────────┘  └────────────────────────────────────┘   │ │   │
+│     └─────────────────────────────────────────────────────────────────────┘   │
+│                                  │                                            │
+│  5. MERGE & FINALIZE             │                                            │
+│     ┌────────────────────────────▼────────────────────────────────────────┐   │
+│     │ merge_nodes_and_edges() [from LightRAG]                             │   │
+│     │ - Merges duplicate entities (same name, different sources)          │   │
+│     │ - Updates entity/relationship descriptions with new context         │   │
+│     │ - Stores to entities_vdb, relationships_vdb, knowledge_graph        │   │
+│     │                                                                     │   │
+│     │ lightrag._insert_done()                                             │   │
+│     │ - Persists all storage changes to disk/database                     │   │
+│     └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### ProcessorMixin Batch Storage Operations
+
+The `ProcessorMixin` class in `processor.py` provides batch processing that efficiently uses LightRAG storage:
+
+| Method | Storage Used | Operation |
+|--------|--------------|-----------|
+| `_store_chunks_to_lightrag_storage_type_aware()` | `text_chunks`, `chunks_vdb` | Store multimodal chunks for retrieval |
+| `_store_multimodal_main_entities()` | `chunk_entity_relation_graph`, `entities_vdb`, `full_entities` | Store modal entities (e.g., "Table 1") |
+| `_batch_extract_entities_lightrag_style_type_aware()` | `text_chunks`, `llm_response_cache` | Extract entities from chunk text |
+| `_batch_add_belongs_to_relations_type_aware()` | `knowledge_graph_inst`, `relationships_vdb` | Add "belongs_to" edges |
+| `_batch_merge_lightrag_style_type_aware()` | `entities_vdb`, `relationships_vdb`, `chunk_entity_relation_graph`, `full_entities`, `full_relations` | Merge all nodes/edges |
+| `_update_doc_status_with_chunks_type_aware()` | `doc_status` | Track processing status |
+
+##### Storage Example: Processing a Table
+
+When `TableModalProcessor.process_multimodal_content()` processes a table:
+
+```python
+# Input table
+table_content = {
+    "table_body": "| Model | Accuracy |\n|-------|----------|\n| GPT-4 | 95.2% |",
+    "table_caption": ["Performance Comparison"],
+    "table_footnote": ["Benchmarked on MMLU"]
+}
+
+# Storage results after processing:
+
+# 1. text_chunks KV Store
+{
+    "chunk-abc123": {
+        "content": "[TABLE]\nCaption: Performance Comparison\n| Model | Accuracy |...\nAnalysis: This table compares...",
+        "tokens": 156,
+        "full_doc_id": "doc-xyz789",
+        "chunk_order_index": 5,
+        "file_path": "benchmark_report.pdf"
+    }
+}
+
+# 2. chunks_vdb Vector Store
+{
+    "chunk-abc123": {
+        "content": "[TABLE]...",  # Same content
+        "embedding": [0.023, -0.156, ...],  # 768/1536/3072-dim vector
+        "full_doc_id": "doc-xyz789"
+    }
+}
+
+# 3. entities_vdb Vector Store (modal entity)
+{
+    "ent-def456": {
+        "entity_name": "Performance Comparison (table)",
+        "entity_type": "table",
+        "content": "Performance Comparison (table)\nTable showing model accuracy...",
+        "source_id": "chunk-abc123",
+        "file_path": "benchmark_report.pdf"
+    }
+}
+
+# 4. knowledge_graph (Graph DB nodes)
+# Node: "Performance Comparison (table)"
+# Attributes: {entity_type: "table", description: "...", source_id: "chunk-abc123"}
+
+# 5. Extracted entities (via extract_entities)
+# Node: "GPT-4"
+# Node: "MMLU"
+
+# 6. Relationships (Graph DB edges + relationships_vdb)
+# Edge: ("GPT-4", "Performance Comparison (table)")
+#   - keywords: "belongs_to,part_of,contained_in"
+#   - description: "Entity GPT-4 belongs to Performance Comparison (table)"
+
+# 7. full_entities KV Store
+{
+    "doc-xyz789": {
+        "entity_names": ["Performance Comparison (table)", "GPT-4", "MMLU"],
+        "count": 3,
+        "update_time": 1704380400
+    }
+}
+```
+
+##### Key Integration Points
+
+The following LightRAG functions are called by RAG-Anything during processing:
+
+| LightRAG Function | Called By | Purpose |
+|-------------------|-----------|---------|
+| `extract_entities()` | `BaseModalProcessor._process_chunk_for_extraction()` | Extract entities/relationships from chunk text |
+| `merge_nodes_and_edges()` | `ProcessorMixin._batch_merge_lightrag_style_type_aware()` | Deduplicate and merge graph data |
+| `lightrag._insert_done()` | Multiple methods | Persist all storage changes |
+| `knowledge_graph.upsert_node()` | `BaseModalProcessor._create_entity_and_chunk()` | Add entity to graph |
+| `knowledge_graph.upsert_edge()` | `BaseModalProcessor._process_chunk_for_extraction()` | Add relationship to graph |
+| `entities_vdb.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store entity embedding |
+| `relationships_vdb.upsert()` | `BaseModalProcessor._process_chunk_for_extraction()` | Store relationship embedding |
+| `chunks_vdb.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store chunk embedding |
+| `text_chunks.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store chunk metadata |
 
 ---
 
