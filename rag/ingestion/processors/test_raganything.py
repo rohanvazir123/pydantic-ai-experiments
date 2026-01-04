@@ -23,6 +23,7 @@ Usage:
     python -m rag.ingestion.processors.test_raganything
     python -m rag.ingestion.processors.test_raganything --api-key YOUR_KEY
     python -m rag.ingestion.processors.test_raganything --use-ollama
+    python -m rag.ingestion.processors.test_raganything --use-ollama --use-mongodb
 """
 
 import argparse
@@ -31,392 +32,130 @@ import logging
 import os
 import sys
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+from rag.ingestion.processors.lightrag_utils import (
+    LightRAGConfig,
+    initialize_lightrag,
+    test_modal_processor,
+    setup_logging,
 )
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def get_ollama_funcs():
-    """Get LLM and vision functions using Ollama."""
-    import httpx
+# =============================================================================
+# Test Data Constants
+# =============================================================================
 
-    def ollama_complete_sync(
-        prompt: str,
-        system_prompt: str | None = None,
-        model: str = "llama3.1:8b",
-        **kwargs,
-    ) -> str:
-        """Call Ollama for text completion (sync)."""
-        with httpx.Client(timeout=120.0) as client:
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-
-            response = client.post(
-                "http://localhost:11434/v1/chat/completions",
-                json={"model": model, "messages": messages},
-                headers={"Authorization": "Bearer ollama"},
-            )
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
-
-    def llm_model_func(
-        prompt, system_prompt=None, history_messages=None, **kwargs
-    ) -> str:
-        """Synchronous Ollama LLM function."""
-        return ollama_complete_sync(prompt, system_prompt, "llama3.1:8b")
-
-    def vision_model_func(
-        prompt,
-        system_prompt=None,
-        history_messages=None,
-        image_data=None,
-        **kwargs,
-    ) -> str:
-        """Vision model function (falls back to text for Ollama)."""
-        # Ollama's llava can handle images but for simplicity we use text
-        if image_data:
-            prompt = f"[Image provided - base64 data length: {len(image_data)}]\n{prompt}"
-        return llm_model_func(prompt, system_prompt)
-
-    return llm_model_func, vision_model_func
-
-
-def get_openai_funcs(api_key: str, base_url: str | None = None):
-    """Get LLM and vision functions using OpenAI API."""
-    from lightrag.llm.openai import openai_complete_if_cache
-
-    def llm_model_func(
-        prompt, system_prompt=None, history_messages=None, **kwargs
-    ) -> str:
-        """OpenAI LLM function."""
-        if history_messages is None:
-            history_messages = []
-        return openai_complete_if_cache(
-            "gpt-4o-mini",
-            prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            api_key=api_key,
-            base_url=base_url,
-            **kwargs,
-        )
-
-    def vision_model_func(
-        prompt,
-        system_prompt=None,
-        history_messages=None,
-        image_data=None,
-        messages=None,
-        **kwargs,
-    ) -> str:
-        """OpenAI Vision function."""
-        if history_messages is None:
-            history_messages = []
-
-        if messages:
-            return openai_complete_if_cache(
-                "gpt-4o",
-                "",
-                messages=messages,
-                api_key=api_key,
-                base_url=base_url,
-                **kwargs,
-            )
-        elif image_data:
-            return openai_complete_if_cache(
-                "gpt-4o",
-                "",
-                messages=[
-                    {"role": "system", "content": system_prompt}
-                    if system_prompt
-                    else None,
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_data}"
-                                },
-                            },
-                        ],
-                    },
-                ],
-                api_key=api_key,
-                base_url=base_url,
-                **kwargs,
-            )
-        else:
-            return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
-
-    return llm_model_func, vision_model_func
-
-
-async def test_table_processor(lightrag, llm_func):
-    """Test the TableModalProcessor."""
-    from raganything.modalprocessors import TableModalProcessor
-
-    logger.info("=" * 60)
-    logger.info("Testing TableModalProcessor")
-    logger.info("=" * 60)
-
-    processor = TableModalProcessor(lightrag=lightrag, modal_caption_func=llm_func)
-
-    table_content = {
-        "table_body": """
+TABLE_TEST_CONTENT = {
+    "table_body": """
 | Model | Accuracy | F1-Score | Latency |
 |-------|----------|----------|---------|
 | GPT-4 | 95.2% | 0.94 | 120ms |
 | Claude | 94.8% | 0.93 | 100ms |
 | Llama | 89.5% | 0.88 | 50ms |
 """,
-        "table_caption": ["Performance Comparison of LLM Models"],
-        "table_footnote": ["Benchmarked on MMLU dataset, 2024"],
-    }
+    "table_caption": ["Performance Comparison of LLM Models"],
+    "table_footnote": ["Benchmarked on MMLU dataset, 2024"],
+}
 
-    try:
-        result = await processor.process_multimodal_content(
-            modal_content=table_content,
-            content_type="table",
-            file_path="benchmark_report.pdf",
-            entity_name="LLM Performance Table",
-        )
+EQUATION_TEST_CONTENT = {
+    "text": r"L(\theta) = -\frac{1}{N}\sum_{i=1}^{N}[y_i \log(p_i) + (1-y_i)\log(1-p_i)]",
+    "text_format": "LaTeX",
+}
 
-        # Handle variable return values (2 or 3)
-        if isinstance(result, tuple):
-            description = result[0] if len(result) > 0 else ""
-            entity_info = result[1] if len(result) > 1 else {}
-        else:
-            description = str(result)
-            entity_info = {}
-
-        desc_preview = description[:200] if description else "(empty)"
-        logger.info(f"Description: {desc_preview}...")
-        logger.info(f"Entity Info: {entity_info}")
-        logger.info("TableModalProcessor: SUCCESS")
-        return True
-    except Exception as e:
-        logger.error(f"TableModalProcessor FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+IMAGE_TEST_CONTENT = {
+    "img_path": "",  # Empty for caption-only test
+    "image_caption": ["Figure 1: Architecture diagram showing the RAG pipeline"],
+    "image_footnote": ["Components include embedder, vector store, and LLM"],
+}
 
 
-async def test_equation_processor(lightrag, llm_func):
-    """Test the EquationModalProcessor."""
-    from raganything.modalprocessors import EquationModalProcessor
-
-    logger.info("=" * 60)
-    logger.info("Testing EquationModalProcessor")
-    logger.info("=" * 60)
-
-    processor = EquationModalProcessor(lightrag=lightrag, modal_caption_func=llm_func)
-
-    equation_content = {
-        "text": r"L(\theta) = -\frac{1}{N}\sum_{i=1}^{N}[y_i \log(p_i) + (1-y_i)\log(1-p_i)]",
-        "text_format": "LaTeX",
-    }
-
-    try:
-        result = await processor.process_multimodal_content(
-            modal_content=equation_content,
-            content_type="equation",
-            file_path="ml_paper.pdf",
-            entity_name="Binary Cross-Entropy Loss",
-        )
-
-        # Handle variable return values (2 or 3)
-        if isinstance(result, tuple):
-            description = result[0] if len(result) > 0 else ""
-            entity_info = result[1] if len(result) > 1 else {}
-        else:
-            description = str(result)
-            entity_info = {}
-
-        desc_preview = description[:200] if description else "(empty)"
-        logger.info(f"Description: {desc_preview}...")
-        logger.info(f"Entity Info: {entity_info}")
-        logger.info("EquationModalProcessor: SUCCESS")
-        return True
-    except Exception as e:
-        logger.error(f"EquationModalProcessor FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-async def test_image_processor(lightrag, vision_func):
-    """Test the ImageModalProcessor (without actual image)."""
-    from raganything.modalprocessors import ImageModalProcessor
-
-    logger.info("=" * 60)
-    logger.info("Testing ImageModalProcessor")
-    logger.info("=" * 60)
-
-    processor = ImageModalProcessor(lightrag=lightrag, modal_caption_func=vision_func)
-
-    # Test with caption only (no actual image file)
-    image_content = {
-        "img_path": "",  # No actual image
-        "image_caption": ["Figure 1: Architecture diagram showing the RAG pipeline"],
-        "image_footnote": ["Components include embedder, vector store, and LLM"],
-    }
-
-    try:
-        result = await processor.process_multimodal_content(
-            modal_content=image_content,
-            content_type="image",
-            file_path="architecture.pdf",
-            entity_name="RAG Architecture Diagram",
-        )
-
-        # Handle variable return values (2 or 3)
-        if isinstance(result, tuple):
-            description = result[0] if len(result) > 0 else ""
-            entity_info = result[1] if len(result) > 1 else {}
-        else:
-            description = str(result)
-            entity_info = {}
-
-        desc_preview = description[:200] if description else "(empty)"
-        logger.info(f"Description: {desc_preview}...")
-        logger.info(f"Entity Info: {entity_info}")
-        logger.info("ImageModalProcessor: SUCCESS")
-        return True
-    except Exception as e:
-        logger.error(f"ImageModalProcessor FAILED: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-async def initialize_lightrag(
+async def run_all_tests(
     api_key: str | None,
     base_url: str | None,
     use_ollama: bool,
     use_mongodb: bool = False,
     mongo_uri: str | None = None,
     mongo_database: str = "test_raganything",
-):
-    """Initialize LightRAG instance.
+) -> bool:
+    """Run all modal processor tests.
 
     Args:
         api_key: OpenAI API key
         base_url: OpenAI base URL
         use_ollama: Use Ollama for LLM/embeddings
-        use_mongodb: Use MongoDB for vector/KV storage
+        use_mongodb: Use MongoDB for storage
         mongo_uri: MongoDB connection URI
         mongo_database: MongoDB database name
+
+    Returns:
+        True if all tests passed
     """
-    from lightrag import LightRAG
-    from lightrag.kg.shared_storage import initialize_pipeline_status
-    from lightrag.utils import EmbeddingFunc
-
-    working_dir = "./test_raganything_storage"
-    os.makedirs(working_dir, exist_ok=True)
-
-    if use_ollama:
-        # Use Ollama for embeddings
-        import httpx
-        import numpy as np
-
-        async def ollama_embed(texts: list[str]) -> np.ndarray:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                embeddings = []
-                for text in texts:
-                    response = await client.post(
-                        "http://localhost:11434/api/embeddings",
-                        json={"model": "nomic-embed-text:latest", "prompt": text},
-                    )
-                    response.raise_for_status()
-                    embeddings.append(response.json()["embedding"])
-                return np.array(embeddings)
-
-        embedding_func = EmbeddingFunc(
-            embedding_dim=768,
-            max_token_size=8192,
-            func=ollama_embed,
-        )
-        llm_func, vision_func = get_ollama_funcs()
-    else:
-        # Use OpenAI
-        from lightrag.llm.openai import openai_embed
-
-        embedding_func = EmbeddingFunc(
-            embedding_dim=3072,
-            max_token_size=8192,
-            func=lambda texts: openai_embed(
-                texts,
-                model="text-embedding-3-large",
-                api_key=api_key,
-                base_url=base_url,
-            ),
-        )
-        llm_func, vision_func = get_openai_funcs(api_key, base_url)
-
-    # Configure storage based on options
-    lightrag_kwargs = {
-        "working_dir": working_dir,
-        "llm_model_func": llm_func,
-        "embedding_func": embedding_func,
-    }
-
-    if use_mongodb:
-        if not mongo_uri:
-            mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-
-        # Set environment variables for LightRAG MongoDB storage
-        os.environ["MONGO_URI"] = mongo_uri
-        os.environ["MONGO_DATABASE"] = mongo_database
-
-        try:
-            from lightrag.kg.mongo_impl import MongoKVStorage, MongoVectorDBStorage
-
-            lightrag_kwargs["kv_storage"] = MongoKVStorage
-            lightrag_kwargs["vector_storage"] = MongoVectorDBStorage
-            logger.info(f"Using MongoDB storage: {mongo_uri} / {mongo_database}")
-        except ImportError:
-            logger.warning(
-                "MongoDB storage classes not available, falling back to file-based storage. "
-                "Install with: pip install pymongo"
-            )
-    else:
-        logger.info(f"Using file-based storage: {working_dir}")
-
-    # Create LightRAG instance
-    rag = LightRAG(**lightrag_kwargs)
-
-    await rag.initialize_storages()
-    await initialize_pipeline_status()
-
-    return rag, llm_func, vision_func
-
-
-async def main_async(
-    api_key: str | None,
-    base_url: str | None,
-    use_ollama: bool,
-    use_mongodb: bool = False,
-    mongo_uri: str | None = None,
-    mongo_database: str = "test_raganything",
-):
-    """Main async test function."""
-    logger.info("Initializing LightRAG...")
-    lightrag, llm_func, vision_func = await initialize_lightrag(
-        api_key, base_url, use_ollama, use_mongodb, mongo_uri, mongo_database
+    from raganything.modalprocessors import (
+        TableModalProcessor,
+        EquationModalProcessor,
+        ImageModalProcessor,
     )
 
-    results = {}
+    # Initialize LightRAG
+    logger.info("Initializing LightRAG...")
+    config = LightRAGConfig(
+        working_dir="./test_raganything_storage",
+        use_ollama=use_ollama,
+        api_key=api_key,
+        base_url=base_url,
+        use_mongodb=use_mongodb,
+        mongo_uri=mongo_uri,
+        mongo_database=mongo_database,
+    )
+    lightrag, llm_func, vision_func = await initialize_lightrag(config)
 
-    # Test each processor
-    results["table"] = await test_table_processor(lightrag, llm_func)
-    results["equation"] = await test_equation_processor(lightrag, llm_func)
-    results["image"] = await test_image_processor(lightrag, vision_func)
+    # Define test cases
+    test_cases = [
+        {
+            "processor_class": TableModalProcessor,
+            "caption_func": llm_func,
+            "test_content": TABLE_TEST_CONTENT,
+            "content_type": "table",
+            "file_path": "benchmark_report.pdf",
+            "entity_name": "LLM Performance Table",
+            "processor_name": "TableModalProcessor",
+        },
+        {
+            "processor_class": EquationModalProcessor,
+            "caption_func": llm_func,
+            "test_content": EQUATION_TEST_CONTENT,
+            "content_type": "equation",
+            "file_path": "ml_paper.pdf",
+            "entity_name": "Binary Cross-Entropy Loss",
+            "processor_name": "EquationModalProcessor",
+        },
+        {
+            "processor_class": ImageModalProcessor,
+            "caption_func": vision_func,
+            "test_content": IMAGE_TEST_CONTENT,
+            "content_type": "image",
+            "file_path": "architecture.pdf",
+            "entity_name": "RAG Architecture Diagram",
+            "processor_name": "ImageModalProcessor",
+        },
+    ]
+
+    # Run tests
+    results = {}
+    for test_case in test_cases:
+        name = test_case["processor_name"]
+        results[name] = await test_modal_processor(
+            processor_class=test_case["processor_class"],
+            lightrag=lightrag,
+            caption_func=test_case["caption_func"],
+            test_content=test_case["test_content"],
+            content_type=test_case["content_type"],
+            file_path=test_case["file_path"],
+            entity_name=test_case["entity_name"],
+            processor_name=name,
+        )
 
     # Summary
     logger.info("=" * 60)
@@ -424,11 +163,11 @@ async def main_async(
     logger.info("=" * 60)
     for name, passed in results.items():
         status = "PASS" if passed else "FAIL"
-        logger.info(f"  {name.capitalize()}Processor: {status}")
+        logger.info(f"  {name}: {status}")
 
     total = len(results)
-    passed = sum(results.values())
-    logger.info(f"\nTotal: {passed}/{total} passed")
+    passed_count = sum(results.values())
+    logger.info(f"\nTotal: {passed_count}/{total} passed")
 
     return all(results.values())
 
@@ -476,7 +215,7 @@ def main():
         args.use_ollama = True
 
     success = asyncio.run(
-        main_async(
+        run_all_tests(
             args.api_key,
             args.base_url,
             args.use_ollama,
