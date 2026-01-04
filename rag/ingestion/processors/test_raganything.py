@@ -295,8 +295,24 @@ async def test_image_processor(lightrag, vision_func):
         return False
 
 
-async def initialize_lightrag(api_key: str | None, base_url: str | None, use_ollama: bool):
-    """Initialize LightRAG instance."""
+async def initialize_lightrag(
+    api_key: str | None,
+    base_url: str | None,
+    use_ollama: bool,
+    use_mongodb: bool = False,
+    mongo_uri: str | None = None,
+    mongo_database: str = "test_raganything",
+):
+    """Initialize LightRAG instance.
+
+    Args:
+        api_key: OpenAI API key
+        base_url: OpenAI base URL
+        use_ollama: Use Ollama for LLM/embeddings
+        use_mongodb: Use MongoDB for vector/KV storage
+        mongo_uri: MongoDB connection URI
+        mongo_database: MongoDB database name
+    """
     from lightrag import LightRAG
     from lightrag.kg.shared_storage import initialize_pipeline_status
     from lightrag.utils import EmbeddingFunc
@@ -343,12 +359,37 @@ async def initialize_lightrag(api_key: str | None, base_url: str | None, use_oll
         )
         llm_func, vision_func = get_openai_funcs(api_key, base_url)
 
+    # Configure storage based on options
+    lightrag_kwargs = {
+        "working_dir": working_dir,
+        "llm_model_func": llm_func,
+        "embedding_func": embedding_func,
+    }
+
+    if use_mongodb:
+        if not mongo_uri:
+            mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+
+        # Set environment variables for LightRAG MongoDB storage
+        os.environ["MONGO_URI"] = mongo_uri
+        os.environ["MONGO_DATABASE"] = mongo_database
+
+        try:
+            from lightrag.kg.mongo_impl import MongoKVStorage, MongoVectorDBStorage
+
+            lightrag_kwargs["kv_storage"] = MongoKVStorage
+            lightrag_kwargs["vector_storage"] = MongoVectorDBStorage
+            logger.info(f"Using MongoDB storage: {mongo_uri} / {mongo_database}")
+        except ImportError:
+            logger.warning(
+                "MongoDB storage classes not available, falling back to file-based storage. "
+                "Install with: pip install pymongo"
+            )
+    else:
+        logger.info(f"Using file-based storage: {working_dir}")
+
     # Create LightRAG instance
-    rag = LightRAG(
-        working_dir=working_dir,
-        llm_model_func=llm_func,
-        embedding_func=embedding_func,
-    )
+    rag = LightRAG(**lightrag_kwargs)
 
     await rag.initialize_storages()
     await initialize_pipeline_status()
@@ -356,11 +397,18 @@ async def initialize_lightrag(api_key: str | None, base_url: str | None, use_oll
     return rag, llm_func, vision_func
 
 
-async def main_async(api_key: str | None, base_url: str | None, use_ollama: bool):
+async def main_async(
+    api_key: str | None,
+    base_url: str | None,
+    use_ollama: bool,
+    use_mongodb: bool = False,
+    mongo_uri: str | None = None,
+    mongo_database: str = "test_raganything",
+):
     """Main async test function."""
     logger.info("Initializing LightRAG...")
     lightrag, llm_func, vision_func = await initialize_lightrag(
-        api_key, base_url, use_ollama
+        api_key, base_url, use_ollama, use_mongodb, mongo_uri, mongo_database
     )
 
     results = {}
@@ -405,6 +453,21 @@ def main():
         action="store_true",
         help="Use Ollama instead of OpenAI",
     )
+    parser.add_argument(
+        "--use-mongodb",
+        action="store_true",
+        help="Use MongoDB for vector/KV storage instead of file-based",
+    )
+    parser.add_argument(
+        "--mongo-uri",
+        default=os.getenv("MONGODB_URI"),
+        help="MongoDB connection URI (default: MONGODB_URI env var)",
+    )
+    parser.add_argument(
+        "--mongo-database",
+        default="test_raganything",
+        help="MongoDB database name (default: test_raganything)",
+    )
 
     args = parser.parse_args()
 
@@ -412,7 +475,16 @@ def main():
         logger.warning("No API key provided. Using --use-ollama for local testing.")
         args.use_ollama = True
 
-    success = asyncio.run(main_async(args.api_key, args.base_url, args.use_ollama))
+    success = asyncio.run(
+        main_async(
+            args.api_key,
+            args.base_url,
+            args.use_ollama,
+            args.use_mongodb,
+            args.mongo_uri,
+            args.mongo_database,
+        )
+    )
     sys.exit(0 if success else 1)
 
 

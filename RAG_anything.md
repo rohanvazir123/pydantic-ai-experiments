@@ -540,6 +540,115 @@ embeddings = openai_embed(
 
 ---
 
+### 5. Storage Architecture
+
+RAG-Anything uses **BOTH** vector databases AND graph storage - they serve different purposes.
+
+#### Storage Components
+
+| Storage Type | Purpose | Default | Options |
+|--------------|---------|---------|---------|
+| **Vector DB** (`chunks_vdb`) | Similarity search for text chunks | nano-vectordb (file) | MongoDB, Milvus, Qdrant, PostgreSQL |
+| **Vector DB** (`entities_vdb`) | Similarity search for entities | nano-vectordb (file) | Same as above |
+| **Vector DB** (`relationships_vdb`) | Similarity search for relationships | nano-vectordb (file) | Same as above |
+| **Graph DB** | Knowledge graph (entity-relation) | NetworkX (file) | Neo4j, PostgreSQL (AGE) |
+| **KV Storage** | Document status, caching | JSON files | PostgreSQL, MongoDB |
+
+#### How They Work Together
+
+```
+Query → Vector Search (find similar chunks/entities)
+      → Graph Traversal (find related entities via relationships)
+      → Combined Results → LLM Response
+```
+
+#### Environment Variables
+
+```bash
+# Storage selection
+LIGHTRAG_KV_STORAGE=JsonKVStorage              # Default (file-based)
+LIGHTRAG_VECTOR_STORAGE=NanoVectorDBStorage    # Default (file-based)
+LIGHTRAG_GRAPH_STORAGE=NetworkXStorage         # Default (file-based)
+
+# MongoDB Configuration
+MONGO_URI=mongodb://root:root@localhost:27017/
+MONGO_DATABASE=LightRAG
+
+# Neo4j Configuration (graph only)
+NEO4J_URI=neo4j+s://xxx.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=your_password
+
+# Milvus Configuration (vector only)
+MILVUS_URI=http://localhost:19530
+MILVUS_DB_NAME=lightrag
+
+# Qdrant Configuration (vector only)
+QDRANT_URL=http://localhost:16333
+QDRANT_API_KEY=your-api-key
+
+# PostgreSQL Configuration (can do everything)
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=your_username
+POSTGRES_PASSWORD=your_password
+POSTGRES_DATABASE=your_database
+```
+
+#### Storage Setup Options
+
+| Setup | Vector Search | Graph Storage | Notes |
+|-------|---------------|---------------|-------|
+| **Default (file-based)** | nano-vectordb | NetworkX | No external DB needed, stores in `working_dir` |
+| **MongoDB only** | MongoDB | NetworkX (file) | Use existing MongoDB for vectors |
+| **Neo4j + MongoDB** | MongoDB | Neo4j | Full production setup |
+| **PostgreSQL all-in-one** | pgvector | AGE | Single DB for everything |
+
+#### Using MongoDB for Vector Storage
+
+```python
+from lightrag import LightRAG
+from lightrag.kg.mongo_impl import MongoKVStorage, MongoVectorDBStorage
+
+lightrag = LightRAG(
+    working_dir="./rag_storage",
+    llm_model_func=llm_func,
+    embedding_func=embedding_func,
+    # Use MongoDB for storage
+    kv_storage=MongoKVStorage,
+    vector_storage=MongoVectorDBStorage,
+    graph_storage="NetworkXStorage",  # Keep file-based graph or use Neo4j
+)
+```
+
+Or via environment variables:
+
+```bash
+# .env file
+MONGO_URI=mongodb://localhost:27017/
+MONGO_DATABASE=lightrag_db
+LIGHTRAG_KV_STORAGE=MongoKVStorage
+LIGHTRAG_VECTOR_STORAGE=MongoVectorDBStorage
+```
+
+#### File-Based Storage Structure
+
+When using default file-based storage, the `working_dir` contains:
+
+```
+working_dir/
+├── vdb_entities.json          # Entity vectors (nano-vectordb)
+├── vdb_relationships.json     # Relationship vectors (nano-vectordb)
+├── vdb_chunks.json            # Chunk vectors (nano-vectordb)
+├── graph_chunk_entity_relation.graphml  # Knowledge graph (NetworkX)
+├── kv_store_full_docs.json    # Document storage
+├── kv_store_text_chunks.json  # Text chunks
+├── kv_store_llm_response_cache.json  # LLM cache
+└── kv_store_doc_status.json   # Document processing status
+```
+
+---
+
 ## Model Function Templates
 
 ### LLM Model Function
@@ -710,7 +819,7 @@ A test script is provided to verify RAG-Anything modal processors work correctly
 ### Running Tests
 
 ```bash
-# Test with Ollama (default, no API key needed)
+# Test with Ollama (default, no API key needed) - uses file-based storage
 python -m rag.ingestion.processors.test_raganything
 
 # Test with Ollama explicitly
@@ -721,6 +830,48 @@ python -m rag.ingestion.processors.test_raganything --api-key YOUR_OPENAI_KEY
 
 # Test with custom base URL
 python -m rag.ingestion.processors.test_raganything --api-key KEY --base-url URL
+
+# Test with MongoDB storage (instead of file-based)
+python -m rag.ingestion.processors.test_raganything --use-ollama --use-mongodb
+
+# Test with MongoDB and custom connection
+python -m rag.ingestion.processors.test_raganything --use-ollama --use-mongodb \
+    --mongo-uri "mongodb://localhost:27017/" \
+    --mongo-database "test_raganything"
+```
+
+### Test Storage Options
+
+| Option | Storage Type | Location | Notes |
+|--------|--------------|----------|-------|
+| Default | File-based | `./test_raganything_storage/` | Uses nano-vectordb + NetworkX |
+| `--use-mongodb` | MongoDB | MongoDB database | Uses MongoVectorDBStorage + MongoKVStorage |
+
+#### Default File-Based Storage
+
+When running without `--use-mongodb`, the test creates:
+
+```
+./test_raganything_storage/
+├── vdb_entities.json          # Entity vectors
+├── vdb_relationships.json     # Relationship vectors
+├── vdb_chunks.json            # Chunk vectors
+├── graph_chunk_entity_relation.graphml  # Knowledge graph
+└── kv_store_*.json            # Various KV stores
+```
+
+#### MongoDB Storage
+
+With `--use-mongodb`, stores data in MongoDB collections:
+
+```
+test_raganything (database)
+├── entities_vdb               # Entity vectors
+├── relationships_vdb          # Relationship vectors
+├── chunks_vdb                 # Chunk vectors
+├── full_docs                  # Document storage
+├── text_chunks                # Text chunks
+└── doc_status                 # Processing status
 ```
 
 ### What Gets Tested
