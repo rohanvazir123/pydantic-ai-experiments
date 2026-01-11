@@ -1,0 +1,50 @@
+{
+  "pdf_path": "test_rag_anything_pdfs_for_question_generation/l1.pdf",
+  "title": "l1",
+  "statistics": {
+    "pages": 12,
+    "text_chunks": 121,
+    "tables": 0,
+    "equations": 1,
+    "images": 5
+  },
+  "questions": [
+    {
+      "question": "What are the key characteristics of consistent hashing, and how does it address issues in present-day systems?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "How does consistent hashing solve the problem of storing recently accessed Web pages across multiple machines?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "What are the properties of a good hash function, and how does modular arithmetic contribute to these properties?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "In what ways can consistent hashing be used for Web caching at large scales, such as Stanford's network?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "How does the concept of a shared cache aggregate recent page requests from multiple users, and what benefits result from this approach?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "What is the role of modular arithmetic in consistent hashing, and how does it contribute to efficient data storage?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    },
+    {
+      "question": "In what ways has consistent hashing improved Web caching efficiency, such as reducing network traffic and latency?",
+      "supported_by": [],
+      "difficulty": "unknown"
+    }
+  ],
+  "entities": [],
+  "error": null
+}

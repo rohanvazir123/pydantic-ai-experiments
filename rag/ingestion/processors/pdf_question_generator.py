@@ -174,13 +174,13 @@ def extract_chunks_from_lightrag(rag, limit: int = 30) -> list[ChunkContext]:
     Returns:
         List of ChunkContext objects
     """
-    chunks = []
+    chunks: list[ChunkContext] = []
 
     # Access the text_chunks KV store
     try:
         text_chunks_data = rag.text_chunks._data if hasattr(rag.text_chunks, '_data') else {}
 
-        for i, (chunk_id, chunk_data) in enumerate(text_chunks_data.items()):
+        for i, (_chunk_id, chunk_data) in enumerate(text_chunks_data.items()):
             if i >= limit:
                 break
 

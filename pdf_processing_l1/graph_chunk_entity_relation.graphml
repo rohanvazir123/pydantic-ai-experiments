@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d5" for="node" attr.name="created_at" attr.type="long"/>
+<key id="d4" for="node" attr.name="file_path" attr.type="string"/>
+<key id="d3" for="node" attr.name="source_id" attr.type="string"/>
+<key id="d2" for="node" attr.name="description" attr.type="string"/>
+<key id="d1" for="node" attr.name="entity_type" attr.type="string"/>
+<key id="d0" for="node" attr.name="entity_id" attr.type="string"/>
+<graph edgedefault="undirected"><node id="Equation 1 from l1">
+  <data key="d0">Equation 1 from l1</data>
+  <data key="d1">equation</data>
+  <data key="d2">Represents a fundamental application of modular arithmetic used across various mathematical and computational fields including coding theory, cryptography, computer science, and more.</data>
+  <data key="d3">chunk-a4d2baed7113f51410dffa1d46800255</data>
+  <data key="d4">test_rag_anything_pdfs_for_question_generation/l1.pdf</data>
+  <data key="d5">1768163968</data>
+</node>
+</graph></graphml>
