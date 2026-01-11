@@ -98,6 +98,67 @@ def get_ollama_llm_funcs(
     return llm_model_func, vision_model_func
 
 
+async def get_ollama_llm_funcs_async(
+    llm_model: str = "llama3.1:8b",
+    base_url: str = "http://localhost:11434",
+    timeout: float = 120.0,
+) -> tuple[Callable, Callable]:
+    """Get async LLM and vision functions using Ollama.
+
+    Use these for raganything modal processors that expect async functions.
+
+    Args:
+        llm_model: Ollama model name for text completion
+        base_url: Ollama server URL
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (async_llm_model_func, async_vision_model_func)
+    """
+    import httpx
+
+    async def ollama_complete_async(
+        prompt: str,
+        system_prompt: str | None = None,
+        model: str = llm_model,
+        **kwargs,
+    ) -> str:
+        """Call Ollama for text completion (async)."""
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = await client.post(
+                f"{base_url}/v1/chat/completions",
+                json={"model": model, "messages": messages},
+                headers={"Authorization": "Bearer ollama"},
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+
+    async def async_llm_model_func(
+        prompt, system_prompt=None, history_messages=None, **kwargs
+    ) -> str:
+        """Async Ollama LLM function for modal processors."""
+        return await ollama_complete_async(prompt, system_prompt, llm_model)
+
+    async def async_vision_model_func(
+        prompt,
+        system_prompt=None,
+        history_messages=None,
+        image_data=None,
+        **kwargs,
+    ) -> str:
+        """Async vision model function (falls back to text for Ollama)."""
+        if image_data:
+            prompt = f"[Image provided - base64 data length: {len(image_data)}]\n{prompt}"
+        return await async_llm_model_func(prompt, system_prompt)
+
+    return async_llm_model_func, async_vision_model_func
+
+
 def get_openai_llm_funcs(
     api_key: str,
     base_url: str | None = None,

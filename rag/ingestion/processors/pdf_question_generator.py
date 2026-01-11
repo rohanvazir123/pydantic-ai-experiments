@@ -46,6 +46,7 @@ from typing import Any
 from rag.ingestion.processors.lightrag_utils import (
     LightRAGConfig,
     get_ollama_llm_funcs,
+    get_ollama_llm_funcs_async,
     get_ollama_embedding_func,
     get_openai_llm_funcs,
     get_openai_embedding_func,
@@ -464,6 +465,8 @@ async def process_pdf_simple(
                 return result
 
             llm_func, vision_func = get_ollama_llm_funcs()
+            # Get async versions for modal processors (they require async functions)
+            async_llm_func, async_vision_func = await get_ollama_llm_funcs_async()
             embedding_func = get_ollama_embedding_func()
             logger.info("Using Ollama for LLM and embeddings")
         else:
@@ -472,14 +475,16 @@ async def process_pdf_simple(
                 return result
 
             llm_func, vision_func = get_openai_llm_funcs(api_key, base_url)
+            # OpenAI functions are already async-compatible, use them directly
+            async_llm_func, async_vision_func = llm_func, vision_func
             embedding_func = get_openai_embedding_func(api_key, base_url)
             logger.info("Using OpenAI for LLM and embeddings")
 
-        # Initialize LightRAG
+        # Initialize LightRAG with async LLM function
         os.makedirs(working_dir, exist_ok=True)
         rag = LightRAG(
             working_dir=working_dir,
-            llm_model_func=llm_func,
+            llm_model_func=async_llm_func,  # Use async for LightRAG internals
             embedding_func=embedding_func,
         )
         await rag.initialize_storages()
@@ -589,7 +594,7 @@ async def process_pdf_simple(
         # Process tables
         if table_content:
             logger.info(f"Processing {len(table_content)} tables...")
-            table_processor = TableModalProcessor(lightrag=rag, modal_caption_func=llm_func)
+            table_processor = TableModalProcessor(lightrag=rag, modal_caption_func=async_llm_func)
             for i, table in enumerate(table_content[:3]):  # Limit to first 3
                 try:
                     desc, entity_info, _ = await table_processor.process_multimodal_content(
@@ -606,7 +611,7 @@ async def process_pdf_simple(
         # Process equations
         if equation_content:
             logger.info(f"Processing {len(equation_content)} equations...")
-            equation_processor = EquationModalProcessor(lightrag=rag, modal_caption_func=llm_func)
+            equation_processor = EquationModalProcessor(lightrag=rag, modal_caption_func=async_llm_func)
             for i, eq in enumerate(equation_content[:5]):  # Limit to first 5
                 try:
                     desc, entity_info, _ = await equation_processor.process_multimodal_content(
@@ -644,7 +649,7 @@ async def process_pdf_simple(
         question_prompt = QUESTION_GENERATION_PROMPT.format(context_chunks=context_chunks)
 
         try:
-            response = llm_func(
+            response = await async_llm_func(
                 question_prompt,
                 system_prompt=QUESTION_GENERATION_SYSTEM_PROMPT,
             )
