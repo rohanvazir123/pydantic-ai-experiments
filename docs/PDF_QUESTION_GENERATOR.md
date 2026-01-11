@@ -8,12 +8,13 @@ Process PDFs using MinerU VLM for multimodal extraction and generate research qu
 
 1. [Overview](#1-overview)
 2. [Architecture](#2-architecture)
-3. [Requirements](#3-requirements)
-4. [CLI Usage](#4-cli-usage)
-5. [Output Format](#5-output-format)
-6. [Configuration](#6-configuration)
-7. [API Reference](#7-api-reference)
-8. [Troubleshooting](#8-troubleshooting)
+3. [MinerU Parser (Core Module)](#3-mineru-parser-core-module)
+4. [Requirements](#4-requirements)
+5. [CLI Usage](#5-cli-usage)
+6. [Output Format](#6-output-format)
+7. [Configuration](#7-configuration)
+8. [API Reference](#8-api-reference)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -149,7 +150,465 @@ class ProcessingResult:
 
 ---
 
-## 3. Requirements
+## 3. MinerU Parser (Core Module)
+
+**File:** `rag/ingestion/chunkers/mineru.py`
+
+The MinerU Parser is the central component for multimodal document extraction. It uses the MinerU 2.5 vision-language model to extract text, tables, figures, and layout information from PDFs and images.
+
+### 3.1 Module Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          MINERU PARSER ARCHITECTURE                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              ┌─────────────────┐
+                              │   MinerUParser  │
+                              │                 │
+                              │  ctx: Context   │
+                              │  dpi: int       │
+                              │  _lock: Lock    │
+                              └────────┬────────┘
+                                       │
+           ┌───────────────────────────┼───────────────────────────┐
+           │                           │                           │
+           ▼                           ▼                           ▼
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│    initialize()     │   │    parse_file()     │   │      close()        │
+│                     │   │                     │   │                     │
+│ Load Qwen2VL model  │   │ PDF → Images →      │   │ Release GPU memory  │
+│ Load AutoProcessor  │   │ Extract blocks      │   │ torch.cuda.empty()  │
+│ Init MinerUClient   │   │ Describe figures    │   │                     │
+└─────────────────────┘   └─────────────────────┘   └─────────────────────┘
+                                       │
+                                       ▼
+                          ┌─────────────────────┐
+                          │   ParsedDocument    │
+                          │                     │
+                          │ source_path: str    │
+                          │ total_pages: int    │
+                          │ blocks: list[Block] │
+                          │ metadata: dict      │
+                          └─────────────────────┘
+```
+
+### 3.2 Classes
+
+#### `BlockType` (Enum)
+
+Content block types extracted by MinerU:
+
+```python
+class BlockType(str, Enum):
+    HEADER = "header"           # Section headers
+    TITLE = "title"             # Document/page titles
+    TEXT = "text"               # Regular text paragraphs
+    LIST = "list"               # Bulleted/numbered lists
+    TABLE = "table"             # Tables (HTML format)
+    TABLE_CAPTION = "table_caption"
+    FIGURE = "figure"           # Charts, graphs, diagrams
+    FIGURE_CAPTION = "figure_caption"
+    IMAGE = "image"             # Photos, screenshots
+    EQUATION = "equation"       # Mathematical equations
+    UNKNOWN = "unknown"         # Unrecognized content
+```
+
+#### `ExtractedBlock` (Pydantic Model)
+
+A single content block extracted from a document:
+
+```python
+class ExtractedBlock(BaseModel):
+    block_type: BlockType       # Type of content (text, table, figure, etc.)
+    content: str                # Text content or HTML for tables
+    bbox: list[float] | None    # Normalized bounding box [x1, y1, x2, y2] (0-1)
+    page_number: int            # Page number (1-indexed)
+    confidence: float           # Extraction confidence (0.0-1.0)
+    figure_description: str | None      # VLM-generated description for figures
+    figure_image_base64: str | None     # Base64-encoded cropped figure image
+    metadata: dict[str, Any]    # Additional metadata
+
+    def to_text(self) -> str:
+        """Convert block to plain text for chunking."""
+```
+
+**Example Block:**
+```python
+ExtractedBlock(
+    block_type=BlockType.FIGURE,
+    content="",
+    bbox=[0.1, 0.2, 0.9, 0.6],
+    page_number=3,
+    confidence=1.0,
+    figure_description="A flowchart showing the data pipeline with three stages...",
+    figure_image_base64="iVBORw0KGgoAAAANSUhEUg...",
+    metadata={}
+)
+```
+
+#### `ParsedDocument` (Pydantic Model)
+
+Complete result of parsing a document:
+
+```python
+class ParsedDocument(BaseModel):
+    source_path: str            # Path to source file
+    total_pages: int            # Total number of pages
+    blocks: list[ExtractedBlock]  # All extracted content blocks
+    metadata: dict[str, Any]    # Document metadata (parser, dpi, etc.)
+
+    def to_text(self) -> str:
+        """Convert entire document to plain text."""
+
+    def get_figures(self) -> list[ExtractedBlock]:
+        """Get all figure/image blocks."""
+
+    def get_tables(self) -> list[ExtractedBlock]:
+        """Get all table blocks."""
+```
+
+#### `MinerUContext` (Dataclass)
+
+Internal context holding model references:
+
+```python
+@dataclass
+class MinerUContext:
+    client: MinerUClient | None = None      # MinerU extraction client
+    model: Qwen2VLForConditionalGeneration | None = None  # VLM model
+    processor: AutoProcessor | None = None   # Text/image processor
+    describe_figures: bool = True            # Generate figure descriptions
+    initialized: bool = False                # Initialization status
+```
+
+#### `MinerUParser` (Main Class)
+
+The main parser class for document extraction:
+
+```python
+class MinerUParser:
+    def __init__(self, describe_figures: bool = True, dpi: int = 200):
+        """
+        Args:
+            describe_figures: Generate VLM descriptions for figures
+            dpi: DPI for PDF rendering (higher = better quality, more memory)
+        """
+
+    async def initialize(self) -> bool:
+        """Initialize MinerU models (lazy loading). Returns success status."""
+
+    async def parse_file(self, file_path: str | Path) -> ParsedDocument:
+        """Parse a PDF or image file. Auto-initializes if needed."""
+
+    async def parse_image(self, image: PIL.Image) -> list[ExtractedBlock]:
+        """Parse a PIL Image directly."""
+
+    async def close(self) -> None:
+        """Release GPU memory and resources."""
+```
+
+### 3.3 Internal Methods
+
+#### PDF Processing Pipeline
+
+```python
+def _pdf_to_images(self, pdf_path: str) -> list[Image.Image]:
+    """
+    Convert PDF pages to PIL Images using pypdfium2.
+
+    Process:
+    1. Open PDF with pdfium.PdfDocument()
+    2. For each page:
+       - Calculate scale from DPI (scale = dpi / 72)
+       - Render page to bitmap
+       - Convert bitmap to PIL Image
+    3. Return list of images
+    """
+```
+
+#### Page Extraction
+
+```python
+def _extract_page(self, image: Image.Image, page_number: int) -> list[ExtractedBlock]:
+    """
+    Extract content blocks from a single page image.
+
+    Process:
+    1. Call client.two_step_extract(image)
+       └── Returns: [{type, content, bbox}, ...]
+    2. For each raw block:
+       - Map type string to BlockType enum
+       - If figure/image with bbox:
+         - Crop figure region
+         - Convert to base64
+         - Generate VLM description (if enabled)
+       - Create ExtractedBlock
+    3. Return list of blocks
+    """
+```
+
+#### Figure Description
+
+```python
+def _describe_figure(self, image: Image.Image) -> str:
+    """
+    Generate VLM description for a cropped figure.
+
+    Process:
+    1. Build chat message with image + prompt:
+       "Describe this diagram or figure in detail.
+        Include any text, labels, arrows, and relationships between elements."
+    2. Apply chat template with processor
+    3. Process vision info with qwen_vl_utils
+    4. Generate description with model (max_new_tokens=512)
+    5. Decode and return description text
+    """
+```
+
+#### Figure Cropping
+
+```python
+def _crop_figure(self, image: Image.Image, bbox: list[float], padding: int = 10) -> Image.Image:
+    """
+    Crop a figure from page image using normalized bbox.
+
+    Args:
+        image: Full page image
+        bbox: Normalized coordinates [x1, y1, x2, y2] in range 0-1
+        padding: Extra pixels around crop (default: 10)
+
+    Process:
+    1. Convert normalized coords to pixel coords:
+       left = x1 * width - padding
+       top = y1 * height - padding
+       right = x2 * width + padding
+       bottom = y2 * height + padding
+    2. Crop and return region
+    """
+```
+
+### 3.4 Processing Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        MINERU PROCESSING FLOW                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+MinerUParser.parse_file("document.pdf")
+    │
+    ├──► [1] Check file exists
+    │
+    ├──► [2] Auto-initialize if needed
+    │       └──► initialize()
+    │               ├──► Check CUDA available
+    │               ├──► Load Qwen2VLForConditionalGeneration
+    │               │       └──► "opendatalab/MinerU2.5-2509-1.2B"
+    │               ├──► Load AutoProcessor
+    │               └──► Create MinerUClient(backend="transformers")
+    │
+    ├──► [3] Determine file type
+    │       ├──► .pdf → _parse_pdf_sync()
+    │       └──► .jpg/.png/etc → _parse_image_sync()
+    │
+    ▼
+_parse_pdf_sync(pdf_path)
+    │
+    ├──► [4] Convert PDF to images
+    │       └──► _pdf_to_images()
+    │               └──► pypdfium2: page.render(scale=dpi/72)
+    │
+    ├──► [5] Extract each page
+    │       └──► FOR i, image IN enumerate(images):
+    │               └──► _extract_page(image, page_number=i+1)
+    │                       │
+    │                       ├──► client.two_step_extract(image)
+    │                       │       └──► Returns raw blocks
+    │                       │
+    │                       └──► FOR raw_block IN raw_blocks:
+    │                               ├──► Map type → BlockType
+    │                               │
+    │                               ├──► IF figure/image AND bbox:
+    │                               │       ├──► _crop_figure()
+    │                               │       ├──► _image_to_base64()
+    │                               │       └──► _describe_figure()
+    │                               │               └──► VLM generates description
+    │                               │
+    │                               └──► Create ExtractedBlock
+    │
+    └──► [6] Return ParsedDocument
+            └──► ParsedDocument(
+                    source_path=pdf_path,
+                    total_pages=len(images),
+                    blocks=all_blocks,
+                    metadata={"parser": "mineru", "dpi": self.dpi}
+                )
+```
+
+### 3.5 MinerU Client Two-Step Extract
+
+The `client.two_step_extract(image)` method performs:
+
+1. **Step 1 - Layout Detection:** Identify regions and their types
+2. **Step 2 - Content Recognition:** Extract text/content from each region
+
+Returns list of dictionaries:
+```python
+[
+    {"type": "title", "content": "Chapter 1: Introduction", "bbox": [0.1, 0.05, 0.9, 0.1]},
+    {"type": "text", "content": "This chapter covers...", "bbox": [0.1, 0.12, 0.9, 0.3]},
+    {"type": "figure", "content": "", "bbox": [0.2, 0.35, 0.8, 0.6]},
+    {"type": "table", "content": "<table>...</table>", "bbox": [0.1, 0.65, 0.9, 0.9]},
+]
+```
+
+### 3.6 Usage Examples
+
+#### Basic PDF Parsing
+
+```python
+import asyncio
+from rag.ingestion.chunkers.mineru import MinerUParser
+
+async def parse_pdf():
+    parser = MinerUParser(describe_figures=True, dpi=200)
+    doc = await parser.parse_file("document.pdf")
+
+    print(f"Pages: {doc.total_pages}")
+    print(f"Total blocks: {len(doc.blocks)}")
+
+    # Count by type
+    from collections import Counter
+    types = Counter(b.block_type.value for b in doc.blocks)
+    print(f"Block types: {dict(types)}")
+
+    # Get full text
+    text = doc.to_text()
+    print(f"Text length: {len(text)} chars")
+
+    await parser.close()
+
+asyncio.run(parse_pdf())
+```
+
+#### Extract Figures with Descriptions
+
+```python
+async def extract_figures():
+    parser = MinerUParser(describe_figures=True)
+    doc = await parser.parse_file("document.pdf")
+
+    figures = doc.get_figures()
+    print(f"Found {len(figures)} figures")
+
+    for i, fig in enumerate(figures, 1):
+        print(f"\nFigure {i} (page {fig.page_number}):")
+        print(f"  BBox: {fig.bbox}")
+        print(f"  Description: {fig.figure_description[:100]}...")
+
+        # Save figure image
+        if fig.figure_image_base64:
+            import base64
+            img_data = base64.b64decode(fig.figure_image_base64)
+            with open(f"figure_{i}.png", "wb") as f:
+                f.write(img_data)
+
+    await parser.close()
+```
+
+#### Extract Tables
+
+```python
+async def extract_tables():
+    parser = MinerUParser()
+    doc = await parser.parse_file("document.pdf")
+
+    tables = doc.get_tables()
+    print(f"Found {len(tables)} tables")
+
+    for i, table in enumerate(tables, 1):
+        print(f"\nTable {i} (page {table.page_number}):")
+        print(f"  HTML: {table.content[:200]}...")
+        print(f"  Plain text: {table.to_text()[:200]}...")
+
+    await parser.close()
+```
+
+#### Parse Single Image
+
+```python
+from PIL import Image
+
+async def parse_image():
+    parser = MinerUParser()
+
+    # From file
+    doc = await parser.parse_file("diagram.png")
+
+    # Or from PIL Image directly
+    img = Image.open("diagram.png")
+    blocks = await parser.parse_image(img)
+
+    for block in blocks:
+        print(f"[{block.block_type.value}] {block.content[:50]}...")
+
+    await parser.close()
+```
+
+#### Convenience Function
+
+```python
+from rag.ingestion.chunkers.mineru import parse_document
+
+async def quick_parse():
+    # Auto-manages parser lifecycle
+    doc = await parse_document("document.pdf")
+    print(doc.to_text()[:500])
+```
+
+### 3.7 CLI Usage
+
+```bash
+# Parse PDF and show results
+python -m rag.ingestion.chunkers.mineru document.pdf
+
+# Output:
+# Parsing: document.pdf
+# Using GPU: NVIDIA GeForce RTX 4060
+# Loading MinerU model...
+# PDF has 12 pages
+# Extracted 13 blocks from page 1
+# ...
+# ============================================================
+# RESULTS: 12 pages, 127 blocks
+# ============================================================
+# Block types: {'text': 98, 'header': 12, 'title': 5, 'figure': 7, 'list': 5}
+#
+# First 5 blocks:
+#   [title] CS168: The Modern Algorithmic Toolbox...
+#   [text] Tim Roughgarden & Gregory Valiant...
+#   [header] 1 Consistent Hashing...
+#   ...
+```
+
+### 3.8 Memory and Performance
+
+| Setting | VRAM Usage | Processing Time (12 pages) |
+|---------|------------|---------------------------|
+| `dpi=150` | ~5GB | ~3 min |
+| `dpi=200` (default) | ~6GB | ~5 min |
+| `dpi=300` | ~8GB | ~8 min |
+| `describe_figures=False` | -1GB | -30% |
+
+**Tips:**
+- Use `dpi=150` for faster processing with acceptable quality
+- Set `describe_figures=False` if figure descriptions not needed
+- Call `parser.close()` after processing to free GPU memory
+- Process documents sequentially to avoid OOM errors
+
+---
+
+## 4. Requirements
 
 ### Hardware
 - **CUDA GPU** required for MinerU VLM (tested with RTX 4060)
@@ -186,7 +645,7 @@ curl http://localhost:11434/api/tags
 
 ---
 
-## 4. CLI Usage
+## 5. CLI Usage
 
 ### Basic Usage
 ```bash
@@ -226,7 +685,7 @@ python -m rag.ingestion.processors.pdf_question_generator --simple \
 
 ---
 
-## 5. Output Format
+## 6. Output Format
 
 ### JSON Output (`{pdf_name}_questions.json`)
 ```json
@@ -311,7 +770,7 @@ GENERATED QUESTIONS
 
 ---
 
-## 6. Configuration
+## 7. Configuration
 
 ### LLM Functions
 
@@ -361,7 +820,7 @@ def format_chunks_as_context(chunks: list[ChunkContext], max_chars: int = 12000)
 
 ---
 
-## 7. API Reference
+## 8. API Reference
 
 ### Main Functions
 
@@ -420,7 +879,7 @@ async def get_ollama_llm_funcs_async(
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### 1. "CUDA GPU required for MinerU"
 MinerU VLM requires a CUDA-capable GPU:

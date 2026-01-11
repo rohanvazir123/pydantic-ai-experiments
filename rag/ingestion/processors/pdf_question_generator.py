@@ -217,7 +217,7 @@ def extract_chunks_from_content_list(
     Returns:
         List of ChunkContext objects
     """
-    chunks = []
+    chunks: list[ChunkContext] = []
     entity_map = {}
 
     # Build entity map if provided
