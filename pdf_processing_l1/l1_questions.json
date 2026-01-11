@@ -1,0 +1,32 @@
+{
+  "pdf_path": "C:/Users/rohan/Desktop/csd168/l1.pdf",
+  "title": "l1",
+  "statistics": {
+    "pages": 12,
+    "text_chunks": 12,
+    "tables": 0,
+    "equations": 0,
+    "images": 0
+  },
+  "questions": [
+    {
+      "question": "How does consistent hashing solve the problem of objects relocating when the number of caches changes?",
+      "supported_by": [
+        "c4"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "question": "What is the disadvantage of using a fixed hash function for mapping URLs to caches, and how does it relate to the changing number of caches?",
+      "supported_by": [
+        "c3",
+        "c5"
+      ],
+      "difficulty": "hard"
+    }
+  ],
+  "entities": [
+    "Chunks used: c1, c2, c3, c4, c5, c6, c7, c8, c9, c10"
+  ],
+  "error": null
+}

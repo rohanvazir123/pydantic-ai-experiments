@@ -1,0 +1,38 @@
+{
+  "pdf_path": "test_rag_anything_pdfs_for_question_generation/l3.pdf",
+  "title": "l3",
+  "statistics": {
+    "pages": 6,
+    "text_chunks": 6,
+    "tables": 0,
+    "equations": 0,
+    "images": 0
+  },
+  "questions": [
+    {
+      "question": "What is the purpose of a kd-tree in relation to finding closest points in data?",
+      "supported_by": [
+        "c1"
+      ],
+      "difficulty": "easy"
+    },
+    {
+      "question": "How does one add a point to a kd-tree structure?",
+      "supported_by": [
+        "c4"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "question": "What is the 'Curse of Dimensionality' and how does it affect algorithms in high-dimensional spaces?",
+      "supported_by": [
+        "c5"
+      ],
+      "difficulty": "hard"
+    }
+  ],
+  "entities": [
+    "Chunks used: c1, c2, c3, c4, c5, c6"
+  ],
+  "error": null
+}

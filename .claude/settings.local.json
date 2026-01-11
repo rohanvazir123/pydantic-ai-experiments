@@ -24,7 +24,10 @@
       "Bash(conda activate:*)",
       "Bash(C:/Users/rohan/anaconda3/Scripts/activate.bat pydantic_ai_agents)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(RUN_OLLAMA_TESTS=1 python -m pytest:*)"
+      "Bash(RUN_OLLAMA_TESTS=1 python -m pytest:*)",
+      "Bash(source:*)",
+      "Bash(echo:*)",
+      "Bash(conda list:*)"
     ]
   }
 }

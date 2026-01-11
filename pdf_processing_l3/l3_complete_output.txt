@@ -1,0 +1,222 @@
+================================================================================
+PDF QUESTION GENERATOR OUTPUT
+PDF: l3
+Path: test_rag_anything_pdfs_for_question_generation/l3.pdf
+================================================================================
+
+STATISTICS
+----------------------------------------
+Pages: 6
+Text chunks: 6
+Tables: 0
+Equations: 0
+Images: 0
+
+================================================================================
+CONTEXT CHUNKS (sent to LLM)
+================================================================================
+
+[chunk_id=c1][page=0]
+CS168: The Modern Algorithmic Toolbox
+Lecture #3: Similarity Metrics and kd-Trees
+Tim Roughgarden & Gregory Valiant∗
+April 9, 2024
+1 Similarity Search
+We begin with the basic problem of how to organize/represent a dataset so that similar items
+can be found quickly. There are two slightly different settings in which one might want to
+consider this question:
+1. All the data is present, and one wants to find pairs or sets of similar items from within
+the dataset.
+2. There is a reference dataset that one has plenty of time to process cleverly, but when
+we are given a newdatapoint, we want to very quickly return a similar datapoint from
+the reference dataset. This setting is sometimes referred to as the “nearest neighbor
+search” setting.
+In general, similar techniques/approaches are used for the above two settings, though it
+is worth being aware of the the different objectives.
+There are many real-world applications of similarity search:
+•Similar documents, web pages, genomes, etc. (de-duplication of datasets, plagiarism
+detection in code/essays, detecting mirror web sites, finding similar genes or sequencing
+populations of organisms such as in the human gut “microbiome”).
+•Collaborative filtering: find similar products (based on whether the same set of peo-
+ple purchased them) or individuals (based on purchase history, demographics, web
+browsing behavior, etc.).
+•Machine learning/classification: If we find two similar datapoints, they might have the
+same label....
+∗©2015–2024, Tim Roughgarden and Gregory Valiant. Not to be sold, published, or distributed without
+the authors’ consent.
+1
+
+[chunk_id=c2][page=1]
+•Combining datasets (e.g. in astronomy—different telescopes take pictures of the same
+portions of the sky, maybe in different wavelengths, etc.–very useful to automatically
+aggregate these datasets).
+•Super fast labeling: e.g. in CERN, which bashes particles together and needs to very
+quickly figure out which new particle traces/trajectories are “interesting” and worth
+saving, and which trajectories are just boring/common particles.
+2 Measures of Similarity
+Before talking about algorithms for finding similar objects, we should begin by considering
+several quantifications of what “similarity” means.
+2.1 Jaccard Similarity
+Jaccard similarity, which we denote by J(·,·), is a distance metric between two sets, S, T(or
+two multisets—sets where elements are allowed to appear more than once):
+J(S, T) =|S∩T|
+|S∪T|.
+Equivalently, if we represent our sets (or multisets) S, Tas vectors vS, vT, with the ith index
+of the vector vS(i) equalling the number of times that the ith element is represented in S,
+the above definition becomes:
+J(S, T) =J(vS, vT) =P
+imin(vS(i), vT(i))P
+imax(vS(i), vT(i)).
+This expression is undefined if S, T are both the empty set, in which case we can define the
+distance to be 0.
+Jaccard similarity works quite well in practice, especially for sparse data. For example,
+if we represent documents in terms of the multiset of words they contain, then the Jaccard
+similarity between two documents is often a reasonable measure of their similarity. Simi-
+larly, to estimate similarity between individuals, an online marketplace like Amazon, might
+represent people as multisets of items purchased, movies reviewed, etc., and use Jaccard
+similarity.
+2.2 Euclidean Distance/ ℓ2distance, and ℓpdistance
+Given datapoints in Rd, the Euclidean distance metric, which we are all familiar with, is
+simply
+Deuclidean (x, y) =||x−y||2=vuutdX
+i=1(x(i)−y(i))2.
+2
+
+[chunk_id=c3][page=2]
+More generally, we can define other measures of similarity for points in Rdthat generalize
+the above form; the ℓpdistance is defined as
+||x−y||p= dX
+i=1|x(i)−y(i)|p!1/p
+.
+Ifp= 1, we get “manhattan” distance, and for large p,||x−y||pis more and more dependent
+on the coordinate with maximal difference, with the ℓ∞distance simply being defined as
+max i|x(i)−y(i)|.
+Note that ℓ2distance is rotationally invariant, whereas ℓpforp̸= 2 is not invariant to
+rotations of the space. One consequence of this fact is that if you are using ℓpdistance with
+p̸= 2,you should make sure that the coordinates of your space actually mean something—
+it does not make too much sense to use a distance metric that depends on your choice of
+coordinate axes, if your choice of coordinate axes are arbitrary.
+2.3 Other similarity metrics
+There are many other similarity metrics, including “cosine similarity” which you will see
+on the homework, “edit distance” that measures the similarity between strings (documents,
+genetic sequences, etc.) by asking “how many edits—-i.e. insertions/deletions” does it take
+to get from one string to the other, and “earthmover distance” which measures how much
+effort it takes to turn one datapoint into another (this is often used to measure distance
+between probability distributions, or distance between images). Given all these similarity
+metrics, it is always worth spending some time thinking about which metric is appropriate
+for a given problem.
+2.4 The Relationships between Metrics, and Metric Embeddings
+A very natural mathematical questions is “how different are the different metrics”? A specific
+practical motivation is that many geometric algorithms are designed for Euclidean distance
+(in part because of its rotational invariance). Given a set of points, and a distance metric D, is
+it possible to map the points into a set of point in Rd, such that the original distance between
+points is equal to (or closely approximated by) the Euclidean distance between the images
+of those points? Formally, given a distance metric D, and a set of points X=x1, . . . , x n,
+is it possible to map the points to a set Y=y1, . . . , y n, where yi∈Rd,ideally for a lowish
+dimension d, s.t. for all i, j,
+D(xi, xj)≈ ||yi−yj||2.
+This is known as a “metric embedding”—in this case, an embedding into Rdunder
+Euclidean distance—and there is a whole area of math/geometry/computer science devoted
+to studying when such embeddings exist.
+3
+
+[chunk_id=c4][page=3]
+3 A Datastructure for Similarity Search: kd-trees
+For the remainder of the lecture, we will focus on Euclidean distance, though it is worth
+thinking about how one would apply these ideas to other similarity measures.
+Akd-tree, originally proposed by Bentley (a Stanford undergrad) in 1975, is a space
+partitioning datastructure that allows one to very quickly find the closest point in a dataset
+to a given “query” point. kd-trees perform extremely well when the dimensionality (or
+effective dimensionality) of the data is not too large—usually people say that it works well
+if the dimensionality of the space is less than 20, or if the number of points is at least 2d,
+where dis the dimensionality of the points. There are many variants of kd-trees, and you
+should think of this as a general framework for designing such a datastructure, though the
+specifics can be fruitfully tailored to individual datasets and applications.
+The high-level idea is to build a binary search tree that partitions space. Edges of
+the tree will correspond to subsets of space, and each node, v, in the tree will have two
+data-fields: the index of some dimension iv, and a value mv. Let Svdenote the subset of
+space corresponding to the edge going into a node v, and let S<, S>denote the subsets
+of space corresponding to the two outgoing edges of v. These subsets will be defined as
+S<={x:x∈Sv,s.t.x(iv)< m v}andS>={x:x∈Sv,s.t.x(iv)≥mv}.
+We build this tree as follows:
+Algorithm 1
+kd-Tree
+Given a pair [ S, v], where S=x1, . . . , x nis a set of points with xi∈Rd,
+corresponding to node vin a partially built kd-tree:
+•ifn= 1,then store that point in the node v.vwill now be a leaf of the
+tree.
+•Otherwise, pick a dimension i∈ {1, . . . d}[there are many suggested
+heuristics: picking uniformly at random, choosing in round-robin order,
+choosing the dimension with largest variance, etc.]
+•Letmbe the median of the ith dimension of the points: m=
+median [x1(i), . . . , x n(i)].Store dimension iand median mat node v.
+Partition the set SintoS<andS>according to whether the ith coor-
+dinate of each point exceeds m. [Note that in some implementations,
+“median” might be replaced by “mean” or some other value.]
+•Make two children of v<andv>, and recurse on [ v<, S<] and [ v>, S>].
+Note that the size of the data-structure is linear in the size of the initial pointset. To add
+a point, v, to the structure, one simply goes down the tree, querying the indices of V, and
+comparing them to the various medians until one reaches a leaf, at which point one will then
+4
+
+[chunk_id=c5][page=4]
+split the leaf into two children. The tree will initially be balanced (because we are using the
+medians of the coordinate values), and hence will have depth O(logn).
+Given a node v, if we want to find the closest point in our kd-tree structure to v, we will
+first go down the tree and find the leaf in which vwould end up. We then go back up the
+tree, at each juncture, asking “is it possible that the closest point to vwould have ended up
+down the other path?”. In low dimensions, the answer to this question will often be “no”,
+and the search will be efficient. For example, in 1 dimension, the leaf node corresponding to
+vwill always contain the closest point to v. [Think about why this is the case!] In higher
+dimensions, we might end up needing to explore more leaves. In general, the number of
+leaves explored before finding the closest point will typically scale exponentially with the
+dimension, ie max(2d, n), which is why kd-trees are often ill-suited to very high dimensional
+data.1
+4 The Curse of Dimensionality [might cover at begin-
+ning of Lecture 4 depending on time]
+Why are high-dimensional spaces often hard to deal with? Why do the running times of many
+algorithms scale exponentially with the dimension? One answer is that high-dimensional
+spaces, in some sense, can lack geometry. For example, they can have lots and lots of points
+with the property that all pairs of points have ...
+
+
+================================================================================
+RAW LLM RESPONSE
+================================================================================
+
+{
+  "questions": [
+    {
+      "question": "What is the purpose of a kd-tree in relation to finding closest points in data?",
+      "supported_by": ["c1"],
+      "difficulty": "easy"
+    },
+    {
+      "question": "How does one add a point to a kd-tree structure?",
+      "supported_by": ["c4"],
+      "difficulty": "medium"
+    },
+    {
+      "question": "What is the 'Curse of Dimensionality' and how does it affect algorithms in high-dimensional spaces?",
+      "supported_by": ["c5"],
+      "difficulty": "hard"
+    }
+  ]
+}
+
+================================================================================
+GENERATED QUESTIONS
+================================================================================
+
+1. What is the purpose of a kd-tree in relation to finding closest points in data?
+   Supported by: c1
+   Difficulty: easy
+
+2. How does one add a point to a kd-tree structure?
+   Supported by: c4
+   Difficulty: medium
+
+3. What is the 'Curse of Dimensionality' and how does it affect algorithms in high-dimensional spaces?
+   Supported by: c5
+   Difficulty: hard
+

@@ -292,12 +292,12 @@ async def process_multimodal_content(self, modal_content, content_type, ...):
 
 #### Processor-Specific Behavior
 
-| Processor | `modal_caption_func` | Content Parsing | Special Handling |
-|-----------|---------------------|-----------------|------------------|
-| `ImageModalProcessor` | Vision model (e.g., GPT-4V) | Encodes image to base64 | Handles `img_path`, `image_caption`, `image_footnote` |
-| `TableModalProcessor` | LLM (e.g., GPT-4) | Parses markdown table | Handles `table_body`, `table_caption`, `table_footnote` |
-| `EquationModalProcessor` | LLM (e.g., GPT-4) | Parses LaTeX/text | Handles `text`, `text_format` |
-| `GenericModalProcessor` | LLM (e.g., GPT-4) | String conversion | Handles any `content` field |
+| Processor                | `modal_caption_func`        | Content Parsing         | Special Handling                                        |
+| ------------------------ | --------------------------- | ----------------------- | ------------------------------------------------------- |
+| `ImageModalProcessor`    | Vision model (e.g., GPT-4V) | Encodes image to base64 | Handles `img_path`, `image_caption`, `image_footnote`   |
+| `TableModalProcessor`    | LLM (e.g., GPT-4)           | Parses markdown table   | Handles `table_body`, `table_caption`, `table_footnote` |
+| `EquationModalProcessor` | LLM (e.g., GPT-4)           | Parses LaTeX/text       | Handles `text`, `text_format`                           |
+| `GenericModalProcessor`  | LLM (e.g., GPT-4)           | String conversion       | Handles any `content` field                             |
 
 #### ImageModalProcessor
 
@@ -445,16 +445,16 @@ The `_extract_from_content_list()` method is designed to work with MinerU-style 
 ]
 ```
 
-| Field | Description |
-|-------|-------------|
-| `type` | Content type: `"text"`, `"image"`, `"table"`, `"equation"` |
-| `page_idx` | Page number (0-indexed) |
-| `text` | Text content (for text items) or equation LaTeX |
-| `text_level` | Header level: 0=paragraph, 1=H1, 2=H2, etc. |
-| `img_path` | Absolute path to image file |
-| `image_caption` / `img_caption` | List of caption strings |
-| `table_body` | Markdown table content |
-| `table_caption` | List of table caption strings |
+| Field                           | Description                                                |
+| ------------------------------- | ---------------------------------------------------------- |
+| `type`                          | Content type: `"text"`, `"image"`, `"table"`, `"equation"` |
+| `page_idx`                      | Page number (0-indexed)                                    |
+| `text`                          | Text content (for text items) or equation LaTeX            |
+| `text_level`                    | Header level: 0=paragraph, 1=H1, 2=H2, etc.                |
+| `img_path`                      | Absolute path to image file                                |
+| `image_caption` / `img_caption` | List of caption strings                                    |
+| `table_body`                    | Markdown table content                                     |
+| `table_caption`                 | List of table caption strings                              |
 
 #### Internal Extraction Logic
 
@@ -1355,14 +1355,14 @@ When processing a multimodal item (image, table, equation), the storage flow is:
 
 The `ProcessorMixin` class in `processor.py` provides batch processing that efficiently uses LightRAG storage:
 
-| Method | Storage Used | Operation |
-|--------|--------------|-----------|
-| `_store_chunks_to_lightrag_storage_type_aware()` | `text_chunks`, `chunks_vdb` | Store multimodal chunks for retrieval |
-| `_store_multimodal_main_entities()` | `chunk_entity_relation_graph`, `entities_vdb`, `full_entities` | Store modal entities (e.g., "Table 1") |
-| `_batch_extract_entities_lightrag_style_type_aware()` | `text_chunks`, `llm_response_cache` | Extract entities from chunk text |
-| `_batch_add_belongs_to_relations_type_aware()` | `knowledge_graph_inst`, `relationships_vdb` | Add "belongs_to" edges |
-| `_batch_merge_lightrag_style_type_aware()` | `entities_vdb`, `relationships_vdb`, `chunk_entity_relation_graph`, `full_entities`, `full_relations` | Merge all nodes/edges |
-| `_update_doc_status_with_chunks_type_aware()` | `doc_status` | Track processing status |
+| Method                                                | Storage Used                                                                                          | Operation                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `_store_chunks_to_lightrag_storage_type_aware()`      | `text_chunks`, `chunks_vdb`                                                                           | Store multimodal chunks for retrieval  |
+| `_store_multimodal_main_entities()`                   | `chunk_entity_relation_graph`, `entities_vdb`, `full_entities`                                        | Store modal entities (e.g., "Table 1") |
+| `_batch_extract_entities_lightrag_style_type_aware()` | `text_chunks`, `llm_response_cache`                                                                   | Extract entities from chunk text       |
+| `_batch_add_belongs_to_relations_type_aware()`        | `knowledge_graph_inst`, `relationships_vdb`                                                           | Add "belongs_to" edges                 |
+| `_batch_merge_lightrag_style_type_aware()`            | `entities_vdb`, `relationships_vdb`, `chunk_entity_relation_graph`, `full_entities`, `full_relations` | Merge all nodes/edges                  |
+| `_update_doc_status_with_chunks_type_aware()`         | `doc_status`                                                                                          | Track processing status                |
 
 ##### Storage Example: Processing a Table
 
@@ -1436,17 +1436,17 @@ table_content = {
 
 The following LightRAG functions are called by RAG-Anything during processing:
 
-| LightRAG Function | Called By | Purpose |
-|-------------------|-----------|---------|
-| `extract_entities()` | `BaseModalProcessor._process_chunk_for_extraction()` | Extract entities/relationships from chunk text |
-| `merge_nodes_and_edges()` | `ProcessorMixin._batch_merge_lightrag_style_type_aware()` | Deduplicate and merge graph data |
-| `lightrag._insert_done()` | Multiple methods | Persist all storage changes |
-| `knowledge_graph.upsert_node()` | `BaseModalProcessor._create_entity_and_chunk()` | Add entity to graph |
-| `knowledge_graph.upsert_edge()` | `BaseModalProcessor._process_chunk_for_extraction()` | Add relationship to graph |
-| `entities_vdb.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store entity embedding |
-| `relationships_vdb.upsert()` | `BaseModalProcessor._process_chunk_for_extraction()` | Store relationship embedding |
-| `chunks_vdb.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store chunk embedding |
-| `text_chunks.upsert()` | `BaseModalProcessor._create_entity_and_chunk()` | Store chunk metadata |
+| LightRAG Function               | Called By                                                 | Purpose                                        |
+| ------------------------------- | --------------------------------------------------------- | ---------------------------------------------- |
+| `extract_entities()`            | `BaseModalProcessor._process_chunk_for_extraction()`      | Extract entities/relationships from chunk text |
+| `merge_nodes_and_edges()`       | `ProcessorMixin._batch_merge_lightrag_style_type_aware()` | Deduplicate and merge graph data               |
+| `lightrag._insert_done()`       | Multiple methods                                          | Persist all storage changes                    |
+| `knowledge_graph.upsert_node()` | `BaseModalProcessor._create_entity_and_chunk()`           | Add entity to graph                            |
+| `knowledge_graph.upsert_edge()` | `BaseModalProcessor._process_chunk_for_extraction()`      | Add relationship to graph                      |
+| `entities_vdb.upsert()`         | `BaseModalProcessor._create_entity_and_chunk()`           | Store entity embedding                         |
+| `relationships_vdb.upsert()`    | `BaseModalProcessor._process_chunk_for_extraction()`      | Store relationship embedding                   |
+| `chunks_vdb.upsert()`           | `BaseModalProcessor._create_entity_and_chunk()`           | Store chunk embedding                          |
+| `text_chunks.upsert()`          | `BaseModalProcessor._create_entity_and_chunk()`           | Store chunk metadata                           |
 
 ---
 
@@ -1521,6 +1521,149 @@ def get_vision_model_func(api_key: str, base_url: str = None):
                 **kwargs
             )
     return vision_func
+```
+
+```
+
+This is a much more simplified, cleaner, readable and correct version of the above function
+
+# see generate_description_only()
+    # System prompts for different analysis types
+    PROMPTS["IMAGE_ANALYSIS_SYSTEM"] = (
+        "You are an expert image analyst. Provide detailed, accurate descriptions."
+    )
+    # User prompt for image caption
+
+    # Image analysis prompt template
+    PROMPTS[
+        "vision_prompt"
+    ] = """Please analyze this image in detail and provide a JSON response with the following structure:
+
+    {{
+        "detailed_description": "A comprehensive and detailed visual description of the image following these guidelines:
+        - Describe the overall composition and layout
+        - Identify all objects, people, text, and visual elements
+        - Explain relationships between elements
+        - Note colors, lighting, and visual style
+        - Describe any actions or activities shown
+        - Include technical details if relevant (charts, diagrams, etc.)
+        - Always use specific names instead of pronouns",
+        "entity_info": {{
+            "entity_name": "{entity_name}",
+            "entity_type": "image",
+            "summary": "concise summary of the image content and its significance (max 100 words)"
+        }}
+    }}
+    ...snip...
+        # Build detailed visual analysis prompt with context
+        if context:
+            vision_prompt = PROMPTS.get(
+                "vision_prompt_with_context", PROMPTS["vision_prompt"]
+            ).format(
+                context=context,
+                entity_name=entity_name
+                if entity_name
+                else "unique descriptive name for this image",
+                image_path=image_path,
+                captions=captions if captions else "None",
+                footnotes=footnotes if footnotes else "None",
+            )
+        else:
+            vision_prompt = PROMPTS["vision_prompt"].format(
+                entity_name=entity_name
+                if entity_name
+                else "unique descriptive name for this image",
+                image_path=image_path,
+                captions=captions if captions else "None",
+                foo)
+    ...snip...
+
+from typing import Any, Callable, List, Optional
+
+
+def get_vision_model_func(api_key: str, base_url: Optional[str] = None) -> Callable:
+    """
+    Factory that returns a callable for text-only or vision-enabled LLM inference.
+
+    - Uses `gpt-4o-mini` for text-only requests
+    - Uses `gpt-4o` when image data is provided
+    - Supports optional system prompt, conversation history, and extra kwargs
+    """
+
+    def vision_model(
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        history_messages: Optional[List[dict]] = None,
+        image_data: Optional[str] = None,
+        **kwargs: Any,
+    ):
+        """
+        Execute a model completion.
+
+        Args:
+            prompt: User text prompt
+            system_prompt: Optional system instruction
+            history_messages: Prior chat messages (for text-only mode)
+            image_data: Base64-encoded image (JPEG/PNG)
+            **kwargs: Extra arguments passed to OpenAI API
+
+        Returns:
+            Model completion result
+        """
+
+        # Avoid mutable default arguments
+        history_messages = history_messages or []
+
+        # -------------------------
+        # Vision-enabled request
+        # -------------------------
+        if image_data:
+            messages = []
+
+            if system_prompt:
+                messages.append(
+                    {"role": "system", "content": system_prompt}
+                )
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_data}"
+                            },
+                        },
+                    ],
+                }
+            )
+
+            return openai_complete_if_cache(
+                model="gpt-4o",
+                prompt="",  # Prompt is embedded in messages
+                messages=messages,
+                api_key=api_key,
+                base_url=base_url,
+                **kwargs,
+            )
+
+        # -------------------------
+        # Text-only request
+        # -------------------------
+        return openai_complete_if_cache(
+            model="gpt-4o-mini",
+            prompt=prompt,
+            system_prompt=system_prompt,
+            history_messages=history_messages,
+            api_key=api_key,
+            base_url=base_url,
+            **kwargs,
+        )
+
+    return vision_model
+
 ```
 
 ### Embedding Function

@@ -1,0 +1,225 @@
+================================================================================
+PDF QUESTION GENERATOR OUTPUT
+PDF: l2
+Path: C:/Users/rohan/Desktop/csd168/l2.pdf
+================================================================================
+
+STATISTICS
+----------------------------------------
+Pages: 14
+Text chunks: 14
+Tables: 0
+Equations: 0
+Images: 0
+
+================================================================================
+CONTEXT CHUNKS (sent to LLM)
+================================================================================
+
+[chunk_id=c1][page=0]
+CS168: The Modern Algorithmic Toolbox
+Lecture #2: Approximate Heavy Hitters and the
+Count-Min Sketch
+Tim Roughgarden & Gregory Valiant∗
+April 4, 2024
+1 The Heavy Hitters Problem
+1.1 Finding the Majority Element
+Let’s begin with a problem that many of you have seen before. It’s a common question in
+technical interviews. You’re given as input an array Aof length n, with the promise that it
+has a majority element — a value that is repeated in strictly more than n/2 of the array’s
+entries. Your task is to find the majority element.
+In algorithm design, the usual “holy grail” is a linear-time algorithm. For this problem,
+your post-CS161 toolbox already contains a subroutine that gives a linear-time solution —
+just compute the median of A. (Note that a majority element will be the median element.)
+So let’s be more ambitious: can we compute the majority element with a single left-to-right
+pass through the array? If you haven’t seen it before, here’s the solution:
+•Initialize counter := 0, current := NULL.
+[current stores the frontrunner for the majority element]
+•Fori= 1 to n:
+–If counter == 0:
+[In this case, there is no frontrunner.]
+∗current := A[i]
+∗counter++
+–else if A[i]==current:
+[In this case, our confidence in the current frontrunner goes up.]
+∗©2015–2024, Tim Roughgarden and Gregory Valiant. Not to be sold, published, or distributed without
+the authors’ consent.
+1
+
+[chunk_id=c2][page=1]
+∗counter++
+–else
+[In this case, our confidence in the current frontrunner goes down.]
+∗counter- -
+•Return current
+For example, suppose the input is the array {2,1,1}. The first iteration of the algorithm
+makes “2” the current guess of the majority element, and sets the counter to 1. The next
+element decreases the counter back to 0 (since 1 ̸= 2). The final iteration resets the current
+guess to “1” (with counter value 1), which is indeed the majority element.
+More generally, the algorithm correctly computes the majority element of any array that
+possesses one. We encourage you to formalize a proof of this statement (e.g., by induction
+onn). The intuition is that each entry of Athat contains a non-majority-value can only
+“cancel out” one copy of the majority value. Since more than n/2 of the entries of Acontain
+the majority value, there is guaranteed to be a copy of it left standing at the end of the
+algorithm.
+But so what? It’s a cute algorithm, but isn’t this just a toy problem? It is, but modest
+generalizations of the problem are quite close to problems that people really want to solve
+in practice.
+1.2 The Heavy Hitters Problem
+In the heavy hitters problem, the input is an array Aof length n, and also a parameter k.
+You should think of nas very large (in the hundreds of millions, or billions), and kas modest
+(10, 100, or 1000). The goal is to compute the values that occur in the array at least n/k
+times.1Note that there can be at most ksuch values; and there might be none. The problem
+of computing the majority element corresponds to the heavy hitters problem with k≈2−δ
+for a small value δ >0, and with the additional promise that a majority element exists.
+The heavy hitters problem has lots of applications, as you can imagine. We’ll be more
+specific later when we discuss a concrete solution, but here are some high-level examples:2
+1. Computing popular products. For example, Acould be all of the page views of products
+onamazon.com yesterday. The heavy hitters are then the most frequently viewed
+products.
+2. Computing frequent search queries. For example, Acould be all of the searches on
+Google yesterday. The heavy hitters are then searches made most often.
+1A similar problem is the “top- kproblem,” where the goal is to output the kvalues that occur with the
+highest frequencies. The algorithmic ideas introduced in this lecture are also relevant for the top- kproblem.
+2You wouldn’t expect there to be a majority element in any of these applications, but you might expect
+a non-empty set of heavy hitters when kis 100, 1000, or 10000.
+2
+
+[chunk_id=c3][page=2]
+3. Identifying heavy TCP flows. Here, Ais a list of data packets passing through a
+network switch, each annotated with a source-destination pair of IP addresses. The
+heavy hitters are then the flows that are sending the most traffic. This is useful for,
+among other things, identifying denial-of-service attacks.
+4. Identifying volatile stocks. Here, Ais a list of stock trades.
+It’s easy to think of more. Clearly, it would be nice to have a good algorithm for the heavy
+hitters problem at your disposal for data analysis.
+The problem is easy to solve efficiently if Ais readily available in main memory — just
+sort the array and do a linear scan over the result, outputting a value if and only if it occurs
+(consecutively) at least n/ktimes. After being spoiled by our slick solution for finding a
+majority element, we naturally want to do better. Can we solve the heavy hitters problem
+with a single pass over the array? This question isn’t posed quite correctly, since it allows us
+to cheat: we could make a single pass over the array, make a local copy of it in our working
+memory, and then apply the sorting-based solution to our local copy. Thus what we mean
+is: can we solve the Heavy Hitters problem with a single pass over the array, using only a
+small amount of auxiliary space?3
+1.3 An Impossibility Result
+The following fact might surprise you.
+Fact 1.1 There is noalgorithm that solves the Heavy Hitters problems in one pass while
+using a sublinear amount of auxiliary space.
+We next explain the intuition behind Fact 1.1. We encourage you to devise a formal
+proof, which follows the same lines as the intuition.
+Setk=n/2, so that our responsibility is to output any values that occur at least twice
+in the input array A.4Suppose Ahas the form
+|x1|x2|x3|···|xn−1|| {z }
+setSof distinct elementsy|,
+where x1, . . . , x n−1are an arbitrary set Sof distinct elements (in {1,2, . . . , n2}, say) and the
+final entry ymay or may not be in S. By definition, we need to output yif and only if
+3Rather than thinking of the array Aas an input fully specified in advance, we can alternatively think
+of the elements of Aas a “data stream,” which are fed to a “streaming algorithm” one element at a time.
+One-pass algorithms that use small auxiliary space translate to streaming algorithms that need only small
+working memory. One use case for streaming algorithms is when data arrives at such a fast rate that explicitly
+storing it is absurd. For example, this is often the reality in the motivating example of data packets traveling
+through a network switch. A second use case is when, even though data can be stored in its entirety and
+fully analyzed (perhaps as an overnight job), it’s still useful to perform lightweight analysis on the arriving
+data in real time. The first two applications (popular transactions or search queries) are examples of this.
+4A simple modification of this argument extends the impossibility result to all interesting values of k—
+can you figure it out?
+3
+
+[chunk_id=c4][page=3]
+y∈S. That is, answering membership queries reduces to solving the Heavy Hitters problem.
+By the “membership problem,” we mean the task of preprocessing a set Sto answer queries
+of the form “is y∈S”? (A hash table is the most common solution to this problem.) It is
+intuitive that you cannot correctly answer all membership queries for a set Swithout storing
+S(thereby using linear, rather than constant, space) — if you throw some of Sout, you
+might get a query asking about the part you threw out, and you won’t know the answer.
+It’s not too hard to make this idea precise using the Pigeonhole Principle.5
+1.4 The Approximate Heavy Hitters Problem
+What should we make of Fact 1.1? Should we go home with our tail between our legs? Of
+course not — the applications that motivate the heavy hitters problem are not going away,
+and we still want to come up with non-trivial algorithms for them. In light of Fact 1.1, the
+best-case scenario would be to find a relaxation of the problem that remains relevant for the
+motivating applications and also admits a good solution.6
+In the ϵ-approximate heavy hitters ( ϵ-HH) problem , the input is an array Aof length n
+and user-defined parameters kandϵ. The responsibility of an algorithm is to output a list
+of values such that:
+1. Every value that occurs at leastn
+ktimes in Ais in the list.
+2. Every value in the list occurs at leastn
+k−ϵntimes in A.
+What prevents us from taking ϵ= 0 and solving the exact version of the problem? We allow
+the space used by a solution to grow as1
+ϵ, so as ϵ↓0 the space blows up (as is necessary, by
+Fact 1.1).
+For example, suppose we take ϵ=1
+2k. Then, the algorithm outputs every value with
+frequency count at leastn
+k, and only values with frequency count at leastn
+2k. Thinking back
+to the motivating examples in Section 1.2, such an approximate solution is essentially as
+useful as an exact solution. Space usage O(1
+ϵ) =O(k) is also totally palatable; after all, the
+output of the heavy hitters or ϵ-HH problem already might be as large as kelements.
+2 The Count-Min Sketch
+2.1 Discussion
+This section presents an elegant small-space data structure, the count-min sketch [5], that
+can be used to solve the ϵ-HH problem. There are also several other good solutions to the
+5Somewhat more detail: if you always use sublinear space to store the set S, then you need to reuse
+exactly the same memory contents for two different sets S1andS2. Your membership query answers will be
+the same in both cases, and in one of these cases some of your answers will be wrong.
+6This impossibility result (Fact 1.1) and our response to it (the ϵ-HH problem) serve as reminders that the
+skilled algorithm designer is respectful of but undaunted by impossibility results that limit what algorithms
+can do. For another example, recall your study in CS161 of methods for coping with NP-complete problems.
+4
+
+
+================================================================================
+RAW LLM RESPONSE
+================================================================================
+
+Here is the generated JSON response:
+
+```
+{
+  "questions": [
+    {
+      "question": "What is the relationship between the Count-Min Sketch and the ϵ-HH problem?",
+      "supported_by": ["c5"],
+      "difficulty": "medium"
+    },
+    {
+      "question": "How does the Approximate Heavy Hitters Problem relate to the membership problem?",
+      "supported_by": [],
+      "difficulty": "hard"
+    }
+  ]
+}
+```
+
+Explanation of the generated response:
+
+The above response is a JSON (JavaScript Object Notation) object that contains an array called `questions` which in turn holds two objects. Each object represents a question with three properties: 
+
+- **question**: The text of the question
+- **supported_by**: An optional array of strings, where each string relates to the supporting evidence (in this case, it is assumed to be "c5" or an empty list).
+- **difficulty**: A string representing the difficulty level of the question.
+
+In our generated response:
+
+1. The first question deals with a relationship that we don't have sufficient context to accurately determine based on the text: how does the Count-Min Sketch relate to the ϵ-HH problem? Given this situation, no specific supporting evidence was linked (only "c5" which doesn't correspond to any information in the provided text). The difficulty level is labeled as 'medium'.
+
+2. The second question deals with an application that isn't discussed directly; it discusses how the Approximate Heavy Hitters Problem relates to the membership problem, without clear connections based on the given text. There's no supporting evidence linked (indicating "supported_by": []), so we simply leave a difficulty level as 'hard' in anticipation of someone wanting to answer this question when additional information is available.
+
+Keep in mind that the provided explanation includes some inferences not explicitly made in the original prompt.
+
+================================================================================
+GENERATED QUESTIONS
+================================================================================
+
+1. What is the relationship between the Count-Min Sketch and the ϵ-HH problem?
+   Supported by: c5
+   Difficulty: medium
+
+2. How does the Approximate Heavy Hitters Problem relate to the membership problem?
+   Difficulty: hard
+

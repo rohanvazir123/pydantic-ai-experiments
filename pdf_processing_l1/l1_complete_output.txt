@@ -1,0 +1,199 @@
+================================================================================
+PDF QUESTION GENERATOR OUTPUT
+PDF: l1
+Path: C:/Users/rohan/Desktop/csd168/l1.pdf
+================================================================================
+
+STATISTICS
+----------------------------------------
+Pages: 12
+Text chunks: 12
+Tables: 0
+Equations: 0
+Images: 0
+
+================================================================================
+CONTEXT CHUNKS (sent to LLM)
+================================================================================
+
+[chunk_id=c1][page=0]
+CS168: The Modern Algorithmic Toolbox
+Lecture #1: Introduction and Consistent Hashing
+Tim Roughgarden & Gregory Valiant∗
+April 2, 2024
+1 Consistent Hashing
+1.1 Meta-Discussion
+We’ll talk about the course in general in Section 2, but first let’s discuss a representative
+technical topic: consistent hashing . This topic is representative in the following respects:
+1. As you could guess by the word “hashing,” the topic builds on central algorithmic ideas
+that you’ve already learned (e.g., in CS161) and adapts them to some very real-world
+applications.
+2. The topic is “modern,” in the sense that it is motivated by issues in present-day systems
+that were not present in the applications of yore — consistent hashing is not in your
+parents’ algorithms textbook, because back then it wasn’t needed. The original idea
+isn’t that new anymore (from 1997), but it has been repurposed for new technologies
+several times since then.
+3. Consistent hashing is a “tool” in the sense that it is a non-obvious idea but, once you
+know it, it’s general and flexible enough to potentially prove useful for other problems.
+In this course, we’ll be looking for the following trifecta: (i) ideas that are non-obvious ,
+even to the well-trained computer scientist, so that we’re not wasting your time; (ii)
+conceptually simple — realistically, these are the only ideas that you might remember
+a year or more from now, when you’re a start-up founder, senior software engineer,
+PhD student, etc. (iii) fundamental , meaning that there is some chance that the idea
+will prove useful to you in the future.
+4. The idea has real applications. Consistent hashing gave birth to Akamai, which to this
+day is a major player in the Internet, managing the Web presence of tons of major
+∗©2015–2024, Tim Roughgarden and Gregory Valiant. Not to be sold, published, or distributed without
+the authors’ consent.
+1
+
+[chunk_id=c2][page=1]
+companies. (Quantitatively, Akamai serves 10-30% of all internet traffic, and has a
+market cap >15B.) More recently, consistent hashing has been repurposed to solve
+basic problems in peer-to-peer networks (initially in [4]), including parts of BitTorrent.
+These days, all the cool kids are using consistent hashing for distributed storage —
+made popular by Amazon’s Dynamo [1], the idea is to have a lightweight alternative
+to a database where all the data resides in main memory across multiple machines,
+rather than on disk.
+1.2 Web Caching
+The original motivation for consistent hashing (in 1997) was Web caching. You’re familiar
+with the concept and benefits of caching. In the context of the Web, imagine a browser
+requesting a URL, like amazon.com . Of course, one could request the page from the appro-
+priate Web server. But if the page is being requested over and over again, it’s wasteful to
+repeatedly download it from the server. An obvious idea is to use a Web cache, which stores
+a local copy of recently visited pages. When a URL is requested, one can first check the
+local cache for the page. If the page is in the cache, one can send it directly to the browser
+— no need to contact the original server. If the page is not in the cache, then the page is
+downloaded from a suitable server as before, and the result is both sent to the browser and
+also stored in the local cache for future re-use.
+Caching is good. The most obvious benefit is that the end user experiences a much faster
+response time. But caches also improve the Internet as a whole: fewer requests to far away
+servers means less network traffic, less congestion in the queues at network switches and Web
+servers, fewer dropped packets, etc.
+So clearly we want Web caches. Where should they go? A first idea is to give each
+end user their own cache, maintained on their own machine or device. So if you request
+amazon.com , and you also requested it in the recent past, then the page can be served from
+your local cache. If not, you incur a cache miss, and the page is downloaded and stored in
+your local cache.
+However, we could take the benefit of caching to the next level if we could implement
+a Web cache that is shared by many users , for example, all users of Stanford’s network.
+For example, if you haven’t accessed amazon.com recently but someone “nearby” has (e.g.,
+someone else in the Stanford network), wouldn’t it be cool if you could just use their local
+copy? The benefits should be clear: by aggregating the recent page requests of a large
+number of users, these users will enjoy many more cache hits and consequently less latency.
+Akamai’s goal was to take the daydream of a single logical Web cache shared by tons of users
+and turn it into a viable technology.
+Why isn’t this an easy problem? We focus on one of several obstacles. Namely, remem-
+bering the recently accessed Web pages of a large number of users might take a lot of storage.
+Unless we want to resort to a big, slow, and special-purpose machine for this purpose, this
+means that the aggregated cache might not fit on a single machine. Thus, implementing a
+shared cache at a large scale requires spreading the cache over multiple machines .
+Now suppose a browser requests amazon.com and you want to know if the Web page has
+2
+
+[chunk_id=c3][page=2]
+Figure 1: A hash function maps elements from a (generally large) universe Uto a list of
+“buckets,” such as 32-bit values.
+been cached locally. Suppose the shared cache is spread over 100 machines. Where should
+you look for a cached copy of the Web page? You could poll all 100 caches for a copy, but
+that feels pretty dumb. And with lots of users and caches, this solution crosses the line
+from dumb to infeasible. Wouldn’t it be nice if, instead, given a URL (like amazon.com ) we
+magically knew which cache (like #23) we should look to for a copy?
+1.3 A Simple Solution Using Hashing
+Formally, we want a mapping from URLs to caches. The first thought of a well-trained
+computer scientist might be to use a hash function for this purpose.1Recall that a hash
+function maps elements of a (usually super-big) universe U, like URLs, to “buckets,” such
+as 32-bit values (Figure 1). A “good” hash function hsatisfies two properties:
+1. It is easy to remember and evaluate. Ideally, computing the function involves just a
+few arithmetic operations, and maybe a “mod” operation.
+2. For all practical purposes, hbehaves like a totally random function, spreading data
+out evenly and without noticeable correlation across the possible buckets.
+Designing good hash functions is not easy — hopefully you won’t need to do it yourself
+— but you can regard it as a solved problem. A common approach in practice is to use a
+well-known and well-crafted hash function like MD52— it’s overwhelmingly likely that this
+1We’ll assume that you’ve seen hashing before, probably multiple times. See the course site for review
+videos on the topic.
+2This is built in to most programming languages, or you can just copy the code for it from the Web. Or
+you might want to use something faster and more lightweight (but still well tested), like from the FarmHash
+family.
+3
+
+[chunk_id=c4][page=3]
+function will “behave randomly” for whatever data set you’re working with. Theoretical
+guarantees are possible only for families of hash functions,3which motivates picking a hash
+function at random from a “universal” family (see CS161 for details).
+Taking the existence of a good hash function hfor granted, we can solve the problem of
+mapping URLs to caches. Say there are ncaches, named {0,1,2, . . . , n −1}. Then we can
+just store the Web page with URL xat the cache server named
+h(x) mod n. (1)
+Note that h(x) is probably something like a 32-bit value, representing an integer that is way
+way bigger than n— this is the reason we apply the “mod n” operation to recover the name
+of one of the caches.
+The solution (1) of mapping URLs to caches is an excellent first cut, and it works great
+in many cases. To motivate why we might need a different solution, suppose the number n
+of caches is not static, but rather is changing over time. For example, in Akamai’s early
+days, they were focused on adding as many caches as possible all over the Internet, so n
+was constantly increasing. Web caches can also fail or lose connection to the network, which
+causes nto decrease. In a peer-to-peer context (see Section 1.5), ncorresponds to the number
+of nodes of the network, which is constantly changing as nodes join and depart.
+Suppose we add a new cache and thereby bump up nfrom 100 to 101. For an object x, it
+is very unlikely that h(x) mod 100 and h(x) mod 101 are the same number, Thus, changing
+nforces almost all objects to relocate . This is a disaster for applications where nis constantly
+changing.4
+1.4 Consistent Hashing
+Our criticism of the solution (1) for mapping URLs to caches motivates the goal of consistent
+hashing : we want hash table-type functionality (we can store stuff and retrieve it later) with
+the additional property that almost all objects stay assigned to the same cache even as
+the number nof caches changes. We next give the most popular implementation of this
+functionality [2].5
+3Assuming that the number of buckets nis significantly smaller than the universe size U, every fixed hash
+function has a large pathological data set S⊆Ufor it, with all elements of Scolliding and hashing to the
+same bucket. (Hint: Pigeonhole Principle.)
+4These relocations should remind you of the “rehash” operation in most hash table implementations.
+Recall that as the load factor (# of elements/# buckets) of a hash table increases, the search time degrades.
+So when the load factor gets too big one usually increases the number of buckets (by 2x, say), which requires
+rehashing all of the elements. This is an expensive operation, traditionally justified by arguing it will be
+invoked infrequently. In the Web caching context, the number of buckets is changing all the time, rather
+than infrequently. Also, rehashing an object now involves moving data between machines acr...
+
+
+================================================================================
+RAW LLM RESPONSE
+================================================================================
+
+Here is the JSON output according to the given format:
+
+```
+{
+    "questions": [
+        {
+            "question": "How does consistent hashing solve the problem of objects relocating when the number of caches changes?",
+            "supported_by": ["c4"],
+            "difficulty": "medium"
+        },
+        {
+            "question": "What is the disadvantage of using a fixed hash function for mapping URLs to caches, and how does it relate to the changing number of caches?",
+            "supported_by": ["c3", "c5"],
+            "difficulty": "hard"
+        }
+    ]
+}
+```
+
+Here are explanations for each generated question:
+
+1. The first question relates to consistent hashing (Section 1.4), which is presented as a solution that allows almost all objects to stay assigned to the same cache even when the number of caches changes. The answer to this question could be related to the description in the paragraph starting with "Our criticism...". 
+2. The second question targets problem (Section 1.3) and answers for it could come from there. It is asking about a specific issue that a fixed hash function causes when the number of caches changes.
+
+================================================================================
+GENERATED QUESTIONS
+================================================================================
+
+1. How does consistent hashing solve the problem of objects relocating when the number of caches changes?
+   Supported by: c4
+   Difficulty: medium
+
+2. What is the disadvantage of using a fixed hash function for mapping URLs to caches, and how does it relate to the changing number of caches?
+   Supported by: c3, c5
+   Difficulty: hard
+

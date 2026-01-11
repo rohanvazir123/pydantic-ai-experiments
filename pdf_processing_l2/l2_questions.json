@@ -1,0 +1,29 @@
+{
+  "pdf_path": "C:/Users/rohan/Desktop/csd168/l2.pdf",
+  "title": "l2",
+  "statistics": {
+    "pages": 14,
+    "text_chunks": 14,
+    "tables": 0,
+    "equations": 0,
+    "images": 0
+  },
+  "questions": [
+    {
+      "question": "What is the relationship between the Count-Min Sketch and the ϵ-HH problem?",
+      "supported_by": [
+        "c5"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "question": "How does the Approximate Heavy Hitters Problem relate to the membership problem?",
+      "supported_by": [],
+      "difficulty": "hard"
+    }
+  ],
+  "entities": [
+    "Chunks used: c1, c2, c3, c4, c5, c6, c7, c8, c9, c10"
+  ],
+  "error": null
+}
