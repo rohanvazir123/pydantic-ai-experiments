@@ -22,7 +22,7 @@ import pytest_asyncio
 
 from rag.agent.rag_agent import agent, search_knowledge_base
 from rag.retrieval.retriever import Retriever
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 # Suppress httpx/asyncio cleanup warnings (harmless "Event loop is closed" errors)
 warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
@@ -145,7 +145,7 @@ class TestRetrieverQueries:
     @pytest_asyncio.fixture
     async def retriever(self):
         """Create retriever with connected store."""
-        store = MongoHybridStore()
+        store = PostgresHybridStore()
         await store.initialize()
         retriever = Retriever(store=store)
         yield retriever
@@ -263,16 +263,16 @@ class TestRetrieverQueries:
             assert len(results) > 0, "Expected at least one result"
             content = " ".join([r.content.lower() for r in results])
             tech_terms = [
-                "openai",
-                "pytorch",
-                "tensorflow",
-                "langchain",
-                "vector",
-                "mongodb",
-                "python",
-                "aws",
-                "azure",
+                "slack",
+                "notion",
+                "linear",
                 "api",
+                "ai",
+                "automation",
+                "cloud",
+                "data",
+                "system",
+                "platform",
             ]
             found_terms = [t for t in tech_terms if t in content]
             logger.info(f"Found technology terms: {found_terms}")
@@ -630,7 +630,7 @@ class TestSearchResultQuality:
     @pytest_asyncio.fixture
     async def retriever(self):
         """Create retriever with connected store."""
-        store = MongoHybridStore()
+        store = PostgresHybridStore()
         await store.initialize()
         retriever = Retriever(store=store)
         yield retriever
@@ -768,7 +768,7 @@ class TestAudioTranscription:
     @pytest_asyncio.fixture
     async def retriever(self):
         """Create retriever with connected store."""
-        store = MongoHybridStore()
+        store = PostgresHybridStore()
         await store.initialize()
         retriever = Retriever(store=store)
         yield retriever

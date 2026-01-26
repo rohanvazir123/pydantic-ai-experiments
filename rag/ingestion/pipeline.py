@@ -127,7 +127,7 @@ from rag.ingestion.models import (
     IngestionConfig,
     IngestionResult,
 )
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class DocumentIngestionPipeline:
 
         self.chunker = create_chunker(self.chunker_config)
         self.embedder = create_embedder()
-        self.store = MongoHybridStore()
+        self.store = PostgresHybridStore()
 
         self._initialized = False
 

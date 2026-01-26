@@ -25,11 +25,12 @@ class TestSettings:
         settings = load_settings()
         assert isinstance(settings, Settings)
 
-    def test_settings_has_mongodb_uri(self):
-        """Test that settings has mongodb_uri."""
+    def test_settings_has_database_config(self):
+        """Test that settings has at least one database configured (MongoDB or PostgreSQL)."""
         settings = load_settings()
-        assert settings.mongodb_uri is not None
-        assert len(settings.mongodb_uri) > 0
+        has_mongodb = settings.mongodb_uri is not None and len(settings.mongodb_uri) > 0
+        has_postgres = settings.database_url is not None and len(settings.database_url) > 0
+        assert has_mongodb or has_postgres, "Either MongoDB URI or PostgreSQL URL must be configured"
 
     def test_settings_has_mongodb_database(self):
         """Test that settings has mongodb_database."""

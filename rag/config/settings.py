@@ -109,6 +109,19 @@ class Settings(BaseSettings):
         description="Full-text search index name (must be created in Atlas UI)",
     )
 
+    # PostgreSQL/Neon Configuration (pgvector)
+    database_url: str = Field(
+        default="", description="PostgreSQL connection string (Neon/Supabase/local)"
+    )
+
+    postgres_table_documents: str = Field(
+        default="documents", description="PostgreSQL table for source documents"
+    )
+
+    postgres_table_chunks: str = Field(
+        default="chunks", description="PostgreSQL table for document chunks with embeddings"
+    )
+
     # LLM Configuration (OpenAI-compatible)
     llm_provider: str = Field(
         default="ollama",

@@ -46,7 +46,7 @@ Retriever
     Main retrieval interface orchestrating embeddings and search.
 
     Methods:
-        __init__(store: MongoHybridStore | None, embedder: EmbeddingGenerator | None)
+        __init__(store: PostgresHybridStore | None, embedder: EmbeddingGenerator | None)
             Initialize with optional store and embedder (creates defaults).
 
         async retrieve(
@@ -87,10 +87,10 @@ Search Types
 Usage
 -----
     from rag.retrieval.retriever import Retriever
-    from rag.storage.vector_store.mongo import MongoHybridStore
+    from rag.storage.vector_store.mongo import PostgresHybridStore
 
     # Create retriever
-    store = MongoHybridStore()
+    store = PostgresHybridStore()
     retriever = Retriever(store=store)
 
     # Retrieve documents
@@ -118,7 +118,7 @@ from collections import OrderedDict
 from rag.config.settings import load_settings
 from rag.ingestion.embedder import EmbeddingGenerator
 from rag.ingestion.models import SearchResult
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
@@ -213,18 +213,18 @@ class Retriever:
 
     def __init__(
         self,
-        store: MongoHybridStore | None = None,
+        store: PostgresHybridStore | None = None,
         embedder: EmbeddingGenerator | None = None,
     ):
         """
         Initialize retriever.
 
         Args:
-            store: Vector store instance (creates MongoHybridStore if not provided)
+            store: Vector store instance (creates PostgresHybridStore if not provided)
             embedder: Embedding generator (creates EmbeddingGenerator if not provided)
         """
         self.settings = load_settings()
-        self.store = store or MongoHybridStore()
+        self.store = store or PostgresHybridStore()
         self.embedder = embedder or EmbeddingGenerator()
 
     async def retrieve(
@@ -348,7 +348,7 @@ if __name__ == "__main__":
         _logger.info("=" * 60)
 
         # Create retriever
-        store = MongoHybridStore()
+        store = PostgresHybridStore()
         retriever = Retriever(store=store)
         _logger.info("[Retriever Created]")
         _logger.info(f"  Default match count: {retriever.settings.default_match_count}")

@@ -122,7 +122,7 @@ from rag.config.settings import load_settings
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class RAGState(BaseModel):
     user_id: str | None = None
 
     # Internal storage - lazily initialized
-    _store: MongoHybridStore | None = None
+    _store: PostgresHybridStore | None = None
     _retriever: Retriever | None = None
     _mem0: Mem0Store | None = None
     _initialized: bool = False
@@ -194,7 +194,7 @@ class RAGState(BaseModel):
     async def get_retriever(self) -> Retriever:
         """Get or create the retriever (lazy initialization in current event loop)."""
         if not self._initialized:
-            self._store = MongoHybridStore()
+            self._store = PostgresHybridStore()
             await self._store.initialize()
             self._retriever = Retriever(store=self._store)
             self._mem0 = Mem0Store()
@@ -266,7 +266,7 @@ async def search_knowledge_base(
         else:
             # Fall back to creating new instances (slower, but works without deps)
             logger.info("[PROFILE] Creating NEW store/retriever (no RAGState)")
-            local_store = MongoHybridStore()
+            local_store = PostgresHybridStore()
             retriever = Retriever(store=local_store)
             mem0_store = Mem0Store()
             user_id = None
