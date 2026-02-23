@@ -119,6 +119,21 @@ Output Files
     └──► {pdf_name}_complete_output.txt    # Human-readable with context
 ```
 
+**Source files for this workflow:**
+
+| Symbol | File | Line |
+|--------|------|------|
+| `process_pdf_simple()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L432) | L432 |
+| `process_pdf_with_raganything()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L269) | L269 |
+| `main_async()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L778) | L778 |
+| `get_ollama_llm_funcs()` | [`lightrag_utils.py`](../rag/ingestion/processors/lightrag_utils.py#L42) | L42 |
+| `get_ollama_llm_funcs_async()` | [`lightrag_utils.py`](../rag/ingestion/processors/lightrag_utils.py#L101) | L101 |
+| `get_ollama_embedding_func()` | [`lightrag_utils.py`](../rag/ingestion/processors/lightrag_utils.py#L254) | L254 |
+| `extract_chunks_from_content_list()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L205) | L205 |
+| `extract_chunks_from_lightrag()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L167) | L167 |
+| `format_chunks_as_context()` | [`pdf_question_generator.py`](../rag/ingestion/processors/pdf_question_generator.py#L126) | L126 |
+| `MinerUParser.parse_file()` | [`mineru.py`](../rag/ingestion/chunkers/mineru.py#L409) | L409 |
+
 ### Key Data Structures
 
 ```python
@@ -152,7 +167,7 @@ class ProcessingResult:
 
 ## 3. MinerU Parser (Core Module)
 
-**File:** `rag/ingestion/chunkers/mineru.py`
+**File:** [`rag/ingestion/chunkers/mineru.py`](../rag/ingestion/chunkers/mineru.py)
 
 The MinerU Parser is the central component for multimodal document extraction. It uses the MinerU 2.5 vision-language model to extract text, tables, figures, and layout information from PDFs and images.
 
@@ -192,6 +207,21 @@ The MinerU Parser is the central component for multimodal document extraction. I
                           │ metadata: dict      │
                           └─────────────────────┘
 ```
+
+**Source symbols in [`mineru.py`](../rag/ingestion/chunkers/mineru.py):**
+
+| Symbol | Line |
+|--------|------|
+| `BlockType` | [L70](../rag/ingestion/chunkers/mineru.py#L70) |
+| `ExtractedBlock` | [L86](../rag/ingestion/chunkers/mineru.py#L86) |
+| `ParsedDocument` | [L121](../rag/ingestion/chunkers/mineru.py#L121) |
+| `MinerUContext` | [L151](../rag/ingestion/chunkers/mineru.py#L151) |
+| `MinerUParser` | [L161](../rag/ingestion/chunkers/mineru.py#L161) |
+| `MinerUParser.initialize()` | [L185](../rag/ingestion/chunkers/mineru.py#L185) |
+| `MinerUParser.parse_file()` | [L409](../rag/ingestion/chunkers/mineru.py#L409) |
+| `MinerUParser.parse_image()` | [L471](../rag/ingestion/chunkers/mineru.py#L471) |
+| `MinerUParser.close()` | [L252](../rag/ingestion/chunkers/mineru.py#L252) |
+| `parse_document()` | [L493](../rag/ingestion/chunkers/mineru.py#L493) |
 
 ### 3.2 Classes
 
@@ -824,7 +854,7 @@ def format_chunks_as_context(chunks: list[ChunkContext], max_chars: int = 12000)
 
 ### Main Functions
 
-#### `process_pdf_simple()`
+#### [`process_pdf_simple()`](../rag/ingestion/processors/pdf_question_generator.py#L432)
 ```python
 async def process_pdf_simple(
     pdf_path: str,
@@ -836,7 +866,7 @@ async def process_pdf_simple(
     """Process PDF using MinerU VLM + modal processors."""
 ```
 
-#### `extract_chunks_from_content_list()`
+#### [`extract_chunks_from_content_list()`](../rag/ingestion/processors/pdf_question_generator.py#L205)
 ```python
 def extract_chunks_from_content_list(
     content_list: list[dict],
@@ -846,7 +876,7 @@ def extract_chunks_from_content_list(
     """Extract chunks from MinerU content list."""
 ```
 
-#### `format_chunks_as_context()`
+#### [`format_chunks_as_context()`](../rag/ingestion/processors/pdf_question_generator.py#L126)
 ```python
 def format_chunks_as_context(
     chunks: list[ChunkContext],
@@ -855,9 +885,9 @@ def format_chunks_as_context(
     """Format chunks as structured context for LLM."""
 ```
 
-### LLM Utilities (lightrag_utils.py)
+### LLM Utilities ([`lightrag_utils.py`](../rag/ingestion/processors/lightrag_utils.py))
 
-#### `get_ollama_llm_funcs()`
+#### [`get_ollama_llm_funcs()`](../rag/ingestion/processors/lightrag_utils.py#L42)
 ```python
 def get_ollama_llm_funcs(
     llm_model: str = "llama3.1:8b",
@@ -867,7 +897,7 @@ def get_ollama_llm_funcs(
     """Get sync LLM and vision functions using Ollama."""
 ```
 
-#### `get_ollama_llm_funcs_async()`
+#### [`get_ollama_llm_funcs_async()`](../rag/ingestion/processors/lightrag_utils.py#L101)
 ```python
 async def get_ollama_llm_funcs_async(
     llm_model: str = "llama3.1:8b",
