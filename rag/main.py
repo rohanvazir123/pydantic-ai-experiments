@@ -60,15 +60,12 @@ def validate_config() -> bool:
         settings = load_settings()
         logger.info("  [OK] Settings loaded successfully")
 
-        # Validate MongoDB configuration
-        logger.info("[2/4] Validating MongoDB configuration...")
-        logger.info(f"  MongoDB URI: {mask_credential(settings.mongodb_uri)}")
-        logger.info(f"  Database: {settings.mongodb_database}")
-        logger.info(f"  Documents Collection: {settings.mongodb_collection_documents}")
-        logger.info(f"  Chunks Collection: {settings.mongodb_collection_chunks}")
-        logger.info(f"  Vector Index: {settings.mongodb_vector_index}")
-        logger.info(f"  Text Index: {settings.mongodb_text_index}")
-        logger.info("  [OK] MongoDB configuration present")
+        # Validate PostgreSQL configuration
+        logger.info("[2/4] Validating PostgreSQL configuration...")
+        logger.info(f"  Database URL: {mask_credential(settings.database_url)}")
+        logger.info(f"  Documents Table: {settings.postgres_table_documents}")
+        logger.info(f"  Chunks Table: {settings.postgres_table_chunks}")
+        logger.info("  [OK] PostgreSQL configuration present")
 
         # Validate LLM configuration
         logger.info("[3/4] Validating LLM configuration...")

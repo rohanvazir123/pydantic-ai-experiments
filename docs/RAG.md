@@ -30,7 +30,7 @@ This guide documents how to implement various RAG (Retrieval-Augmented Generatio
 
 ### System Flow
 ```
-Documents → Ingestion Pipeline → Chunking → Embedding → MongoDB → Retrieval → Agent
+Documents → Ingestion Pipeline → Chunking → Embedding → PostgreSQL → Retrieval → Agent
 ```
 
 #### Ingestion Pipeline Workflow
@@ -60,7 +60,7 @@ DocumentIngestionPipeline.__init__() [pipeline.py:32]
     ├──► create_embedder()                      [embedder.py]
     │       └──► EmbeddingGenerator()
     │               └──► openai.AsyncOpenAI()
-    └──► MongoHybridStore()                     [mongo.py]
+    └──► PostgresHybridStore()                     [postgres.py]
             └──► load_settings()
     │
     ▼
@@ -68,7 +68,7 @@ pipeline.ingest_documents() [pipeline.py:366]
     │
     ├──► pipeline.initialize()
     │       └──► store.initialize()
-    │               └──► AsyncMongoClient()
+    │               └──► asyncpg.connect()
     │               └──► client.admin.command("ping")
     │
     ├──► [if clean_before_ingest]:
@@ -139,7 +139,7 @@ embedder.embed_chunks(chunks) [embedder.py:122]                               �
     │       └──► ChunkData(content, embedding, metadata)                      │
     │                                                                         │
     ▼                                                                         │
-store.save_document() [mongo.py:340]                                          │
+store.save_document() [postgres.py:340]                                          │
     │                                                                         │
     └──► documents.insert_one({                                               │
             title, source, content, metadata, created_at                      │
@@ -147,7 +147,7 @@ store.save_document() [mongo.py:340]                                          �
         └──► Returns document_id (ObjectId)                                   │
     │                                                                         │
     ▼                                                                         │
-store.add(chunks, document_id) [mongo.py:61]                                  │
+store.add(chunks, document_id) [postgres.py:61]                                  │
     │                                                                         │
     └──► chunks.insert_many([{                                                │
             document_id, content, embedding, chunk_index,                     │
@@ -173,7 +173,7 @@ pipeline.close()
     ▼
 INGESTION COMPLETE
     ├──► Log: "{N} documents processed, {M} chunks created"
-    └──► Next: Create vector_index and text_index in MongoDB Atlas UI
+    └──► Tables and indexes created automatically by PostgresHybridStore
 ```
 
 #### Ingestion Modes
@@ -243,7 +243,7 @@ ChunkData(content, index, metadata, token_count, embedding=None)
 | Ingestion | `rag/ingestion/pipeline.py` | Multi-format document processing, incremental indexing |
 | Chunking | `rag/ingestion/chunkers/docling.py` | Docling HybridChunker (token-aware, structure-preserving) |
 | Embedding | `rag/ingestion/embedder.py` | OpenAI-compatible API (Ollama, OpenAI) |
-| Storage | `rag/storage/vector_store/mongo.py` | MongoDB Atlas with vector + text search |
+| Storage | `rag/storage/vector_store/postgres.py` | PostgreSQL/pgvector with vector + text search |
 | Retrieval | `rag/retrieval/retriever.py` | Semantic, text, and hybrid (RRF) search |
 | Agent | `rag/agent/rag_agent.py` | Pydantic AI agent with search tool |
 | Config | `rag/config/settings.py` | Environment-based configuration |
@@ -265,7 +265,7 @@ Detailed call graphs showing how class methods interact within each component.
 ```
 Class: Settings(BaseSettings)
 ├── model_config (class var)
-└── [Fields: mongodb_uri, mongodb_database, llm_model, etc.]
+└── [Fields: database_url, postgres_table_documents, llm_model, etc.]
 
 Functions:
 ┌──────────────────────┐
@@ -292,13 +292,13 @@ __init__(config, documents_folder, clean_before_ingest)
     ├──► ChunkingConfig()                   [models.py]
     ├──► create_chunker(config)             [chunkers/docling.py]
     ├──► create_embedder()                  [embedder.py]
-    └──► MongoHybridStore()                 [mongo.py]
+    └──► PostgresHybridStore()                 [postgres.py]
 
 initialize()
-    └──► self.store.initialize()            [mongo.py]
+    └──► self.store.initialize()            [postgres.py]
 
 close()
-    └──► self.store.close()                 [mongo.py]
+    └──► self.store.close()                 [postgres.py]
 
 ingest_documents(progress_callback)
     ├──► self.initialize()
@@ -324,8 +324,8 @@ _ingest_single_document(file_path)
     │       └──► self._compute_file_hash()
     ├──► self.chunker.chunk_document()              [docling.py]
     ├──► self.embedder.embed_chunks()               [embedder.py]
-    ├──► self.store.save_document()                 [mongo.py]
-    └──► self.store.add()                           [mongo.py]
+    ├──► self.store.save_document()                 [postgres.py]
+    └──► self.store.add()                           [postgres.py]
 
 run_ingestion_pipeline() [async main]
     ├──► argparse.ArgumentParser()
@@ -417,44 +417,34 @@ get_embedding_dimension()
 create_embedder(model, **kwargs) ──────────► EmbeddingGenerator(model, **kwargs)
 ```
 
-#### 5. MongoDB Store (`rag/storage/vector_store/mongo.py`)
+#### 5. PostgreSQL Store (`rag/storage/vector_store/postgres.py`)
 
 ```
-Class: MongoHybridStore
+Class: PostgresHybridStore
 
 __init__()
     └──► load_settings()                    [settings.py]
 
 initialize()
-    ├──► AsyncMongoClient()                 [pymongo]
-    └──► client.admin.command("ping")       [pymongo]
+    ├──► asyncpg.connect()                 [asyncpg]
+    └──► CREATE EXTENSION IF NOT EXISTS vector
+    └──► CREATE TABLE IF NOT EXISTS documents, chunks
 
 close()
-    └──► self.client.close()                [pymongo]
+    └──► self.pool.close()                  [asyncpg]
 
 add(chunks, document_id)
     ├──► self.initialize()
-    └──► collection.insert_many()           [pymongo]
+    └──► INSERT INTO chunks (...)           [asyncpg]
 
 semantic_search(query_embedding, match_count)
     ├──► self.initialize()
-    ├──► collection.aggregate([             [pymongo]
-    │       $vectorSearch,
-    │       $lookup,
-    │       $unwind,
-    │       $project
-    │   ])
+    ├──► SELECT ... ORDER BY embedding <=> $1::vector  [asyncpg/pgvector]
     └──► SearchResult()                     [models.py]
 
 text_search(query, match_count)
     ├──► self.initialize()
-    ├──► collection.aggregate([             [pymongo]
-    │       $search,
-    │       $limit,
-    │       $lookup,
-    │       $unwind,
-    │       $project
-    │   ])
+    ├──► SELECT ... WHERE content_tsv @@ plainto_tsquery(...)  [asyncpg]
     └──► SearchResult()                     [models.py]
 
 hybrid_search(query, query_embedding, match_count)
@@ -472,28 +462,26 @@ _reciprocal_rank_fusion(search_results_list, k=60)
 
 save_document(title, source, content, metadata)
     ├──► self.initialize()
-    └──► collection.insert_one()            [pymongo]
+    └──► INSERT INTO documents (...)        [asyncpg]
 
 clean_collections()
     ├──► self.initialize()
-    └──► collection.delete_many()           [pymongo]
+    └──► TRUNCATE TABLE chunks, documents   [asyncpg]
 
 get_document_by_source(source)
     ├──► self.initialize()
-    └──► collection.find_one()              [pymongo]
+    └──► SELECT * FROM documents WHERE source = $1  [asyncpg]
 
 get_document_hash(source)
     └──► self.get_document_by_source()
 
 delete_document_and_chunks(source)
     ├──► self.initialize()
-    ├──► collection.find_one()              [pymongo]
-    ├──► collection.delete_many()           (chunks)
-    └──► collection.delete_one()            (document)
+    └──► DELETE FROM documents WHERE source = $1 (CASCADE deletes chunks)
 
 get_all_document_sources()
     ├──► self.initialize()
-    └──► collection.find()                  [pymongo]
+    └──► SELECT source FROM documents       [asyncpg]
 ```
 
 #### 6. Retriever (`rag/retrieval/retriever.py`)
@@ -529,7 +517,7 @@ Class: Retriever
 
 __init__(store, embedder)
     ├──► load_settings()                    [settings.py]
-    ├──► MongoHybridStore()                 (if store not provided)
+    ├──► PostgresHybridStore()                 (if store not provided)
     └──► EmbeddingGenerator()               (if embedder not provided)
 
 retrieve(query, match_count, search_type, use_cache)
@@ -540,9 +528,9 @@ retrieve(query, match_count, search_type, use_cache)
     ├──► self.embedder.embed_query()        [embedder.py]
     │
     ├──► [based on search_type]:
-    │       ├──► self.store.semantic_search()   [mongo.py]
-    │       ├──► self.store.text_search()       [mongo.py]
-    │       └──► self.store.hybrid_search()     [mongo.py] (default)
+    │       ├──► self.store.semantic_search()   [postgres.py]
+    │       ├──► self.store.text_search()       [postgres.py]
+    │       └──► self.store.hybrid_search()     [postgres.py] (default)
     │
     └──► [if use_cache]:
             └──► _result_cache.set()
@@ -558,7 +546,7 @@ retrieve_as_context(query, match_count, search_type)
     └──► [Format results as string]
 
 close()
-    └──► self.store.close()                 [mongo.py]
+    └──► self.store.close()                 [postgres.py]
 ```
 
 #### 7. RAG Agent (`rag/agent/rag_agent.py`)
@@ -583,13 +571,13 @@ Class: RAGState(BaseModel)
 
 get_retriever()
     ├──► [if not initialized]:
-    │       ├──► MongoHybridStore()         [mongo.py]
+    │       ├──► PostgresHybridStore()         [postgres.py]
     │       ├──► store.initialize()
     │       └──► Retriever(store)           [retriever.py]
     └──► return self._retriever
 
 close()
-    └──► self._store.close()                [mongo.py]
+    └──► self._store.close()                [postgres.py]
 
 ─────────────────────────────────────────────────────────────────
 
@@ -598,7 +586,7 @@ search_knowledge_base(ctx, query, match_count, search_type)
     │
     ├──► [Get deps from ctx]
     │       ├──► RAGState.get_retriever()       (if RAGState in deps)
-    │       └──► MongoHybridStore() + Retriever() (fallback)
+    │       └──► PostgresHybridStore() + Retriever() (fallback)
     │
     ├──► retriever.retrieve_as_context()        [retriever.py]
     │
@@ -647,10 +635,10 @@ agent.run() [pydantic_ai]
 search_knowledge_base() [rag_agent.py:101]
     │
     ├──► RAGState.get_retriever() ─────────────────────────────┐
-    │       ├──► MongoHybridStore() [mongo.py]                  │
+    │       ├──► PostgresHybridStore() [postgres.py]                  │
     │       │       └──► load_settings() [settings.py]          │
     │       ├──► store.initialize()                             │
-    │       │       └──► AsyncMongoClient()                     │
+    │       │       └──► asyncpg.connect()                     │
     │       └──► Retriever(store) [retriever.py]                │
     │               ├──► load_settings()                        │
     │               └──► EmbeddingGenerator() [embedder.py]     │
@@ -667,7 +655,7 @@ retriever.retrieve_as_context() [retriever.py:189]
     │       │       └──► _cached_embed() ──► [CACHE HIT?] ──► return cached
     │       │               └──► client.embeddings.create() [openai]
     │       │
-    │       └──► store.hybrid_search() [mongo.py:238]
+    │       └──► store.hybrid_search() [postgres.py:238]
     │               │
     │               ├──► asyncio.gather(
     │               │       semantic_search(),
@@ -695,7 +683,7 @@ retriever.retrieve_as_context() [retriever.py:189]
 
 | Pattern | Where Used | Purpose |
 |---------|------------|---------|
-| **Lazy Initialization** | `RAGState.get_retriever()`, `MongoHybridStore.initialize()` | Avoid event loop issues, defer connection until needed |
+| **Lazy Initialization** | `RAGState.get_retriever()`, `PostgresHybridStore.initialize()` | Avoid event loop issues, defer connection until needed |
 | **Two-Level Caching** | `@alru_cache` (embeddings), `ResultCache` (search results) | Reduce API calls and DB queries |
 | **Dependency Injection** | `Retriever(store, embedder)` | Testability, flexibility |
 | **Factory Functions** | `create_chunker()`, `create_embedder()` | Encapsulate instantiation logic |
@@ -720,7 +708,7 @@ The RAG agent includes a Streamlit-based web interface for interactive chat with
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  🔍 MongoDB RAG Agent          │  💬 Chat with RAG Agent            │
+│  🔍 RAG Agent                  │  💬 Chat with RAG Agent            │
 │  ─────────────────────         │  ───────────────────────           │
 │  Configuration                 │                                     │
 │  LLM Provider: ollama          │  User: What is the PTO policy?     │
@@ -742,7 +730,7 @@ The RAG agent includes a Streamlit-based web interface for interactive chat with
 
 #### Prerequisites
 
-1. Ensure MongoDB Atlas is configured with vector and text indexes
+1. Ensure PostgreSQL is configured with the pgvector extension and indexes
 2. Ensure Ollama is running (or configure another LLM provider)
 3. Install Streamlit:
 
@@ -845,7 +833,7 @@ st.markdown("""
 | `ModuleNotFoundError: No module named 'rag'` | Run from project root, not `rag/agent/` |
 | App won't start | Check if port 8501 is in use: `lsof -i :8501` |
 | No response from agent | Verify Ollama is running: `ollama list` |
-| MongoDB connection error | Check `MONGODB_URI` in `.env` file |
+| PostgreSQL connection error | Check `DATABASE_URL` in `.env` file |
 | Slow responses | Consider using a faster model or reducing `match_count` |
 
 ### Running with Docker (Optional)
@@ -943,7 +931,7 @@ class SemanticChunker:
 
 **Files to modify**:
 - Create `rag/ingestion/chunkers/hierarchical.py`
-- Update MongoDB schema in `rag/storage/vector_store/mongo.py`
+- Update PostgreSQL schema in `rag/storage/vector_store/postgres.py`
 
 ```python
 # rag/ingestion/chunkers/hierarchical.py
@@ -972,14 +960,11 @@ class HierarchicalChunker:
         return chunks
 ```
 
-**Schema extension** in MongoDB:
-```python
-# Add to chunk document
-{
-    "parent_chunk_id": ObjectId | None,
-    "children_chunk_ids": [ObjectId],
-    "hierarchy_level": 0  # 0=parent, 1=child
-}
+**Schema extension** in PostgreSQL:
+```sql
+-- Add to chunks table
+ALTER TABLE chunks ADD COLUMN parent_chunk_id UUID REFERENCES chunks(id);
+ALTER TABLE chunks ADD COLUMN hierarchy_level INTEGER DEFAULT 0;  -- 0=parent, 1=child
 ```
 
 ### Switching Chunking Strategy
@@ -1087,11 +1072,11 @@ Return only the document numbers in order of relevance (most relevant first):"""
 class Retriever:
     def __init__(
         self,
-        store: MongoHybridStore | None = None,
+        store: PostgresHybridStore | None = None,
         embedder: EmbeddingGenerator | None = None,
         reranker: Reranker | None = None,  # Add this
     ):
-        self.store = store or MongoHybridStore()
+        self.store = store or PostgresHybridStore()
         self.embedder = embedder or EmbeddingGenerator()
         self.reranker = reranker
 
@@ -1214,14 +1199,14 @@ Returns only matched chunks, no surrounding context.
 
 **Files to create/modify**:
 - Create `rag/retrieval/context_expanders.py`
-- Modify `rag/storage/vector_store/mongo.py`
+- Modify `rag/storage/vector_store/postgres.py`
 
 #### 5.1 Adjacent Chunk Expander
 
 ```python
 # rag/retrieval/context_expanders.py
 class AdjacentChunkExpander:
-    def __init__(self, store: MongoHybridStore):
+    def __init__(self, store: PostgresHybridStore):
         self.store = store
 
     async def expand(
@@ -1255,14 +1240,16 @@ class AdjacentChunkExpander:
         return "\n\n".join(c["content"] for c in sorted_chunks)
 ```
 
-#### 5.2 MongoDB Helper Methods
+#### 5.2 PostgreSQL Helper Methods
 
 ```python
-# rag/storage/vector_store/mongo.py
+# rag/storage/vector_store/postgres.py
 async def get_chunk_by_id(self, chunk_id: str) -> dict:
     """Get a single chunk by ID."""
-    collection = self.db[self.settings.mongodb_collection_chunks]
-    return await collection.find_one({"_id": ObjectId(chunk_id)})
+    row = await self._pool.fetchrow(
+        "SELECT * FROM chunks WHERE id = $1", chunk_id
+    )
+    return dict(row) if row else None
 
 async def get_chunks_by_document(
     self,
@@ -1271,13 +1258,14 @@ async def get_chunks_by_document(
     end_index: int
 ) -> list[dict]:
     """Get chunks for a document within index range."""
-    collection = self.db[self.settings.mongodb_collection_chunks]
-    cursor = collection.find({
-        "document_id": ObjectId(document_id),
-        "chunk_index": {"$gte": start_index, "$lt": end_index}
-    }).sort("chunk_index", 1)
-
-    return await cursor.to_list(length=end_index - start_index)
+    rows = await self._pool.fetch(
+        """SELECT * FROM chunks
+           WHERE document_id = $1
+             AND chunk_index >= $2 AND chunk_index < $3
+           ORDER BY chunk_index""",
+        document_id, start_index, end_index
+    )
+    return [dict(r) for r in rows]
 ```
 
 ---
@@ -1290,33 +1278,24 @@ Flat chunk structure, no hierarchical relationships.
 ### Adding Hierarchical Retrieval
 
 **Files to modify**:
-- `rag/storage/vector_store/mongo.py`
+- `rag/storage/vector_store/postgres.py`
 - `rag/ingestion/pipeline.py`
 - `rag/retrieval/retriever.py`
 
 #### 6.1 Schema Extension
 
-```python
-# Extended chunk schema
-{
-    "_id": ObjectId,
-    "document_id": ObjectId,
-    "content": str,
-    "embedding": list[float],
-    "chunk_index": int,
-
-    # New hierarchical fields
-    "parent_chunk_id": ObjectId | None,
-    "children_chunk_ids": list[ObjectId],
-    "hierarchy_level": int,  # 0=leaf, 1=parent, 2=grandparent
-    "section_path": str,  # e.g., "1.2.3" for nested sections
-}
+```sql
+-- Extended chunks table with hierarchical fields
+ALTER TABLE chunks ADD COLUMN parent_chunk_id UUID REFERENCES chunks(id);
+ALTER TABLE chunks ADD COLUMN hierarchy_level INTEGER DEFAULT 0;
+  -- 0=leaf, 1=parent, 2=grandparent
+ALTER TABLE chunks ADD COLUMN section_path TEXT;  -- e.g., "1.2.3" for nested sections
 ```
 
 #### 6.2 Parent Retrieval
 
 ```python
-# rag/storage/vector_store/mongo.py
+# rag/storage/vector_store/postgres.py
 async def semantic_search_with_parents(
     self,
     query_embedding: list[float],
@@ -1383,13 +1362,13 @@ No filtering, returns all matching chunks.
 ### Adding Metadata Filters
 
 **Files to modify**:
-- `rag/storage/vector_store/mongo.py`
+- `rag/storage/vector_store/postgres.py`
 - `rag/agent/rag_agent.py`
 
 #### 7.1 Filter Implementation
 
 ```python
-# rag/storage/vector_store/mongo.py
+# rag/storage/vector_store/postgres.py
 async def semantic_search(
     self,
     query_embedding: list[float],
@@ -1399,37 +1378,43 @@ async def semantic_search(
     # Build filter stage
     filter_stage = self._build_filter_stage(filters) if filters else None
 
-    pipeline = [
-        {
-            "$vectorSearch": {
-                "index": self.settings.mongodb_vector_index,
-                "queryVector": query_embedding,
-                "path": "embedding",
-                "numCandidates": 100,
-                "limit": match_count,
-                "filter": filter_stage  # Add filter here
-            }
-        },
-        # ... rest of pipeline
-    ]
+    where_clause, params = self._build_filter_clause(filters) if filters else ("", [])
+    params_base = [query_embedding, match_count]
+    offset = len(params_base)
+    # Inject filter params after base params
+    all_params = params_base + params
+    sql = f"""
+        SELECT c.*, d.title, d.source,
+               1 - (c.embedding <=> $1::vector) AS similarity
+        FROM chunks c JOIN documents d ON c.document_id = d.id
+        {where_clause}
+        ORDER BY c.embedding <=> $1::vector
+        LIMIT $2
+    """
 
-def _build_filter_stage(self, filters: dict) -> dict:
-    """Convert filter dict to MongoDB filter expression."""
-    mongo_filter = {}
+def _build_filter_clause(self, filters: dict) -> tuple[str, list]:
+    """Convert filter dict to PostgreSQL WHERE clause and params."""
+    conditions: list[str] = []
+    params: list = []
 
     if "source_pattern" in filters:
-        mongo_filter["metadata.source"] = {"$regex": filters["source_pattern"]}
+        params.append(f"%{filters['source_pattern']}%")
+        conditions.append(f"d.source ILIKE ${len(params)}")
 
     if "created_after" in filters:
-        mongo_filter["created_at"] = {"$gte": filters["created_after"]}
+        params.append(filters["created_after"])
+        conditions.append(f"c.created_at >= ${len(params)}")
 
     if "document_type" in filters:
-        mongo_filter["metadata.file_type"] = filters["document_type"]
+        params.append(filters["document_type"])
+        conditions.append(f"c.metadata->>'file_type' = ${len(params)}")
 
     if "title_contains" in filters:
-        mongo_filter["metadata.title"] = {"$regex": filters["title_contains"], "$options": "i"}
+        params.append(f"%{filters['title_contains']}%")
+        conditions.append(f"d.title ILIKE ${len(params)}")
 
-    return mongo_filter
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where, params
 ```
 
 #### 7.2 Agent Tool Update
@@ -1471,7 +1456,7 @@ Single embedding per chunk.
 
 **Files to modify**:
 - `rag/ingestion/embedder.py`
-- `rag/storage/vector_store/mongo.py`
+- `rag/storage/vector_store/postgres.py`
 - `rag/ingestion/pipeline.py`
 
 #### 8.1 Multi-Embedding Generation
@@ -1507,29 +1492,17 @@ class MultiEmbeddingGenerator:
 
 #### 8.2 Extended Storage Schema
 
-```python
-# MongoDB chunk schema with multiple embeddings
-{
-    "_id": ObjectId,
-    "document_id": ObjectId,
-    "content": str,
-
-    # Multiple embeddings
-    "embeddings": {
-        "primary": list[float],    # 768-dim nomic
-        "summary": list[float],    # 1536-dim OpenAI
-        "hyde": list[float],       # Hypothetical doc embedding
-    },
-
-    # Keep backward compatibility
-    "embedding": list[float],  # Alias for primary
-}
+```sql
+-- PostgreSQL chunks table with multiple embedding columns
+ALTER TABLE chunks ADD COLUMN embedding_summary vector(1536);  -- OpenAI summary embedding
+ALTER TABLE chunks ADD COLUMN embedding_hyde vector(768);      -- Hypothetical doc embedding
+-- existing `embedding` column stays as primary (nomic 768-dim)
 ```
 
 #### 8.3 Multi-Vector Search
 
 ```python
-# rag/storage/vector_store/mongo.py
+# rag/storage/vector_store/postgres.py
 async def multi_vector_search(
     self,
     query_embedding: list[float],
@@ -1537,18 +1510,21 @@ async def multi_vector_search(
     match_count: int = 10
 ) -> list[SearchResult]:
     """Search using a specific embedding type."""
-    pipeline = [
-        {
-            "$vectorSearch": {
-                "index": f"vector_index_{embedding_type}",  # Separate index per type
-                "queryVector": query_embedding,
-                "path": f"embeddings.{embedding_type}",
-                "numCandidates": 100,
-                "limit": match_count,
-            }
-        },
-        # ... rest of pipeline
-    ]
+    # Map embedding type to column name
+    col = {
+        "primary": "embedding",
+        "summary": "embedding_summary",
+        "hyde": "embedding_hyde",
+    }.get(embedding_type, "embedding")
+    rows = await self._pool.fetch(
+        f"""SELECT c.*, d.title, d.source,
+                   1 - (c.{col} <=> $1::vector) AS similarity
+            FROM chunks c JOIN documents d ON c.document_id = d.id
+            ORDER BY c.{col} <=> $1::vector
+            LIMIT $2""",
+        query_embedding, match_count
+    )
+    return [self._row_to_search_result(r) for r in rows]
 ```
 
 ---
@@ -1602,7 +1578,7 @@ pip install graphiti-core
                     │                                       │
             ┌───────▼───────┐                     ┌─────────▼─────────┐
             │  Vector RAG   │                     │  Knowledge Graph  │
-            │  (MongoDB)    │                     │  RAG (Graphiti)   │
+            │ (PostgreSQL)  │                     │  RAG (Graphiti)   │
             └───────┬───────┘                     └─────────┬─────────┘
                     │                                       │
             ┌───────▼───────┐                     ┌─────────▼─────────┐
@@ -1870,11 +1846,11 @@ from rag.knowledge_graph.graphiti_store import GraphitiStore
 class Retriever:
     def __init__(
         self,
-        store: MongoHybridStore | None = None,
+        store: PostgresHybridStore | None = None,
         embedder: EmbeddingGenerator | None = None,
         graph_store: GraphitiStore | None = None,  # Add this
     ):
-        self.store = store or MongoHybridStore()
+        self.store = store or PostgresHybridStore()
         self.embedder = embedder or EmbeddingGenerator()
         self.graph_store = graph_store  # Optional graph store
 
@@ -2341,7 +2317,7 @@ LANGFUSE_HOST=http://localhost:3000
 
 ### Phase 3: Context Expansion (Medium Impact, Low Effort)
 1. Create `rag/retrieval/context_expanders.py`
-2. Add `get_chunks_by_document()` to MongoDB store
+2. Add `get_chunks_by_document()` to PostgreSQL store
 3. Update `retrieve_as_context()` to include surrounding chunks
 4. Add context size to settings
 
@@ -2349,14 +2325,14 @@ LANGFUSE_HOST=http://localhost:3000
 
 ### Phase 4: Metadata Filtering (Low Impact, Low Effort)
 1. Add `filters` parameter to search methods
-2. Build filter pipeline in MongoDB
+2. Build filter clause in PostgreSQL
 3. Update agent tool parameters
 
 **Expected improvement**: Domain-specific retrieval
 
 ### Phase 5: Hierarchical Chunking (High Impact, High Effort)
 1. Create `HierarchicalChunker`
-2. Extend MongoDB schema
+2. Extend PostgreSQL schema
 3. Add two-stage retrieval
 4. Update ingestion pipeline
 5. Create data migration script
@@ -2372,10 +2348,10 @@ LANGFUSE_HOST=http://localhost:3000
 | Chunking | `chunkers/docling.py` | `pipeline.py`, `models.py` |
 | Reranking | `retrieval/rerankers.py` (new) | `retriever.py`, `settings.py` |
 | Query Expansion | `retrieval/query_processors.py` (new) | `retriever.py` |
-| Context Expansion | `retrieval/context_expanders.py` (new) | `mongo.py`, `retriever.py` |
-| Parent-Child | `mongo.py`, `pipeline.py` | `chunkers/`, `retriever.py` |
-| Metadata Filtering | `mongo.py` | `rag_agent.py` |
-| Multi-Vector | `embedder.py`, `mongo.py` | `pipeline.py` |
+| Context Expansion | `retrieval/context_expanders.py` (new) | `postgres.py`, `retriever.py` |
+| Parent-Child | `postgres.py`, `pipeline.py` | `chunkers/`, `retriever.py` |
+| Metadata Filtering | `postgres.py` | `rag_agent.py` |
+| Multi-Vector | `embedder.py`, `postgres.py` | `pipeline.py` |
 | Knowledge Graph | `knowledge_graph/graphiti_store.py` (new) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
 | Langfuse Tracing | `observability/langfuse_integration.py` | `rag_agent.py`, `settings.py` |
 | Streamlit Web UI | `agent/streamlit_app.py` | `rag_agent.py` |
@@ -2449,10 +2425,10 @@ python -m pytest rag/tests/test_config.py -v
 # Ingestion model tests (fast, no external deps)
 python -m pytest rag/tests/test_ingestion.py -v
 
-# MongoDB connection & index tests (requires MongoDB)
-python -m pytest rag/tests/test_mongo_store.py -v
+# PostgreSQL connection & index tests (requires PostgreSQL/Neon)
+python -m pytest rag/tests/test_postgres_store.py -v
 
-# RAG agent integration tests (requires MongoDB + Ollama)
+# RAG agent integration tests (requires PostgreSQL + Ollama)
 python -m pytest rag/tests/test_rag_agent.py -v
 python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
 ```
@@ -2518,7 +2494,7 @@ test_agent_flow_verbose (test_agent_flow.py)
 | `_stream_agent()` | Passes `deps` to `agent.iter(..., deps=deps)` |
 | `search_knowledge_base()` | Uses `ctx.deps.retriever` if available (no connection overhead) |
 
-**Performance benefit:** Without shared deps, each tool call creates a new `MongoHybridStore` connection. With shared deps, the connection is reused.
+**Performance benefit:** Without shared deps, each tool call creates a new `PostgresHybridStore` connection. With shared deps, the connection is reused.
 
 ```python
 # Good: Shared store (fast - connection reused)
@@ -2530,7 +2506,7 @@ await state.close()  # Clean up once
 # Without shared deps (slower - new connection per tool call)
 state = RAGState()  # Empty state
 deps = StateDeps(state)
-# ... each tool call creates new MongoHybridStore() ...
+# ... each tool call creates new PostgresHybridStore() ...
 ```
 
 #### Running the Tests
@@ -2583,9 +2559,9 @@ set_verbose_debug(False)  # Disable when done
 |-----------|--------------|--------------|
 | `test_config.py` | Settings loading, credential masking | None |
 | `test_ingestion.py` | Data models, chunking config validation | None |
-| `test_mongo_store.py` | MongoDB connection, vector/text indexes | MongoDB Atlas |
-| `test_rag_agent.py` | Retriever queries, agent integration | MongoDB + Ollama |
-| `test_agent_flow.py` | Agent flow execution, debug prints | MongoDB + Ollama |
+| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL/Neon |
+| `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
+| `test_agent_flow.py` | Agent flow execution, debug prints | PostgreSQL + Ollama |
 
 ### Sample Test Queries (from test_rag_agent.py)
 
@@ -2609,7 +2585,7 @@ The tests query the ingested NeuralFlow AI documents:
 After successful ingestion of `rag/documents/`:
 - `test_config.py`: 13 tests pass
 - `test_ingestion.py`: 14 tests pass
-- `test_mongo_store.py`: 5+ tests pass (some may skip if indexes not created)
+- `test_postgres_store.py`: 18 tests pass
 - `test_rag_agent.py`: All tests pass (requires indexes + Ollama running)
 
 ---
@@ -2628,7 +2604,7 @@ python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_ve
 | Phase | Time | Description |
 |-------|------|-------------|
 | ModelRequestNode (decide) | ~3-5s | LLM deciding to call search tool |
-| CallToolsNode (search) | ~2-3s | MongoDB search + embedding generation |
+| CallToolsNode (search) | ~2-3s | PostgreSQL search + embedding generation |
 | **ModelRequestNode (response)** | **~10-17s** | **LLM generating final response (BOTTLENECK)** |
 | Total | ~15-25s | End-to-end query time |
 
@@ -2729,7 +2705,7 @@ deps = StateDeps(state)
 # Subsequent queries: reuses the same connection
 ```
 
-This avoids creating new MongoDB connections per query.
+This avoids creating new PostgreSQL connections per query.
 
 ### Profiling Commands
 
@@ -2792,7 +2768,7 @@ The RAG system implements two levels of caching to improve response times for re
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    MongoDB Search                            │
+│                   PostgreSQL Search                          │
 │  Uses embedding to find similar documents                   │
 │  Results cached in Result Cache for next time               │
 └─────────────────────────────────────────────────────────────┘
@@ -2956,7 +2932,7 @@ This section provides sample queries for testing the RAG system against differen
 | 9 | What was Q4 2024 revenue? | q4-2024-business-review.pdf | $2.8 million |
 | 10 | What was the quarter-over-quarter growth rate? | q4-2024-business-review.pdf | 47% QoQ growth |
 | 11 | What is the 2025 ARR target? | mission-and-goals.md / q4-2024 | $12 million ARR |
-| 12 | What database is used for vector storage? | technical-architecture-guide.pdf | MongoDB Atlas, vector database |
+| 12 | What database is used for vector storage? | technical-architecture-guide.pdf | PostgreSQL with pgvector |
 | 13 | Describe the technical architecture | technical-architecture-guide.pdf | Microservices, RAG system, APIs |
 
 ### DOCX File Queries (meeting-notes-*.docx)
@@ -2990,7 +2966,7 @@ This section provides sample queries for testing the RAG system against differen
 ```python
 import asyncio
 from rag.retrieval.retriever import Retriever
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 TEST_QUERIES = [
     "What does NeuralFlow AI do?",
@@ -3005,7 +2981,7 @@ TEST_QUERIES = [
 ]
 
 async def run_test_queries():
-    store = MongoHybridStore()
+    store = PostgresHybridStore()
     retriever = Retriever(store=store)
 
     for query in TEST_QUERIES:
@@ -3047,7 +3023,7 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO
 If a query doesn't return expected results:
 
 1. **Verify ingestion**: Run `python -m rag.main --ingest --documents rag/documents --verbose`
-2. **Check document count**: Query MongoDB to verify chunk count
+2. **Check document count**: Query PostgreSQL to verify chunk count
 3. **Test search types separately**:
    ```python
    # Try semantic-only search
@@ -3169,7 +3145,7 @@ All future queries:
 │                   rag/agent/rag_agent.py                    │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  RAGState                                            │    │
-│  │  ├── _store: MongoHybridStore                       │    │
+│  │  ├── _store: PostgresHybridStore                       │    │
 │  │  ├── _retriever: Retriever                          │    │
 │  │  └── _mem0: Mem0Store  ← NEW                        │    │
 │  └─────────────────────────────────────────────────────┘    │
@@ -3192,9 +3168,9 @@ All future queries:
 pip install mem0ai
 ```
 
-### MongoDB Atlas Setup
+### PostgreSQL Setup
 
-Mem0 uses **MongoDB Atlas** as its vector store (same database as RAG). You need to create a vector search index on the `mem0_memories` collection.
+Mem0 uses **PostgreSQL/pgvector** as its vector store (same database as RAG). The `mem0_memories` table is created automatically on first use.
 
 #### Step 1: Enable Mem0 in `.env`
 
@@ -3202,34 +3178,11 @@ Mem0 uses **MongoDB Atlas** as its vector store (same database as RAG). You need
 # Mem0 Configuration
 MEM0_ENABLED=true
 
-# Uses existing MongoDB connection (MONGODB_URI, MONGODB_DATABASE)
+# Uses existing PostgreSQL connection (DATABASE_URL)
 # Uses existing Ollama models (LLM_MODEL, EMBEDDING_MODEL)
 ```
 
-#### Step 2: Create Vector Search Index in MongoDB Atlas
-
-1. Go to **MongoDB Atlas** → Your Cluster → **Atlas Search**
-2. Click **Create Search Index**
-3. Select **JSON Editor** and choose the `mem0_memories` collection
-4. Use index name: `vector_index`
-5. Paste this configuration:
-
-```json
-{
-  "fields": [
-    {
-      "type": "vector",
-      "path": "embedding",
-      "numDimensions": 768,
-      "similarity": "cosine"
-    }
-  ]
-}
-```
-
-> **Note**: `numDimensions` must match your embedding model (768 for `nomic-embed-text`).
-
-#### Step 3: Verify Setup
+#### Step 2: Verify Setup
 
 ```bash
 # Test Mem0 standalone
@@ -3241,18 +3194,17 @@ python -m rag.memory.mem0_store
 | Setting | Environment Variable | Default | Description |
 |---------|---------------------|---------|-------------|
 | `mem0_enabled` | `MEM0_ENABLED` | `false` | Enable/disable Mem0 |
-| `mem0_collection_name` | `MEM0_COLLECTION_NAME` | `mem0_memories` | MongoDB collection for memories |
+| `mem0_collection_name` | `MEM0_COLLECTION_NAME` | `mem0_memories` | Table name for memories |
 
 Mem0 automatically uses these existing settings:
-- `MONGODB_URI` - MongoDB Atlas connection string
-- `MONGODB_DATABASE` - Database name (default: `rag_db`)
+- `DATABASE_URL` - PostgreSQL connection string
 - `LLM_MODEL` - For fact extraction (default: `llama3.1:8b`)
 - `EMBEDDING_MODEL` - For memory vectors (default: `nomic-embed-text:latest`)
 
 ### Database Architecture
 
 ```
-MongoDB Atlas (rag_db)
+PostgreSQL (neondb)
 ├── documents        ← RAG source documents
 ├── chunks           ← RAG chunks with embeddings
 └── mem0_memories    ← Mem0 user memories with embeddings
@@ -3334,7 +3286,7 @@ async def search_knowledge_base(ctx, query, match_count=5, search_type="hybrid")
     # Get user_id from RAGState
     user_id = state.user_id if state else None
 
-    # 1. Get RAG results from MongoDB
+    # 1. Get RAG results from PostgreSQL
     rag_result = await retriever.retrieve_as_context(query, match_count, search_type)
 
     # 2. Get Mem0 user context (if enabled and user_id provided)
@@ -3431,7 +3383,7 @@ We still need the query cache - they serve different purposes:
 
 | Cache              | Purpose                                                 |
 |--------------------|---------------------------------------------------------|
-| Query/Result Cache | Avoids repeated MongoDB searches for identical queries  |
+| Query/Result Cache | Avoids repeated PostgreSQL searches for identical queries |
 | Embedding Cache    | Avoids repeated embedding API calls                     |
 | Mem0               | Stores user-specific memories/preferences (not a cache) |
 

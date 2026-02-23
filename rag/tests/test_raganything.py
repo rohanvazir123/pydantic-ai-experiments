@@ -374,23 +374,10 @@ class TestStorageConfiguration:
 
         assert LightRAG is not None
 
-    def test_mongodb_storage_import(self):
-        """Test that MongoDB storage classes can be imported."""
-        try:
-            from lightrag.kg.mongo_impl import MongoKVStorage, MongoVectorDBStorage
-
-            assert MongoKVStorage is not None
-            assert MongoVectorDBStorage is not None
-        except ImportError:
-            pytest.skip("MongoDB storage not available (pymongo not installed)")
-
     def test_storage_env_vars(self):
         """Test that storage environment variables are recognized."""
-        mongo_uri = os.getenv("MONGO_URI", "")
-        mongo_db = os.getenv("MONGO_DATABASE", "")
-
-        assert isinstance(mongo_uri, str)
-        assert isinstance(mongo_db, str)
+        database_url = os.getenv("DATABASE_URL", "")
+        assert isinstance(database_url, str)
 
 
 # =============================================================================
@@ -406,7 +393,6 @@ class TestLightRAGUtils:
         config = LightRAGConfig()
         assert config.working_dir == "./lightrag_storage"
         assert config.use_ollama is True
-        assert config.use_mongodb is False
 
     def test_lightrag_config_custom(self):
         """Test LightRAGConfig with custom values."""
@@ -414,14 +400,10 @@ class TestLightRAGUtils:
             working_dir="/tmp/test",
             use_ollama=False,
             api_key="test-key",
-            use_mongodb=True,
-            mongo_database="test_db",
         )
         assert config.working_dir == "/tmp/test"
         assert config.use_ollama is False
         assert config.api_key == "test-key"
-        assert config.use_mongodb is True
-        assert config.mongo_database == "test_db"
 
     def test_parse_processor_result_tuple(self):
         """Test parsing tuple result."""

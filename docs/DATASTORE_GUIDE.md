@@ -25,7 +25,6 @@ The RAG system uses a pluggable vector store architecture. All stores implement 
 rag/storage/vector_store/
 ├── __init__.py          # Exports all stores
 ├── base.py              # VectorStore protocol (interface)
-├── mongo.py             # MongoDB Atlas implementation
 └── postgres.py          # PostgreSQL/pgvector implementation
 ```
 
@@ -51,7 +50,7 @@ class VectorStore(Protocol):
 
 ### Extended Interface (HybridStore)
 
-Both MongoDB and PostgreSQL stores implement an extended interface with:
+The PostgreSQL store implements an extended interface with:
 - `initialize()` - Establish connection
 - `close()` - Close connection
 - `add(chunks, document_id)` - Store chunks
@@ -67,26 +66,6 @@ Both MongoDB and PostgreSQL stores implement an extended interface with:
 ---
 
 ## 2. Available Stores
-
-### MongoHybridStore (MongoDB Atlas)
-
-**File:** `rag/storage/vector_store/mongo.py`
-
-**Features:**
-- MongoDB Atlas Vector Search for semantic search
-- MongoDB Atlas Search for full-text search
-- RRF fusion for hybrid search
-- Requires Atlas cluster with indexes
-
-**Usage:**
-```python
-from rag.storage.vector_store import MongoHybridStore
-
-store = MongoHybridStore()
-await store.initialize()
-# ... use store ...
-await store.close()
-```
 
 ### PostgresHybridStore (PostgreSQL/Neon with pgvector)
 
@@ -213,12 +192,12 @@ LIMIT $2;
 
 #### 4. Package Exports (`rag/storage/vector_store/__init__.py`)
 
-Added export for PostgresHybridStore:
+Export for PostgresHybridStore:
 
 ```python
 from rag.storage.vector_store.postgres import PostgresHybridStore
 
-__all__ = ["VectorStore", "MongoHybridStore", "PostgresHybridStore"]
+__all__ = ["VectorStore", "PostgresHybridStore"]
 ```
 
 #### 5. Dependencies (`pyproject.toml`)
@@ -477,7 +456,7 @@ Update `rag/storage/vector_store/__init__.py`:
 ```python
 from rag.storage.vector_store.<name> import <Name>HybridStore
 
-__all__ = ["VectorStore", "MongoHybridStore", "PostgresHybridStore", "<Name>HybridStore"]
+__all__ = ["VectorStore", "PostgresHybridStore", "<Name>HybridStore"]
 ```
 
 ### Step 4: Add Dependencies
@@ -549,9 +528,6 @@ async def test_hybrid_search(store):
 ### Run All Store Tests
 
 ```bash
-# MongoDB store tests
-python -m pytest rag/tests/test_mongo_store.py -v
-
 # PostgreSQL store tests
 python -m pytest rag/tests/test_postgres_store.py -v
 
@@ -640,34 +616,26 @@ asyncio.run(test_full_workflow())
 
 | Variable | Description | Required For |
 |----------|-------------|--------------|
-| `MONGODB_URI` | MongoDB Atlas connection string | MongoDB |
-| `MONGODB_DATABASE` | Database name | MongoDB |
 | `DATABASE_URL` | PostgreSQL connection string | PostgreSQL |
 | `POSTGRES_TABLE_DOCUMENTS` | Documents table name | PostgreSQL |
 | `POSTGRES_TABLE_CHUNKS` | Chunks table name | PostgreSQL |
 | `EMBEDDING_DIMENSION` | Vector dimension (768 for nomic-embed-text) | All |
 
-### Switching Between Stores
-
-The stores are independent - you can use either one:
+### Store Usage
 
 ```python
-# MongoDB
-from rag.storage.vector_store import MongoHybridStore
-store = MongoHybridStore()
-
-# PostgreSQL
 from rag.storage.vector_store import PostgresHybridStore
+
 store = PostgresHybridStore()
 ```
 
-For the retriever and agent, update the store initialization:
+For the retriever and agent:
 
 ```python
 # In rag/retrieval/retriever.py or your code
-from rag.storage.vector_store import PostgresHybridStore  # or MongoHybridStore
+from rag.storage.vector_store import PostgresHybridStore
 
-store = PostgresHybridStore()  # Change store here
+store = PostgresHybridStore()
 retriever = Retriever(store=store)
 ```
 
@@ -697,24 +665,3 @@ results = await store.hybrid_search(query, query_embedding, 10)
 await store.close()
 ```
 
-### MongoDB Store
-
-```python
-from rag.storage.vector_store import MongoHybridStore
-
-# Initialize
-store = MongoHybridStore()
-await store.initialize()
-
-# Save document
-doc_id = await store.save_document(title, source, content, metadata)
-
-# Add chunks
-await store.add(chunks, doc_id)
-
-# Search
-results = await store.hybrid_search(query, query_embedding, 10)
-
-# Cleanup
-await store.close()
-```

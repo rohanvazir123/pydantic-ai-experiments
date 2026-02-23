@@ -59,19 +59,37 @@ def get_settings():
         "llm_api_key": os.getenv("LLM_API_KEY", "ollama"),
         "embedding_model": os.getenv("EMBEDDING_MODEL", "nomic-embed-text:latest"),
         "embedding_dimension": int(os.getenv("EMBEDDING_DIMENSION", "768")),
-        "mongodb_uri": os.getenv("MONGODB_URI", ""),
-        "mongodb_database": os.getenv("MONGODB_DATABASE", "rag_db"),
+        "database_url": os.getenv("DATABASE_URL", ""),
         "mem0_collection": os.getenv("MEM0_COLLECTION_NAME", "mem0_memories"),
+    }
+
+
+def _parse_database_url(database_url: str) -> dict:
+    """Parse DATABASE_URL into connection parameters for pgvector."""
+    from urllib.parse import parse_qs, urlparse
+
+    if not database_url:
+        raise ValueError("DATABASE_URL not configured")
+
+    parsed = urlparse(database_url)
+
+    return {
+        "user": parsed.username or "",
+        "password": parsed.password or "",
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 5432,
+        "dbname": parsed.path.lstrip("/") if parsed.path else "",
     }
 
 
 # --- Mem0 Setup ---
 @st.cache_resource
 def get_mem0():
-    """Initialize Mem0 with MongoDB backend."""
+    """Initialize Mem0 with PostgreSQL/pgvector backend."""
     settings = get_settings()
 
     ollama_base = settings["llm_base_url"].replace("/v1", "")
+    db_config = _parse_database_url(settings["database_url"])
 
     config = {
         "llm": {
@@ -89,12 +107,15 @@ def get_mem0():
             },
         },
         "vector_store": {
-            "provider": "mongodb",
+            "provider": "pgvector",
             "config": {
                 "collection_name": settings["mem0_collection"],
                 "embedding_model_dims": settings["embedding_dimension"],
-                "mongo_uri": settings["mongodb_uri"],
-                "db_name": settings["mongodb_database"],
+                "dbname": db_config["dbname"],
+                "user": db_config["user"],
+                "password": db_config["password"],
+                "host": db_config["host"],
+                "port": db_config["port"],
             },
         },
         "version": "v1.1",
@@ -125,25 +146,46 @@ Be concise and friendly."""
 
 def get_user_context(user_id: str) -> str:
     """Retrieve all memories for the user (simple approach without vector search)."""
-    from pymongo import MongoClient
+    import psycopg2
 
     try:
         settings = get_settings()
-        client = MongoClient(settings["mongodb_uri"])
-        db = client[settings["mongodb_database"]]
-        col = db[settings["mem0_collection"]]
+        db_config = _parse_database_url(settings["database_url"])
 
-        # Get all memories for this user (simple filter, no vector search)
-        docs = list(col.find({"payload.user_id": user_id}).limit(10))
-        client.close()
+        conn = psycopg2.connect(
+            dbname=db_config["dbname"],
+            user=db_config["user"],
+            password=db_config["password"],
+            host=db_config["host"],
+            port=db_config["port"],
+            sslmode="require",
+        )
+        cursor = conn.cursor()
 
-        if not docs:
+        # Mem0 stores memories in a table named after the collection_name
+        table_name = settings["mem0_collection"]
+
+        # Query for memories belonging to this user
+        cursor.execute(
+            f"""
+            SELECT metadata->>'data' as memory_text
+            FROM {table_name}
+            WHERE metadata->>'user_id' = %s
+            LIMIT 10
+            """,
+            (user_id,),
+        )
+
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        if not rows:
             return ""
 
         lines = ["[User Memory Context]"]
-        for doc in docs:
-            payload = doc.get("payload", {})
-            memory_text = payload.get("data", "")
+        for row in rows:
+            memory_text = row[0]
             if memory_text:
                 lines.append(f"- {memory_text}")
 
@@ -163,22 +205,38 @@ def save_to_memory(mem0: Memory, user_id: str, text: str):
 
 def delete_all_memories(user_id: str):
     """Delete all memories for a user (workaround for Mem0 bug)."""
+    import psycopg2
 
-    from dotenv import load_dotenv
-    from pymongo import MongoClient
-
-    load_dotenv()
     settings = get_settings()
+    db_config = _parse_database_url(settings["database_url"])
 
-    client = MongoClient(settings["mongodb_uri"])
-    db = client[settings["mongodb_database"]]
-    col = db[settings["mem0_collection"]]
+    conn = psycopg2.connect(
+        dbname=db_config["dbname"],
+        user=db_config["user"],
+        password=db_config["password"],
+        host=db_config["host"],
+        port=db_config["port"],
+        sslmode="require",
+    )
+    cursor = conn.cursor()
 
-    # Delete all documents where payload.user_id matches
-    result = col.delete_many({"payload.user_id": user_id})
-    client.close()
+    table_name = settings["mem0_collection"]
 
-    return result.deleted_count
+    # Delete all rows where metadata.user_id matches
+    cursor.execute(
+        f"""
+        DELETE FROM {table_name}
+        WHERE metadata->>'user_id' = %s
+        """,
+        (user_id,),
+    )
+
+    deleted_count = cursor.rowcount
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return deleted_count
 
 
 async def run_agent(agent: Agent, prompt: str) -> str:

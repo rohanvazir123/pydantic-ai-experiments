@@ -78,7 +78,7 @@ The RAG system follows a **layered architecture** with five distinct layers:
 +------------------------+    +---------------------------+
 |    INGESTION LAYER     |    |      STORAGE LAYER        |
 |  - Embedder            |    |  - Vector Store Protocol  |
-|  - Chunker Protocol    |    |  - MongoDB Hybrid Store   |
+|  - Chunker Protocol    |    |  - PostgreSQL Hybrid Store|
 |  - Data Models         |    |                           |
 +------------------------+    +---------------------------+
             |                               |
@@ -128,7 +128,7 @@ rag/
 │   └── vector_store/
 │       ├── __init__.py
 │       ├── base.py               # Vector store protocol (20 LOC)
-│       └── mongo.py              # MongoDB implementation (61 LOC)
+│       └── postgres.py           # PostgreSQL/pgvector implementation
 └── docs/
     └── CODE_REVIEW.md            # This document
 ```
@@ -147,9 +147,9 @@ class Settings(BaseSettings):
     llm_model: str = "llama3"
     llm_base_url: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"
-    mongo_uri: str = "mongodb://localhost:27017"
-    mongo_db: str = "rag"
-    mongo_collection: str = "chunks"
+    database_url: str = ""  # PostgreSQL connection string
+    postgres_table_documents: str = "documents"
+    postgres_table_chunks: str = "chunks"
     top_k: int = 5
 ```
 
@@ -265,39 +265,37 @@ class VectorStore(Protocol):
 
 **Assessment:** Well-designed protocol supporting both storage and hybrid search.
 
-#### 4.4.2 MongoHybridStore (`storage/vector_store/mongo.py`)
+#### 4.4.2 PostgresHybridStore (`storage/vector_store/postgres.py`)
 
-**Purpose:** MongoDB Atlas implementation with hybrid vector + text search
+**Purpose:** PostgreSQL/pgvector implementation with hybrid vector + text search
 
 **Key Features:**
-1. **Hybrid Search Pipeline:** Combines vector similarity with text search
-2. **Score Fusion:** `vectorScore + searchScore` for ranking
-3. **Batch Insertion:** Uses `insert_many()` with `ordered=False`
+1. **Hybrid Search:** Combines pgvector cosine similarity with tsvector full-text search
+2. **Score Fusion:** RRF (Reciprocal Rank Fusion) for ranking
+3. **Auto-initialization:** Creates tables and indexes on first connection
 
-**MongoDB Aggregation Pipeline:**
-```python
-[
-    {"$vectorSearch": {...}},      # Vector similarity (top 100)
-    {"$search": {...}},            # Full-text search
-    {"$addFields": {...}},         # Combine scores
-    {"$sort": {"score": -1}},      # Rank by combined score
-    {"$limit": k}                  # Return top-k
-]
+**Search Operations:**
+```sql
+-- Semantic search (pgvector)
+SELECT c.*, 1 - (c.embedding <=> $1::vector) as similarity
+FROM chunks c ORDER BY c.embedding <=> $1::vector LIMIT $2;
+
+-- Text search (tsvector)
+SELECT c.*, ts_rank(c.content_tsv, plainto_tsquery('english', $1)) as similarity
+FROM chunks c WHERE c.content_tsv @@ plainto_tsquery('english', $1);
 ```
 
 **Assessment:**
 | Aspect | Status | Notes |
 |--------|--------|-------|
-| Hybrid Search | Good | Sophisticated pipeline |
-| Score Combination | Basic | Simple addition, could use weighted fusion |
-| Index Names | Hardcoded | "vector_index", "text_index" |
-| Connection | Basic | No pooling or cleanup |
+| Hybrid Search | Good | RRF fusion of vector + text |
+| Score Combination | Good | RRF with configurable k parameter |
+| Indexes | Auto-created | IVFFlat vector, GIN text search |
+| Connection | Good | asyncpg connection pooling |
 
 **Issues:**
-1. No connection pooling
-2. No index existence validation
-3. Hardcoded index names (should be configurable)
-4. No explicit connection cleanup/context manager
+1. IVFFlat index requires data to be present for optimal performance
+2. Could benefit from HNSW index for larger datasets
 
 ---
 
@@ -335,7 +333,7 @@ class Retriever:
 
 **Implementation:**
 ```python
-store = MongoHybridStore()
+store = PostgresHybridStore()
 retriever = Retriever(store)
 
 agent = Agent(
@@ -386,13 +384,13 @@ User Query
     │               │
     ▼               ▼
 ┌───────────┐  ┌────────────────┐
-│ Embedder  │  │ MongoHybridStore│
+│ Embedder  │  │PostgresHybridStore│
 │ .embed()  │  │    .query()     │
 └───────────┘  └────────────────┘
             │
             ▼
 ┌─────────────────────────┐
-│   MongoDB Aggregation   │
+│  PostgreSQL pgvector    │
 │  - Vector Search        │
 │  - Text Search          │
 │  - Score Combination    │
@@ -441,12 +439,12 @@ Document Input
             │
             ▼
 ┌─────────────────────────┐
-│ MongoHybridStore.add()  │
+│ PostgresHybridStore.add()  │
 └───────────┬─────────────┘
             │
             ▼
 ┌─────────────────────────┐
-│  MongoDB Collection     │
+│  PostgreSQL Tables      │
 │  (indexed documents)    │
 └─────────────────────────┘
 ```
@@ -462,7 +460,8 @@ Document Input
 | pydantic | >= 2.0 | Core | Data models, validation |
 | pydantic-settings | >= 2.0 | config | Environment configuration |
 | pydantic-ai | Latest | agent | AI agent framework |
-| pymongo | Latest | storage | MongoDB operations |
+| asyncpg | Latest | storage | Async PostgreSQL driver |
+| pgvector | Latest | storage | pgvector Python client |
 | requests | Latest | ingestion | HTTP requests for embeddings |
 
 ### 6.2 Internal Dependencies
@@ -473,7 +472,7 @@ agent/rag_agent.py
     │   ├── ingestion/embedder.py
     │   │   └── config/settings.py
     │   └── storage/vector_store/base.py (Protocol)
-    └── storage/vector_store/mongo.py
+    └── storage/vector_store/postgres.py
         └── config/settings.py
 
 ingestion/chunkers/docling.py
@@ -484,7 +483,7 @@ ingestion/chunkers/docling.py
 
 | Service | Purpose | Configuration |
 |---------|---------|---------------|
-| MongoDB Atlas | Vector + text storage | `mongo_uri` in settings |
+| PostgreSQL/Neon | Vector + text storage (pgvector) | `database_url` in settings |
 | Local LLM Server | Embedding generation | `llm_base_url` in settings |
 
 ---
@@ -498,9 +497,9 @@ ingestion/chunkers/docling.py
 | `llm_model` | "llama3" | LLM model identifier |
 | `llm_base_url` | "http://localhost:11434" | LLM server endpoint |
 | `embedding_model` | "nomic-embed-text" | Embedding model name |
-| `mongo_uri` | "mongodb://localhost:27017" | MongoDB connection string |
-| `mongo_db` | "rag" | Database name |
-| `mongo_collection` | "chunks" | Collection name |
+| `database_url` | "" | PostgreSQL connection string |
+| `postgres_table_documents` | "documents" | Documents table name |
+| `postgres_table_chunks` | "chunks" | Chunks table name |
 | `top_k` | 5 | Number of results to retrieve |
 
 ### 7.2 Environment Variable Mapping Issue
@@ -509,10 +508,10 @@ The `.env` file in the project root uses different variable names than the `Sett
 
 | .env Variable | Settings Field | Status |
 |---------------|----------------|--------|
-| `MONGODB_URI` | `mongo_uri` | Not mapped |
-| `MONGODB_DATABASE` | `mongo_db` | Not mapped |
-| `LLM_BASE_URL` | `llm_base_url` | Not mapped |
-| `EMBEDDING_MODEL` | `embedding_model` | Not mapped |
+| `DATABASE_URL` | `database_url` | Mapped |
+| `POSTGRES_TABLE_DOCUMENTS` | `postgres_table_documents` | Mapped |
+| `LLM_BASE_URL` | `llm_base_url` | Mapped |
+| `EMBEDDING_MODEL` | `embedding_model` | Mapped |
 
 **Recommendation:** Add `model_config` to Settings class with proper env prefix and aliases.
 
@@ -555,7 +554,7 @@ The `.env` file in the project root uses different variable names than the `Sett
 
 #### Medium
 - Global module-level instantiation in rag_agent.py
-- No connection pooling for MongoDB
+- Connection management could be improved
 - Hardcoded index names
 
 #### Low
@@ -571,15 +570,15 @@ The `.env` file in the project root uses different variable names than the `Sett
 
 | Concern | Severity | Location | Mitigation |
 |---------|----------|----------|------------|
-| Connection string in code | Medium | settings.py | Use env vars |
+| Database URL in code | Medium | settings.py | Use env vars |
 | No input sanitization | Medium | retriever.py | Add validation |
 | HTTP without retry | Low | embedder.py | Add retry logic |
 
 ### 9.2 Recommendations
 
-1. **Secrets Management:** Ensure MongoDB URI and API keys are loaded from environment variables only
+1. **Secrets Management:** Ensure DATABASE_URL and API keys are loaded from environment variables only
 2. **Input Validation:** Sanitize query inputs before passing to database
-3. **Connection Security:** Verify SSL/TLS for MongoDB Atlas connections
+3. **Connection Security:** Verify SSL/TLS for PostgreSQL connections (sslmode=require)
 
 ---
 
@@ -632,7 +631,7 @@ The `.env` file in the project root uses different variable names than the `Sett
    - Use factory pattern for component creation
 
 2. **Connection Management**
-   - Implement connection pooling for MongoDB
+   - Leverage asyncpg connection pooling
    - Add context managers for cleanup
 
 3. **Caching Layer**
@@ -657,7 +656,7 @@ The `.env` file in the project root uses different variable names than the `Sett
 | `ingestion/chunkers/base.py` | 7 | Complete | - |
 | `ingestion/chunkers/docling.py` | 15 | Stub - needs implementation | P0 |
 | `storage/vector_store/base.py` | 20 | Complete | - |
-| `storage/vector_store/mongo.py` | 61 | Needs error handling | P1 |
+| `storage/vector_store/postgres.py` | - | Needs error handling | P1 |
 | `retrieval/retriever.py` | 14 | Needs error handling | P1 |
 | `agent/rag_agent.py` | 17 | Refactor global state | P1 |
 
@@ -669,7 +668,7 @@ rag/
 │   ├── __init__.py
 │   ├── test_embedder.py
 │   ├── test_retriever.py
-│   ├── test_mongo_store.py
+│   ├── test_postgres_store.py
 │   └── conftest.py
 ├── exceptions.py           # Custom exceptions
 ├── logging.py              # Logging configuration

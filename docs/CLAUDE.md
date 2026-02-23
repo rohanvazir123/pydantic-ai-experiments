@@ -1,8 +1,8 @@
-# MongoDB RAG Agent Development Instructions
+# PostgreSQL RAG Agent Development Instructions
 
 ## Project Overview
 
-Agentic RAG system combining MongoDB Atlas Vector Search with Pydantic AI for intelligent document retrieval. Uses Docling for multi-format ingestion (PDF, DOCX, audio via Whisper ASR), async MongoDB operations, and hybrid search (vector + text with RRF). Built with Python 3.13, Ollama for local LLM/embeddings, and type-safe Pydantic models.
+Agentic RAG system combining PostgreSQL/pgvector with Pydantic AI for intelligent document retrieval. Uses Docling for multi-format ingestion (PDF, DOCX, audio via Whisper ASR), async PostgreSQL operations, and hybrid search (vector + text with RRF). Built with Python 3.13, Ollama for local LLM/embeddings, and type-safe Pydantic models.
 
 ## Quick Start
 
@@ -29,10 +29,10 @@ python -m pytest rag/tests/ -v
 
 2. **KISS** (Keep It Simple, Stupid)
    - Prefer simple, readable solutions over clever abstractions
-   - Trust MongoDB RRF - no manual score combination
+   - Trust PostgreSQL RRF - no manual score combination
 
 3. **ASYNC ALL THE WAY**
-   - All I/O operations MUST be async (MongoDB, embeddings, LLM calls)
+   - All I/O operations MUST be async (PostgreSQL, embeddings, LLM calls)
    - Use `asyncio` for concurrent operations
 
 ---
@@ -51,7 +51,7 @@ rag/
 │       └── docling.py        # Docling HybridChunker integration
 ├── storage/
 │   └── vector_store/
-│       └── mongo.py          # MongoHybridStore (vector + text search)
+│       └── postgres.py       # PostgresHybridStore (vector + text search via pgvector)
 ├── retrieval/
 │   └── retriever.py          # Search orchestrator
 ├── agent/
@@ -61,7 +61,7 @@ rag/
 ├── tests/                    # Test suite
 │   ├── test_config.py        # Configuration tests
 │   ├── test_ingestion.py     # Ingestion model tests
-│   ├── test_mongo_store.py   # MongoDB connection & index tests
+│   ├── test_postgres_store.py # PostgreSQL connection & index tests
 │   └── test_rag_agent.py     # RAG agent integration tests
 └── main.py                   # CLI entry point
 ```
@@ -73,8 +73,8 @@ rag/
 ### Environment Variables (.env)
 
 ```bash
-# MongoDB Atlas
-MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/?appName=MyApp
+# PostgreSQL/Neon (pgvector)
+DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
 
 # LLM (Ollama local)
 LLM_PROVIDER=ollama
@@ -90,38 +90,21 @@ EMBEDDING_API_KEY=ollama
 EMBEDDING_DIMENSION=768
 ```
 
-### MongoDB Atlas Setup
+### PostgreSQL/Neon Setup
 
-Create these indexes in Atlas UI on the `chunks` collection:
+The database tables and indexes are created automatically by `PostgresHybridStore.initialize()`. To set up manually:
 
-**Vector Search Index** (`vector_index`):
-```json
-{
-  "fields": [
-    {
-      "type": "vector",
-      "path": "embedding",
-      "numDimensions": 768,
-      "similarity": "cosine"
-    }
-  ]
-}
-```
+1. Enable the pgvector extension:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
 
-**Text Search Index** (`text_index`):
-```json
-{
-  "mappings": {
-    "dynamic": false,
-    "fields": {
-      "content": {
-        "type": "string",
-        "analyzer": "lucene.standard"
-      }
-    }
-  }
-}
-```
+2. Tables are created automatically: `documents` and `chunks`
+
+3. Indexes created automatically:
+   - **IVFFlat vector index** on `chunks.embedding` for cosine similarity search
+   - **GIN index** on `chunks.content_tsv` for full-text search
+   - **B-tree indexes** on `chunks.document_id` and `documents.source`
 
 ---
 
@@ -173,10 +156,10 @@ python -m pytest rag/tests/test_config.py -v
 # Ingestion model tests (fast, no external deps)
 python -m pytest rag/tests/test_ingestion.py -v
 
-# MongoDB connection & index tests (requires MongoDB)
-python -m pytest rag/tests/test_mongo_store.py -v
+# PostgreSQL connection & index tests (requires PostgreSQL/Neon)
+python -m pytest rag/tests/test_postgres_store.py -v
 
-# RAG agent integration tests (requires MongoDB + Ollama)
+# RAG agent integration tests (requires PostgreSQL + Ollama)
 python -m pytest rag/tests/test_rag_agent.py -v
 python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
 ```
@@ -187,8 +170,8 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short 
 |-----------|--------------|--------------|
 | `test_config.py` | Settings loading, credential masking | None |
 | `test_ingestion.py` | Data models, chunking config validation | None |
-| `test_mongo_store.py` | MongoDB connection, vector/text indexes | MongoDB Atlas |
-| `test_rag_agent.py` | Retriever queries, agent integration | MongoDB + Ollama |
+| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL/Neon |
+| `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
 
 ### Sample Test Queries (from test_rag_agent.py)
 
@@ -212,8 +195,8 @@ The tests query the ingested NeuralFlow AI documents:
 After successful ingestion of `rag/documents/`:
 - `test_config.py`: 13 tests pass
 - `test_ingestion.py`: 14 tests pass
-- `test_mongo_store.py`: 5+ tests pass (some may skip if indexes not created)
-- `test_rag_agent.py`: All tests pass (requires indexes + Ollama running)
+- `test_postgres_store.py`: 18 tests pass
+- `test_rag_agent.py`: All tests pass (requires PostgreSQL with data + Ollama running)
 
 ---
 
@@ -237,32 +220,33 @@ make ruff    # Run ruff check --fix and format
 
 ## Architecture
 
-### Two-Collection Pattern
+### Two-Table Pattern
 
-**`documents` collection**: Full document metadata
-```python
-{
-    "_id": ObjectId,
-    "title": str,
-    "source": str,  # Relative file path
-    "content": str,  # Full document text
-    "metadata": dict,
-    "created_at": datetime
-}
+**`documents` table**: Full document metadata
+```sql
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    source TEXT NOT NULL UNIQUE,
+    content TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 ```
 
-**`chunks` collection**: Embedded chunks for search
-```python
-{
-    "_id": ObjectId,
-    "document_id": ObjectId,  # Reference to documents
-    "content": str,
-    "embedding": list[float],  # 768-dim for nomic-embed-text
-    "chunk_index": int,
-    "metadata": dict,
-    "token_count": int,
-    "created_at": datetime
-}
+**`chunks` table**: Embedded chunks for search
+```sql
+CREATE TABLE chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    embedding vector(768),  -- 768-dim for nomic-embed-text
+    chunk_index INTEGER NOT NULL,
+    metadata JSONB DEFAULT '{}',
+    token_count INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+);
 ```
 
 ### Hybrid Search (RRF)
@@ -284,8 +268,8 @@ merged = reciprocal_rank_fusion([semantic_results, text_results])
 
 ## Common Issues
 
-### 1. "Vector index not found"
-Create the `vector_index` in MongoDB Atlas UI (see Configuration section).
+### 1. "pgvector extension not found"
+Enable the pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
 
 ### 2. "callable is not subscriptable"
 Use `Callable` from `collections.abc`:
@@ -335,10 +319,10 @@ Ensure `EMBEDDING_DIMENSION` matches your model:
    ```python
    import asyncio
    from rag.retrieval.retriever import Retriever
-   from rag.storage.vector_store.mongo import MongoHybridStore
+   from rag.storage.vector_store.postgres import PostgresHybridStore
 
    async def test():
-       store = MongoHybridStore()
+       store = PostgresHybridStore()
        retriever = Retriever(store=store)
        results = await retriever.retrieve("What does the company do?")
        for r in results:
@@ -368,10 +352,10 @@ asyncio.run(main())
 ```python
 import asyncio
 from rag.retrieval.retriever import Retriever
-from rag.storage.vector_store.mongo import MongoHybridStore
+from rag.storage.vector_store.postgres import PostgresHybridStore
 
 async def search(query: str):
-    store = MongoHybridStore()
+    store = PostgresHybridStore()
     retriever = Retriever(store=store)
 
     # Get search results

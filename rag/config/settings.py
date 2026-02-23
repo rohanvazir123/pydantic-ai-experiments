@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Settings configuration for MongoDB RAG Agent.
+Settings configuration for RAG Agent.
 
 Module: rag.config.settings
 ===========================
@@ -25,27 +25,6 @@ Classes
 -------
 Settings(BaseSettings)
     Main configuration class with all application settings.
-
-    Attributes:
-        mongodb_uri: str              - MongoDB Atlas connection string
-        mongodb_database: str         - Database name (default: "rag_db")
-        mongodb_collection_documents: str - Documents collection (default: "documents")
-        mongodb_collection_chunks: str    - Chunks collection (default: "chunks")
-        mongodb_vector_index: str     - Vector index name (default: "vector_index")
-        mongodb_text_index: str       - Text index name (default: "text_index")
-        llm_provider: str             - LLM provider (default: "ollama")
-        llm_api_key: str              - LLM API key
-        llm_model: str                - LLM model name (default: "llama3.1:8b")
-        llm_base_url: str | None      - LLM API base URL
-        embedding_provider: str       - Embedding provider (default: "ollama")
-        embedding_api_key: str        - Embedding API key
-        embedding_model: str          - Embedding model (default: "nomic-embed-text:latest")
-        embedding_base_url: str | None - Embedding API base URL
-        embedding_dimension: int      - Vector dimension (default: 768)
-        default_match_count: int      - Default search results (default: 10)
-        langfuse_enabled: bool        - Enable Langfuse tracing (default: False)
-        mem0_enabled: bool            - Enable Mem0 memory layer (default: False)
-        mem0_collection_name: str     - MongoDB collection for Mem0 (default: "mem0_memories")
 
 Functions
 ---------
@@ -64,12 +43,8 @@ Usage
 -----
     from rag.config.settings import settings, load_settings, mask_credential
 
-    # Use singleton
-    print(settings.mongodb_database)
-
-    # Or load fresh instance
     s = load_settings()
-    print(mask_credential(s.mongodb_uri))
+    print(mask_credential(s.database_url))
 """
 
 from dotenv import load_dotenv
@@ -84,29 +59,6 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
-    )
-
-    # MongoDB Configuration
-    mongodb_uri: str = Field(default="", description="MongoDB Atlas connection string")
-
-    mongodb_database: str = Field(default="rag_db", description="MongoDB database name")
-
-    mongodb_collection_documents: str = Field(
-        default="documents", description="Collection for source documents"
-    )
-
-    mongodb_collection_chunks: str = Field(
-        default="chunks", description="Collection for document chunks with embeddings"
-    )
-
-    mongodb_vector_index: str = Field(
-        default="vector_index",
-        description="Vector search index name (must be created in Atlas UI)",
-    )
-
-    mongodb_text_index: str = Field(
-        default="text_index",
-        description="Full-text search index name (must be created in Atlas UI)",
     )
 
     # PostgreSQL/Neon Configuration (pgvector)
@@ -201,7 +153,7 @@ class Settings(BaseSettings):
     )
 
     mem0_collection_name: str = Field(
-        default="mem0_memories", description="MongoDB collection for Mem0 memories"
+        default="mem0_memories", description="Collection name for Mem0 memories"
     )
 
     # Neo4j Configuration
@@ -257,8 +209,8 @@ def load_settings() -> Settings:
         return Settings()
     except Exception as e:
         error_msg = f"Failed to load settings: {e}"
-        if "mongodb_uri" in str(e).lower():
-            error_msg += "\nMake sure to set MONGODB_URI in your .env file"
+        if "database_url" in str(e).lower():
+            error_msg += "\nMake sure to set DATABASE_URL in your .env file"
         raise ValueError(error_msg) from e
 
 
@@ -292,13 +244,10 @@ if __name__ == "__main__":
     _logger.info("[Settings Loaded Successfully]")
 
     # Display configuration (with masked credentials)
-    _logger.info("--- MongoDB Configuration ---")
-    _logger.info(f"  URI: {mask_credential(s.mongodb_uri)}")
-    _logger.info(f"  Database: {s.mongodb_database}")
-    _logger.info(f"  Documents Collection: {s.mongodb_collection_documents}")
-    _logger.info(f"  Chunks Collection: {s.mongodb_collection_chunks}")
-    _logger.info(f"  Vector Index: {s.mongodb_vector_index}")
-    _logger.info(f"  Text Index: {s.mongodb_text_index}")
+    _logger.info("--- PostgreSQL Configuration ---")
+    _logger.info(f"  Database URL: {mask_credential(s.database_url)}")
+    _logger.info(f"  Documents Table: {s.postgres_table_documents}")
+    _logger.info(f"  Chunks Table: {s.postgres_table_chunks}")
 
     _logger.info("--- LLM Configuration ---")
     _logger.info(f"  Provider: {s.llm_provider}")

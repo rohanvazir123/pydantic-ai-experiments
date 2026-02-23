@@ -87,7 +87,7 @@ Search Types
 Usage
 -----
     from rag.retrieval.retriever import Retriever
-    from rag.storage.vector_store.mongo import PostgresHybridStore
+    from rag.storage.vector_store.postgres import PostgresHybridStore
 
     # Create retriever
     store = PostgresHybridStore()

@@ -339,9 +339,6 @@ class LightRAGConfig:
     use_ollama: bool = True
     api_key: str | None = None
     base_url: str | None = None
-    use_mongodb: bool = False
-    mongo_uri: str | None = None
-    mongo_database: str = "lightrag"
     ollama_llm_model: str = "llama3.1:8b"
     ollama_embed_model: str = "nomic-embed-text:latest"
     ollama_base_url: str = "http://localhost:11434"
@@ -403,19 +400,7 @@ async def initialize_lightrag(
         "embedding_func": embedding_func,
     }
 
-    # Configure MongoDB storage if requested
-    if config.use_mongodb:
-        mongo_uri = config.mongo_uri or os.getenv(
-            "MONGODB_URI", "mongodb://localhost:27017/"
-        )
-        os.environ["MONGO_URI"] = mongo_uri
-        os.environ["MONGO_DATABASE"] = config.mongo_database
-
-        lightrag_kwargs["kv_storage"] = "MongoKVStorage"
-        lightrag_kwargs["vector_storage"] = "MongoVectorDBStorage"
-        logger.info(f"Using MongoDB storage: {mongo_uri} / {config.mongo_database}")
-    else:
-        logger.info(f"Using file-based storage: {config.working_dir}")
+    logger.info(f"Using file-based storage: {config.working_dir}")
 
     # Create and initialize LightRAG
     rag = LightRAG(**lightrag_kwargs)

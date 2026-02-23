@@ -1,13 +1,12 @@
 [project]
-name = "mongodb-rag-agent"
+name = "rag-agent"
 version = "0.1.0"
-description = "Agentic RAG system with MongoDB Atlas Vector Search"
+description = "Agentic RAG system with PostgreSQL pgvector"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "pydantic-ai>=0.1.0",
-    "pymongo>=4.10.0",
     "openai>=1.58.0",
     "docling>=2.14.0",
     "docling-core>=2.4.0",

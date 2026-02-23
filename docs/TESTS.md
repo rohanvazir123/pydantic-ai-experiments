@@ -40,10 +40,10 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_config.py` | 13 | None | Configuration and settings validation |
 | `test_ingestion.py` | 14 | None | Data models and chunking validation |
 | `test_postgres_store.py` | 18 | PostgreSQL/Neon | PostgreSQL/pgvector store operations |
-| `test_mongo_store.py` | 12 | MongoDB Atlas | MongoDB store and index verification |
 | `test_rag_agent.py` | 25+ | PostgreSQL + Ollama | RAG retriever and agent queries |
 | `test_agent_flow.py` | 3 | PostgreSQL + Ollama | Agent execution flow with Pydantic AI |
 | `test_pdf_question_generator.py` | 23 | PostgreSQL + Ollama | PDF question generator with pgvector |
+| `test_mem0_store.py` | 15+ | PostgreSQL + Ollama | Mem0 memory store with pgvector |
 | `test_raganything.py` | 10+ | Ollama + raganything | Multimodal processors (tables, equations, images) |
 
 ---
@@ -72,8 +72,8 @@ python -m pytest rag/tests/test_config.py -v
 
 Tests:
 - `test_load_settings_returns_settings_instance` - Settings loading works
-- `test_settings_has_database_config` - MongoDB or PostgreSQL configured
-- `test_settings_has_mongodb_database` - MongoDB database name set
+- `test_settings_has_database_config` - PostgreSQL configured
+- `test_settings_has_database_url` - DATABASE_URL set
 - `test_settings_has_llm_config` - LLM settings configured
 - `test_settings_has_embedding_config` - Embedding settings configured
 - `test_settings_has_search_config` - Search parameters set
@@ -115,23 +115,6 @@ Tests:
   - `test_semantic_search_empty_results` - Vector search works
   - `test_text_search_empty_results` - Full-text search works
   - `test_hybrid_search_empty_results` - RRF hybrid search works
-- `TestEmbeddingDimensionValidation` - Embedding dimension checks
-
-#### MongoDB Store Tests
-```bash
-python -m pytest rag/tests/test_mongo_store.py -v
-```
-
-**Requirements:** MongoDB Atlas with vector and text search indexes
-
-Tests:
-- `TestMongoDBConnection` - Basic store initialization
-- `TestMongoDBIndexVerification` - Index verification
-  - `test_mongodb_connection` - Connection established
-  - `test_vector_index_exists` - Vector search index exists
-  - `test_vector_index_configuration` - Index has correct settings
-  - `test_text_index_exists` - Text search index exists
-  - `test_collections_exist` - Required collections exist
 - `TestEmbeddingDimensionValidation` - Embedding dimension checks
 
 #### RAG Agent Tests
@@ -226,6 +209,40 @@ This shows:
 - `NODE #3: CallToolsNode` (FunctionToolCallEvent, FunctionToolResultEvent)
 - End node
 
+#### Mem0 Store Tests
+```bash
+python -m pytest rag/tests/test_mem0_store.py -v
+```
+
+**Requirements:** PostgreSQL/Neon with pgvector + Ollama running + MEM0_ENABLED=true
+
+Tests:
+- `TestMem0StoreBasic` - Store initialization
+  - `test_store_initialization` - Basic store setup
+  - `test_store_has_settings` - Settings access
+  - `test_create_mem0_store_factory` - Factory function
+- `TestMem0StoreDatabaseParsing` - DATABASE_URL parsing
+  - `test_parse_database_url_basic` - Basic PostgreSQL URL parsing
+  - `test_parse_database_url_with_sslmode` - URL with query parameters
+  - `test_parse_database_url_missing_raises_error` - Missing URL error
+- `TestMem0StoreEnabled` - Enabled/disabled behavior
+  - `test_is_enabled_returns_setting` - Reflects MEM0_ENABLED setting
+  - `test_disabled_add_returns_empty` - Add returns empty when disabled
+  - `test_disabled_search_returns_empty` - Search returns empty when disabled
+  - `test_disabled_get_all_returns_empty` - get_all returns empty when disabled
+  - `test_disabled_get_context_returns_empty` - Context returns empty when disabled
+- `TestMem0StoreIntegration` - Integration tests (require MEM0_ENABLED=true)
+  - `test_add_memory` - Add memory to PostgreSQL
+  - `test_get_all_memories` - Retrieve all memories
+  - `test_search_memories` - Search with vector similarity
+  - `test_get_context_string` - Formatted context for LLM
+  - `test_delete_all_memories` - Delete user memories
+- `TestMem0StoreContextFormatting` - Context string formatting
+  - `test_empty_memories_returns_empty_string` - Empty context handling
+  - `test_history_disabled_returns_empty` - History when disabled
+
+**Note:** Integration tests are skipped when `MEM0_ENABLED` is not `true`.
+
 #### RAG-Anything Multimodal Tests
 ```bash
 python -m pytest rag/tests/test_raganything.py -v
@@ -254,9 +271,6 @@ These tests run quickly (~1 second) and don't require any external services.
 ```bash
 # PostgreSQL tests
 python -m pytest rag/tests/test_postgres_store.py -v
-
-# MongoDB tests
-python -m pytest rag/tests/test_mongo_store.py -v
 ```
 
 ### End-to-End Tests (Require Database + LLM)
@@ -285,11 +299,6 @@ pip install pytest pytest-asyncio
    python -m rag.main --ingest --documents rag/documents
    ```
 
-### For MongoDB Tests
-1. MongoDB Atlas cluster with vector/text indexes
-2. `MONGODB_URI` in `.env`
-3. Create indexes in Atlas UI (see CLAUDE.md)
-
 ### For Agent Tests
 1. Ollama running locally:
    ```bash
@@ -299,6 +308,15 @@ pip install pytest pytest-asyncio
    ```bash
    ollama pull llama3.2:3b
    ollama pull nomic-embed-text:latest
+   ```
+
+### For Mem0 Tests
+1. PostgreSQL/Neon with pgvector extension
+2. `DATABASE_URL` in `.env`
+3. `MEM0_ENABLED=true` in `.env` (for integration tests)
+4. Install mem0:
+   ```bash
+   pip install mem0ai
    ```
 
 ### For RAG-Anything Tests
@@ -334,9 +352,6 @@ Start Ollama server:
 ```bash
 ollama serve
 ```
-
-#### "Vector index not found" (MongoDB)
-Create the vector index in MongoDB Atlas UI. See CLAUDE.md for instructions.
 
 #### Tests timing out
 Increase timeout:
@@ -375,6 +390,9 @@ python -m pytest rag/tests/test_rag_agent.py -v
 # Agent flow debugging
 python -m pytest rag/tests/test_agent_flow.py -v -s
 
+# Mem0 memory store tests
+python -m pytest rag/tests/test_mem0_store.py -v
+
 # Everything
 python -m pytest rag/tests/ -v
 ```
@@ -388,10 +406,10 @@ python -m pytest rag/tests/ -v
 | test_config.py | 13 |
 | test_ingestion.py | 14 |
 | test_postgres_store.py | 18 |
-| test_mongo_store.py | 12 (if MongoDB configured) |
 | test_rag_agent.py | 25+ |
 | test_agent_flow.py | 3 |
 | test_pdf_question_generator.py | 23 |
+| test_mem0_store.py | 15+ (integration tests require MEM0_ENABLED=true) |
 | test_raganything.py | 10+ (if raganything installed) |
 
 **Total with PostgreSQL setup:** ~95+ tests

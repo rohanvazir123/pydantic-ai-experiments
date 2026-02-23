@@ -21,6 +21,8 @@ Module: rag.memory.mem0_store
 This module provides a wrapper around Mem0 for storing and retrieving
 user-specific memories to enable personalization in the RAG system.
 
+Uses PostgreSQL with pgvector for vector storage (same as main RAG system).
+
 Classes
 -------
 Mem0Store
@@ -93,7 +95,7 @@ class Mem0Store:
     Wrapper for Mem0 Memory with RAG-specific configuration.
 
     Uses Ollama for LLM and embeddings by default (same as RAG system).
-    Memories are stored locally using Qdrant and SQLite.
+    Memories are stored in PostgreSQL using pgvector (same as main RAG system).
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -107,6 +109,40 @@ class Mem0Store:
         self._memory = None
         self._initialized = False
 
+    def _parse_database_url(self) -> dict:
+        """Parse DATABASE_URL into connection parameters for pgvector."""
+        from urllib.parse import parse_qs, urlparse
+
+        url = self.settings.database_url
+        if not url:
+            raise ValueError("DATABASE_URL not configured in settings")
+
+        parsed = urlparse(url)
+
+        # Extract connection parameters
+        config = {
+            "user": parsed.username or "",
+            "password": parsed.password or "",
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 5432,
+        }
+
+        # Get database name from path (remove leading /)
+        dbname = parsed.path.lstrip("/") if parsed.path else ""
+
+        # Handle query parameters (e.g., sslmode)
+        query_params = parse_qs(parsed.query)
+
+        # For Neon, handle the endpoint parameter
+        if "options" in query_params:
+            options = query_params["options"][0]
+            config["options"] = options
+
+        return {
+            "dbname": dbname,
+            **config,
+        }
+
     def _get_memory(self):
         """Lazy initialize Mem0 Memory instance."""
         if self._memory is None:
@@ -119,8 +155,11 @@ class Mem0Store:
                 else "http://localhost:11434"
             )
 
+            # Parse database URL for pgvector config
+            db_config = self._parse_database_url()
+
             # Configure Mem0 to use same LLM/embedder as RAG
-            # and MongoDB Atlas as vector store (same as RAG)
+            # and PostgreSQL with pgvector for vector store (same as RAG)
             config = {
                 "llm": {
                     "provider": "ollama",
@@ -137,12 +176,15 @@ class Mem0Store:
                     },
                 },
                 "vector_store": {
-                    "provider": "mongodb",
+                    "provider": "pgvector",
                     "config": {
                         "collection_name": self.settings.mem0_collection_name,
                         "embedding_model_dims": self.settings.embedding_dimension,
-                        "mongo_uri": self.settings.mongodb_uri,
-                        "db_name": self.settings.mongodb_database,
+                        "dbname": db_config["dbname"],
+                        "user": db_config["user"],
+                        "password": db_config["password"],
+                        "host": db_config["host"],
+                        "port": db_config["port"],
                     },
                 },
                 "version": "v1.1",
@@ -151,7 +193,7 @@ class Mem0Store:
             self._memory = Memory.from_config(config)
             self._initialized = True
             logger.info(
-                f"Mem0 initialized with MongoDB collection: {self.settings.mem0_collection_name}"
+                f"Mem0 initialized with PostgreSQL/pgvector table: {self.settings.mem0_collection_name}"
             )
 
         return self._memory
@@ -344,13 +386,14 @@ if __name__ == "__main__":
     _logger = logging.getLogger(__name__)
 
     _logger.info("=" * 60)
-    _logger.info("RAG Mem0 Store Module Test")
+    _logger.info("RAG Mem0 Store Module Test (PostgreSQL/pgvector)")
     _logger.info("=" * 60)
 
     # Check if enabled
     settings = load_settings()
     _logger.info(f"\nMem0 Enabled: {settings.mem0_enabled}")
-    _logger.info(f"Collection: {settings.mem0_collection_name}")
+    _logger.info(f"Table Name: {settings.mem0_collection_name}")
+    _logger.info(f"Database URL: {settings.database_url[:30]}..." if settings.database_url else "Not set")
     _logger.info(f"LLM Model: {settings.llm_model}")
     _logger.info(f"Embedding Model: {settings.embedding_model}")
 
