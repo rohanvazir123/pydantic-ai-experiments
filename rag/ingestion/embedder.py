@@ -83,6 +83,7 @@ Usage
 """
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -96,20 +97,22 @@ from rag.ingestion.models import ChunkData
 logger = logging.getLogger(__name__)
 
 
-# Module-level client (lazy initialized)
+# Module-level client (lazy initialized, protected by lock)
 _client: openai.AsyncOpenAI | None = None
 _settings = None
+_client_lock = threading.Lock()
 
 
 def _get_client() -> openai.AsyncOpenAI:
-    """Get or create the shared OpenAI client."""
+    """Get or create the shared OpenAI client (thread-safe)."""
     global _client, _settings
-    if _client is None:
-        _settings = load_settings()
-        _client = openai.AsyncOpenAI(
-            api_key=_settings.embedding_api_key,
-            base_url=_settings.embedding_base_url,
-        )
+    with _client_lock:
+        if _client is None:
+            _settings = load_settings()
+            _client = openai.AsyncOpenAI(
+                api_key=_settings.embedding_api_key,
+                base_url=_settings.embedding_base_url,
+            )
     return _client
 
 
@@ -158,7 +161,7 @@ class EmbeddingGenerator:
         }
 
         self.config = self.model_configs.get(
-            self.model, {"dimensions": 1536, "max_tokens": 8191}
+            self.model, {"dimensions": self.settings.embedding_dimension, "max_tokens": 8191}
         )
 
     async def generate_embedding(self, text: str) -> list[float]:

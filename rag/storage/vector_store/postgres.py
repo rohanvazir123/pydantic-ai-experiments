@@ -121,30 +121,37 @@ class PostgresHybridStore:
         self.settings = load_settings()
         self.pool: asyncpg.Pool | None = None
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Initialize PostgreSQL connection and create tables/indexes."""
-        if self._initialized:
-            return
+        async with self._init_lock:
+            if self._initialized:
+                return
 
+            await self._do_initialize()
+
+    async def _do_initialize(self) -> None:
+        """Internal initialization (called under _init_lock)."""
         try:
-            # Create connection pool
+            # Enable pgvector extension before creating the pool so the
+            # register_vector init callback succeeds on the first connection.
+            temp_conn = await asyncpg.connect(self.settings.database_url)
+            try:
+                await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            finally:
+                await temp_conn.close()
+
+            # Create connection pool; register_vector runs once per new connection
             self.pool = await asyncpg.create_pool(
                 self.settings.database_url,
-                min_size=1,
-                max_size=10,
+                min_size=self.settings.db_pool_min_size,
+                max_size=self.settings.db_pool_max_size,
                 command_timeout=60,
+                init=register_vector,
             )
 
-            # Enable pgvector extension first, then register type
             async with self.pool.acquire() as conn:
-                # Enable pgvector extension (must be done before register_vector)
-                await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-
-            # Register pgvector type (needs fresh connection after extension creation)
-            async with self.pool.acquire() as conn:
-                await register_vector(conn)
-
                 # Create documents table
                 await conn.execute(f"""
                     CREATE TABLE IF NOT EXISTS {self.settings.postgres_table_documents} (
@@ -196,7 +203,7 @@ class PostgresHybridStore:
                     ON {self.settings.postgres_table_documents}(source)
                 """)
 
-            logger.info(f"Connected to PostgreSQL and initialized tables")
+            logger.info("Connected to PostgreSQL and initialized tables")
             self._initialized = True
 
         except Exception as e:
@@ -222,22 +229,24 @@ class PostgresHybridStore:
         await self.initialize()
 
         async with self.pool.acquire() as conn:
-            await register_vector(conn)
-
-            for chunk in chunks:
-                await conn.execute(
-                    f"""
-                    INSERT INTO {self.settings.postgres_table_chunks}
-                    (document_id, content, embedding, chunk_index, metadata, token_count)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    """,
-                    uuid.UUID(document_id),
-                    chunk.content,
-                    chunk.embedding,
-                    chunk.index,
-                    json.dumps(chunk.metadata),
-                    chunk.token_count,
-                )
+            await conn.executemany(
+                f"""
+                INSERT INTO {self.settings.postgres_table_chunks}
+                (document_id, content, embedding, chunk_index, metadata, token_count)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                [
+                    (
+                        uuid.UUID(document_id),
+                        chunk.content,
+                        chunk.embedding,
+                        chunk.index,
+                        json.dumps(chunk.metadata),
+                        chunk.token_count,
+                    )
+                    for chunk in chunks
+                ],
+            )
 
             logger.info(f"Inserted {len(chunks)} chunks for document {document_id}")
 
@@ -262,8 +271,6 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
-                await register_vector(conn)
-
                 # Set IVF probes for better recall (default is 1, we use 10)
                 await conn.execute("SET ivfflat.probes = 10")
 
@@ -512,7 +519,7 @@ class PostgresHybridStore:
                 f"DELETE FROM {self.settings.postgres_table_documents}"
             )
 
-            logger.info(f"Deleted all chunks and documents")
+            logger.info(f"Cleaned collections: {chunks_result}, {docs_result}")
 
     async def get_document_by_source(self, source: str) -> dict[str, Any] | None:
         """

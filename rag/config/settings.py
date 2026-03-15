@@ -47,8 +47,10 @@ Usage
     print(mask_credential(s.database_url))
 """
 
+import re
+
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -73,6 +75,24 @@ class Settings(BaseSettings):
     postgres_table_chunks: str = Field(
         default="chunks", description="PostgreSQL table for document chunks with embeddings"
     )
+
+    # Connection pool sizing
+    db_pool_min_size: int = Field(
+        default=1, ge=1, description="Minimum PostgreSQL connection pool size"
+    )
+    db_pool_max_size: int = Field(
+        default=10, ge=1, description="Maximum PostgreSQL connection pool size"
+    )
+
+    @field_validator("postgres_table_documents", "postgres_table_chunks", mode="before")
+    @classmethod
+    def validate_table_name(cls, v: str) -> str:
+        """Prevent SQL injection via settings-supplied table names."""
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                f"Invalid table name '{v}': only letters, digits, and underscores allowed"
+            )
+        return v
 
     # LLM Configuration (OpenAI-compatible)
     llm_provider: str = Field(

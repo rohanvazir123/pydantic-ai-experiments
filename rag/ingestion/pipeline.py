@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Document ingestion pipeline for processing documents into MongoDB vector database.
+Document ingestion pipeline for processing documents into PostgreSQL/pgvector.
 
 Module: rag.ingestion.pipeline
 ==============================
@@ -24,7 +24,7 @@ This module provides the main document ingestion pipeline that:
 - Transcribes audio files using Whisper ASR
 - Chunks documents using HybridChunker
 - Generates embeddings using OpenAI-compatible API
-- Stores documents and chunks in MongoDB
+- Stores documents and chunks in PostgreSQL
 
 Classes
 -------
@@ -127,13 +127,14 @@ from rag.ingestion.models import (
     IngestionConfig,
     IngestionResult,
 )
+from rag.retrieval.retriever import _result_cache
 from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentIngestionPipeline:
-    """Pipeline for ingesting documents into MongoDB vector database."""
+    """Pipeline for ingesting documents into PostgreSQL/pgvector."""
 
     def __init__(
         self,
@@ -169,9 +170,19 @@ class DocumentIngestionPipeline:
         self.store = PostgresHybridStore()
 
         self._initialized = False
+        self._doc_converter = None  # Cached DocumentConverter (expensive to init)
+
+    def _get_converter(self):
+        """Get or create the cached DocumentConverter (loads ML models once)."""
+        if self._doc_converter is None:
+            from docling.document_converter import DocumentConverter
+
+            self._doc_converter = DocumentConverter()
+            logger.info("DocumentConverter initialized (ML models loaded)")
+        return self._doc_converter
 
     async def initialize(self) -> None:
-        """Initialize MongoDB connection."""
+        """Initialize PostgreSQL connection."""
         if self._initialized:
             return
 
@@ -180,7 +191,7 @@ class DocumentIngestionPipeline:
         logger.info("Ingestion pipeline initialized")
 
     async def close(self) -> None:
-        """Close MongoDB connection."""
+        """Close PostgreSQL connection."""
         if self._initialized:
             await self.store.close()
             self._initialized = False
@@ -261,13 +272,11 @@ class DocumentIngestionPipeline:
 
         if file_ext in docling_formats:
             try:
-                from docling.document_converter import DocumentConverter
-
                 logger.info(
                     f"Converting {file_ext} file using Docling: {os.path.basename(file_path)}"
                 )
 
-                converter = DocumentConverter()
+                converter = self._get_converter()
                 result = converter.convert(file_path)
 
                 markdown_content = result.document.export_to_markdown()
@@ -446,7 +455,7 @@ class DocumentIngestionPipeline:
         embedded_chunks = await self.embedder.embed_chunks(chunks)
         logger.info(f"Generated embeddings for {len(embedded_chunks)} chunks")
 
-        # Save document to MongoDB
+        # Save document
         document_id = await self.store.save_document(
             title=document_title,
             source=document_source,
@@ -454,7 +463,7 @@ class DocumentIngestionPipeline:
             metadata=document_metadata,
         )
 
-        # Save chunks to MongoDB
+        # Save chunks
         await self.store.add(embedded_chunks, document_id)
 
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -590,9 +599,13 @@ class DocumentIngestionPipeline:
             )
 
         logger.info(
-            f"Ingestion complete: {len(results)} documents processed, "
-            f"{total_chunks} chunks created, {total_errors} errors"
+            f"Ingestion complete: {len(results)} documents, "
+            f"{total_chunks} chunks, {total_errors} errors"
         )
+
+        # Invalidate retriever cache so queries immediately see new/updated documents
+        _result_cache.clear()
+        logger.info("Retriever result cache cleared after ingestion")
 
         return results
 
@@ -633,9 +646,9 @@ def create_pipeline(
 async def run_ingestion_pipeline() -> None:
     """Main function for running ingestion."""
     parser = argparse.ArgumentParser(
-        description="Ingest documents into MongoDB vector database"
+        description="Ingest documents into PostgreSQL/pgvector database"
     )
-    parser.add_argument(
+        parser.add_argument(
         "--documents", "-d", default="documents", help="Documents folder path"
     )
     parser.add_argument(
@@ -719,15 +732,8 @@ async def run_ingestion_pipeline() -> None:
         logger.info("=" * 50)
         logger.info("NEXT STEPS")
         logger.info("=" * 50)
-        logger.info("1. Create vector search index in Atlas UI:")
-        logger.info("   - Index name: vector_index")
-        logger.info("   - Collection: chunks")
-        logger.info("   - Field: embedding")
-        logger.info("   - Dimensions: 768 (for nomic-embed-text)")
-        logger.info("2. Create text search index in Atlas UI:")
-        logger.info("   - Index name: text_index")
-        logger.info("   - Collection: chunks")
-        logger.info("   - Field: content")
+        logger.info("Indexes are created automatically by the pipeline.")
+        logger.info("Run the RAG agent to query the ingested documents.")
 
     except KeyboardInterrupt:
         logger.warning("Ingestion interrupted by user")

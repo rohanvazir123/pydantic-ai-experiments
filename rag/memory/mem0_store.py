@@ -86,6 +86,7 @@ import logging
 from typing import Any
 
 from rag.config.settings import Settings, load_settings
+from rag.utils.db_utils import parse_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -111,44 +112,14 @@ class Mem0Store:
 
     def _parse_database_url(self) -> dict:
         """Parse DATABASE_URL into connection parameters for pgvector."""
-        from urllib.parse import parse_qs, urlparse
-
-        url = self.settings.database_url
-        if not url:
-            raise ValueError("DATABASE_URL not configured in settings")
-
-        parsed = urlparse(url)
-
-        # Extract connection parameters
-        config = {
-            "user": parsed.username or "",
-            "password": parsed.password or "",
-            "host": parsed.hostname or "localhost",
-            "port": parsed.port or 5432,
-        }
-
-        # Get database name from path (remove leading /)
-        dbname = parsed.path.lstrip("/") if parsed.path else ""
-
-        # Handle query parameters (e.g., sslmode)
-        query_params = parse_qs(parsed.query)
-
-        # For Neon, handle the endpoint parameter
-        if "options" in query_params:
-            options = query_params["options"][0]
-            config["options"] = options
-
-        return {
-            "dbname": dbname,
-            **config,
-        }
+        return parse_database_url(self.settings.database_url)
 
     def _get_memory(self):
         """Lazy initialize Mem0 Memory instance."""
         if self._memory is None:
             from mem0 import Memory
 
-            # Get Ollama base URL without /v1 suffix
+            # Get Ollama base URL without /v1 suffix (used only for ollama providers)
             ollama_base = (
                 self.settings.llm_base_url.replace("/v1", "")
                 if self.settings.llm_base_url
@@ -158,23 +129,47 @@ class Mem0Store:
             # Parse database URL for pgvector config
             db_config = self._parse_database_url()
 
-            # Configure Mem0 to use same LLM/embedder as RAG
-            # and PostgreSQL with pgvector for vector store (same as RAG)
-            config = {
-                "llm": {
+            # Build LLM config based on provider setting
+            if self.settings.llm_provider == "ollama":
+                llm_config = {
                     "provider": "ollama",
                     "config": {
                         "model": self.settings.llm_model,
                         "ollama_base_url": ollama_base,
                     },
-                },
-                "embedder": {
+                }
+            else:
+                llm_config = {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.settings.llm_model,
+                        "api_key": self.settings.llm_api_key,
+                        "openai_base_url": self.settings.llm_base_url,
+                    },
+                }
+
+            # Build embedder config based on provider setting
+            if self.settings.embedding_provider == "ollama":
+                embedder_config = {
                     "provider": "ollama",
                     "config": {
                         "model": self.settings.embedding_model,
                         "ollama_base_url": ollama_base,
                     },
-                },
+                }
+            else:
+                embedder_config = {
+                    "provider": "openai",
+                    "config": {
+                        "model": self.settings.embedding_model,
+                        "api_key": self.settings.embedding_api_key,
+                        "openai_base_url": self.settings.embedding_base_url,
+                    },
+                }
+
+            config = {
+                "llm": llm_config,
+                "embedder": embedder_config,
                 "vector_store": {
                     "provider": "pgvector",
                     "config": {

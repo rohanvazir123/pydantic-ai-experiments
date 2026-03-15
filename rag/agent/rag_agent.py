@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Main MongoDB RAG agent implementation.
+Main RAG agent (PostgreSQL/pgvector) implementation.
 
 Module: rag.agent.rag_agent
 ===========================
@@ -70,8 +70,9 @@ Module Attributes
 agent: PydanticAgent
     Pre-configured Pydantic AI agent with search tool.
 
-_current_trace: Langfuse trace
-    Global trace reference for tool calls (set by traced_agent_run).
+_trace_context: contextvars.ContextVar
+    Per-coroutine trace reference for tool calls (set by traced_agent_run).
+    Safe for concurrent requests — each coroutine has its own value.
 
 Agent Tools
 -----------
@@ -106,12 +107,15 @@ Usage
     mem0.add("User prefers concise answers", user_id="john_doe")
 """
 
+import asyncio
+import contextvars
 import logging
 import time
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel
+from pydantic import PrivateAttr
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -126,8 +130,8 @@ from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
-# Global trace reference for tool calls (set by traced_agent_run)
-_current_trace = None
+# Per-coroutine trace reference — safe for concurrent requests
+_trace_context: contextvars.ContextVar = contextvars.ContextVar("rag_trace", default=None)
 
 
 def get_llm_model(model_choice: str | None = None) -> OpenAIChatModel:
@@ -186,22 +190,24 @@ class RAGState(BaseModel):
     user_id: str | None = None
 
     # Internal storage - lazily initialized
-    _store: PostgresHybridStore | None = None
-    _retriever: Retriever | None = None
-    _mem0: Mem0Store | None = None
-    _initialized: bool = False
+    _store: PostgresHybridStore | None = PrivateAttr(default=None)
+    _retriever: Retriever | None = PrivateAttr(default=None)
+    _mem0: Mem0Store | None = PrivateAttr(default=None)
+    _initialized: bool = PrivateAttr(default=False)
+    _init_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
     async def get_retriever(self) -> Retriever:
         """Get or create the retriever (lazy initialization in current event loop)."""
-        if not self._initialized:
-            self._store = PostgresHybridStore()
-            await self._store.initialize()
-            self._retriever = Retriever(store=self._store)
-            self._mem0 = Mem0Store()
-            self._initialized = True
-            logger.info(
-                "[PROFILE] Lazy-initialized store/retriever/mem0 in current event loop"
-            )
+        async with self._init_lock:
+            if not self._initialized:
+                self._store = PostgresHybridStore()
+                await self._store.initialize()
+                self._retriever = Retriever(store=self._store)
+                self._mem0 = Mem0Store()
+                self._initialized = True
+                logger.info(
+                    "[PROFILE] Lazy-initialized store/retriever/mem0 in current event loop"
+                )
         return self._retriever
 
     def get_mem0(self) -> Mem0Store:
@@ -243,7 +249,6 @@ async def search_knowledge_base(
         String containing the retrieved information formatted for the LLM,
         optionally prefixed with user context from Mem0
     """
-    global _current_trace
     start_time = time.time()
 
     # Check if we have RAGState from deps for shared/lazy-initialized retriever
@@ -299,9 +304,9 @@ async def search_knowledge_base(
         duration_ms = (time.time() - start_time) * 1000
 
         # Trace the tool call if Langfuse is enabled
-        if _current_trace is not None:
+        if _trace_context.get() is not None:
             trace_tool_call(
-                trace=_current_trace,
+                trace=_trace_context.get(),
                 tool_name="search_knowledge_base",
                 tool_input={
                     "query": query,
@@ -383,48 +388,50 @@ async def traced_agent_run(
         )
         print(result.output)
     """
-    global _current_trace
-
     langfuse = get_langfuse()
 
     if langfuse is not None:
-        # Create a trace for this run
-        _current_trace = langfuse.trace(
-            name="rag_agent_run",
-            input={"query": query},
-            user_id=user_id,
-            session_id=session_id,
-            metadata={"has_history": message_history is not None},
+        # Set trace in context var — isolated per coroutine, safe for concurrent calls
+        _trace_context.set(
+            langfuse.trace(
+                name="rag_agent_run",
+                input={"query": query},
+                user_id=user_id,
+                session_id=session_id,
+                metadata={"has_history": message_history is not None},
+            )
         )
 
+    state = RAGState(user_id=user_id)
     try:
-        # Run the agent
+        # Run the agent with shared state (enables lazy-initialized store reuse)
         if message_history:
-            result = await agent.run(query, message_history=message_history)
+            result = await agent.run(query, message_history=message_history, deps=state)
         else:
-            result = await agent.run(query)
+            result = await agent.run(query, deps=state)
 
         # Update trace with output
-        if _current_trace is not None:
-            _current_trace.update(
+        if _trace_context.get() is not None:
+            _trace_context.get().update(
                 output={"response": str(result.output)[:1000]},
             )
 
         return result
 
     except Exception as e:
-        if _current_trace is not None:
-            _current_trace.update(
+        if _trace_context.get() is not None:
+            _trace_context.get().update(
                 output={"error": str(e)},
                 level="ERROR",
             )
         raise
 
     finally:
-        # Flush trace
+        await state.close()
+        # Flush trace and reset context var
         if langfuse is not None:
             langfuse.flush()
-        _current_trace = None
+        _trace_context.set(None)
 
 
 if __name__ == "__main__":
