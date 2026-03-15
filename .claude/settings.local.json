@@ -27,7 +27,10 @@
       "Bash(RUN_OLLAMA_TESTS=1 python -m pytest:*)",
       "Bash(source:*)",
       "Bash(echo:*)",
-      "Bash(conda list:*)"
+      "Bash(conda list:*)",
+      "Bash(xcopy /E /I /Y \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\notebook\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\notebooks_backup\" 2>&1)",
+      "Bash(cp -r \"C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/notebook\" \"C:/Users/rohan/Documents/ai_agents/notebooks_backup\")",
+      "Read(//c/Users/rohan/Documents/ai_agents/**)"
     ]
   }
 }

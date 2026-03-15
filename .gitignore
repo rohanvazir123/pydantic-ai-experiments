@@ -1,7 +1,10 @@
 /.mypy_cache
 /data
 /fais-indexes
-/.ipynb_checkpoints
+# Jupyter notebooks (backed up to notebooks_backup/ outside this repo)
+*.ipynb
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
 /.env
 venv/
 .git
