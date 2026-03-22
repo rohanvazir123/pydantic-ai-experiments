@@ -2,6 +2,22 @@
 
 One-stop reference for the entire RAG system. Read this first; dive into the other docs for deeper detail.
 
+## Table of Contents
+
+- [1. What This System Does](#1-what-this-system-does)
+- [2. Top-Level Architecture](#2-top-level-architecture)
+- [3. Data Schema](#3-data-schema)
+- [4. Ingestion Pipeline](#4-ingestion-pipeline)
+- [5. Retrieval Pipeline](#5-retrieval-pipeline)
+- [6. RAG Agent](#6-rag-agent)
+- [7. Mem0 Memory Layer](#7-mem0-memory-layer)
+- [8. Langfuse Observability](#8-langfuse-observability)
+- [9. Streamlit Apps](#9-streamlit-apps)
+- [10. Configuration (.env Quick Reference)](#10-configuration-env-quick-reference)
+- [11. Key File Map](#11-key-file-map)
+- [12. How to Run](#12-how-to-run)
+- [13. Further Reading](#13-further-reading)
+
 ---
 
 ## 1. What This System Does

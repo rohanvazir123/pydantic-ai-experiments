@@ -1,5 +1,22 @@
 # PostgreSQL RAG Agent Development Instructions
 
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Quick Start](#quick-start)
+- [Core Principles](#core-principles)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
+- [CLI Usage](#cli-usage)
+- [Testing](#testing)
+- [Code Quality](#code-quality)
+- [Architecture](#architecture)
+- [Common Issues](#common-issues)
+- [Development Workflow](#development-workflow)
+- [Quick Reference](#quick-reference)
+
+---
+
 ## Project Overview
 
 Agentic RAG system combining PostgreSQL/pgvector with Pydantic AI for intelligent document retrieval. Uses Docling for multi-format ingestion (PDF, DOCX, audio via Whisper ASR), async PostgreSQL operations, and hybrid search (vector + text with RRF). Built with Python 3.13, Ollama for local LLM/embeddings, and type-safe Pydantic models.
