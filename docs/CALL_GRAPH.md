@@ -81,29 +81,47 @@ rag/main.py:main()                                                L100
 
 > See [RAG.md](RAG.md) and [DATASTORE_GUIDE.md](DATASTORE_GUIDE.md) for details.
 
-**Entry point**: [`Retriever.retrieve()`](../rag/retrieval/retriever.py#L230)
+**Entry point**: [`Retriever.retrieve()`](../rag/retrieval/retriever.py#L234)
 
 ```
-Retriever.retrieve(query, match_count, search_type, use_cache)    L230
-  ├── ResultCache.get(query, search_type, match_count)             L153
-  │     └── cache hit? → return list[SearchResult]
-  ├── EmbeddingGenerator.embed_query(query, use_cache)             L260
-  │     ├── _cached_embed(text, model)  async_lru(1000)            L117
-  │     └── openai.AsyncOpenAI.embeddings.create()
-  ├── [search_type == "semantic"]
-  │     └── store.semantic_search(query_embedding, match_count)    L244
-  │           └── SQL: ORDER BY embedding <=> $1::vector LIMIT $2
-  ├── [search_type == "text"]
-  │     └── store.text_search(query, match_count)                  L306
-  │           └── SQL: WHERE content_tsv @@ plainto_tsquery(...)
-  ├── [search_type == "hybrid"]  (default)
-  │     ├── asyncio.gather(semantic_search, text_search)
-  │     └── _reciprocal_rank_fusion(results_list)                  L419
-  │           └── RRF score = Σ 1/(k=60 + rank), deduplicate, sort
-  ├── ResultCache.set(...)                                          L171
+Retriever.retrieve(query, match_count, search_type, use_cache)    L234
+  ├── 1. ResultCache.get(query, search_type, match_count)          L266
+  │        └── cache hit? → return list[SearchResult]
+  │
+  ├── 2. Query embedding  (HyDE if hyde_enabled=True)
+  │     ├── [hyde_enabled=True]:
+  │     │     ├── HyDEProcessor.generate_hypothetical(query)       ← LLM call
+  │     │     └── embedder.generate_embedding(hypothetical_doc)
+  │     └── [hyde_enabled=False]:
+  │           └── EmbeddingGenerator.embed_query(query)            L288
+  │                 ├── _cached_embed(text, model)  async_lru(1000)
+  │                 └── openai.AsyncOpenAI.embeddings.create()
+  │
+  ├── 3. fetch_count = match_count × reranker_overfetch_factor     (if reranker_enabled)
+  │
+  ├── 4. Search
+  │     ├── [search_type == "semantic"]
+  │     │     └── store.semantic_search(query_embedding, fetch_count)
+  │     │           └── SQL: ORDER BY embedding <=> $1::vector LIMIT $2
+  │     ├── [search_type == "text"]
+  │     │     └── store.text_search(query, fetch_count)
+  │     │           └── SQL: WHERE content_tsv @@ plainto_tsquery(...)
+  │     └── [search_type == "hybrid"]  (default)
+  │           ├── asyncio.gather(semantic_search, text_search)
+  │           └── _reciprocal_rank_fusion(results_list)
+  │                 └── RRF score = Σ 1/(k=60 + rank), deduplicate, sort
+  │
+  ├── 5. Rerank  (if reranker_enabled=True)
+  │     ├── [reranker_type == "llm"]:
+  │     │     └── LLMReranker.rerank(query, results, top_k)
+  │     │           └── asyncio.gather(*[_score_document(...) for each result])
+  │     └── [reranker_type == "cross_encoder"]:
+  │           └── CrossEncoderReranker.rerank(query, results, top_k)
+  │
+  ├── 6. ResultCache.set(...)
   └── return list[SearchResult]
 
-Retriever.retrieve_as_context(query, match_count, search_type)    L299
+Retriever.retrieve_as_context(query, match_count, search_type)    L334
   └── retrieve(...)
         └── join chunks as formatted context string
 ```
@@ -307,24 +325,21 @@ Fallback (if RAGAnything unavailable):
 
 ```
 streamlit_mem0_app.py  (cached with @st.cache_resource)
-  ├── get_settings()          load .env → dict
-  ├── get_mem0()              Memory.from_config(pgvector_config)
+  ├── get_mem0_store()        create_mem0_store() → Mem0Store (PostgreSQL/pgvector)
   └── get_agent()             Agent(OpenAIChatModel, system_prompt)
 
 Page rerun lifecycle:
   ├── Display st.session_state.messages
   ├── Sidebar
   │     ├── [Clear Chat]     → session_state.messages = []
-  │     ├── [Clear Memories] → delete_all_memories(user_id)
-  │     │                         └── psycopg2 DELETE from mem0 table
-  │     └── [Show Memories]  → mem0.get_all(user_id)
+  │     ├── [Clear Memories] → get_mem0_store().delete_all(user_id)
+  │     └── [Show Memories]  → get_mem0_store().get_all(user_id)
   └── st.chat_input() → user_message
-        ├── get_user_context(user_id)
-        │     └── psycopg2 SELECT memories → context string
+        ├── mem0_store.get_context_string(query=prompt, user_id=user_id)
+        │     └── pgvector similarity search → formatted context string
         ├── enhanced_prompt = context + "\n\n" + user_message
         ├── asyncio.run(agent.run(enhanced_prompt))
-        ├── save_to_memory(mem0, user_id, conversation)
-        │     └── mem0.add(text, user_id, infer=True)
+        ├── mem0_store.add(conversation, user_id=user_id, infer=True)
         └── session_state.messages.append(response)
 ```
 
@@ -334,7 +349,7 @@ Page rerun lifecycle:
 |-----|-------|----------|
 | `messages` | Browser session | `[{role, content}, ...]` |
 | cached `agent` | Server lifetime | Pydantic AI Agent |
-| cached `mem0` | Server lifetime | Mem0 Memory instance |
+| cached `mem0_store` | Server lifetime | Mem0Store (PostgreSQL-backed) |
 | PostgreSQL `mem0_memories` | Persistent | User facts across sessions |
 
 ---

@@ -30,7 +30,12 @@
       "Bash(conda list:*)",
       "Bash(xcopy /E /I /Y \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\notebook\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\notebooks_backup\" 2>&1)",
       "Bash(cp -r \"C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/notebook\" \"C:/Users/rohan/Documents/ai_agents/notebooks_backup\")",
-      "Read(//c/Users/rohan/Documents/ai_agents/**)"
+      "Read(//c/Users/rohan/Documents/ai_agents/**)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/**)",
+      "Bash(done)",
+      "Bash(grep -n \"insert_one\\\\|insert_many\\\\|delete_many\\\\|ObjectId\\\\|\\\\$vectorSearch\\\\|\\\\$search\\\\|client\\\\.admin\\\\|client\\\\.close\\\\|collection\\\\b\" /c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/RAG.md | head -40)"
     ]
   }
 }

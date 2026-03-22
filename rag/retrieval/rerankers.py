@@ -377,14 +377,15 @@ class LLMReranker(BaseReranker):
         if not results:
             return results
 
+        import asyncio
+
         client = self._get_client()
 
-        # Score each document individually for reliability
-        scored_results = []
-
-        for result in results:
-            score = await self._score_document(client, query, result.content)
-            scored_results.append((result, score))
+        # Score all documents concurrently
+        scores = await asyncio.gather(
+            *[self._score_document(client, query, r.content) for r in results]
+        )
+        scored_results = list(zip(results, scores))
 
         # Sort by score
         scored_results.sort(key=lambda x: x[1], reverse=True)

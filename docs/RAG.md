@@ -69,12 +69,12 @@ pipeline.ingest_documents() [pipeline.py:366]
     ├──► pipeline.initialize()
     │       └──► store.initialize()
     │               └──► asyncpg.connect()
-    │               └──► client.admin.command("ping")
+    │               └──► CREATE EXTENSION IF NOT EXISTS vector
     │
     ├──► [if clean_before_ingest]:
     │       └──► store.clean_collections()
-    │               ├──► chunks.delete_many({})
-    │               └──► documents.delete_many({})
+    │               ├──► TRUNCATE TABLE chunks
+    │               └──► TRUNCATE TABLE documents
     │
     ├──► _find_document_files()
     │       └──► glob.glob("**/*.{md,pdf,docx,...}")
@@ -141,18 +141,16 @@ embedder.embed_chunks(chunks) [embedder.py:122]                               �
     ▼                                                                         │
 store.save_document() [postgres.py:340]                                          │
     │                                                                         │
-    └──► documents.insert_one({                                               │
-            title, source, content, metadata, created_at                      │
-        })                                                                    │
-        └──► Returns document_id (ObjectId)                                   │
+    └──► INSERT INTO documents (title, source, content, metadata)             │
+        └──► Returns document_id (UUID)                                       │
     │                                                                         │
     ▼                                                                         │
 store.add(chunks, document_id) [postgres.py:61]                                  │
     │                                                                         │
-    └──► chunks.insert_many([{                                                │
+    └──► executemany INSERT INTO chunks (                                    │
             document_id, content, embedding, chunk_index,                     │
-            metadata, token_count, created_at                                 │
-        }, ...])                                                              │
+            metadata, token_count                                              │
+        ) [batch insert]                                                      │
     │                                                                         │
     ▼                                                                         │
 IngestionResult(document_id, title, chunks_created, processing_time_ms)       │
@@ -168,7 +166,7 @@ IngestionResult(document_id, title, chunks_created, processing_time_ms)       �
     ▼
 pipeline.close()
     └──► store.close()
-            └──► client.close()
+            └──► pool.close()
     │
     ▼
 INGESTION COMPLETE
@@ -662,8 +660,8 @@ retriever.retrieve_as_context() [retriever.py:189]
     │               │       text_search()
     │               │   )
     │               │
-    │               ├──► semantic_search() ──► $vectorSearch pipeline
-    │               ├──► text_search() ──► $search pipeline
+    │               ├──► semantic_search() ──► ORDER BY embedding <=> $1::vector
+    │               ├──► text_search() ──► WHERE content_tsv @@ plainto_tsquery
     │               │
     │               └──► _reciprocal_rank_fusion()
     │

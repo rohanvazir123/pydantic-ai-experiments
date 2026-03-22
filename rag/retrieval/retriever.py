@@ -19,35 +19,20 @@ Module: rag.retrieval.retriever
 ===============================
 
 This module provides the high-level retrieval interface for the RAG system.
-It coordinates embedding generation and search operations with result caching.
+It coordinates embedding generation, optional HyDE query transformation,
+search, optional reranking, and result caching.
 
 Classes
 -------
 ResultCache
     LRU cache for search results with TTL expiration.
 
-    Methods:
-        __init__(max_size: int = 100, ttl_seconds: int = 300)
-            Initialize cache with size limit and TTL.
-
-        get(query, search_type, match_count) -> list[SearchResult] | None
-            Get cached results if available and not expired.
-
-        set(query, search_type, match_count, results) -> None
-            Cache search results.
-
-        stats() -> dict
-            Return cache statistics.
-
-        clear() -> None
-            Clear all cached results.
-
 Retriever
     Main retrieval interface orchestrating embeddings and search.
 
     Methods:
-        __init__(store: PostgresHybridStore | None, embedder: EmbeddingGenerator | None)
-            Initialize with optional store and embedder (creates defaults).
+        __init__(store, embedder, reranker, hyde)
+            Initialize with optional components (all lazy-init from settings).
 
         async retrieve(
             query: str,
@@ -55,28 +40,20 @@ Retriever
             search_type: str = "hybrid",
             use_cache: bool = True
         ) -> list[SearchResult]
-            Retrieve documents matching query with caching.
+            Retrieve documents. Pipeline:
+              1. HyDE (if enabled): generate hypothetical doc, embed it
+              2. Over-fetch from DB (if reranking)
+              3. Search (semantic / text / hybrid)
+              4. Rerank (if enabled) down to match_count
+              5. Cache final results
 
-        async retrieve_as_context(
-            query: str,
-            match_count: int | None = None,
-            search_type: str = "hybrid"
-        ) -> str
+        async retrieve_as_context(query, match_count, search_type) -> str
             Retrieve and format results as LLM context string.
-
-        get_cache_stats() -> dict (static)
-            Return result cache statistics.
-
-        clear_cache() -> None (static)
-            Clear the result cache.
-
-        async close() -> None
-            Close store connection.
 
 Module Attributes
 -----------------
 _result_cache: ResultCache
-    Global result cache instance (shared across Retriever instances).
+    Global result cache (shared across Retriever instances).
 
 Search Types
 ------------
@@ -84,29 +61,20 @@ Search Types
 - "semantic": Pure vector similarity search
 - "text": Full-text keyword search
 
+Feature Flags (settings)
+------------------------
+- hyde_enabled: Use HyDE embedding instead of raw query embedding
+- reranker_enabled: Rerank over-fetched results before returning
+- reranker_type: "llm" or "cross_encoder"
+- reranker_overfetch_factor: How many × match_count to fetch before reranking
+
 Usage
 -----
     from rag.retrieval.retriever import Retriever
-    from rag.storage.vector_store.postgres import PostgresHybridStore
 
-    # Create retriever
-    store = PostgresHybridStore()
-    retriever = Retriever(store=store)
-
-    # Retrieve documents
-    results = await retriever.retrieve(
-        query="What is RAG?",
-        match_count=5,
-        search_type="hybrid"
-    )
-
-    # Get formatted context for LLM
+    retriever = Retriever()
+    results = await retriever.retrieve("What is RAG?", match_count=5)
     context = await retriever.retrieve_as_context("employee benefits")
-
-    # Check cache stats
-    print(Retriever.get_cache_stats())
-
-    # Cleanup
     await retriever.close()
 """
 
@@ -118,6 +86,8 @@ from collections import OrderedDict
 from rag.config.settings import load_settings
 from rag.ingestion.embedder import EmbeddingGenerator
 from rag.ingestion.models import SearchResult
+from rag.retrieval.query_processors import HyDEProcessor
+from rag.retrieval.rerankers import BaseReranker, CrossEncoderReranker, LLMReranker
 from rag.storage.vector_store.postgres import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
@@ -209,23 +179,57 @@ _result_cache = ResultCache(max_size=100, ttl_seconds=300)
 
 
 class Retriever:
-    """Orchestrates embedding and retrieval operations."""
+    """Orchestrates embedding, optional HyDE, search, and optional reranking."""
 
     def __init__(
         self,
         store: PostgresHybridStore | None = None,
         embedder: EmbeddingGenerator | None = None,
+        reranker: BaseReranker | None = None,
+        hyde: HyDEProcessor | None = None,
     ):
         """
         Initialize retriever.
 
         Args:
-            store: Vector store instance (creates PostgresHybridStore if not provided)
+            store: Vector store (creates PostgresHybridStore if not provided)
             embedder: Embedding generator (creates EmbeddingGenerator if not provided)
+            reranker: Optional reranker override (lazy-init from settings if None)
+            hyde: Optional HyDE processor override (lazy-init from settings if None)
         """
         self.settings = load_settings()
         self.store = store or PostgresHybridStore()
         self.embedder = embedder or EmbeddingGenerator()
+        self._reranker = reranker
+        self._hyde = hyde
+
+    def _get_hyde(self) -> HyDEProcessor:
+        """Lazy-init HyDE processor from settings."""
+        if self._hyde is None:
+            self._hyde = HyDEProcessor(
+                model=self.settings.llm_model,
+                base_url=self.settings.llm_base_url,
+                api_key=self.settings.llm_api_key,
+                embedding_model=self.settings.embedding_model,
+                embedding_base_url=self.settings.embedding_base_url,
+            )
+        return self._hyde
+
+    def _get_reranker(self) -> BaseReranker:
+        """Lazy-init reranker from settings."""
+        if self._reranker is None:
+            reranker_type = self.settings.reranker_type
+            if reranker_type == "cross_encoder":
+                model = self.settings.reranker_model or "BAAI/bge-reranker-base"
+                self._reranker = CrossEncoderReranker(model_name=model)
+            else:  # default: llm
+                model = self.settings.reranker_model or self.settings.llm_model
+                self._reranker = LLMReranker(
+                    model=model,
+                    base_url=self.settings.llm_base_url,
+                    api_key=self.settings.llm_api_key,
+                )
+        return self._reranker
 
     async def retrieve(
         self,
@@ -235,12 +239,20 @@ class Retriever:
         use_cache: bool = True,
     ) -> list[SearchResult]:
         """
-        Retrieve relevant documents for a query with optional caching.
+        Retrieve relevant documents for a query.
+
+        Pipeline:
+          1. Check cache
+          2. HyDE (if enabled): generate hypothetical doc, embed it
+          3. Over-fetch from DB (if reranking enabled)
+          4. Search (semantic / text / hybrid)
+          5. Rerank (if enabled) and trim to match_count
+          6. Cache and return
 
         Args:
             query: Search query text
             match_count: Number of results to return (defaults to settings)
-            search_type: Type of search - "semantic", "text", or "hybrid" (default)
+            search_type: "semantic", "text", or "hybrid" (default)
             use_cache: Whether to use result cache (default: True)
 
         Returns:
@@ -249,37 +261,60 @@ class Retriever:
         if match_count is None:
             match_count = self.settings.default_match_count
 
-        # Check result cache first
+        # 1. Cache check
         if use_cache:
             cached_results = _result_cache.get(query, search_type, match_count)
             if cached_results is not None:
                 logger.info(
-                    f"[CACHE HIT] Search results from cache ({len(cached_results)} results)"
+                    f"[CACHE HIT] {len(cached_results)} results"
                 )
                 return cached_results
 
         start_time = time.time()
         logger.info(
-            f"[CACHE MISS] Retrieving for query: '{query}', type: {search_type}, count: {match_count}"
+            f"[RETRIEVE] query='{query}', type={search_type}, count={match_count}, "
+            f"hyde={'on' if self.settings.hyde_enabled else 'off'}, "
+            f"rerank={'on' if self.settings.reranker_enabled else 'off'}"
         )
 
-        # Generate query embedding (uses its own cache)
-        query_embedding = await self.embedder.embed_query(query)
+        # 2. Query embedding — use HyDE if enabled
+        if self.settings.hyde_enabled:
+            hyde = self._get_hyde()
+            hypothetical = await hyde.generate_hypothetical(query)
+            # Use our existing embedder so caching/settings stay consistent
+            query_embedding = await self.embedder.generate_embedding(hypothetical)
+            logger.info("[HyDE] Using hypothetical-document embedding")
+        else:
+            query_embedding = await self.embedder.embed_query(query)
 
-        # Perform search based on type
+        # 3. Determine fetch count (over-fetch before reranking)
+        fetch_count = match_count
+        if self.settings.reranker_enabled:
+            fetch_count = min(
+                match_count * self.settings.reranker_overfetch_factor,
+                self.settings.max_match_count,
+            )
+
+        # 4. Search
         if search_type == "semantic":
-            results = await self.store.semantic_search(query_embedding, match_count)
+            results = await self.store.semantic_search(query_embedding, fetch_count)
         elif search_type == "text":
-            results = await self.store.text_search(query, match_count)
+            results = await self.store.text_search(query, fetch_count)
         else:  # hybrid (default)
-            results = await self.store.hybrid_search(
-                query, query_embedding, match_count
+            results = await self.store.hybrid_search(query, query_embedding, fetch_count)
+
+        # 5. Rerank
+        if self.settings.reranker_enabled and results:
+            reranker = self._get_reranker()
+            results = await reranker.rerank(query, results, top_k=match_count)
+            logger.info(
+                f"[RERANK] {self.settings.reranker_type}: trimmed to {len(results)} results"
             )
 
         elapsed_ms = (time.time() - start_time) * 1000
-        logger.info(f"Retrieved {len(results)} results in {elapsed_ms:.0f}ms")
+        logger.info(f"[RETRIEVE] Done: {len(results)} results in {elapsed_ms:.0f}ms")
 
-        # Cache results
+        # 6. Cache final results
         if use_cache:
             _result_cache.set(query, search_type, match_count, results)
 

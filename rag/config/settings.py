@@ -149,6 +149,34 @@ class Settings(BaseSettings):
         default=0.3, description="Default text weight for hybrid search (0-1)"
     )
 
+    # HyDE (Hypothetical Document Embeddings) Configuration
+    hyde_enabled: bool = Field(
+        default=False,
+        description="Enable HyDE: embed a hypothetical answer instead of the raw query for better recall",
+    )
+
+    # Reranker Configuration
+    reranker_enabled: bool = Field(
+        default=False,
+        description="Enable reranking of initial search results for better precision",
+    )
+
+    reranker_type: str = Field(
+        default="llm",
+        description="Reranker type: 'llm' (no extra deps) or 'cross_encoder' (requires sentence-transformers)",
+    )
+
+    reranker_model: str = Field(
+        default="",
+        description="Model for reranker. For llm: defaults to llm_model. For cross_encoder: defaults to BAAI/bge-reranker-base",
+    )
+
+    reranker_overfetch_factor: int = Field(
+        default=3,
+        ge=1,
+        description="Fetch this multiple of match_count from DB before reranking",
+    )
+
     # Langfuse Observability Configuration
     langfuse_enabled: bool = Field(
         default=False, description="Enable Langfuse tracing and observability"
