@@ -6,6 +6,8 @@ One-stop reference for the entire RAG system. Read this first; dive into the oth
 
 - [1. What This System Does](#1-what-this-system-does)
 - [2. Top-Level Architecture](#2-top-level-architecture)
+  - [RAG Agent Workflow](#rag-agent-workflow)
+  - [PDF Question Generator Workflow](#pdf-question-generator-workflow)
 - [3. Data Schema](#3-data-schema)
 - [4. Ingestion Pipeline](#4-ingestion-pipeline)
 - [5. Retrieval Pipeline](#5-retrieval-pipeline)
@@ -28,45 +30,143 @@ An **agentic RAG (Retrieval-Augmented Generation)** system that:
 3. **Answers** questions through a Pydantic AI agent that calls the retrieval tool
 4. **Remembers** users across sessions via Mem0 (pgvector-backed user memory)
 5. **Observes** itself with optional Langfuse tracing
+6. **Deep-processes PDFs** via a separate PDF Question Generator workflow — uses RAGAnything/MinerU to extract multimodal content (tables, images, equations), processes each with specialised LLM/vision processors, then generates structured Q&A pairs stored in their own PostgreSQL tables
 
 ---
 
 ## 2. Top-Level Architecture
 
+### RAG Agent Workflow
+
 ```
-┌────────────────────────────────────────────────────────────────┐
-│  Interfaces                                                    │
-│  ├── CLI agent         rag/agent/agent_main.py                 │
-│  ├── Streamlit RAG app rag/agent/streamlit_app.py              │
-│  └── Streamlit Mem0 app streamlit_mem0_app.py                  │
-└─────────────────────────────┬──────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────┐
-│  Pydantic AI Agent  (rag/agent/rag_agent.py)                   │
-│  ├── tool: search_knowledge_base()  ← calls Retriever + Mem0   │
-│  └── tool: remember_user_context()  ← writes to Mem0           │
-└──────────┬──────────────────────────┬──────────────────────────┘
-           │                          │
-           ▼                          ▼
-┌──────────────────────┐   ┌────────────────────────────────────┐
-│  Retriever           │   │  Mem0Store  (rag/memory/mem0_store) │
-│  ├── HyDE (optional) │   │  pgvector similarity search over    │
-│  ├── Embed query     │   │  user-specific memory facts         │
-│  ├── Hybrid search   │   └─────────────────┬──────────────────┘
-│  └── Rerank (opt.)   │                     │
-└──────────┬───────────┘                     │
-           │                                 │
-           ▼                                 ▼
-┌────────────────────────────────────────────────────────────────┐
-│  PostgreSQL / Neon  (pgvector extension)                       │
-│  ├── documents        ← source docs metadata                   │
-│  ├── chunks           ← embedded chunks (768-dim vector)       │
-│  └── mem0_memories    ← user memory facts (pgvector)           │
-└────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Interfaces                                                         │
+│  CLI agent · Streamlit RAG app · Streamlit Mem0 app                │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │
+                                ▼
+                 ┌──────────────────────────────────┐
+                 │  Pydantic AI Agent               │
+                 │  rag/agent/rag_agent.py           │
+                 │  search_knowledge_base()          │
+                 │  remember_user_context()          │
+                 └──────────┬──────────────┬─────────┘
+                            │              │
+                            ▼              ▼
+         ┌──────────────────────┐   ┌──────────────────────────────┐
+         │  Retriever           │   │  Mem0Store                   │
+         │  rag/retrieval/      │   │  memory/mem0_store.py        │
+         │                      │   │                              │
+         │  1. HyDE (opt.)      │   │  pgvector similarity search  │
+         │  2. Embed query      │   │  over user memory facts      │
+         │  3. Hybrid search    │   │                              │
+         │     (RRF)            │   │  · fact extraction           │
+         │  4. Rerank (opt.)    │   │  · embed memories            │
+         │     LLM or CrossEnc  │   │                              │
+         └──────────┬───────────┘   └──────────────┬───────────────┘
+                    │                               │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+         ┌──────────────────────────────────────────────────────────┐
+         │  PostgreSQL / Neon  (pgvector extension)                 │
+         │  ├── documents        ← metadata + file hash             │
+         │  ├── chunks           ← vector(768) + tsvector           │
+         │  └── mem0_memories    ← user memory facts                │
+         └──────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │  (ingest)
+         ┌──────────────────────────┴───────────────────────────────┐
+         │  Ingestion Pipeline  (rag/ingestion/pipeline.py)         │
+         │  Docling (PDF/DOCX/audio) → chunk → embed → store       │
+         │  Note: MinerU/RAGAnything is PDF Question Generator only │
+         └──────────────────────────────────────────────────────────┘
 ```
 
-**LLM / Embeddings**: OpenAI-compatible API — defaults to local Ollama (`llama3.1:8b`, `nomic-embed-text`), swappable to OpenAI / Anthropic / any provider.
+**AI service calls** — which component calls what and when:
+
+| Caller | Service | Condition |
+|--------|---------|-----------|
+| Agent | LLM | Every query (inference) |
+| Retriever – HyDE | LLM | `HYDE_ENABLED=true` |
+| Retriever – Embed query | Embeddings | Always |
+| Retriever – Rerank | LLM | `RERANKER_ENABLED=true` + `RERANKER_TYPE=llm` (default) |
+| Retriever – Rerank | CrossEncoder (local) | `RERANKER_ENABLED=true` + `RERANKER_TYPE=cross_encoder` |
+| Mem0Store – fact extraction | LLM | Every `add()` call with `infer=True` |
+| Mem0Store – embed memories | Embeddings | Every `add()` call |
+| Ingestion Pipeline | Embeddings | Every chunk during ingest |
+
+**CrossEncoder** runs entirely locally via `sentence-transformers` — no API call.
+
+**LLM default**: Ollama `llama3.1:8b` (swap: OpenAI, Anthropic, any OpenAI-compatible endpoint)
+
+**Embeddings default**: Ollama `nomic-embed-text` 768-dim (swap: OpenAI `text-embedding-3-*`)
+
+### PDF Question Generator Workflow
+
+A separate ingestion workflow that deep-processes PDFs into structured Q&A pairs using multimodal content understanding.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Entry: python -m rag.ingestion.processors.pdf_question_generator    │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  RAGAnything  (primary path)                                         │
+│  MinerU parser → extracts structured content from PDF               │
+│  ├── text blocks                                                     │
+│  ├── tables          ──► TableProcessor                              │
+│  ├── images          ──► ImageProcessor                              │
+│  └── equations       ──► EquationProcessor                           │
+└──────────────────┬────────────┬────────────────┬─────────────────────┘
+                   │            │                │
+                   ▼            ▼                ▼
+        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+        │ Table        │ │ Image        │ │ Equation     │
+        │ Processor    │ │ Processor    │ │ Processor    │
+        │              │ │              │ │              │
+        │ LLM call     │ │ Vision model │ │ LLM call     │
+        │ → summary    │ │ → describe   │ │ → LaTeX +    │
+        │ → key facts  │ │ → objects    │ │   meaning    │
+        │ → insights   │ │ → context    │ │              │
+        └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+               │                │                │
+               └────────────────┼────────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  LightRAG chunk store  →  extract_chunks_from_lightrag()             │
+│  format_chunks_as_context()  →  combined context string              │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  LLM  (QUESTION_GENERATION_SYSTEM_PROMPT)                            │
+│  Input: full multimodal context                                      │
+│  Output JSON: { questions[], entities[], summary }                   │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  PDFQuestionStore  (PostgreSQL)                                      │
+│  ├── pdf_documents   ← document metadata                            │
+│  ├── pdf_questions   ← Q&A pairs + embeddings (searchable)          │
+│  └── pdf_chunks      ← raw chunks + embeddings (searchable)         │
+└──────────────────────────────────────────────────────────────────────┘
+
+Fallback (if RAGAnything / MinerU unavailable):
+  Docling DocumentConverter (text-only) → same LLM call → same store
+```
+
+**External AI services used by PDF Question Generator**:
+
+| Step | Service |
+|------|---------|
+| TableProcessor, EquationProcessor | LLM (same `LLM_MODEL` / `LLM_BASE_URL`) |
+| ImageProcessor | Vision model (`VISION_MODEL` — default `gpt-4o`) |
+| Q&A generation | LLM |
+| Embedding questions & chunks | Embeddings (`EMBEDDING_MODEL`) |
 
 ---
 
