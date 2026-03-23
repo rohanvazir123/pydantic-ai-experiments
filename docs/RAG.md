@@ -513,24 +513,45 @@ _result_cache = ResultCache(max_size=100, ttl_seconds=300)
 
 Class: Retriever
 
-__init__(store, embedder)
+__init__(store, embedder, reranker, hyde)
     ├──► load_settings()                    [settings.py]
-    ├──► PostgresHybridStore()                 (if store not provided)
-    └──► EmbeddingGenerator()               (if embedder not provided)
+    ├──► PostgresHybridStore()              (if store not provided)
+    ├──► EmbeddingGenerator()              (if embedder not provided)
+    ├──► self._reranker = reranker          (lazy-init from settings if None)
+    └──► self._hyde = hyde                  (lazy-init from settings if None)
+
+_get_hyde()  [lazy-init]
+    └──► HyDEProcessor(model, base_url, api_key, embedding_model, ...)
+
+_get_reranker()  [lazy-init]
+    ├──► [reranker_type == "cross_encoder"]:
+    │       └──► CrossEncoderReranker(model_name)
+    └──► [reranker_type == "llm"]:
+            └──► LLMReranker(model, base_url, api_key)
 
 retrieve(query, match_count, search_type, use_cache)
-    ├──► [if use_cache]:
-    │       └──► _result_cache.get()
-    │               └──► [CACHE HIT] ──► return cached results
+    ├──► 1. [if use_cache]:
+    │           └──► _result_cache.get()
+    │                   └──► [CACHE HIT] ──► return cached results
     │
-    ├──► self.embedder.embed_query()        [embedder.py]
+    ├──► 2. Query embedding:
+    │       ├──► [hyde_enabled=True]:
+    │       │       ├──► _get_hyde().generate_hypothetical(query)  [LLM call]
+    │       │       └──► embedder.generate_embedding(hypothetical)
+    │       └──► [hyde_enabled=False]:
+    │               └──► embedder.embed_query(query)               [embedder.py]
     │
-    ├──► [based on search_type]:
+    ├──► 3. fetch_count = match_count × reranker_overfetch_factor  (if reranking)
+    │
+    ├──► 4. [based on search_type]:
     │       ├──► self.store.semantic_search()   [postgres.py]
     │       ├──► self.store.text_search()       [postgres.py]
     │       └──► self.store.hybrid_search()     [postgres.py] (default)
     │
-    └──► [if use_cache]:
+    ├──► 5. [if reranker_enabled]:
+    │       └──► _get_reranker().rerank(query, results, top_k=match_count)
+    │
+    └──► 6. [if use_cache]:
             └──► _result_cache.set()
 
 get_cache_stats() [static]
@@ -551,7 +572,7 @@ close()
 
 ```
 Module-level:
-_current_trace = None
+_trace_context: ContextVar  (per-coroutine trace isolation)
 
 get_llm_model(model_choice)
     ├──► load_settings()                    [settings.py]
@@ -566,12 +587,19 @@ agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
 ─────────────────────────────────────────────────────────────────
 
 Class: RAGState(BaseModel)
+    _store:       PostgresHybridStore  (PrivateAttr)
+    _retriever:   Retriever            (PrivateAttr)
+    _mem0:        Mem0Store            (PrivateAttr, if mem0_enabled)
+    _initialized: bool                 (PrivateAttr)
+    _init_lock:   asyncio.Lock         (PrivateAttr)
 
 get_retriever()
-    ├──► [if not initialized]:
+    ├──► [if not initialized, under _init_lock]:
     │       ├──► PostgresHybridStore()         [postgres.py]
     │       ├──► store.initialize()
-    │       └──► Retriever(store)           [retriever.py]
+    │       ├──► EmbeddingGenerator()          [embedder.py]
+    │       ├──► Retriever(store, embedder)    [retriever.py]
+    │       └──► Mem0Store()  (if mem0_enabled) [mem0_store.py]
     └──► return self._retriever
 
 close()
@@ -582,34 +610,32 @@ close()
 @agent.tool
 search_knowledge_base(ctx, query, match_count, search_type)
     │
-    ├──► [Get deps from ctx]
-    │       ├──► RAGState.get_retriever()       (if RAGState in deps)
-    │       └──► PostgresHybridStore() + Retriever() (fallback)
+    ├──► RAGState.get_retriever()           (from ctx.deps)
     │
-    ├──► retriever.retrieve_as_context()        [retriever.py]
+    ├──► retriever.retrieve_as_context()    [retriever.py]
     │
-    ├──► [if _current_trace]:
-    │       └──► trace_tool_call()              [observability]
+    ├──► mem0_store.get_context_string()    [mem0_store.py]  (if mem0_enabled)
     │
-    └──► [close local_store if created]
+    └──► return combined context string
 
 ─────────────────────────────────────────────────────────────────
 
 traced_agent_run(query, user_id, session_id, message_history)
     │
-    ├──► get_langfuse()                         [observability]
+    ├──► _trace_context.set(trace)          (ContextVar — per coroutine)
     │
-    ├──► [if langfuse enabled]:
-    │       └──► langfuse.trace()
+    ├──► get_langfuse()                     [observability]
+    │       └──► [if langfuse enabled]: langfuse.trace()
     │
-    ├──► agent.run(query, message_history)      [pydantic_ai]
-    │       │
-    │       └──► [Internally calls]:
-    │               └──► search_knowledge_base()
+    ├──► state = RAGState(user_id=user_id)
     │
-    ├──► [update trace with output]
+    ├──► agent.run(query, deps=state, message_history)  [pydantic_ai]
+    │       └──► [Internally calls]: search_knowledge_base()
     │
-    └──► langfuse.flush()
+    └──► [finally]:
+            ├──► state.close()
+            ├──► langfuse.flush()
+            └──► _trace_context.set(None)
 ```
 
 ### Complete System Call Flow
@@ -859,10 +885,105 @@ docker run -p 8501:8501 --env-file .env rag-streamlit
 
 ## 3. Chunking Strategies
 
-### Current Implementation
-- **Method**: Docling HybridChunker
-- **Location**: `rag/ingestion/chunkers/docling.py`
-- **Config**: `chunk_size=1000`, `chunk_overlap=200`, `max_tokens=512`
+### Current Implementation: DoclingHybridChunker
+
+**Location**: [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py)
+
+#### What It Does
+
+`DoclingHybridChunker` wraps Docling's built-in `HybridChunker`. Rather than splitting text blindly at character counts, it understands the document's structure — sections, headings, paragraphs, tables, code blocks — and uses that structure to find natural chunk boundaries.
+
+#### Initialisation
+
+```python
+# docling.py:130-135
+TOKENIZER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+tokenizer_obj = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)
+self.chunker = HybridChunker(
+    tokenizer=tokenizer_obj,
+    max_tokens=config.max_tokens,   # hard token ceiling per chunk
+    merge_peers=True,               # merge small sibling sections
+)
+```
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `max_tokens` | `512` | Hard token ceiling — chunks never exceed this |
+| `merge_peers` | `True` | Merges short adjacent sibling sections into one chunk |
+| Tokenizer | `all-MiniLM-L6-v2` | Used for accurate token counting (not for embeddings) |
+| `chunk_size` | `1000` | Character limit for fallback chunker |
+| `chunk_overlap` | `200` | Overlap for fallback sliding window |
+
+#### Requires a `DoclingDocument`
+
+The primary path requires a `DoclingDocument` object — the structured representation produced by Docling's `DocumentConverter`. This is passed in from the ingestion pipeline directly (the converter result is reused, not re-run):
+
+```python
+# pipeline.py — converter result passed directly to chunker
+chunks = await self.chunker.chunk_document(
+    content=markdown_text,
+    title=title,
+    source=str(file_path),
+    metadata=metadata,
+    docling_doc=docling_doc,   # ← structured doc from DocumentConverter
+)
+```
+
+If `docling_doc` is `None` (e.g. for plain `.txt` files), the chunker logs a warning and falls back to `_simple_fallback_chunk()`.
+
+#### `contextualize()` — Heading Context Prepended
+
+After chunking, each chunk is passed through `HybridChunker.contextualize()`:
+
+```python
+# docling.py:191
+contextualized_text = self.chunker.contextualize(chunk=chunk)
+```
+
+This prepends the full heading hierarchy to the chunk text:
+
+```
+## Company Overview
+### Mission Statement
+Our mission is to build AI tools that...
+```
+
+Without contextualization, the second chunk of a section would contain only the body text, with no indication of which section it belongs to. With it, every chunk is self-contained — the embedding captures both the topic (heading) and the content (body).
+
+#### Fallback: `_simple_fallback_chunk()`
+
+Used when no `DoclingDocument` is available or when `HybridChunker` raises an exception:
+
+```python
+# docling.py:249-292
+# Sliding window with sentence-boundary detection
+while start < len(content):
+    end = start + chunk_size
+    # Walk back from end to find ".!?\n" sentence boundary
+    for i in range(end, max(start + min_chunk_size, end - 200), -1):
+        if content[i] in ".!?\n":
+            chunk_end = i + 1
+            break
+    chunks.append(ChunkData(content=chunk_text, ...))
+    start = end - overlap   # advance with overlap
+```
+
+Chunks are tagged `chunk_method: "simple_fallback"` in metadata so you can distinguish them.
+
+#### Output: `ChunkData`
+
+Each chunk carries:
+
+| Field | Contents |
+|-------|----------|
+| `content` | Contextualized chunk text (heading hierarchy + body) |
+| `index` | Position within document |
+| `start_char` / `end_char` | Estimated character offsets |
+| `token_count` | Exact token count via the tokenizer |
+| `metadata.chunk_method` | `"hybrid"` or `"simple_fallback"` |
+| `metadata.has_context` | `True` when heading context was prepended |
+| `metadata.total_chunks` | Total chunk count for the document |
 
 ### Available Strategies
 

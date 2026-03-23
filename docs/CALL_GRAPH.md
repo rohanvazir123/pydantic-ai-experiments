@@ -184,6 +184,13 @@ RAGState lazy init (first get_retriever() call):                   L194
 | [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L357) | `traced_agent_run()` | L357 |
 | [`rag/agent/agent_main.py`](../rag/agent/agent_main.py#L75) | `stream_agent_interaction()` | L75 |
 | [`rag/agent/agent_main.py`](../rag/agent/agent_main.py#L58) | `set_verbose_debug()` | L58 |
+| [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
+| [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L126) | `PostgresHybridStore.initialize()` | L126 |
+| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L132) | `EmbeddingGenerator` | L132 |
+| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L181) | `Retriever` | L181 |
+| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L334) | `Retriever.retrieve_as_context()` | L334 |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L93) | `Mem0Store` | L93 |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L196) | `Mem0Store.get_context_string()` | L196 |
 
 ---
 
