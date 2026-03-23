@@ -21,3 +21,5 @@ coverage/
 htmlcov/
 .venv
 *.out.txt
+relevant_notebooks/
+notebooks_backup/
