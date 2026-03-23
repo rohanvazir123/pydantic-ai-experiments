@@ -1,8 +1,9 @@
 /.mypy_cache
 /data
 /fais-indexes
-# Jupyter notebooks (backed up to notebooks_backup/ outside this repo)
+# Jupyter notebooks — all ignored except ingestion_pipeline.ipynb
 *.ipynb
+!notebook/ingestion_pipeline.ipynb
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 /.env
