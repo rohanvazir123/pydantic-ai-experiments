@@ -10,6 +10,38 @@ Code references: line numbers point to files under `rag/` in this repo.
 
 RAG (Retrieval-Augmented Generation) combines a retrieval step — finding relevant documents from a knowledge store — with a generation step where an LLM uses those documents as context to answer a question. It is preferred over fine-tuning when: (a) the knowledge changes frequently (fine-tuning is a one-time bake-in), (b) you need source attribution (retrieved chunks can be cited), (c) the knowledge base is too large to fit in the model's weights, or (d) you need to reduce hallucinations by grounding the LLM in verifiable text. Fine-tuning is better for teaching the model a new *style* or *skill*, not for injecting factual knowledge.
 
+**Fine-tuning — detailed explanation**
+
+Fine-tuning takes a pre-trained base model (e.g. `llama-3-8b`) and continues training it on a curated dataset of your own examples. The model's weights are updated via gradient descent on your data. After fine-tuning, the knowledge is baked into the weights permanently — no prompt needed at inference time.
+
+Two main variants:
+
+- **Full fine-tuning**: all weights updated. Requires the same GPU RAM as pre-training — expensive and rare outside large labs.
+- **Parameter-efficient fine-tuning (PEFT) / LoRA**: only small adapter matrices are trained while the base model is frozen. LoRA injects low-rank matrices `A` and `B` into attention layers, training <1% of total parameters. This is what most practitioners mean when they say "fine-tuning" today.
+
+**Where fine-tuning shines:**
+
+| Use case | Why fine-tuning, not RAG |
+|---|---|
+| Style / tone / persona | Teaching a specific voice (legal writing, medical notes, brand tone). RAG cannot change *how* the model writes. |
+| Output format | Structured JSON schemas, SQL dialects, ICD-10 codes — tasks with a fixed input→output shape. |
+| Domain vocabulary | Medical/legal/financial jargon where the base model consistently uses lay terms or gets terminology wrong. Fine-tuning shifts the token probability distribution. |
+| Low-latency inference | A fine-tuned 7B model can outperform a large base model + RAG on a narrow task with zero retrieval overhead. |
+| Reducing prompt length | 50-line system prompt instructions can be baked into weights, cutting cost and latency per request. |
+| Safety / refusal tuning | Teaching domain-specific refusals beyond what RLHF provides. |
+
+**Why RAG beats fine-tuning for knowledge:**
+
+1. **Freshness** — fine-tuning is a snapshot; RAG just re-ingests the updated document.
+2. **Hallucination grounding** — fine-tuned models still hallucinate facts; RAG gives the model the actual text to quote from.
+3. **Source attribution** — RAG returns `"source: team-handbook.pdf"`. A fine-tuned model cannot tell you where it learned something.
+4. **Scale** — you cannot fine-tune millions of documents into a 7B model without catastrophic forgetting. RAG scales to arbitrary corpus size.
+5. **Cost** — a LoRA fine-tune costs $10–$200 and hours of GPU time. RAG ingestion costs pennies.
+
+**The power combo:** fine-tune for style/format/vocabulary + RAG for factual knowledge. Example: a medical assistant fine-tuned to output structured SOAP notes + RAG over the patient's chart for factual grounding.
+
+**This project:** RAG only — the LLM is used as-is. The NeuralFlow AI knowledge base changes frequently enough that baking it into weights would be impractical, and source attribution matters for a Q&A system.
+
 **Q2. What are the main failure modes of a naive RAG pipeline?**
 
 - **Recall failure**: the relevant chunk is not retrieved at all — wrong embedding model, poor chunking, or the query phrasing differs too much from the document.
@@ -29,6 +61,34 @@ Smaller chunks → higher precision (each chunk is tightly scoped) but lower rec
 **Q5. What is the "lost in the middle" problem and how does chunk ordering help?**
 
 LLMs attend more strongly to tokens near the beginning and end of the context window, and less to tokens in the middle. When 5 chunks are formatted into context, the chunk at position 3 is most likely to be ignored. The mitigation in this codebase is to return ranked results (highest similarity first) so the most relevant chunk is always at position 1, not buried in the middle.
+
+**Why it happens:** Transformer attention is not uniform across the context window. Research (Liu et al., 2023 — "Lost in the Middle") showed that LLMs pay the most attention to the **beginning** (primacy effect) and **end** (recency effect) of the context. Tokens in the middle receive significantly less attention weight.
+
+**Concrete example:** Say you retrieve 5 chunks and stuff them into the prompt:
+
+```
+[CHUNK 1] — about PTO policy (rank #1, most relevant)
+[CHUNK 2] — about sick leave
+[CHUNK 3] — about the actual answer to the question  ← buried in the middle
+[CHUNK 4] — about health benefits
+[CHUNK 5] — about holidays
+```
+
+The user asks: *"How many vacation days do employees get?"* The exact answer is in chunk 3, but the model attends poorly to it and may hallucinate — even though the correct text is in its context.
+
+The problem gets worse when you retrieve many chunks (k=10, 20) and when your retriever is imperfect (the real answer lands at rank #4 or #5 instead of #1).
+
+**Mitigations:**
+
+| Technique | How it helps |
+|---|---|
+| Rank-order the context (this project) | Most relevant chunk at position 1 → top of context where attention is highest |
+| Reduce k | Fewer chunks → less "middle" — but risks missing the answer if it's at rank #6 |
+| Reranker | Cross-encoder re-scores chunks more accurately → truly relevant chunk lands at rank #1 |
+| "Sandwich" ordering | Most relevant chunks at top AND bottom; less relevant in the middle |
+| Smaller context | Keep total context short so there's less "middle" to lose things in |
+
+**This project:** The retriever returns results sorted by RRF score (highest first). The agent formats them in that order, so if retrieval is correct the answer is always near the top. The reranker (when enabled) improves this further by making rank ordering more accurate.
 
 **Q6. Why store the full document alongside chunks?**
 
