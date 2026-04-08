@@ -387,6 +387,117 @@ The LLM (via Pydantic AI) decides *whether* to call retrieval, *what query* to u
 
 The `@agent.tool` decorator registers a Python async function as a tool available to the model. Pydantic AI serializes the function signature (name, parameters, docstring) into the tool schema and includes it in the system prompt / tool list sent to the LLM. When the LLM outputs a tool call (in its structured response), Pydantic AI deserializes the arguments, calls the Python function, and feeds the return value back to the LLM as a tool result. Type annotations are used for the schema — changing a parameter type changes what the LLM knows about the tool.
 
+**Q47a. How does the LLM know which tool to call — does Pydantic AI register tool names with it?**
+
+Yes — this is the core of how tool-calling LLMs work. Pydantic AI introspects the decorated function and builds a JSON Schema describing the tool, then sends it to the LLM as part of the API request. The LLM never "learns" about tools through training on your code — it receives them fresh on every request.
+
+**Step 1 — Pydantic AI introspects the function:**
+
+```python
+@agent.tool
+async def search_knowledge_base(
+    ctx: PydanticRunContext,
+    query: str,
+    match_count: int | None = 5,
+    search_type: str | None = "hybrid",
+) -> str:
+    """Search the knowledge base for relevant information."""
+    ...
+```
+
+Pydantic AI reads: the function name (`search_knowledge_base`), every parameter (excluding `ctx`), their types, their defaults, and the docstring. It converts these into a JSON Schema object:
+
+```json
+{
+  "name": "search_knowledge_base",
+  "description": "Search the knowledge base for relevant information.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string" },
+      "match_count": { "type": "integer", "default": 5 },
+      "search_type": { "type": "string", "default": "hybrid" }
+    },
+    "required": ["query"]
+  }
+}
+```
+
+**Step 2 — This schema is sent to the LLM API on every request:**
+
+For OpenAI-compatible APIs (which this project uses via `OpenAIChatModel`), the schema is passed in the `tools` field of the chat completion request:
+
+```json
+POST /v1/chat/completions
+{
+  "model": "llama3.1:8b",
+  "messages": [...],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "search_knowledge_base",
+        "description": "Search the knowledge base...",
+        "parameters": { ... }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}
+```
+
+**Step 3 — The LLM decides whether to call the tool:**
+
+The LLM has been fine-tuned (via RLHF/instruction tuning) to understand the `tools` field. Based on the user message, the system prompt, and the tool descriptions, it decides:
+- If the question needs information from the knowledge base → emit a tool call response
+- If the question is trivial (greeting, math) → emit a plain text response directly
+
+The system prompt in `prompts.py` provides additional guidance:
+```
+ONLY search when users explicitly ask for information that would be in the knowledge base
+For greetings (hi, hello) -> Just respond conversationally, no search needed
+```
+
+**Step 4 — The LLM emits a structured tool call:**
+
+Instead of plain text, the LLM responds with:
+```json
+{
+  "role": "assistant",
+  "tool_calls": [{
+    "id": "call_abc123",
+    "type": "function",
+    "function": {
+      "name": "search_knowledge_base",
+      "arguments": "{\"query\": \"PTO policy\", \"match_count\": 5, \"search_type\": \"hybrid\"}"
+    }
+  }]
+}
+```
+
+Note the LLM fills in the argument values — it chose `"PTO policy"` as the query string, not the user's original phrasing.
+
+**Step 5 — Pydantic AI executes the tool and loops:**
+
+Pydantic AI catches this response, validates the arguments against the JSON Schema, calls the Python function, and appends the result to the message history:
+
+```json
+{
+  "role": "tool",
+  "tool_call_id": "call_abc123",
+  "content": "Source: team-handbook | Title: Employee Benefits\n\nEmployees receive 20 days of PTO per year..."
+}
+```
+
+The updated message history is sent back to the LLM for a second call. Now the LLM has the retrieved context and generates the final answer as plain text — no more tool calls.
+
+**Why the tool name and docstring matter so much:**
+
+The LLM's decision to call `search_knowledge_base` (and with what arguments) is entirely driven by the tool's `name` and `description`. If the function were named `do_thing` with no docstring, the LLM would rarely call it. Good tool design:
+- Name: verb + noun, self-explanatory (`search_knowledge_base` not `skb`)
+- Description (docstring): explain *what*, *when to use it*, and what it returns
+- Parameter descriptions: type annotations + defaults give the LLM strong hints
+
 **Q48. What is `RAGState` and why are its attributes `PrivateAttr`?**
 
 `RAGState` is the dependency injection container passed as `deps` to every tool call. It holds the `user_id`, `store`, `retriever`, and `mem0_store`. These are declared as `PrivateAttr(...)` because `RAGState` extends `BaseModel` — regular fields would be included in Pydantic's schema/validation/serialization, which is wrong for internal service objects. `PrivateAttr` tells Pydantic "this field exists but is not part of the data model."
@@ -885,3 +996,118 @@ pgvector is appropriate up to ~5–10M vectors with HNSW. Beyond that, or when y
 - **Distributed horizontal scaling** — pgvector is single-node; Qdrant/Weaviate/Pinecone are distributed.
 
 The advantage of staying on pgvector: single database for both relational data (documents table) and vectors (chunks table), transactional consistency, no extra infrastructure. This project's corpus (hundreds of documents, tens of thousands of chunks) is well within pgvector's sweet spot.
+
+---
+
+## Data Model
+
+**Q117. What does the PostgreSQL data model look like — entity diagram and sample records?**
+
+**Entity diagram:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│                     documents                       │
+├──────────────┬──────────────────────────────────────┤
+│ id           │ UUID  PK  gen_random_uuid()          │
+│ title        │ TEXT  NOT NULL                       │
+│ source       │ TEXT  NOT NULL  UNIQUE               │  ← file path / URL
+│ content      │ TEXT                                 │  ← full markdown text
+│ metadata     │ JSONB  DEFAULT '{}'                  │  ← title, author, hash…
+│ created_at   │ TIMESTAMPTZ  DEFAULT NOW()           │
+└──────────────┴──────────────────────────────────────┘
+        │ 1
+        │ ON DELETE CASCADE
+        │ N
+┌─────────────────────────────────────────────────────┐
+│                      chunks                         │
+├──────────────┬──────────────────────────────────────┤
+│ id           │ UUID  PK  gen_random_uuid()          │
+│ document_id  │ UUID  FK → documents.id              │
+│ content      │ TEXT  NOT NULL                       │  ← contextualized chunk text
+│ embedding    │ vector(768)                          │  ← pgvector float32 array
+│ chunk_index  │ INTEGER  NOT NULL                    │  ← 0-based order within doc
+│ metadata     │ JSONB  DEFAULT '{}'                  │  ← chunk_method, token_count…
+│ token_count  │ INTEGER                              │
+│ created_at   │ TIMESTAMPTZ  DEFAULT NOW()           │
+│ content_tsv  │ tsvector  GENERATED ALWAYS STORED    │  ← auto-updated from content
+└──────────────┴──────────────────────────────────────┘
+
+Indexes:
+  chunks_embedding_idx    USING ivfflat (embedding vector_cosine_ops)  lists=100
+  chunks_content_tsv_idx  USING GIN (content_tsv)
+  chunks_document_id_idx  USING btree (document_id)
+  documents_source_idx    USING btree (source)
+```
+
+**Sample `documents` row:**
+
+```
+id          │ a3f1c2d4-88b1-4e2a-9c3f-1234567890ab
+title       │ Employee Handbook
+source      │ rag/documents/team-handbook.md
+content     │ # Employee Handbook\n\n## Benefits\n\nEmployees receive 20 days
+            │ of PTO per year...[full markdown, ~8000 chars]
+metadata    │ {
+            │   "file_type": "md",
+            │   "content_hash": "d41d8cd98f00b204e9800998ecf8427e",
+            │   "chunk_count": 18,
+            │   "title": "Employee Handbook"
+            │ }
+created_at  │ 2025-03-15 10:23:41+00
+```
+
+**Sample `chunks` row:**
+
+```
+id           │ 7b2e9f13-cc4a-4d88-b901-abcdef012345
+document_id  │ a3f1c2d4-88b1-4e2a-9c3f-1234567890ab   ← FK to documents row above
+content      │ Benefits > Time Off Policy
+             │
+             │ Employees are entitled to 20 days of paid time off (PTO) per
+             │ calendar year. PTO accrues monthly and unused days roll over
+             │ up to a maximum of 10 days.
+embedding    │ [0.0213, -0.1047, 0.0831, 0.0492, -0.2103, 0.1774, ...] (768 floats)
+chunk_index  │ 3
+metadata     │ {
+             │   "chunk_method": "hybrid",
+             │   "has_context": true,
+             │   "document_source": "rag/documents/team-handbook.md",
+             │   "document_title": "Employee Handbook"
+             │ }
+token_count  │ 87
+created_at   │ 2025-03-15 10:23:42+00
+content_tsv  │ 'benefit':1 'calendar':11 'day':8,16 'entitl':5 'maximum':20
+             │ 'month':14 'off':9 'paid':7 'polic':3 'pto':10 'roll':17
+             │ 'time':8 'unus':15 'year':12
+             │                              ← auto-generated, stemmed lexemes
+```
+
+**Key observations:**
+
+- `content` in the chunk is the *contextualized* text (`"Benefits > Time Off Policy\n\n..."`) — the heading breadcrumb is baked in, so the embedding captures the topic context.
+- `embedding` is a `vector(768)` — 768 × 4 bytes = 3,072 bytes per chunk row purely for the vector.
+- `content_tsv` is computed automatically by PostgreSQL on every INSERT/UPDATE — you never write to it directly. The lexemes are stemmed (`'entitl'` for "entitled", `'polic'` for "policy") and stop words (`"are"`, `"to"`, `"of"`) are dropped.
+- `metadata` JSONB is flexible — the pipeline writes `chunk_method` and `has_context` here; YAML frontmatter fields from markdown files also land here.
+- `chunk_index` preserves the original document order, useful for re-ranking by position or reconstructing document flow.
+
+**How a hybrid search touches these tables:**
+
+```sql
+-- Semantic leg: cosine similarity on embedding
+SELECT id, content, metadata, document_id,
+       1 - (embedding <=> $1::vector) AS score
+FROM chunks
+ORDER BY embedding <=> $1::vector
+LIMIT 20;
+
+-- Text leg: tsvector full-text ranking
+SELECT id, content, metadata, document_id,
+       ts_rank(content_tsv, plainto_tsquery('english', $2)) AS score
+FROM chunks
+WHERE content_tsv @@ plainto_tsquery('english', $2)
+ORDER BY score DESC
+LIMIT 20;
+
+-- Results merged in Python via RRF, then joined back to documents for title/source
+```
