@@ -10,8 +10,9 @@ This document describes all available tests in the RAG system, how to run them, 
 2. [Test Files Overview](#test-files-overview)
 3. [Running Tests](#running-tests)
 4. [Test Categories](#test-categories)
-5. [Prerequisites](#prerequisites)
-6. [Troubleshooting](#troubleshooting)
+5. [Retrieval Metrics](#retrieval-metrics)
+6. [Prerequisites](#prerequisites)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -41,6 +42,7 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_ingestion.py` | 14 | None | Data models and chunking validation |
 | `test_postgres_store.py` | 18 | PostgreSQL/Neon | PostgreSQL/pgvector store operations |
 | `test_rag_agent.py` | 25+ | PostgreSQL + Ollama | RAG retriever and agent queries |
+| `test_retrieval_metrics.py` | 28 | PostgreSQL + Ollama | Gold dataset evaluation: Hit Rate, MRR, NDCG, Precision, Recall |
 | `test_agent_flow.py` | 3 | PostgreSQL + Ollama | Agent execution flow with Pydantic AI |
 | `test_pdf_question_generator.py` | 23 | PostgreSQL + Ollama | PDF question generator with pgvector |
 | `test_mem0_store.py` | 15+ | PostgreSQL + Ollama | Mem0 memory store with pgvector |
@@ -282,6 +284,119 @@ These require:
 1. PostgreSQL/Neon with pgvector and ingested data
 2. Ollama running with llama3.2:3b and nomic-embed-text models
 
+#### Retrieval Metrics Tests
+```bash
+python -m pytest rag/tests/test_retrieval_metrics.py -v --log-cli-level=INFO
+```
+
+**Requirements:** PostgreSQL with ingested NeuralFlow AI documents + Ollama running
+
+Two test classes:
+
+**`TestMetricFunctions`** (19 unit tests, no external dependencies) — verifies the
+metric math in isolation before any DB calls are made.
+
+**`TestRetrievalMetrics`** (7 integration tests) — runs all 10 gold queries through
+the live retriever and asserts minimum quality thresholds.
+
+---
+
+## Retrieval Metrics
+
+### Concepts
+
+RAG retrieval quality is measured by comparing the ranked result list for each query
+against a **gold dataset** — a curated list of (query, relevant document sources) pairs.
+A result is marked **relevant** if its `document_source` path contains any of the
+expected document filename stems (case-insensitive match).
+
+### Metrics at K
+
+All ranking metrics are computed at a cutoff K (evaluated at K=1, 3, 5):
+
+| Metric | Formula | What it measures |
+|--------|---------|-----------------|
+| **Hit Rate@K** | `mean( any(rel_i) for i≤K )` | Fraction of queries where at least one relevant doc appears in the top-K results. The most practical single metric — "did the system find something useful?" |
+| **MRR@K** | `mean( 1/rank_first_relevant )` | Mean Reciprocal Rank — rewards finding the first relevant result as early as possible. Score of 1.0 means first result is always relevant; 0.5 means first relevant doc is at rank 2 on average. |
+| **Precision@K** | `mean( relevant_in_top_K / K )` | How much of the returned list is relevant? Penalises returning irrelevant results. |
+| **Recall@K** | `mean( relevant_in_top_K / total_relevant )` | What fraction of all relevant documents for a query were found? Limited by how many relevant docs exist (e.g. a query with only 1 relevant doc can achieve Recall=1.0 with a single hit). |
+| **NDCG@K** | `mean( DCG@K / IDCG@K )` | Normalised Discounted Cumulative Gain — like Precision@K but position-aware: a relevant result at rank 1 contributes more than the same result at rank 5. Ideal ranking = 1.0. |
+
+### System Metrics
+
+| Metric | Definition |
+|--------|-----------|
+| **Mean latency** | Average wall-clock time per query in milliseconds, measured end-to-end including embedding and DB round-trip. |
+| **P95 latency** | 95th-percentile query latency — worst-case performance for 95% of queries. Threshold: < 10 000 ms. |
+
+### NDCG Calculation Detail
+
+```
+DCG@K  = Σ rel_i / log2(i + 2)        for i = 0 … K-1
+IDCG@K = Σ 1    / log2(i + 2)        for i = 0 … min(#relevant, K)-1
+NDCG@K = DCG@K / IDCG@K
+
+rel_i ∈ {0, 1}  (binary relevance)
+```
+
+Dividing by log2(i+2) gives position 1 a weight of 1.0, position 2 a weight of 0.63,
+position 5 a weight of 0.39 — relevance at the top counts much more.
+
+### Gold Dataset
+
+10 queries grounded in the NeuralFlow AI document corpus:
+
+| # | Query | Expected sources |
+|---|-------|-----------------|
+| 1 | What does NeuralFlow AI do? | company-overview, mission-and-goals |
+| 2 | What is the PTO policy? | team-handbook |
+| 3 | What is the learning budget for employees? | team-handbook |
+| 4 | What technologies and architecture does the platform use? | technical-architecture-guide |
+| 5 | What is the company mission and vision? | mission-and-goals |
+| 6 | GlobalFinance Corp loan processing success story | client-review-globalfinance, Recording4 |
+| 7 | How many employees work at NeuralFlow AI? | company-overview, team-handbook |
+| 8 | What is DocFlow AI and how does it process documents? | Recording2 |
+| 9 | Q4 2024 business results and performance review | q4-2024-business-review |
+| 10 | implementation approach and playbook | implementation-playbook |
+
+Entries 6 and 8 (audio Recordings) are automatically scored 0 for retrieval if Whisper
+is not installed and audio files were not transcribed during ingestion.
+
+### Minimum Thresholds (K=5, hybrid search)
+
+| Metric | Threshold |
+|--------|-----------|
+| Hit Rate@5 | ≥ 0.60 |
+| MRR@5 | ≥ 0.40 |
+| Precision@5 | ≥ 0.15 |
+| Recall@5 | ≥ 0.40 |
+| NDCG@5 | ≥ 0.40 |
+| P95 latency | < 10 000 ms |
+
+### Reading the Metrics Table
+
+Running with `--log-cli-level=INFO` prints a table like:
+
+```
+=================================================================
+  RETRIEVAL METRICS — hybrid search, NeuralFlow AI corpus
+=================================================================
+  Metric               K=1       K=3       K=5
+---------------------------------------------------------
+  HIT_RATE@K         0.700     0.800     0.900
+  MRR@K              0.700     0.700     0.700
+  PRECISION@K        0.700     0.367     0.260
+  RECALL@K           0.350     0.533     0.600
+  NDCG@K             0.700     0.603     0.563
+---------------------------------------------------------
+  Mean latency                              850ms
+  P95  latency                             1420ms
+=================================================================
+```
+
+Followed by a per-query breakdown showing whether each query hit (✓/✗),
+its reciprocal rank, and its latency.
+
 ---
 
 ## Prerequisites
@@ -407,9 +522,10 @@ python -m pytest rag/tests/ -v
 | test_ingestion.py | 14 |
 | test_postgres_store.py | 18 |
 | test_rag_agent.py | 25+ |
+| test_retrieval_metrics.py | 28 (19 unit + 9 integration) |
 | test_agent_flow.py | 3 |
 | test_pdf_question_generator.py | 23 |
 | test_mem0_store.py | 15+ (integration tests require MEM0_ENABLED=true) |
 | test_raganything.py | 10+ (if raganything installed) |
 
-**Total with PostgreSQL setup:** ~95+ tests
+**Total with PostgreSQL setup:** ~123+ tests
