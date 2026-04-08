@@ -54,6 +54,79 @@ Two main variants:
 
 Standard RAG is a hardwired pipeline: embed query → retrieve → stuff context → generate. The retrieval always happens regardless of whether the question needs it. Agentic RAG gives the LLM retrieval as a *tool* it can choose to call, with control over the query string and number of results. This project uses agentic RAG: the Pydantic AI agent has a `search_knowledge_base` tool (`rag_agent.py`) and decides when to call it. The agent can also decline to retrieve if the question is trivially answerable. It is "lightweight agentic" — one retrieval tool, no multi-hop planning loops.
 
+**Standard RAG — how it works:**
+
+```
+User query
+    │
+    ▼
+Embed query  →  Vector search  →  Top-K chunks  →  Stuff into prompt  →  LLM  →  Answer
+```
+
+Every step is fixed and runs unconditionally. The system has no judgement — it always retrieves, always uses exactly K chunks, always calls the LLM once. There is no loop, no decision point, no ability to follow up.
+
+Failure modes this causes:
+- Retrieves chunks even for "What is 2+2?" — wastes latency and tokens
+- Uses a fixed query string (the raw user question) even if it's vague or ambiguous
+- Cannot realise mid-generation that it needs more information and go back to retrieve
+
+**Agentic RAG — how it works:**
+
+```
+User query
+    │
+    ▼
+LLM (agent) ──► decides: do I need to search?
+    │                        │
+    │          Yes           │  No
+    │◄────────────────────   └──► answer directly
+    │
+    ▼
+search_knowledge_base(query="refined query", count=5)
+    │
+    ▼
+LLM reads results ──► decides: is this enough?
+    │                              │
+    │  No (needs more)             │  Yes
+    ▼                              ▼
+search_knowledge_base(...)      Generate final answer
+    │
+    ▼
+... (loop until satisfied or max iterations)
+```
+
+Key differences:
+
+| Dimension | Standard RAG | Agentic RAG |
+|---|---|---|
+| **Retrieval decision** | Always retrieves | LLM decides whether to retrieve |
+| **Query formulation** | Raw user question | LLM rewrites query for better retrieval |
+| **Number of retrievals** | Exactly 1 | 0, 1, or many — LLM decides |
+| **Multi-hop** | No | Yes — can search → read → search again |
+| **Tool choice** | Only retrieval | Can have multiple tools (web search, calculator, DB lookup) |
+| **Latency** | Predictable (always 1 retrieval) | Variable (0–N retrievals) |
+| **Cost** | Predictable | Variable — more LLM calls |
+
+**Multi-hop example:** User asks *"Who is the manager of the team that owns the billing service?"*
+- Standard RAG: embeds the full question, retrieves chunks, hopes the answer is in one chunk.
+- Agentic RAG: searches "billing service owner" → finds team name → searches "team X manager" → finds the person. Two hops, two retrievals.
+
+**How Pydantic AI implements the tool loop:**
+
+The agent runs in a loop internally. After each LLM response, Pydantic AI checks if the model emitted a tool call. If yes, it executes the tool (`search_knowledge_base`), appends the result to the message history, and calls the LLM again. This continues until the LLM produces a plain text response with no tool calls — that becomes the final answer. The loop is bounded by `max_result_retries` to prevent infinite loops.
+
+```python
+# rag/agent/rag_agent.py
+@agent.tool
+async def search_knowledge_base(ctx: RunContext[RAGState], query: str, count: int = 5) -> str:
+    results = await ctx.deps.retriever.retrieve(query, match_count=count)
+    # returns formatted chunk text → LLM reads it and decides what to do next
+```
+
+**This project's flavour — "lightweight agentic":**
+
+One tool, no multi-hop planning, no separate planner LLM. The agent can choose *not* to search (for greetings, math questions) and can search with a rewritten query, but it does not chain multiple searches in a reasoning loop in practice. This keeps latency predictable while still getting the benefits of dynamic query formulation and skip-retrieval for trivial questions.
+
 **Q4. How does chunking strategy affect retrieval quality?**
 
 Smaller chunks → higher precision (each chunk is tightly scoped) but lower recall (context that spans multiple chunks is split). Larger chunks → more context per result but noisier embeddings (the embedding averages over more text, diluting the signal). For this project, `max_tokens=512` is the hard ceiling set by the embedding model's window. The HybridChunker respects structural boundaries (sections, paragraphs) rather than splitting at an arbitrary character count, which improves coherence without sacrificing precision.
@@ -680,3 +753,135 @@ RRF scores are not probabilities. They are sums of `1/(k+rank)` terms. With k=60
 **Q90. Changing `chunk_overlap` from 100 to 0 — improve some metrics, hurt others?**
 
 With overlap=0: fewer total chunks (no duplicated content at boundaries), cleaner boundaries, no duplicate information in the index. Precision@K may improve (less redundant chunks in results). Recall@K may drop: a sentence that straddles a boundary is now fully in one chunk rather than partially in two — if it's in the "wrong" chunk, the query misses it. MRR could go either way. The improvement is most visible in small corpora where duplicate chunks from overlap pollute results. For large corpora, overlap is important to prevent boundary-straddling losses.
+
+---
+
+## Scale, Latency & Precision Models
+
+**Q111. What are the main scale bottlenecks in this system at 1M documents?**
+
+At 1M documents the system hits three hard limits:
+
+1. **IVFFlat index accuracy degrades** — IVFFlat partitions vectors into `lists` clusters and searches only `probes` clusters at query time. With 1M vectors, the default `lists=100` is grossly under-partitioned (pgvector recommends `lists ≈ sqrt(rows)`  → ~1000 for 1M rows). With too few lists, each cluster is huge and `probes` must be increased to maintain recall — but that defeats the speed benefit. Fix: rebuild the index with `lists=1000`, tune `probes` to balance recall vs latency, or migrate to HNSW which scales better.
+
+2. **PostgreSQL table scan for text search** — GIN index on `content_tsv` scales well to millions of rows, but the `ts_rank` scoring function re-scores every matched row. At 1M chunks, a broad query like "company policy" may match 100K rows that all need ranking. Fix: limit via metadata filters (tenant_id, date range) before full-text scoring.
+
+3. **Single PostgreSQL instance write throughput** — 1M documents × 20 chunks × 768-dim float32 vectors = ~60GB of vector data. A single Postgres instance hits I/O limits during bulk ingestion. Fix: Neon's branching for parallel ingest on separate branches, then merge; or partition `chunks` by `document_id` hash across multiple Postgres instances.
+
+**Q112. What are the ingestion latency bottlenecks and how would you profile them?**
+
+The ingestion pipeline has four serial stages per document, each with a different bottleneck type:
+
+| Stage | Typical latency | Bottleneck type | Profiling tool |
+|---|---|---|---|
+| `DocumentConverter.convert()` | 2–15s/doc (CPU) | CPU-bound ML inference (layout detection, table recognition) | `cProfile`, GPU utilisation |
+| `chunker.chunk_document()` | 50–200ms/doc | CPU-bound tokenization | `time.perf_counter` around call |
+| `embedder.embed_chunks()` | 100–500ms/doc | Network I/O (HTTP to embedding API) | HTTP request tracing, async profiler |
+| `store.add()` (DB write) | 20–100ms/doc | Network I/O + disk I/O | `EXPLAIN ANALYZE` on INSERT, asyncpg query timing |
+
+**How to profile:**
+```python
+import time
+t0 = time.perf_counter()
+result = converter.convert(path)
+print(f"convert: {time.perf_counter() - t0:.2f}s")
+```
+
+Or instrument with Langfuse spans — wrap each stage in a `langfuse_client.span(name="convert")` context manager to get per-stage timing in the Langfuse dashboard.
+
+**Biggest win**: `DocumentConverter` is the dominant cost. Parallelising it with a semaphore-bounded `asyncio.to_thread` pool gives near-linear throughput improvement up to the number of CPU cores.
+
+**Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?**
+
+Current retrieval path latency breakdown (approximate, local Ollama):
+
+| Step | Latency | Notes |
+|---|---|---|
+| Embed query | 20–50ms | HTTP to local Ollama embedding endpoint |
+| Semantic search (IVFFlat) | 5–20ms | PostgreSQL vector scan |
+| Text search (GIN) | 2–10ms | PostgreSQL tsvector scan |
+| RRF merge (Python) | <1ms | Pure in-memory |
+| HyDE LLM call (if enabled) | 500–2000ms | Full LLM generation — dominant cost |
+| Reranker (if enabled) | 200–1000ms | N parallel LLM calls or CrossEncoder forward pass |
+
+**To reach sub-100ms:**
+1. **Disable HyDE and reranker** — both are off by default. Retrieval without them is already ~30–80ms.
+2. **Cache embeddings** — the embedder has an in-memory cache keyed on query text. Repeated queries return instantly.
+3. **Cache retrieval results** — `_result_cache` (LRU+TTL) returns cached results for identical queries.
+4. **Switch IVFFlat → HNSW** — HNSW has lower query latency at high recall. Trade-off: more memory (~2–3× IVFFlat) and slower index build.
+5. **Use a faster embedding model** — smaller models (e.g. `nomic-embed-text` at 768-dim is already fast; `all-MiniLM-L6-v2` at 384-dim is faster but lower quality).
+6. **Connection pooling** — asyncpg pool avoids TCP handshake + SSL per query. Already in place.
+7. **Co-locate** — run PostgreSQL and the app on the same machine or in the same datacenter to cut network RTT.
+
+**Q114. What models can be swapped in to improve retrieval precision?**
+
+Precision can be improved at three stages — embedding, reranking, and generation:
+
+**Embedding models (affects semantic search quality):**
+
+| Model | Dimensions | Strengths | Trade-off |
+|---|---|---|---|
+| `nomic-embed-text` (current) | 768 | Fast, local via Ollama, good general quality | Not fine-tuned for RAG |
+| `text-embedding-3-small` (OpenAI) | 1536 | Strong general retrieval, MTEB top tier | Paid API, network latency |
+| `text-embedding-3-large` (OpenAI) | 3072 | Best OpenAI retrieval quality | 2× cost of small, more DB storage |
+| `voyage-3` (Voyage AI) | 1024 | Optimised for RAG, strong on long documents | Paid API |
+| `voyage-3-lite` | 512 | Fastest Voyage model | Lower quality than voyage-3 |
+| `bge-large-en-v1.5` (BAAI) | 1024 | Open source, strong MTEB scores | Larger than nomic, needs more RAM |
+| `e5-mistral-7b-instruct` | 4096 | Instruction-tuned, best open-source quality | 7B params — slow without GPU |
+
+Switching model requires: (1) update `EMBEDDING_MODEL` + `EMBEDDING_DIMENSION` in `.env`, (2) drop and recreate the IVFFlat index with the new dimension, (3) re-ingest all documents (old vectors are incompatible).
+
+**Reranking models (affects precision@K after retrieval):**
+
+| Model | Type | Latency | Quality |
+|---|---|---|---|
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | CrossEncoder | ~50ms/batch | Good, fast |
+| `cross-encoder/ms-marco-electra-base` | CrossEncoder | ~100ms/batch | Better quality |
+| `BAAI/bge-reranker-large` | CrossEncoder | ~150ms/batch | Strong open-source reranker |
+| `voyage-rerank-2` (Voyage AI) | API-based | ~200ms | Best-in-class precision |
+| `cohere-rerank-3` (Cohere) | API-based | ~200ms | Strong, especially multilingual |
+| LLM-as-reranker (current option) | Generative | 500–2000ms | Highest quality, highest cost |
+
+CrossEncoder rerankers score each (query, chunk) pair jointly — they see both at once, unlike bi-encoders that embed independently. This gives them much higher precision but they cannot be pre-computed, so they only run on the top-K retrieved candidates (typically K=20→rerank→return top 5).
+
+**Generation models (affects answer quality, not retrieval):**
+
+| Model | Notes |
+|---|---|
+| `llama3.1:8b` (current, local) | Fast, private, good for simple Q&A |
+| `llama3.1:70b` | Much better reasoning, needs strong GPU |
+| `gpt-4o` | Best answer quality, paid, low latency |
+| `claude-sonnet-4-6` | Strong reasoning, good context handling |
+| `gemini-1.5-pro` | 1M context window — can stuff entire corpus |
+
+**Q115. How would you benchmark and choose between embedding models for this corpus?**
+
+1. **Build a gold dataset** — the existing `GOLD_DATASET` in `test_retrieval_metrics.py` (10 queries) is a start. Expand to 50–100 queries with known relevant sources, covering edge cases: acronyms (PTO), proper nouns (NeuralFlow), multi-hop (manager of team that owns X).
+
+2. **Run the evaluation harness** for each candidate model:
+   - Re-ingest with the new model
+   - Run `test_retrieval_metrics.py` → collect Hit Rate@5, MRR@5, NDCG@5, mean latency
+   - Record index size (storage cost of higher-dimension vectors)
+
+3. **Key metrics to compare:**
+
+| Metric | What it tells you |
+|---|---|
+| Hit Rate@5 | Does the right document appear at all in top 5? |
+| MRR@5 | Is the right document near the top? |
+| NDCG@5 | Full quality of the ranked list |
+| P95 latency | Worst-case query speed |
+| Index size | Storage cost (dim × n_chunks × 4 bytes) |
+
+4. **Decision rule**: prefer the model with highest NDCG@5 among those whose P95 latency stays under your SLA (e.g. 100ms). If two models tie on NDCG, pick the smaller dimension (cheaper storage, faster search).
+
+**Q116. At what scale would you move away from PostgreSQL/pgvector to a dedicated vector database?**
+
+pgvector is appropriate up to ~5–10M vectors with HNSW. Beyond that, or when you need:
+
+- **Sub-10ms P99 latency at high QPS** → dedicated vector DBs (Qdrant, Weaviate) are optimised for this; pgvector shares I/O with OLTP workloads.
+- **Filtered vector search at scale** → pgvector applies filters post-retrieval; Qdrant/Weaviate apply filters during HNSW traversal (payload indexing), which is far more efficient.
+- **Multi-tenant isolation** — dedicated DBs have namespace/collection isolation built in; pgvector requires `WHERE tenant_id = ?` on every query.
+- **Distributed horizontal scaling** — pgvector is single-node; Qdrant/Weaviate/Pinecone are distributed.
+
+The advantage of staying on pgvector: single database for both relational data (documents table) and vectors (chunks table), transactional consistency, no extra infrastructure. This project's corpus (hundreds of documents, tens of thousands of chunks) is well within pgvector's sweet spot.
