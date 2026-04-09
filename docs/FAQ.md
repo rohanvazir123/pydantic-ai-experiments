@@ -1,4 +1,4 @@
-# Interview Answers — Pydantic AI RAG System
+# FAQ - Pydantic AI RAG System
 
 Code references: line numbers point to files under `rag/` in this repo.
 
