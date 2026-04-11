@@ -1111,3 +1111,173 @@ LIMIT 20;
 
 -- Results merged in Python via RRF, then joined back to documents for title/source
 ```
+
+---
+
+## Pydantic AI Internals
+
+**Q118. How does the Pydantic AI agent loop work in this codebase — agent creation, RunContext, deps, and the tool execution cycle?**
+
+**1. Agent creation (`rag_agent.py:227`)**
+
+```python
+agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+```
+
+`PydanticAgent` is instantiated once at module level — it is stateless and reused across all requests. It holds:
+- the LLM model configuration (`OpenAIChatModel` pointing at Ollama/OpenAI)
+- the system prompt string
+- the registry of tools (populated by `@agent.tool` decorators below it)
+
+No database connections or user state live here — those are in `RAGState`.
+
+---
+
+**2. Registering a tool (`rag_agent.py:230`)**
+
+```python
+@agent.tool
+async def search_knowledge_base(
+    ctx: PydanticRunContext,
+    query: str,
+    match_count: int | None = 5,
+    search_type: str | None = "hybrid",
+) -> str:
+    """Search the knowledge base for relevant information."""
+    ...
+```
+
+`@agent.tool` does three things at decoration time (before any request):
+- Registers `search_knowledge_base` in the agent's internal tool registry
+- Introspects the signature and docstring to build a JSON Schema (see Q47a for details)
+- The first parameter `ctx: PydanticRunContext` is **always** the run context — it is stripped from the JSON Schema sent to the LLM (the LLM never sees it or fills it in)
+
+The remaining parameters (`query`, `match_count`, `search_type`) become the tool's callable arguments that the LLM fills in.
+
+---
+
+**3. Starting a run — passing `deps`**
+
+```python
+# Simple run — no deps, no shared state
+result = await agent.run("What does NeuralFlow AI do?")
+
+# Full run — with RAGState for connection reuse and user personalisation
+state = RAGState(user_id="alice")
+result = await agent.run("What is the PTO policy?", deps=state)
+await state.close()
+```
+
+`deps` is arbitrary — any Python object. Pydantic AI doesn't care what it is; it just makes it available inside every tool call via `ctx.deps`. This is the dependency injection mechanism. The `deps_type` annotation on the agent (if set) enables type checking, but it is optional.
+
+In `traced_agent_run` (`rag_agent.py:362`) this is done automatically:
+
+```python
+state = RAGState(user_id=user_id)
+result = await agent.run(query, deps=state)
+await state.close()
+```
+
+---
+
+**4. The `RunContext` object inside a tool**
+
+When Pydantic AI calls `search_knowledge_base`, it injects a `RunContext` as the first argument. This object exposes:
+
+| Attribute | Type | What it contains |
+|---|---|---|
+| `ctx.deps` | `Any` (here: `RAGState \| None`) | Whatever was passed as `deps` to `agent.run()` |
+| `ctx.model` | `Model` | The LLM model instance |
+| `ctx.usage` | `Usage` | Token counts so far in this run |
+| `ctx.prompt` | `str` | The original user prompt |
+| `ctx.tool_call_id` | `str` | Unique ID of this specific tool invocation |
+
+In this codebase only `ctx.deps` is used:
+
+```python
+deps = ctx.deps
+state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
+```
+
+The `isinstance` guard handles two call patterns:
+- `agent.run(query, deps=state)` → `ctx.deps` is a `RAGState` directly
+- `agent.run(query, deps=some_wrapper)` → `ctx.deps` is a wrapper with a `.state` attribute
+
+---
+
+**5. The full agent loop — what happens during `agent.run()`**
+
+```
+agent.run("What is the PTO policy?", deps=state)
+│
+├─► Build messages list:
+│     [ system_prompt, user: "What is the PTO policy?" ]
+│
+├─► POST /v1/chat/completions  (with tools=[search_knowledge_base schema])
+│
+├─► LLM responds with tool call:
+│     tool_calls: [{ name: "search_knowledge_base", args: '{"query":"PTO policy"}' }]
+│
+├─► Pydantic AI sees tool_calls in response → does NOT return to caller yet
+│
+├─► Validates args against JSON Schema ──► calls search_knowledge_base(ctx, query="PTO policy")
+│       │
+│       ├─► ctx.deps → RAGState → retriever.retrieve_as_context("PTO policy")
+│       ├─► Hits PostgreSQL (semantic + text search, RRF merge)
+│       └─► Returns formatted string of top-5 chunks
+│
+├─► Appends tool result to messages:
+│     [ system_prompt, user: "...", assistant: tool_call, tool: "Benefits > PTO\n\nEmployees..." ]
+│
+├─► POST /v1/chat/completions  (second LLM call, same tools available)
+│
+├─► LLM responds with plain text (no tool calls):
+│     "Employees receive 20 days of PTO per year, accruing monthly..."
+│
+└─► agent.run() returns AgentResult(output="Employees receive 20 days...")
+```
+
+The loop runs until the LLM produces a response with **no tool calls**. If the LLM calls the tool again (e.g. a second search for a follow-up detail), Pydantic AI executes it and loops again. The loop is bounded by `max_result_retries` (default: 1 retry on validation error) and implicitly by the LLM's own decision to stop calling tools.
+
+---
+
+**6. `RAGState` — why lazy initialisation matters**
+
+```python
+class RAGState(BaseModel):
+    user_id: str | None = None
+
+    _store: PostgresHybridStore | None = PrivateAttr(default=None)
+    _retriever: Retriever | None = PrivateAttr(default=None)
+    _initialized: bool = PrivateAttr(default=False)
+    _init_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
+
+    async def get_retriever(self) -> Retriever:
+        async with self._init_lock:
+            if not self._initialized:
+                self._store = PostgresHybridStore()
+                await self._store.initialize()   # creates asyncpg pool HERE
+                self._retriever = Retriever(store=self._store)
+                self._initialized = True
+        return self._retriever
+```
+
+The asyncpg pool is created **inside** `get_retriever()`, which is called **inside** the tool, which runs in the same event loop as `agent.run()`. This is intentional — asyncpg pools are bound to the event loop that created them. If the pool were created in `RAGState.__init__` (which might run in a different loop, e.g. Streamlit's startup loop), every query would fail with "pool attached to a different loop". The `_init_lock` prevents double-initialisation if two tool calls happen concurrently.
+
+---
+
+**7. Message history for multi-turn conversations**
+
+```python
+# First turn
+result1 = await agent.run("What is the PTO policy?", deps=state)
+
+# Second turn — pass previous messages for context
+result2 = await agent.run(
+    "How does it compare to the sick leave policy?",
+    message_history=result1.new_messages(),
+    deps=state,
+)
+```
+
+`result.new_messages()` returns the messages from that run (user prompt + tool calls + tool results + assistant response). Passing them as `message_history` on the next call appends them before the new user message, giving the LLM full conversation context. This is how `traced_agent_run` supports multi-turn chat in the Streamlit UI.
