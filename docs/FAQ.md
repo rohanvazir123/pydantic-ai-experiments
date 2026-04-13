@@ -1115,6 +1115,207 @@ pgvector is appropriate up to ~5–10M vectors with HNSW. Beyond that, or when y
 
 The advantage of staying on pgvector: single database for both relational data (documents table) and vectors (chunks table), transactional consistency, no extra infrastructure. This project's corpus (hundreds of documents, tens of thousands of chunks) is well within pgvector's sweet spot.
 
+**Q116a. Why aren't we using `pg_textsearch` (Timescale's BM25 extension) instead of `tsvector`/`ts_rank`?**
+
+Short answer: we weren't aware of it at build time, and for a prototype it wasn't a blocker. But it is a meaningful upgrade for production.
+
+**What `pg_textsearch` is:**
+
+`pg_textsearch` (github.com/timescale/pg_textsearch, v1.0.0, production-ready) is a PostgreSQL extension from Timescale that replaces the built-in `tsvector`/`ts_rank` FTS stack with a **BM25-based** index and ranking engine. Same idea — full-text search inside Postgres — but with a better ranking algorithm, faster top-k retrieval, and a simpler query syntax.
+
+**BM25 vs `ts_rank` (TF-IDF):**
+
+`ts_rank` scores based on raw term frequency (TF) and inverse document frequency (IDF). BM25 improves on this with two corrections:
+- **Term frequency saturation** (k1 parameter, default 1.2) — the score boost from seeing a term 20× vs 10× is diminished; stops long-document term spam from dominating
+- **Length normalisation** (b parameter, default 0.75) — a match in a short chunk scores higher than the same match in a 5000-word chunk, because finding the term in less context is more informative
+
+For a RAG corpus where chunks vary in size (50-token fallback chunks vs 512-token HybridChunker chunks), BM25 length normalisation is directly relevant — `ts_rank` will unfairly favour longer chunks that contain the term more times by chance.
+
+**API comparison:**
+
+```sql
+-- Current: tsvector/ts_rank
+CREATE INDEX chunks_content_tsv_idx ON chunks USING GIN(content_tsv);
+
+SELECT content, ts_rank(content_tsv, plainto_tsquery('english', $1)) AS score
+FROM chunks
+WHERE content_tsv @@ plainto_tsquery('english', $1)
+ORDER BY score DESC
+LIMIT 20;
+
+-- With pg_textsearch: BM25
+CREATE INDEX chunks_bm25_idx ON chunks USING bm25(content)
+  WITH (text_config='english');
+
+SELECT content
+FROM chunks
+ORDER BY content <@> 'PTO policy'   -- <@> operator, returns negative BM25 score
+LIMIT 20;
+```
+
+The `<@>` operator integrates with `LIMIT` via **Block-Max WAND** — an algorithm that skips document blocks that cannot possibly make the top-k, avoiding scoring most of the index. `ts_rank` scores all matched rows before truncating.
+
+**Feature comparison:**
+
+| Feature | `tsvector` / `ts_rank` (current) | `pg_textsearch` BM25 |
+|---|---|---|
+| Ranking algorithm | TF-IDF (`ts_rank`) | BM25 (industry standard) |
+| Top-k optimisation | None — scores all matches | Block-Max WAND — skips non-competitive docs |
+| Index build | Single-threaded | Parallel (multi-worker) |
+| Query syntax | `@@ plainto_tsquery(...)` | `<@>` operator |
+| Tunable parameters | None | k1, b per index |
+| Length normalisation | None | Yes (b parameter) |
+| Partitioned table support | Yes | Yes |
+| Memory management | OS-managed | Configurable DSA limit |
+| Installation | Built-in | Extension (`shared_preload_libraries`) |
+| PostgreSQL version | All | 17/18 (pre-built binaries) |
+
+**What would change in this codebase:**
+
+```python
+# postgres.py — text_search() method
+
+# Remove:
+content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+CREATE INDEX ... USING GIN(content_tsv)
+WHERE content_tsv @@ plainto_tsquery('english', $1)
+ts_rank(content_tsv, plainto_tsquery('english', $1)) as similarity
+
+# Add:
+CREATE INDEX chunks_bm25_idx ON chunks USING bm25(content)
+  WITH (text_config='english', k1=1.2, b=0.75);
+
+-- Query becomes:
+SELECT id, content, metadata, document_id,
+       -(content <@> $1) AS similarity   -- negate: <@> returns negative scores
+FROM chunks
+ORDER BY content <@> $1
+LIMIT $2;
+```
+
+`content_tsv` column and its GIN index can be dropped entirely — `pg_textsearch` maintains its own BM25 index internally.
+
+**When to switch:**
+
+- If retrieval precision on keyword queries is noticeably poor (BM25 will improve it)
+- If the corpus has high chunk-length variance (BM25 length normalisation helps more)
+- If text search latency is a bottleneck at scale (Block-Max WAND is faster for large corpora)
+- When running PostgreSQL 17+ (pre-built binaries available; PostgreSQL 16 requires building from source)
+
+**Current limitation that `pg_textsearch` does not fix:**
+
+Both `tsvector` and BM25 drop stop words and use stemming — so "PTO" → `'pto'` and "paid time off" → `'paid' 'time' 'off'` still do not match each other. This vocabulary mismatch is why the semantic leg of hybrid search exists. Switching to BM25 improves ranking quality within text search, but does not solve cross-vocabulary retrieval — that remains the job of the embedding model.
+
+**Q116b. What other PostgreSQL text search extensions exist, which does this project use, and what would each add?**
+
+**Overview — all relevant extensions:**
+
+| Extension | Used? | What it does | Best for |
+|---|---|---|---|
+| `tsvector` / `tsquery` (built-in) | **Yes** | Stemming, stop-word removal, lexeme indexing via GIN | General keyword search, already in every PostgreSQL install |
+| `pg_trgm` | No | Trigram similarity — splits text into 3-char grams, supports fuzzy `%` and `<->` operators | Typo tolerance, fuzzy matching, `LIKE`/`ILIKE` acceleration |
+| `pg_textsearch` (Timescale) | No | BM25 ranking via `bm25` index + `<@>` operator, Block-Max WAND top-k | Better ranking quality than `ts_rank`, faster top-k at scale |
+| `pg_search` (ParadeDB) | No | BM25 via `bm25` index + `@@@` operator, also supports fuzzy, phrase, boost queries | Full Elasticsearch-like search inside PostgreSQL |
+| `pgvector` | **Yes** | Dense vector storage + IVFFlat/HNSW ANN search | Semantic/embedding-based retrieval |
+
+---
+
+**`pg_trgm` — fuzzy matching**
+
+`pg_trgm` splits text into overlapping 3-character grams (`"NeuralFlow"` → `"neu"`, `"eur"`, `"ura"`, `"ral"`, `"alf"`, `"lfl"`, `"flo"`, `"low"`). Two strings are similar if they share many trigrams.
+
+```sql
+CREATE EXTENSION pg_trgm;
+CREATE INDEX chunks_trgm_idx ON chunks USING GIN(content gin_trgm_ops);
+
+-- Fuzzy match: "NeuralFow" still matches "NeuralFlow"
+SELECT content, similarity(content, 'NeuralFow') AS sim
+FROM chunks
+WHERE content % 'NeuralFow'   -- % operator: similarity above pg_trgm.similarity_threshold (default 0.3)
+ORDER BY sim DESC
+LIMIT 10;
+
+-- Also accelerates LIKE/ILIKE queries:
+SELECT content FROM chunks WHERE content ILIKE '%neuralflow%';
+```
+
+**What it adds vs `tsvector`:**
+- `tsvector` does not handle typos — `'neuralFow'` produces the lexeme `'neuralfow'` which does not match `'neuralflow'`. `pg_trgm` handles this naturally via shared trigrams.
+- Useful for user-facing search where typos are expected (product names, proper nouns, codes).
+
+**Why it adds little on top of `tsvector` in this project:**
+- The semantic search leg already handles vocabulary variation much better than trigrams.
+- The corpus is company documents — misspellings in the source are unlikely. User query typos would be caught by the embedding model (cosine similarity is robust to minor variations).
+- Adds another index (~same size as GIN tsvector index), another query path, and more complexity in the hybrid merge.
+
+**When to add it:** if users frequently search for proper nouns or product codes with typos, and semantic search is not catching them (e.g. internal tool names, employee IDs, part numbers).
+
+---
+
+**`pg_search` (ParadeDB) — BM25 + Elasticsearch-like queries inside PostgreSQL**
+
+ParadeDB's `pg_search` is the most feature-complete text search extension. It uses the same BM25 algorithm as `pg_textsearch` but adds:
+
+- **Phrase queries**: `"paid time off"` matches the exact phrase, not just individual words
+- **Fuzzy term matching**: `fuzzy_term(field=>'content', value=>'neuralfow', distance=>1)` — edit-distance-based fuzzy within BM25
+- **Boosted fields**: boost matches in titles over body text
+- **Range filters**: combine BM25 score with numeric/date filters in one index scan
+- **Highlighting**: return matched snippets with hit terms highlighted
+- **`@@@` operator** with a rich query builder API
+
+```sql
+CREATE EXTENSION pg_search;
+CREATE INDEX chunks_search_idx ON chunks
+  USING bm25(id, content, metadata)
+  WITH (text_fields='{"content": {"tokenizer": {"type": "default"}}}');
+
+-- Basic BM25 query
+SELECT id, content, paradedb.score(id) AS score
+FROM chunks
+WHERE chunks @@@ 'PTO policy'
+ORDER BY score DESC LIMIT 10;
+
+-- Fuzzy query (handles "NeuralFow" → "NeuralFlow")
+SELECT id, content
+FROM chunks
+WHERE chunks @@@ paradedb.fuzzy_term(field=>'content', value=>'NeuralFow')
+ORDER BY paradedb.score(id) DESC LIMIT 10;
+
+-- Phrase match
+WHERE chunks @@@ paradedb.phrase(field=>'content', phrases=>ARRAY['paid time off'])
+```
+
+**What it adds vs `tsvector` + `pg_textsearch`:**
+
+| Feature | `tsvector` | `pg_textsearch` | `pg_search` |
+|---|---|---|---|
+| BM25 ranking | No (TF-IDF) | Yes | Yes |
+| Phrase queries | No | No | Yes |
+| Fuzzy term matching | No | No | Yes |
+| Field boosting | No | No | Yes |
+| Snippet highlighting | `ts_headline()` | No | Yes |
+| Query builder API | `plainto_tsquery` | `<@>` operator | Rich Pydantic-style API |
+| Maturity | Stable (built-in) | v1.0.0 | Active, production users |
+
+**Why not used in this project:**
+- Prototype was built with built-in `tsvector` — sufficient for the NeuralFlow corpus size
+- `pg_search` requires ParadeDB-distributed PostgreSQL or installing the extension + `shared_preload_libraries` — heavier operational overhead than a built-in
+- The semantic leg already handles fuzzy/vocabulary matching; phrase queries are less critical when chunks are short (≤512 tokens) and focused
+
+**The upgrade path if text search quality becomes a bottleneck:**
+
+```
+Current:  tsvector + ts_rank (TF-IDF, no fuzzy, no phrases)
+    ↓
+Step 1:   pg_textsearch (drop-in BM25 upgrade, minimal code change, better ranking)
+    ↓
+Step 2:   pg_search / ParadeDB (BM25 + fuzzy + phrase + boosting, if precision still insufficient)
+    ↓
+Parallel: pg_trgm (add only if users report typo misses on proper nouns/codes)
+```
+
+In all cases, the semantic (pgvector) leg remains unchanged — the text search upgrade only affects one half of the hybrid search pipeline.
+
 ---
 
 ## Data Model
@@ -1402,105 +1603,471 @@ result2 = await agent.run(
 
 ---
 
-## PDF Question Generator & LightRAG Experiment
+## Production Readiness
 
-**Q119. What are the `pdf_processing_l1/l2/l3` folders and how were they generated?**
+**Q120. What are all the changes needed to make this RAG system production-ready?**
 
-These are output folders from the **PDF Question Generator** pipeline (`rag/ingestion/processors/pdf_question_generator.py`). Each folder corresponds to one CS168 lecture PDF that was run through the pipeline — `l1`, `l2`, `l3` are lecture numbers, not RAG processing levels.
+The current codebase is a well-structured prototype — async throughout, typed, tested, with observability hooks. But it has significant gaps before it can serve real users reliably. Changes are grouped by category.
 
-**The PDFs processed:**
+---
 
-| Folder | PDF | Topic | Pages | Chunks |
+### 1. Authentication & Authorisation
+
+**Current state:** No auth. Anyone who can reach the Streamlit UI or call `agent.run()` gets full access to everything.
+
+| Change | Where | Detail |
+|---|---|---|
+| JWT/session auth | Streamlit UI + API layer | Validate bearer token on every request; extract `user_id` and `tenant_id` from claims |
+| Role-based access | New `roles` table | `admin` (can ingest), `reader` (query only), `superadmin` (cross-tenant) |
+| API key management | New `api_keys` table | Hashed keys for programmatic access; rate-limited per key |
+| Secure secret storage | Config | Move all keys out of `.env` into a secrets manager (AWS Secrets Manager, Vault, Doppler) — `.env` is fine locally, not in prod |
+
+---
+
+### 2. Multi-tenancy
+
+**Current state:** Single shared corpus, no isolation (see Q78 for full detail).
+
+| Change | Where | Detail |
+|---|---|---|
+| Add `tenant_id` column | `documents`, `chunks` tables | `TEXT NOT NULL` with B-tree index |
+| Row-Level Security | PostgreSQL | RLS policies + `SET LOCAL app.tenant_id` per connection |
+| Tenant provisioning API | New service | Create tenant → register in tenant registry → confirm schema ready |
+| Pass `tenant_id` through stack | `RAGState` → `PostgresHybridStore` → every query | Extracted from the auth token, never user-supplied |
+
+---
+
+### 3. API Layer
+
+**Current state:** Entry points are Streamlit UI and direct Python imports. No HTTP API.
+
+| Change | Detail |
+|---|---|
+| FastAPI app | Wrap `traced_agent_run` in `POST /chat`, ingestion in `POST /ingest`, health in `GET /health` |
+| Request/response models | Pydantic models for all endpoints — input validation, OpenAPI docs auto-generated |
+| Async request handling | FastAPI + uvicorn already async-compatible with asyncpg pool |
+| Streaming responses | `agent.run_stream()` → `StreamingResponse` for real-time token output in the UI |
+| Versioned endpoints | `/v1/chat`, `/v1/ingest` — enables non-breaking API evolution |
+
+---
+
+### 4. Ingestion Pipeline
+
+**Current state:** CLI only (`python -m rag.main --ingest`), synchronous processing, no job queue, `clean_before_ingest=True` takes the system down briefly.
+
+| Change | Detail |
+|---|---|
+| Background job queue | Celery + Redis or arq — ingest jobs are CPU/network-heavy, should not block API requests |
+| Job status tracking | `ingestion_jobs` table: `job_id`, `status`, `progress`, `error`; poll via `GET /ingest/{job_id}` |
+| Zero-downtime re-index | Shadow table swap (Q106) — ingest into `documents_new`/`chunks_new`, then `ALTER TABLE RENAME` atomically |
+| Deduplication | MD5 hash check before ingestion (already exists for incremental); add SHA-256 for security-sensitive dedup |
+| Parallel document processing | Semaphore-bounded `asyncio.to_thread` for `DocumentConverter` (Q105) |
+| Webhook / event notification | Notify downstream systems when ingestion completes |
+| Max file size guard | Reject files above configurable limit before conversion begins |
+| Virus scanning | ClamAV scan uploaded files before processing |
+
+---
+
+### 5. Database
+
+**Current state:** Single asyncpg pool, `pool_min=1 / pool_max=10`, IVFFlat index with `lists=100`, no migrations, no connection SSL enforcement.
+
+| Change | Detail |
+|---|---|
+| Schema migrations | Alembic — version-controlled DDL changes; never `CREATE TABLE IF NOT EXISTS` in application code in prod |
+| IVFFlat → HNSW | Better query latency at scale; tune `m` and `ef_construction` for recall/speed trade-off |
+| Connection SSL | Enforce `sslmode=require` in `DATABASE_URL`; already supported by asyncpg |
+| Pool tuning | `pool_min` = number of worker processes; `pool_max` = based on PostgreSQL `max_connections` limit |
+| Read replica | Route `semantic_search` and `text_search` to a read replica; writes go to primary |
+| Soft deletes | Add `deleted_at TIMESTAMPTZ` to `documents`; filter `WHERE deleted_at IS NULL`; hard delete via scheduled job |
+| Connection timeout / retry | Set `command_timeout` and add retry logic with exponential backoff for transient connection failures |
+| pgBouncer | Connection pooler in front of PostgreSQL to handle burst traffic without exhausting `max_connections` |
+
+---
+
+### 6. Embedding Model Management
+
+**Current state:** Model name and dimension are env vars. No record of which model was used per document. Changing the model silently breaks all existing vectors.
+
+| Change | Detail |
+|---|---|
+| Store model metadata | Add `embedding_model TEXT`, `embedding_dimension INT` to `documents` table at ingestion time |
+| Model version guard | On startup, check that `settings.embedding_model` matches the model recorded in the DB; refuse to query if mismatched |
+| Model migration tooling | Script to re-embed all chunks with a new model into a shadow table, then swap (zero-downtime model upgrade) |
+
+---
+
+### 7. Observability & Alerting
+
+**Current state:** Langfuse tracing is optional and off by default. No metrics, no structured logging, no alerts.
+
+| Change | Detail |
+|---|---|
+| Enable Langfuse in prod | `LANGFUSE_ENABLED=true`; trace every agent run, tool call, and ingestion job |
+| Structured logging | Replace `logging.info(f"...")` with structured JSON logs (`structlog` or `python-json-logger`); include `tenant_id`, `user_id`, `trace_id` in every log line |
+| Prometheus metrics | Expose `/metrics` endpoint: query latency histogram, retrieval hit rate, ingestion throughput, error rate, pool connection count |
+| Alerting | Alert on: P95 query latency > 2s, error rate > 1%, embedding API failure rate > 5%, ingestion queue depth > 100 |
+| Distributed tracing | Add OpenTelemetry spans around DB queries and embedding API calls for end-to-end request tracing |
+| Health checks | `GET /health` returns DB connectivity, embedding API reachability, LLM API reachability — used by load balancer |
+
+---
+
+### 8. Reliability & Error Handling
+
+**Current state:** Tool errors return a string `"Error searching knowledge base: ..."` to the LLM. No retries, no circuit breakers, no graceful degradation.
+
+| Change | Detail |
+|---|---|
+| Retry with backoff | Wrap embedding API and LLM calls with `tenacity` — retry on 429/503 with exponential backoff + jitter |
+| Circuit breaker | If embedding API is down, fast-fail new requests rather than queuing them; fall back to text-search-only mode |
+| Graceful degradation | If semantic search fails → fall back to text search only; if reranker fails → return pre-rerank order |
+| Timeout enforcement | Set explicit timeouts on all external calls: embedding API (5s), LLM (30s), DB query (10s) |
+| Dead letter queue | Failed ingestion jobs go to a DLQ for manual inspection rather than silently dropped |
+
+---
+
+### 9. Security
+
+**Current state:** No input sanitisation beyond the table name validator in `settings.py`. API keys in `.env`.
+
+| Change | Detail |
+|---|---|
+| Input sanitisation | Validate and truncate user query length (e.g. max 1000 chars) before embedding |
+| Prompt injection defence | Strip or escape content that looks like system prompt overrides before passing to LLM |
+| `plainto_tsquery` already safe | Already used (Q22) — no SQL injection risk from user queries |
+| Secrets rotation | Rotate DB password, API keys on schedule; store in secrets manager with auto-rotation |
+| Dependency scanning | Add `pip-audit` or `safety` to CI to catch known CVEs in dependencies |
+| HTTPS only | TLS termination at load balancer; redirect HTTP → HTTPS |
+| CORS policy | Restrict allowed origins in the FastAPI CORS middleware |
+
+---
+
+### 10. Testing
+
+**Current state:** 118 tests, 12 skipped. No load tests, no contract tests, no chaos tests.
+
+| Change | Detail |
+|---|---|
+| Expand gold dataset | 10 queries → 100+ with edge cases: acronyms, multi-hop, negation, out-of-corpus queries |
+| Load testing | `locust` or `k6` — simulate 100 concurrent users, measure P95 latency and error rate under load |
+| Contract tests | Pin embedding API response schema — detect breaking changes before deployment |
+| Chaos testing | Kill the DB connection mid-request, kill the embedding API — verify graceful degradation |
+| CI pipeline | GitHub Actions: lint (ruff) → unit tests → integration tests (with test DB) → load test (nightly) |
+
+---
+
+### 11. Deployment
+
+**Current state:** Runs locally via `python -m rag.main` or `streamlit run`. No containerisation, no CI/CD.
+
+| Change | Detail |
+|---|---|
+| Dockerfile | Multi-stage build: `python:3.13-slim` base, install deps, copy source, run as non-root user |
+| Docker Compose | `app` + `postgres` + `ollama` services for local dev parity |
+| Kubernetes / managed container | Deploy FastAPI app as a `Deployment` with HPA (scale on CPU/request rate); separate `Job` for ingestion |
+| CI/CD pipeline | On merge to main: build image → run tests → push to registry → deploy to staging → smoke test → promote to prod |
+| Environment promotion | `dev` → `staging` → `prod` with separate Neon branches or databases per environment |
+| Graceful shutdown | Handle `SIGTERM`: stop accepting new requests, drain in-flight requests, close asyncpg pool, flush Langfuse |
+
+---
+
+### Priority order for a startup moving from prototype to production:
+
+```
+Phase 1 — Make it safe to expose:
+  Auth (JWT) → HTTPS → Input sanitisation → Secrets in vault
+
+Phase 2 — Make it multi-user:
+  FastAPI layer → Multi-tenancy (RLS) → Structured logging → Health checks
+
+Phase 3 — Make it reliable:
+  Retries + circuit breakers → Background ingestion queue → Alembic migrations → Monitoring + alerts
+
+Phase 4 — Make it scalable:
+  IVFFlat → HNSW → Read replica → Connection pooler → Load testing → HPA
+```
+
+---
+
+## Performance Tuning
+
+**Q121. What are all the tunables in this RAG system and how should they be set for performance?**
+
+Every tunable is grouped by the stage of the pipeline it affects. For each one: what it does, the current default, the effect of increasing/decreasing it, and a recommended starting point.
+
+---
+
+### 1. Chunking
+
+Chunking is the highest-leverage tunable. It affects every downstream stage — embedding quality, text search recall, storage size, and retrieval latency.
+
+**`max_tokens`** — `settings.py` / `pipeline.py`, default `512`
+
+The hard ceiling on chunk size measured in tokens (using the `all-MiniLM-L6-v2` tokenizer). `HybridChunker` never produces a chunk larger than this.
+
+| Value | Effect |
+|---|---|
+| Too small (< 128) | Chunks lack context — embeddings are poor signal, precision drops |
+| 128–256 | Good for FAQ-style docs with short, self-contained answers |
+| 256–512 (current) | Best general-purpose range for most document types |
+| > 512 | Truncated by the embedding model's context window — content silently cut |
+
+**Rule:** set `max_tokens` to ≤ the embedding model's max input tokens. `nomic-embed-text` supports 8192 tokens, so 512 is conservative — you could go to 1024 for denser chunks if precision allows.
+
+---
+
+**`chunk_size`** — `pipeline.py`, default `1000` (characters)
+
+Used only by the **simple fallback chunker** (plain text, `.txt`, failed PDF conversions). The sliding window width in characters.
+
+**`chunk_overlap`** — `pipeline.py`, default `200` (characters)
+
+Overlap between consecutive fallback chunks. Prevents answers that straddle a boundary from being missed entirely.
+
+| overlap=0 | Fewer chunks, no duplicate content, risk of boundary-straddling misses |
+| overlap=100–200 | Balanced — one sentence of shared context between chunks |
+| overlap > 50% of chunk_size | Massive redundancy, index bloat, duplicate results in retrieval |
+
+**Recommendation:** keep overlap at 10–20% of chunk_size. For 1000-char chunks, 100–200 char overlap is appropriate.
+
+---
+
+**`merge_peers`** — `docling.py`, default `True`
+
+Controls whether `HybridChunker` merges small adjacent chunks at the same heading level. Turning it off gives maximum granularity — every paragraph becomes its own chunk.
+
+Turn off if: your corpus has very long sections and you want finer retrieval granularity. Turn on (keep default) if: you want coherent multi-paragraph chunks with better embedding signal.
+
+---
+
+**`TOKENIZER_MODEL`** — `docling.py:105`, hardcoded `"sentence-transformers/all-MiniLM-L6-v2"`
+
+The tokenizer used to measure chunk token counts. Should match the embedding model's tokenizer for accurate boundary decisions (see Q97 for the mismatch risk). Not currently configurable via `.env` — requires a code change.
+
+---
+
+### 2. Embedding Model
+
+The embedding model is the single biggest determinant of semantic search quality.
+
+**`embedding_model`** — `settings.py`, default `"nomic-embed-text:latest"`
+**`embedding_dimension`** — `settings.py`, default `768`
+
+Must be changed together. Changing the model after ingestion requires a full re-ingest — all existing vectors become invalid.
+
+| Model | Dim | Speed | Quality | Notes |
 |---|---|---|---|---|
-| `pdf_processing_l1` | l1.pdf | Consistent Hashing | 12 | 121 |
-| `pdf_processing_l2` | l2.pdf | Count-Min Sketch / Heavy Hitters | 14 | 14 |
-| `pdf_processing_l3` | l3.pdf | kd-Trees / Curse of Dimensionality | 6 | 6 |
+| `nomic-embed-text` (current) | 768 | Fast (local) | Good | Local via Ollama, no cost |
+| `text-embedding-3-small` | 1536 | Fast (API) | Strong | OpenAI paid, MTEB top tier |
+| `text-embedding-3-large` | 3072 | Moderate | Best OpenAI | 2× cost, higher storage |
+| `voyage-3` | 1024 | Fast (API) | Excellent for RAG | Purpose-built for retrieval |
+| `bge-large-en-v1.5` | 1024 | Moderate (local) | Strong open-source | Runs locally, no API cost |
+| `e5-mistral-7b-instruct` | 4096 | Slow (7B model) | Best open-source | GPU required |
 
-Source: CS168 — The Modern Algorithmic Toolbox (Stanford, Tim Roughgarden & Gregory Valiant, 2024).
+**Storage impact:** each chunk stores `embedding_dimension × 4` bytes. At 768 dim and 50,000 chunks: 768 × 4 × 50,000 = **150MB** just for vectors. At 3072 dim: **600MB**.
 
-**What each folder contains:**
+**When to change:** run `test_retrieval_metrics.py` with different models and compare NDCG@5. Pick the highest-quality model whose P95 latency stays under your SLA.
 
-```
-pdf_processing_l1/                          ← most complete run (full RAGAnything mode)
-├── kv_store_text_chunks.json               ← LightRAG's KV store: chunk_id → content
-├── kv_store_llm_response_cache.json        ← cached LLM calls (avoid re-running)
-├── graph_chunk_entity_relation.graphml     ← knowledge graph: entities + relationships
-├── vdb_chunks.json                         ← vector DB entries for text chunks
-├── vdb_entities.json                       ← vector DB entries for extracted entities
-├── vdb_relationships.json                  ← vector DB entries for relationships
-├── l1_questions.json                       ← generated questions (JSON)
-└── l1_complete_output.txt                  ← full run log: context sent to LLM + raw response + questions
+---
 
-pdf_processing_l2/ and pdf_processing_l3/   ← simpler runs (fewer artefacts)
-├── l{n}_questions.json
-└── l{n}_complete_output.txt
-```
+### 3. Vector Index (pgvector)
 
-**How the pipeline works (`pdf_question_generator.py`):**
+**`ivfflat.lists`** — `postgres.py:187`, default `100`
 
-```
-PDF file
-   │
-   ▼
-MinerU VLM parser  (or PyPDF2 fallback)
-   │   ├── text blocks  → content_list items type="text"
-   │   ├── tables       → content_list items type="table"
-   │   ├── equations    → content_list items type="equation"
-   │   └── images       → content_list items type="image"  (with figure captions)
-   │
-   ▼
-LightRAG initialised in working_dir
-   │   └── stores chunks in kv_store_text_chunks.json + builds knowledge graph
-   │
-   ▼
-Multimodal processors (RAGAnything)
-   │   ├── TableModalProcessor   → LLM describes table content
-   │   ├── EquationModalProcessor → LLM explains equations
-   │   └── ImageModalProcessor   → vision LLM captions figures
-   │
-   ▼
-format_chunks_as_context()
-   │   └── builds "[chunk_id=c1][page=0]\n<text>\n..." string (max 10,000 chars)
-   │
-   ▼
-LLM called with QUESTION_GENERATION_PROMPT
-   │   └── returns JSON: [{ question, supported_by: [c1,c3], difficulty: easy|medium|hard }]
-   │
-   ▼
-Saved to {working_dir}/{name}_questions.json
-         {working_dir}/{name}_complete_output.txt
+Number of Voronoi cells the IVFFlat index partitions vectors into. pgvector recommendation: `lists ≈ rows / 1000` for up to 1M rows, `sqrt(rows)` beyond that.
+
+| Corpus size | Recommended lists |
+|---|---|
+| < 10,000 chunks | 10–50 |
+| 10,000–100,000 chunks | 100 (current default is fine) |
+| 100,000–1,000,000 chunks | 300–1000 |
+| > 1,000,000 chunks | Migrate to HNSW |
+
+Changing `lists` requires dropping and recreating the index (`CREATE INDEX ... USING ivfflat`).
+
+---
+
+**`ivfflat.probes`** — `postgres.py:275`, default `10` (set per-query via `SET LOCAL`)
+
+Number of cells inspected during a query. More probes → higher recall, higher latency.
+
+| probes | Recall | Latency |
+|---|---|---|
+| 1 | ~70–80% | Fastest |
+| 10 (current) | ~95% | Good balance |
+| lists (= full scan) | 100% | Same as no index |
+
+**Rule:** set `probes` to ~1% of `lists` for fast approximate search, up to 10% for near-exact results.
+
+---
+
+**IVFFlat → HNSW migration**
+
+For corpora above ~500K chunks or when P99 latency matters more than build time:
+
+```sql
+DROP INDEX chunks_embedding_idx;
+CREATE INDEX chunks_embedding_hnsw_idx ON chunks
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m=16, ef_construction=64);
+-- At query time, set ef_search for recall/speed trade-off:
+SET hnsw.ef_search = 40;
 ```
 
-**Two processing modes:**
+HNSW is faster at query time and does not require `lists` tuning, but uses 2–3× more memory and takes longer to build.
 
-- **`process_pdf_with_raganything`** (default) — uses the full `RAGAnything` wrapper which orchestrates LightRAG + MinerU + modal processors end to end. Produced the l1 folder with the GraphML knowledge graph.
-- **`process_pdf_simple`** (flag `--simple`) — calls MinerU directly, then manually applies the modal processors, then feeds chunks to LightRAG. More transparent, easier to debug. Used for l2 and l3.
+---
 
-**LightRAG's role:**
+### 4. Hybrid Search & RRF
 
-LightRAG is a graph-based RAG library. Unlike this project's vector-only approach, LightRAG also:
-- Extracts named entities and relationships from chunks via LLM
-- Builds a knowledge graph (`graph_chunk_entity_relation.graphml`) where nodes are entities and edges are relationships
-- Supports query modes: `local` (chunk-level), `global` (community summaries), `hybrid`
+**`default_text_weight`** — `settings.py`, default `0.3`
 
-The `kv_store_*` and `vdb_*` JSON files are LightRAG's persistent storage format (file-based, no separate DB needed — useful for experiments).
+Controls the relative weight of text search vs semantic search in the RRF merge. Not directly a weight in the RRF formula — used to tune the number of results fetched from each leg before merging.
 
-**How to run it:**
+**`rrf_k`** — `postgres.py:421`, default `60`
 
-```bash
-# Process a PDF with Ollama (default)
-python -m rag.ingestion.processors.pdf_question_generator path/to/lecture.pdf
+The smoothing constant in the RRF formula `1 / (k + rank)`. Higher k → less penalty for lower-ranked results, flatter score distribution.
 
-# With OpenAI
-python -m rag.ingestion.processors.pdf_question_generator --api-key YOUR_KEY path/to/lecture.pdf
+| k | Effect |
+|---|---|
+| 1 | Aggressive — rank 1 scores much higher than rank 2 |
+| 60 (current) | Standard — smooth score distribution, widely used default |
+| 120 | Very flat — rank 1 and rank 10 are nearly equivalent |
 
-# Simple mode (MinerU + modal processors directly)
-python -m rag.ingestion.processors.pdf_question_generator --simple path/to/lecture.pdf
+**Leave at 60** unless you have evidence from your evaluation harness that a different value improves NDCG.
 
-# List PDFs in a directory
-python -m rag.ingestion.processors.pdf_question_generator --list-dir path/to/dir
-```
+---
 
-**Relationship to the main RAG system:**
+**`default_match_count`** — `settings.py`, default `10`
+**`max_match_count`** — `settings.py`, default `50`
 
-This pipeline is a standalone experiment — it does not share the PostgreSQL store or the Pydantic AI agent. It is used to generate question datasets from academic PDFs, which can then be used as gold datasets for evaluating the main RAG system (similar to the `GOLD_DATASET` in `test_retrieval_metrics.py`). The `test_rag_anything_pdfs_for_question_generation/` folder holds the source PDFs fed into this pipeline.
+How many chunks are returned from retrieval and stuffed into the LLM context. More chunks → higher recall but more tokens → higher cost, longer latency, and lost-in-the-middle risk.
+
+| match_count | Use case |
+|---|---|
+| 3–5 | High-precision queries, simple factual Q&A |
+| 5–10 (current) | General purpose |
+| 10–20 | Complex multi-part questions, research synthesis |
+| > 20 | Only with a reranker — without one, precision collapses |
+
+---
+
+### 5. HyDE
+
+**`hyde_enabled`** — `settings.py`, default `False`
+
+Generates a hypothetical answer to the query using the LLM, then embeds the answer (instead of the query) for retrieval. Closes the vocabulary gap between query phrasing and document phrasing.
+
+| Scenario | Use HyDE? |
+|---|---|
+| Queries are short, vague, or conversational | Yes — a good hypothetical answer is much richer than 3 words |
+| Queries are precise technical terms | No — the query embedding is already close to documents |
+| Latency budget < 200ms | No — HyDE adds a full LLM call (500–2000ms) |
+| LLM is weak/small | No — a bad hypothetical answer hurts retrieval |
+
+---
+
+### 6. Reranker
+
+**`reranker_enabled`** — `settings.py`, default `False`
+**`reranker_type`** — `settings.py`, default `"llm"`
+**`reranker_overfetch_factor`** — `settings.py`, default `3`
+
+When enabled, retrieves `match_count × reranker_overfetch_factor` candidates, reranks them, and returns the top `match_count`.
+
+**`reranker_type` options and trade-offs:**
+
+| Type | Model | Latency | Quality | Cost |
+|---|---|---|---|---|
+| `llm` (current) | `llama3.1:8b` | 500–2000ms | High | LLM tokens per chunk |
+| `cross_encoder` | `BAAI/bge-reranker-base` | 50–150ms | High | Local inference only |
+| `cross_encoder` | `BAAI/bge-reranker-large` | 100–250ms | Higher | Larger model |
+
+**`reranker_overfetch_factor`:** fetch 3× the requested results, rerank, return top N. Higher factor → better reranking coverage but more DB and embedding work.
+
+| factor | Effect |
+|---|---|
+| 2 | Minimal — reranker sees twice as many candidates |
+| 3 (current) | Good balance |
+| 5+ | Useful only with a fast cross-encoder; LLM reranker becomes too slow |
+
+**When to enable:** corpus > 10,000 chunks, or when evaluation shows top-ranked result is often wrong. Start with `cross_encoder` + `BAAI/bge-reranker-base` for the best latency/quality trade-off.
+
+---
+
+### 7. Result Cache
+
+**`max_size`** — `retriever.py:104`, default `100` (number of cached queries)
+**`ttl_seconds`** — `retriever.py:104`, default `300` (5 minutes)
+
+In-memory LRU cache keyed on `(query, match_count, search_type)`. Identical queries within the TTL return instantly without hitting PostgreSQL or the embedding API.
+
+| ttl_seconds | Use case |
+|---|---|
+| 60 | Rapidly changing corpus — stale results are a concern |
+| 300 (current) | General purpose |
+| 3600 | Static corpus — maximise cache hits |
+| 0 (disable) | Debugging, evaluation runs (you want fresh results) |
+
+Cache is cleared automatically after ingestion via `_result_cache.clear()`.
+
+---
+
+### 8. Connection Pool
+
+**`db_pool_min_size`** — `settings.py`, default `1`
+**`db_pool_max_size`** — `settings.py`, default `10`
+**`command_timeout`** — `postgres.py`, default `60` seconds
+
+| Setting | Recommendation |
+|---|---|
+| `min_size` | Set to number of worker processes — keeps connections warm |
+| `max_size` | Set to `(PostgreSQL max_connections - system connections) / number_of_app_instances` |
+| `command_timeout` | Lower to 10–15s in production — fast-fail slow queries rather than holding connections |
+
+---
+
+### 9. LLM Model
+
+**`llm_model`** — `settings.py`, default `"llama3.1:8b"`
+
+The LLM used for answer generation (and for the LLM reranker and HyDE if enabled). Does not affect retrieval quality — only the quality and style of the final answer.
+
+| Model | Context window | Quality | Latency | Cost |
+|---|---|---|---|---|
+| `llama3.1:8b` (current) | 128K | Good | Fast (local) | Free |
+| `llama3.1:70b` | 128K | Very good | Slow (local, needs GPU) | Free |
+| `gpt-4o-mini` | 128K | Good | Fast | Low ($) |
+| `gpt-4o` | 128K | Excellent | Fast | Medium ($$$) |
+| `claude-sonnet-4-6` | 200K | Excellent | Fast | Medium ($$$) |
+| `gemini-1.5-pro` | 1M | Excellent | Moderate | Medium ($$$) |
+
+For RAG specifically, a smaller model is often sufficient — the LLM is summarising retrieved chunks, not recalling facts from memory. `gpt-4o-mini` or `llama3.1:8b` handles this well. Use a larger model when answers require complex reasoning across many chunks.
+
+---
+
+### 10. Complete Tuning Reference Table
+
+| Tunable | Default | File | Impact area | When to change |
+|---|---|---|---|---|
+| `max_tokens` | 512 | settings / pipeline | Chunk quality | Increase if chunks are too small; never exceed embedding model limit |
+| `chunk_size` | 1000 chars | pipeline | Fallback chunking | Increase for denser documents, decrease for FAQ-style content |
+| `chunk_overlap` | 200 chars | pipeline | Fallback recall | 10–20% of chunk_size |
+| `merge_peers` | True | docling.py | Chunk granularity | False for maximum granularity |
+| `embedding_model` | nomic-embed-text | settings | Semantic quality | When NDCG@5 evaluation shows room for improvement |
+| `embedding_dimension` | 768 | settings | Storage / speed | Must match model |
+| `ivfflat.lists` | 100 | postgres.py | Index recall/speed | rows/1000 for < 1M chunks |
+| `ivfflat.probes` | 10 | postgres.py | Query recall/speed | 1–10% of lists |
+| `default_match_count` | 10 | settings | Recall vs cost | Lower for speed, higher for complex queries |
+| `rrf_k` | 60 | postgres.py | RRF score distribution | Leave at 60 unless evaluation says otherwise |
+| `default_text_weight` | 0.3 | settings | Text vs semantic balance | Increase for keyword-heavy queries |
+| `hyde_enabled` | False | settings | Semantic recall | Enable for vague/conversational queries with latency budget |
+| `reranker_enabled` | False | settings | Precision@K | Enable for large corpora where top-1 accuracy matters |
+| `reranker_type` | llm | settings | Reranker speed/quality | cross_encoder for lower latency |
+| `reranker_overfetch_factor` | 3 | settings | Reranker coverage | 3–5 depending on reranker speed |
+| `cache max_size` | 100 | retriever.py | Cache hit rate | Increase for high-traffic, repetitive query workloads |
+| `cache ttl_seconds` | 300 | retriever.py | Cache freshness | Lower for frequently updated corpora |
+| `db_pool_max_size` | 10 | settings | Concurrency | Set based on PostgreSQL max_connections |
+| `command_timeout` | 60s | postgres.py | Reliability | Lower to 10–15s in production |
+| `llm_model` | llama3.1:8b | settings | Answer quality | Upgrade when answer synthesis is the bottleneck |
+| `reranker_model` | bge-reranker-base | settings | Reranking precision | Upgrade to bge-reranker-large for better precision |
