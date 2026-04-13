@@ -668,13 +668,131 @@ Storing full document content in every chunk row would be massive redundancy (a 
 
 The pipeline already does this (`clean_before_ingest=False`): compute MD5 hash of the file, compare against `metadata.content_hash` stored in the `documents` table. If equal → skip. If different → `delete_document_and_chunks(source)` then re-ingest. If the source doesn't exist → ingest as new. Deleted files are handled by comparing `current_sources` (files on disk) against `get_all_document_sources()` (files in DB) and deleting any that are in DB but not on disk.
 
-**Q78. Multi-tenancy with isolated document stores.**
+**Q78. Is multi-tenancy supported? What would it take to make this prototype production-ready for multiple tenants?**
 
-Options:
-- **Row-level security (RLS)**: add `tenant_id` column to `documents` and `chunks`, enable PostgreSQL RLS policies so each connection only sees its own tenant's rows. Single schema, strong isolation via policy enforcement.
-- **Schema-per-tenant**: each tenant gets a separate PostgreSQL schema (`tenant_a.chunks`, `tenant_b.chunks`). More isolation, more schema management overhead.
-- **Database-per-tenant**: separate PostgreSQL databases or Neon branches. Maximum isolation, highest cost.
-For this codebase, RLS would require adding `tenant_id` to all queries and the pool connection setup.
+**Current state: No multi-tenancy support.**
+
+The system has a single shared `documents` and `chunks` table with no tenant isolation. Every user queries the same corpus. If customer A's documents are ingested alongside customer B's, B can retrieve A's content and vice versa — there is no access boundary.
+
+**Three isolation strategies — trade-offs:**
+
+| Strategy | Isolation | Complexity | Cost | Best for |
+|---|---|---|---|---|
+| Row-level security (RLS) | Strong (policy-enforced) | Medium | Low (one DB) | Many small tenants (SaaS) |
+| Schema-per-tenant | Strong (namespace) | High (DDL per tenant) | Medium | Tens of tenants |
+| Database-per-tenant | Complete | Very high | High | Few large enterprise customers |
+
+---
+
+**Option 1 — Row-Level Security (recommended for SaaS)**
+
+Add `tenant_id` to both tables and let PostgreSQL enforce access at the row level. No application-level filtering needed — the DB rejects queries that cross tenant boundaries even if the app has a bug.
+
+Schema changes:
+```sql
+ALTER TABLE documents ADD COLUMN tenant_id TEXT NOT NULL;
+ALTER TABLE chunks    ADD COLUMN tenant_id TEXT NOT NULL;
+
+-- Index for fast per-tenant scans
+CREATE INDEX documents_tenant_idx ON documents(tenant_id);
+CREATE INDEX chunks_tenant_idx    ON chunks(tenant_id);
+
+-- RLS policies
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks    ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_documents ON documents
+    USING (tenant_id = current_setting('app.tenant_id'));
+
+CREATE POLICY tenant_isolation_chunks ON chunks
+    USING (tenant_id = current_setting('app.tenant_id'));
+```
+
+Per-request, set the tenant context on the connection before any query:
+```python
+async with pool.acquire() as conn:
+    await conn.execute("SET LOCAL app.tenant_id = $1", tenant_id)
+    # All subsequent queries on this connection automatically scoped to tenant
+    results = await conn.fetch("SELECT * FROM chunks ...")
+```
+
+Changes needed in this codebase:
+- `PostgresHybridStore.add()` — pass `tenant_id` into every INSERT
+- `PostgresHybridStore.semantic_search()` / `text_search()` — set `app.tenant_id` on the connection before querying (RLS handles the rest automatically)
+- `RAGState` — carry `tenant_id` alongside `user_id`, pass it into the store
+- Ingestion pipeline — accept `tenant_id` as a parameter and write it to every document/chunk row
+- IVFFlat index — may need `lists` retuning since the effective index size per tenant is smaller than the full table
+
+**RLS caveat with connection pools:** asyncpg reuses connections. `SET LOCAL` resets at transaction end, but `SET` persists for the connection lifetime. Always use `SET LOCAL` (transaction-scoped) or reset after use to prevent tenant leakage across pooled connections.
+
+---
+
+**Option 2 — Schema-per-tenant**
+
+Each tenant gets their own PostgreSQL schema with identical table structure:
+
+```sql
+CREATE SCHEMA tenant_acme;
+CREATE TABLE tenant_acme.documents ( ... );  -- same DDL
+CREATE TABLE tenant_acme.chunks    ( ... );
+```
+
+The `PostgresHybridStore` is initialised with a `schema` parameter:
+```python
+store = PostgresHybridStore(schema="tenant_acme")
+# All queries use f"{self.schema}.chunks" instead of "chunks"
+```
+
+Pros: true namespace isolation, no RLS policy bugs, easy to dump/restore a single tenant.
+Cons: schema migration (adding a column) must run against every tenant schema — needs a migration runner that iterates all tenant schemas.
+
+---
+
+**Option 3 — Database/branch per tenant (Neon)**
+
+Each tenant gets their own Neon branch or project. Maximum isolation — one tenant's load cannot affect another's query latency. `DATABASE_URL` is tenant-specific and stored in a tenant registry.
+
+```python
+# Tenant registry (e.g. stored in a separate "control plane" DB)
+tenant_db_urls = {
+    "acme":  "postgresql://user:pass@acme.neon.tech/rag",
+    "globex": "postgresql://user:pass@globex.neon.tech/rag",
+}
+store = PostgresHybridStore(database_url=tenant_db_urls[tenant_id])
+```
+
+Neon's branching is particularly well-suited: create a branch per tenant from a template branch that already has the schema and indexes set up.
+
+Cons: connection pool per tenant (memory cost), cross-tenant analytics require federated queries.
+
+---
+
+**Full production readiness checklist beyond just multi-tenancy:**
+
+| Area | What's missing | What to add |
+|---|---|---|
+| **Auth** | No authentication | JWT validation middleware; `tenant_id` extracted from the token claim |
+| **Tenant provisioning** | Manual | API to create tenant → run schema migration → register in tenant registry |
+| **Data isolation** | None | RLS (recommended) or schema-per-tenant |
+| **Rate limiting** | None | Per-tenant query rate limits (token bucket in Redis) |
+| **Ingestion ACL** | None | Only tenant admins can ingest documents for their tenant |
+| **Audit logging** | None | Log every query with `tenant_id`, `user_id`, timestamp to an audit table |
+| **Embedding model lock** | None | Store `embedding_model` + `embedding_dimension` per tenant; block re-ingestion with wrong model |
+| **Soft deletes** | None | `deleted_at` column instead of hard DELETE, for audit trail |
+| **Billing hooks** | None | Count chunks/queries per tenant for usage-based billing |
+| **Backup/restore** | None | Per-tenant pg_dump or Neon branch snapshot |
+| **Zero-downtime re-index** | None | Shadow table swap (Q106) per tenant |
+| **Search result ACL** | None | Document-level permissions within a tenant (not just tenant-level) |
+
+**Recommended migration path for this codebase (RLS approach):**
+
+1. Add `tenant_id TEXT NOT NULL DEFAULT 'default'` to both tables (non-breaking — existing data gets `'default'` tenant)
+2. Add indexes on `tenant_id`
+3. Enable RLS and create policies
+4. Update `PostgresHybridStore` to `SET LOCAL app.tenant_id` at connection checkout
+5. Update ingestion pipeline to accept and write `tenant_id`
+6. Update `RAGState` to carry `tenant_id` from the auth layer
+7. Add JWT middleware to the Streamlit/API layer to extract `tenant_id` from the request token
 
 **Q79. Risk of changing the embedding model after ingestion.**
 
@@ -1281,3 +1399,108 @@ result2 = await agent.run(
 ```
 
 `result.new_messages()` returns the messages from that run (user prompt + tool calls + tool results + assistant response). Passing them as `message_history` on the next call appends them before the new user message, giving the LLM full conversation context. This is how `traced_agent_run` supports multi-turn chat in the Streamlit UI.
+
+---
+
+## PDF Question Generator & LightRAG Experiment
+
+**Q119. What are the `pdf_processing_l1/l2/l3` folders and how were they generated?**
+
+These are output folders from the **PDF Question Generator** pipeline (`rag/ingestion/processors/pdf_question_generator.py`). Each folder corresponds to one CS168 lecture PDF that was run through the pipeline — `l1`, `l2`, `l3` are lecture numbers, not RAG processing levels.
+
+**The PDFs processed:**
+
+| Folder | PDF | Topic | Pages | Chunks |
+|---|---|---|---|---|
+| `pdf_processing_l1` | l1.pdf | Consistent Hashing | 12 | 121 |
+| `pdf_processing_l2` | l2.pdf | Count-Min Sketch / Heavy Hitters | 14 | 14 |
+| `pdf_processing_l3` | l3.pdf | kd-Trees / Curse of Dimensionality | 6 | 6 |
+
+Source: CS168 — The Modern Algorithmic Toolbox (Stanford, Tim Roughgarden & Gregory Valiant, 2024).
+
+**What each folder contains:**
+
+```
+pdf_processing_l1/                          ← most complete run (full RAGAnything mode)
+├── kv_store_text_chunks.json               ← LightRAG's KV store: chunk_id → content
+├── kv_store_llm_response_cache.json        ← cached LLM calls (avoid re-running)
+├── graph_chunk_entity_relation.graphml     ← knowledge graph: entities + relationships
+├── vdb_chunks.json                         ← vector DB entries for text chunks
+├── vdb_entities.json                       ← vector DB entries for extracted entities
+├── vdb_relationships.json                  ← vector DB entries for relationships
+├── l1_questions.json                       ← generated questions (JSON)
+└── l1_complete_output.txt                  ← full run log: context sent to LLM + raw response + questions
+
+pdf_processing_l2/ and pdf_processing_l3/   ← simpler runs (fewer artefacts)
+├── l{n}_questions.json
+└── l{n}_complete_output.txt
+```
+
+**How the pipeline works (`pdf_question_generator.py`):**
+
+```
+PDF file
+   │
+   ▼
+MinerU VLM parser  (or PyPDF2 fallback)
+   │   ├── text blocks  → content_list items type="text"
+   │   ├── tables       → content_list items type="table"
+   │   ├── equations    → content_list items type="equation"
+   │   └── images       → content_list items type="image"  (with figure captions)
+   │
+   ▼
+LightRAG initialised in working_dir
+   │   └── stores chunks in kv_store_text_chunks.json + builds knowledge graph
+   │
+   ▼
+Multimodal processors (RAGAnything)
+   │   ├── TableModalProcessor   → LLM describes table content
+   │   ├── EquationModalProcessor → LLM explains equations
+   │   └── ImageModalProcessor   → vision LLM captions figures
+   │
+   ▼
+format_chunks_as_context()
+   │   └── builds "[chunk_id=c1][page=0]\n<text>\n..." string (max 10,000 chars)
+   │
+   ▼
+LLM called with QUESTION_GENERATION_PROMPT
+   │   └── returns JSON: [{ question, supported_by: [c1,c3], difficulty: easy|medium|hard }]
+   │
+   ▼
+Saved to {working_dir}/{name}_questions.json
+         {working_dir}/{name}_complete_output.txt
+```
+
+**Two processing modes:**
+
+- **`process_pdf_with_raganything`** (default) — uses the full `RAGAnything` wrapper which orchestrates LightRAG + MinerU + modal processors end to end. Produced the l1 folder with the GraphML knowledge graph.
+- **`process_pdf_simple`** (flag `--simple`) — calls MinerU directly, then manually applies the modal processors, then feeds chunks to LightRAG. More transparent, easier to debug. Used for l2 and l3.
+
+**LightRAG's role:**
+
+LightRAG is a graph-based RAG library. Unlike this project's vector-only approach, LightRAG also:
+- Extracts named entities and relationships from chunks via LLM
+- Builds a knowledge graph (`graph_chunk_entity_relation.graphml`) where nodes are entities and edges are relationships
+- Supports query modes: `local` (chunk-level), `global` (community summaries), `hybrid`
+
+The `kv_store_*` and `vdb_*` JSON files are LightRAG's persistent storage format (file-based, no separate DB needed — useful for experiments).
+
+**How to run it:**
+
+```bash
+# Process a PDF with Ollama (default)
+python -m rag.ingestion.processors.pdf_question_generator path/to/lecture.pdf
+
+# With OpenAI
+python -m rag.ingestion.processors.pdf_question_generator --api-key YOUR_KEY path/to/lecture.pdf
+
+# Simple mode (MinerU + modal processors directly)
+python -m rag.ingestion.processors.pdf_question_generator --simple path/to/lecture.pdf
+
+# List PDFs in a directory
+python -m rag.ingestion.processors.pdf_question_generator --list-dir path/to/dir
+```
+
+**Relationship to the main RAG system:**
+
+This pipeline is a standalone experiment — it does not share the PostgreSQL store or the Pydantic AI agent. It is used to generate question datasets from academic PDFs, which can then be used as gold datasets for evaluating the main RAG system (similar to the `GOLD_DATASET` in `test_retrieval_metrics.py`). The `test_rag_anything_pdfs_for_question_generation/` folder holds the source PDFs fed into this pipeline.
