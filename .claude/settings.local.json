@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)",
+      "Bash(psql:*)",
+      "WebFetch(domain:neon.tech)",
+      "WebFetch(domain:neon.com)",
+      "mcp__Neon__list_projects",
+      "mcp__Neon__run_sql",
+      "Bash(export PATH=\"$PATH:/c/Program Files/PostgreSQL/18/bin\")",
+      "Bash(powershell.exe:*)",
+      "Bash(python -m pytest rag/tests/ -v)",
+      "Bash(python -m pytest rag/tests/test_rag_agent.py::TestRAGAgentIntegration::test_agent_run_specific_query -v)",
+      "Bash(python -m pytest rag/tests/test_rag_agent.py::TestRAGAgentIntegration::test_agent_run_specific_query -v --log-cli-level=INFO --tb=short)",
+      "Bash(python -m pytest rag/tests/test_postgres_store.py -v)"
     ]
   }
 }

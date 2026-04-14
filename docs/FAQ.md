@@ -233,6 +233,55 @@ Auto-increment integers are sequential and predictable (an attacker who gets chu
 
 It is a PostgreSQL *generated column*. The value of `content_tsv` is automatically computed by PostgreSQL as `to_tsvector('english', content)` whenever a row is `INSERT`ed or `UPDATE`d. `STORED` means the computed value is written to disk (not recomputed at query time). You never write to this column manually — PostgreSQL enforces this (`GENERATED ALWAYS` prevents explicit writes). On `UPDATE` to `content`, the column is recalculated automatically.
 
+**Q19b. How do I install `psql` and connect to the Neon database?**
+
+`psql` is the PostgreSQL command-line client. It is not bundled with Windows — it must be installed separately.
+
+**Installation (Windows)**
+
+Option 1 — Chocolatey:
+```bash
+choco install postgresql -y
+```
+
+Option 2 — Winget:
+```bash
+winget install PostgreSQL.PostgreSQL
+```
+
+Option 3 — Manual: download the "Command Line Tools" zip from postgresql.org/download/windows and extract `psql.exe` plus its `lib/` folder.
+
+After installation, add the bin directory to your PATH permanently (run in PowerShell):
+```powershell
+[System.Environment]::SetEnvironmentVariable("PATH", [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";C:\Program Files\PostgreSQL\18\bin", "User")
+```
+Open a new terminal for the change to take effect. Verify with `psql --version`.
+
+**Connecting to Neon**
+
+```bash
+psql "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
+```
+
+Use the connection string from your `.env` file (`DATABASE_URL`). The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
+
+**Useful one-liners**
+
+```bash
+# Check PostgreSQL version
+psql "$DATABASE_URL" -c "SELECT version();"
+
+# List available extensions
+psql "$DATABASE_URL" -c "SELECT name, installed_version FROM pg_available_extensions WHERE name IN ('vector', 'pg_trgm', 'pg_search');"
+
+# Check table row counts
+psql "$DATABASE_URL" -c "SELECT 'documents' AS tbl, COUNT(*) FROM documents UNION ALL SELECT 'chunks', COUNT(*) FROM chunks;"
+```
+
+**Alternative: Neon MCP tools**
+
+If you are running inside Claude Code, the Neon MCP server is available and can run SQL queries against your project directly without `psql` or any local installation.
+
 ---
 
 ## Full-Text Search
@@ -1315,6 +1364,70 @@ Parallel: pg_trgm (add only if users report typo misses on proper nouns/codes)
 ```
 
 In all cases, the semantic (pgvector) leg remains unchanged — the text search upgrade only affects one half of the hybrid search pipeline.
+
+---
+
+**Q116c. What indexes currently exist on the `chunks` table?**
+
+The following indexes are active in the Neon database as of the current deployment. Each serves a different search path in the hybrid retrieval pipeline:
+
+| Index | Type | Column(s) | Search path |
+|---|---|---|---|
+| `chunks_pkey` | btree (unique) | `id` | Primary key lookups |
+| `chunks_document_id_idx` | btree | `document_id` | JOIN to `documents`, cascade deletes |
+| `chunks_embedding_idx` | ivfflat (cosine) | `embedding` | Semantic search (`semantic_search`) |
+| `chunks_content_tsv_idx` | GIN | `content_tsv` | Full-text search (`text_search`) |
+| `chunks_content_trgm_idx` | GIN (trigram) | `content` | Fuzzy search (`fuzzy_search`) |
+| `chunks_bm25_idx` | bm25 (pg_search) | `id`, `content` | BM25 search (`bm25_search`) |
+
+All four search indexes feed into `hybrid_search` via parallel `asyncio.gather`, then merge through Reciprocal Rank Fusion (RRF).
+
+**Q116d. How does re-indexing happen on the fly?**
+
+All indexes except IVFFlat are maintained automatically by PostgreSQL on every `INSERT` — no manual step needed:
+
+- **btree** indexes update instantly on insert.
+- **GIN tsvector** (`content_tsv`) is a generated column — PostgreSQL recomputes and indexes it automatically on every insert/update.
+- **GIN trigram** (`content gin_trgm_ops`) — new content trigrams are added to the inverted index on insert.
+- **BM25** (`pg_search`) — uses a memtable architecture: new rows land in an in-memory inverted index first, then spill to disk automatically.
+
+**IVFFlat is the exception.** Its Voronoi centroids are fixed at build time. New vectors are assigned to the nearest existing centroid, which works fine for small growth — but if the chunk count grows significantly beyond what the index was built at, recall degrades because the centroid layout no longer reflects the data distribution.
+
+This project handles it automatically: after every `add()` call, `PostgresHybridStore` checks if the total chunk count has reached 3× the count recorded at index build time. If so, it runs:
+
+```sql
+REINDEX INDEX CONCURRENTLY chunks_embedding_idx
+```
+
+`CONCURRENTLY` means the rebuild happens without locking reads or writes — queries continue uninterrupted during the reindex. After completion, `_ivfflat_index_build_count` is reset to the new count, restarting the 3× window.
+
+**Q116e. How are new documents auto-ingested and re-indexed?**
+
+New documents flow through the same pipeline as the initial ingest — no special re-index step is needed:
+
+1. **Ingest** — `DocumentIngestionPipeline.ingest_document()` converts the file (Docling), chunks it, generates embeddings, and calls `PostgresHybridStore.add()`.
+2. **Insert** — `add()` runs `executemany` to batch-insert all chunks into the `chunks` table.
+3. **Auto-index** — PostgreSQL automatically updates all five indexes (btree, GIN tsvector, GIN trigram, BM25, IVFFlat) on insert.
+4. **IVFFlat growth check** — after the insert, `add()` checks if the 3× threshold has been crossed and triggers `REINDEX CONCURRENTLY` if needed.
+5. **Duplicate detection** — `ingest_document()` hashes the file content and skips re-ingestion if the hash matches what's already stored (`get_document_hash()`). Only changed or new documents are processed.
+
+The result: pointing the pipeline at a folder of new or updated documents is all that's required. Retrieval immediately reflects the new content.
+
+**Q116f. Which tests are currently failing and what needs to be done to fix them?**
+
+As of the current test run: **1 test failing, 147 passing, 12 skipped.**
+
+| Test | File | Failure reason | Fix required |
+|---|---|---|---|
+| `test_agent_run_specific_query` | `test_rag_agent.py` | The chunk containing "NeuralFlow AI has 47 employees" is not present in the indexed documents. The LLM also calls the search tool with suboptimal parameters (`query=''`, `match_count=1`) due to the small model (llama3.2:3b). | Re-ingest the NeuralFlow AI company overview document that contains employee headcount, **or** update the test assertion to match data that is actually in the DB. |
+
+**Root cause detail:**
+
+The test asks `"How many employees does NeuralFlow AI have?"` and asserts the response contains a number. The DB has 194 chunks from 13 documents — all customer case studies — none containing the company's own headcount. The fact was never ingested.
+
+The test is also sensitive to the LLM's tool-calling quality. With `llama3.2:3b`, the model sometimes calls `search_knowledge_base` with an empty query string or `match_count=1`, which limits what retrieval can return even if the data were present. Switching to a larger model (e.g. `llama3.1:8b` or any OpenAI model) would make tool calls more reliable.
+
+**Skipped tests (12):** all integration tests that require live services not running in CI (Ollama server, Langfuse, Mem0 with non-default config). These are expected skips, not failures.
 
 ---
 
