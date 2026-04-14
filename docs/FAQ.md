@@ -1789,6 +1789,83 @@ Phase 4 — Make it scalable:
 
 ---
 
+## Chunking Strategy
+
+**Q122. Is this project using semantic chunking or fixed-size chunking with overlaps?**
+
+Neither purely — the active strategy is **structure-aware chunking** via Docling's `HybridChunker`, with a **fixed-size sliding window fallback** for plain text. A fully-implemented semantic chunker exists in the codebase but is not wired into the pipeline.
+
+---
+
+**Primary path — `DoclingHybridChunker` (structure-aware)**
+
+Used for: PDF, DOCX, and all formats handled by `DocumentConverter`.
+
+`pipeline.py:168` calls `create_chunker(config)` from `docling.py`, which always returns a `DoclingHybridChunker`. This wraps Docling's `HybridChunker` and splits documents at **structural boundaries** extracted from the `DoclingDocument` object — section headings, paragraph breaks, table boundaries — not at fixed character counts and not by measuring embedding similarity between sentences.
+
+"Hybrid" in Docling's terminology means: structural layout signals (from `DoclingDocument`) + token budget enforcement (`max_tokens=512`). A chunk grows to fill a structural section, capped at 512 tokens. Tables are always kept atomic — never split mid-row.
+
+After splitting, `contextualize()` prepends the heading breadcrumb (`"Benefits > Time Off Policy\n\n..."`) to each chunk before embedding. This is unique to the structural approach — semantic and fixed-size chunkers have no heading hierarchy to prepend.
+
+`chunk_method` in chunk metadata is set to `"hybrid"` for these chunks.
+
+---
+
+**Fallback path — `_simple_fallback_chunk` (fixed-size with overlap)**
+
+Triggered for: `.txt` files, plain markdown without structure, or when `DocumentConverter` fails.
+
+This is a sliding window over characters:
+- `chunk_size = 1000` chars
+- `chunk_overlap = 200` chars (20% overlap)
+- Cuts at the nearest sentence boundary (`.`, `!`, `?`, `\n`) within 200 chars of the target end — so it is sentence-aware but not semantically aware
+
+`chunk_method` is set to `"simple_fallback"` for these chunks.
+
+---
+
+**What exists but is NOT active — `semantic.py`**
+
+`rag/ingestion/chunkers/semantic.py` contains two fully-implemented semantic chunkers that are **never instantiated** by the pipeline:
+
+**`SemanticChunker`** — threshold-based:
+1. Splits document into sentences (regex on `.`, `!`, `?`)
+2. Embeds every sentence with `all-MiniLM-L6-v2` via `SentenceTransformer`
+3. Computes cosine similarity between each adjacent sentence pair
+4. Starts a new chunk when similarity drops below `similarity_threshold=0.5` AND the current chunk has at least `min_sentences=2`
+5. Also splits when `max_sentences=15` is reached regardless of similarity
+
+**`GradientSemanticChunker`** — percentile-based (more adaptive):
+1. Same sentence embedding step
+2. Computes all adjacent sentence similarities across the document
+3. Sets the split threshold at the bottom `percentile_threshold=25`th percentile of all similarity scores — adapts to each document's style rather than using a fixed 0.5 cutoff
+4. Also enforces `min_chunk_size=100` / `max_chunk_size=2000` chars
+
+Neither is wired into `pipeline.py`. `create_chunker()` in `docling.py:302` always returns `DoclingHybridChunker`.
+
+---
+
+**Why structure-aware beats semantic chunking for this corpus:**
+
+| | Structure-aware (active) | Semantic (implemented, unused) | Fixed-size (fallback only) |
+|---|---|---|---|
+| Chunk boundary quality | Excellent — section = natural unit of meaning | Good — topic shifts detected | Poor — arbitrary cuts |
+| Table handling | Atomic — `TableItem` never split | May split mid-table | Splits mid-table |
+| Heading context | `contextualize()` prepends breadcrumb | No heading hierarchy available | No heading hierarchy |
+| Token budget | Enforced via HuggingFace tokenizer | Approximated as `len(text) // 4` | Exact character count |
+| Extra cost at ingest | None beyond conversion | Embeds every sentence to find boundaries | None |
+| Works on plain text | No → falls back to sliding window | Yes | Yes |
+| `chunk_method` metadata | `"hybrid"` | `"semantic"` / `"gradient_semantic"` | `"simple_fallback"` |
+
+For structured company documents (handbooks, policy docs, architecture docs), the section heading is the strongest available signal for chunk boundaries. Semantic chunking pays the cost of embedding every sentence at ingest time and still produces worse boundaries than just following the document's own structure.
+
+**When semantic chunking would be preferable:**
+- Corpus is raw, unstructured prose with no headings (e.g. books, emails, transcripts)
+- Documents are not in a format Docling can parse (unusual binary formats)
+- You want topic-coherent chunks that span multiple short paragraphs under the same heading
+
+---
+
 ## Performance Tuning
 
 **Q121. What are all the tunables in this RAG system and how should they be set for performance?**
