@@ -3,9 +3,21 @@
 Code references: line numbers point to files under `rag/` in this repo.
 
 ---
+## Table of Contents
+
+- [Q1. What are the `pdf_processing_l1/l2/l3` folders and how were they generated?](#q1)
+- [Q2. What is LightRAG and how does it differ from this project's RAG approach?](#q2)
+- [Q3. What is RAGAnything and what does it add on top of LightRAG?](#q3)
+- [Q4. What is MinerU and why is it used instead of Docling for this pipeline?](#q4)
+- [Q5. How does the question generation prompt work and what does the output JSON look like?](#q5)
+- [Q6. How would you use these generated questions as a gold dataset for the main RAG system?](#q6)
+
+---
+
 
 ## PDF Question Generator & LightRAG Experiment
 
+<a id="q1"></a>
 **Q1. What are the `pdf_processing_l1/l2/l3` folders and how were they generated?**
 
 These are output folders from the **PDF Question Generator** pipeline (`rag/ingestion/processors/pdf_question_generator.py`). Each folder corresponds to one CS168 lecture PDF that was run through the pipeline — `l1`, `l2`, `l3` are lecture numbers, not RAG processing levels.
@@ -109,6 +121,7 @@ This pipeline is a standalone experiment — it does not share the PostgreSQL st
 
 ---
 
+<a id="q2"></a>
 **Q2. What is LightRAG and how does it differ from this project's RAG approach?**
 
 LightRAG is a graph-based RAG framework that combines vector search with a knowledge graph. The key architectural difference from this project:
@@ -126,6 +139,7 @@ LightRAG's graph extraction pipeline: for each chunk, an LLM call extracts entit
 
 ---
 
+<a id="q3"></a>
 **Q3. What is RAGAnything and what does it add on top of LightRAG?**
 
 RAGAnything (`raganything` package) is a multimodal extension of LightRAG. It adds:
@@ -138,6 +152,7 @@ Without RAGAnything, a table in a PDF would either be ignored or stored as raw c
 
 ---
 
+<a id="q4"></a>
 **Q4. What is MinerU and why is it used instead of Docling for this pipeline?**
 
 Both MinerU and Docling are layout-aware PDF parsers that use ML models. They serve the same role — structured PDF extraction — but have different strengths:
@@ -155,6 +170,7 @@ MinerU is used in this pipeline because RAGAnything was built around it, and its
 
 ---
 
+<a id="q5"></a>
 **Q5. How does the question generation prompt work and what does the output JSON look like?**
 
 The `QUESTION_GENERATION_PROMPT` sends up to 10,000 characters of chunk context to the LLM, formatted with chunk IDs:
@@ -196,6 +212,7 @@ The pipeline handles JSON parse failures by: (1) stripping markdown code fences,
 
 ---
 
+<a id="q6"></a>
 **Q6. How would you use these generated questions as a gold dataset for the main RAG system?**
 
 The `l{n}_questions.json` files contain questions grounded in specific chunk IDs. To use them as evaluation data for the main RAG system:

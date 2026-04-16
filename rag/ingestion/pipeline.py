@@ -648,7 +648,7 @@ async def run_ingestion_pipeline() -> None:
     parser = argparse.ArgumentParser(
         description="Ingest documents into PostgreSQL/pgvector database"
     )
-        parser.add_argument(
+    parser.add_argument(
         "--documents", "-d", default="documents", help="Documents folder path"
     )
     parser.add_argument(
