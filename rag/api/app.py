@@ -20,6 +20,34 @@ Usage
 
     # Or via Python
     python -m rag.api.app
+
+    # Non-streaming query (curl)
+    curl -X POST http://localhost:8000/v1/chat \
+      -H "Content-Type: application/json" \
+      -d '{"query": "What does NeuralFlow AI do?"}'
+
+    # Streaming query — tokens arrive as SSE (curl)
+    curl -X POST http://localhost:8000/v1/chat/stream \
+      -H "Content-Type: application/json" \
+      -d '{"query": "What is the PTO policy?"}' \
+      --no-buffer
+
+    # From Python (httpx)
+    import httpx, asyncio
+
+    async def ask(query: str) -> str:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                "http://localhost:8000/v1/chat",
+                json={"query": query},
+            )
+            r.raise_for_status()
+            return r.json()["answer"]
+
+    print(asyncio.run(ask("How many engineers work here?")))
+
+    # Interactive docs
+    open http://localhost:8000/docs
 """
 
 import asyncio
