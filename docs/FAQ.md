@@ -353,7 +353,9 @@ When query and document use different vocabulary for the same concept. Example: 
 <a id="q11"></a>
 **Q11. Semantic Hit Rate@5 = 0.90 vs hybrid = 0.80. How do you explain this?**
 
-RRF merges the two ranked lists. If a chunk ranks #1 in semantic but is not in the text results at all (Hit Rate@5=0.80 vs 0.90 means 1 query that semantic hits but hybrid misses), the RRF score may push another chunk above it. Specifically, a chunk that ranks moderately in *both* lists gets a higher combined RRF score than a chunk that ranks #1 in only one list. The "company mission and vision" query misses in hybrid — `mission-and-goals.md` ranks high semantically but doesn't contain strong keywords, so the text leg contributes nothing and a different, keyword-rich chunk edges ahead after RRF. Fix: increase `match_count` (fetch more candidates before RRF) or tune the k constant.
+*Note: this gap existed before audio transcription was fixed. After re-ingesting with Whisper, both hybrid and semantic reach 0.90 — see Q69a for current results.*
+
+RRF merges the two ranked lists. If a chunk ranks #1 in semantic but is not in the text results at all (Hit Rate@5=0.80 vs 0.90 means 1 query that semantic hits but hybrid misses), the RRF score may push another chunk above it. Specifically, a chunk that ranks moderately in *both* lists gets a higher combined RRF score than a chunk that ranks #1 in only one list. The "company mission and vision" query previously missed in hybrid — `mission-and-goals.md` ranks high semantically but doesn't contain strong keywords, so the text leg contributes nothing and a different, keyword-rich chunk edges ahead after RRF. After Whisper re-ingestion added audio transcript content, RRF rankings shifted and this query now hits at rank 1 in hybrid. Fix if it regresses: increase `match_count` (fetch more candidates before RRF) or tune the k constant.
 
 <a id="q12"></a>
 **Q12. If you had to drop one leg, which would you keep?**
@@ -859,14 +861,18 @@ No — 10 queries gives high variance estimates. Changing one query outcome flip
 <a id="q66"></a>
 **Q66. Why do "company mission and vision" and "DocFlow AI" miss consistently?**
 
-"Company mission and vision" — `mission-and-goals.md` is a small document with relatively generic language. After RRF, company-overview chunks (which appear in both semantic and text lists) may outscore mission-and-goals chunks (which only appear in the semantic list). Fix: investigate which document actually contains the answer and tune the query, or expand the relevant_sources list.
+*Current status (post-Whisper fix):* "company mission and vision" now **passes** (Hit ✓, RR=1.00). "DocFlow AI" still **fails** (Hit ✗, RR=0.00) — see below.
 
-"DocFlow AI" — this content is in `Recording2.mp3`. If Whisper is not installed, the audio was never transcribed. In the DB there is either a `[Error: Could not transcribe...]` stub chunk or nothing. Fix: install Whisper and re-ingest.
+"Company mission and vision" — previously, `mission-and-goals.md` ranked well semantically but weakly in text search (generic language, no strong keywords), so after RRF a keyword-rich chunk from `company-overview.md` edged ahead. After re-ingesting with Whisper, the additional audio transcript content shifted RRF rankings enough that `mission-and-goals.md` now surfaces at rank 1. This was a side-effect fix, not a targeted one — the underlying fragility (thin keyword signal) remains and could regress on corpus changes.
+
+"DocFlow AI" — content lives in `Recording2.mp3`. Whisper is now installed and the file was re-ingested, producing 1 chunk of transcript. However, the query still misses. The likely cause is that the Whisper transcription of `Recording2.mp3` does not use the exact phrase "DocFlow AI" prominently enough to surface in top-5 results for that query — the transcript may refer to it differently or the chunk is outscored by other documents that discuss document processing more generally. Next steps: inspect the actual transcript content in the DB (`SELECT content FROM chunks WHERE document_id IN (SELECT id FROM documents WHERE source ILIKE '%Recording2%')`), then either re-phrase the gold query to match the transcript, or expand `relevant_sources` to include additional source stems.
 
 <a id="q67"></a>
 **Q67. Recall@5 shows values above 1.0 — is that a bug?**
 
-Not a bug in the metric code, but a bug in the gold dataset definition. Recall@K = `relevant_found / total_relevant`. `total_relevant` is set to `len(entry["relevant_sources"])` — the number of *documents* in the relevant_sources list, not the number of *chunks* retrieved. When a relevant document has multiple chunks in top-K (e.g. 3 chunks from `team-handbook`), `relevant_found` = 3 but `total_relevant` = 1, giving Recall = 3.0. The fix is to count distinct relevant *documents* found in top-K rather than chunks. This is a known ambiguity in chunk-level vs document-level recall.
+Not a bug in the metric code, but a limitation of the gold dataset definition. Recall@K = `relevant_found / total_relevant`. `total_relevant` is set to `len(entry["relevant_sources"])` — the number of *documents* in the relevant_sources list, not the number of *chunks* retrieved. When a relevant document has multiple chunks in top-K (e.g. 3 chunks from `team-handbook`), `relevant_found` = 3 but `total_relevant` = 1, giving Recall = 3.0.
+
+This is now confirmed in practice: after Whisper re-ingestion, Recall@5 = **2.250** (up from 0.900 before). The audio transcripts added new chunks from documents already in the index, so several queries now retrieve multiple relevant chunks per relevant document. The fix is to count distinct relevant *documents* found in top-K rather than chunks — but the current values are not harmful to the CI gate since the threshold is 0.40 and any value above 0 satisfies it. Treat Recall in this codebase as a coarse "coverage" signal, not a precise fraction.
 
 <a id="q68"></a>
 **Q68. Why are unit tests and integration tests in the same file?**
@@ -883,116 +889,129 @@ Run the gold dataset with each configuration: baseline (off/off), HyDE only, rer
 <a id="q69a"></a>
 **Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?**
 
-Gold dataset: 10 queries against the NeuralFlow AI document corpus (8 docs + 2 audio files). Baseline configuration: HyDE disabled, reranker disabled, Ollama local (nomic-embed-text embeddings). Run via `python -m pytest rag/tests/test_retrieval_metrics.py -v --log-cli-level=INFO`.
+Gold dataset: 10 queries against the NeuralFlow AI document corpus (8 docs + 4 audio files, all transcribed via Whisper). Baseline configuration: HyDE disabled, reranker disabled, Ollama local (nomic-embed-text embeddings). Run via `python -m pytest rag/tests/test_retrieval_metrics.py -v --log-cli-level=INFO`.
 
-**Hybrid search results by K**
+**Hybrid search results by K (current — post Whisper fix)**
 
 ```
 =================================================================
   RETRIEVAL METRICS — hybrid search, NeuralFlow AI corpus
 =================================================================
-  Metric                  K=1       K=3       K=5
+  Metric                   K=1       K=3       K=5
 -----------------------------------------------------------------
-  HIT_RATE@K            0.700     0.800     0.800
-  MRR@K                 0.700     0.733     0.733
-  PRECISION@K           0.700     0.267     0.160
-  RECALL@K              0.600     0.800     0.900
-  NDCG@K                0.700     0.756     0.756
+  HIT_RATE@K             0.900     0.900     0.900
+  MRR@K                  0.900     0.900     0.900
+  PRECISION@K            0.900     0.633     0.560
+  RECALL@K               0.750     1.550     2.250
+  NDCG@K                 0.900     0.884     0.874
 -----------------------------------------------------------------
-  Mean latency           312ms
-  P95  latency           748ms
+  Mean latency            308ms
+  P95  latency            903ms
 =================================================================
 ```
 
-**Per-query breakdown (K=5, hybrid)**
+**Previous results (before Whisper — for reference)**
+
+```
+  Metric                   K=1       K=3       K=5
+-----------------------------------------------------------------
+  HIT_RATE@K             0.700     0.800     0.800
+  MRR@K                  0.700     0.733     0.733
+  PRECISION@K            0.700     0.267     0.160
+  RECALL@K               0.600     0.800     0.900
+  NDCG@K                 0.700     0.756     0.756
+-----------------------------------------------------------------
+  Mean latency            312ms  /  P95: 748ms
+```
+
+**Per-query breakdown (K=5, hybrid — current)**
 
 ```
 Query                                                Hit    RR     Lat
 ------------------------------------------------------------------------
-What does NeuralFlow AI do?                           ✓   1.00    285ms
-What is the PTO policy?                               ✓   1.00    301ms
-What is the learning budget for employees?            ✓   1.00    298ms
-What technologies and architecture does the ...       ✓   1.00    342ms
-What is the company mission and vision?               ✗   0.00    274ms  ← RRF demotion (see Q66)
-GlobalFinance Corp loan processing success story      ✓   0.50    318ms
-How many employees work at NeuralFlow AI?             ✓   1.00    289ms
-What is DocFlow AI and how does it process ...        ✗   0.00    267ms  ← Whisper not installed (see Q66)
-Q4 2024 business results and performance review       ✓   1.00    354ms
-implementation approach and playbook                  ✓   1.00    310ms
+What does NeuralFlow AI do?                           ✓   1.00   1447ms  ← cold-start embed
+What is the PTO policy?                               ✓   1.00    238ms
+What is the learning budget for employees?            ✓   1.00    235ms
+What technologies and architecture does the ...       ✓   1.00    203ms
+What is the company mission and vision?               ✓   1.00    167ms  ← fixed (was ✗ pre-Whisper)
+GlobalFinance Corp loan processing success story      ✓   1.00    146ms  ← fixed (was RR=0.50)
+How many employees work at NeuralFlow AI?             ✓   1.00    165ms
+What is DocFlow AI and how does it process ...        ✗   0.00    146ms  ← still missing (see Q66)
+Q4 2024 business results and performance review       ✓   1.00    186ms
+implementation approach and playbook                  ✓   1.00    149ms
 ```
 
-**Search type comparison (Hit Rate@5)**
+**Search type comparison (Hit Rate@5 — current)**
 
 | Search type | Hit Rate@5 | MRR@5 | NDCG@5 | Notes |
 |---|---|---|---|---|
-| Hybrid (RRF) | 0.80 | 0.733 | 0.756 | Misses "mission and vision" due to RRF demotion |
-| Semantic only | 0.90 | 0.800 | 0.833 | Recovers "mission and vision" — strong semantic match |
-| Text only | 0.60 | 0.567 | 0.589 | Misses vocabulary-mismatch queries (Q88) |
+| Hybrid (RRF) | 0.90 | 0.900 | 0.874 | Tied with semantic; one miss ("DocFlow AI") |
+| Semantic only | 0.90 | 0.900 | — | Same single miss |
+| Text only | 0.40 | — | — | Down from 0.60 pre-Whisper; audio transcripts added content that text search struggles with |
 
-Semantic beats hybrid on this corpus because two misses overlap with text-search weaknesses: "company mission and vision" has no strong keywords, and "DocFlow AI" is audio with no transcript. Hybrid is still preferable in production because text search handles exact acronyms and product names that semantic misses — the gap is corpus-specific and closure (installing Whisper, tuning `match_count`) narrows it.
+Hybrid and semantic are now equal. Text search dropped from 0.60 to 0.40 after Whisper re-ingestion — the audio transcripts are conversational prose with few strong keywords, which hurts text search more than it helps it.
 
 **Minimum passing thresholds (CI gate)**
 
 ```python
 THRESHOLDS_K5 = {
-    "hit_rate":  0.60,   # current: 0.80  (+0.20 headroom)
-    "mrr":       0.40,   # current: 0.733 (+0.333 headroom)
-    "precision": 0.15,   # current: 0.160 (+0.010 headroom)
-    "recall":    0.40,   # current: 0.900 (+0.500 headroom)
-    "ndcg":      0.40,   # current: 0.756 (+0.356 headroom)
+    "hit_rate":  0.60,   # current: 0.900 (+0.300 headroom)
+    "mrr":       0.40,   # current: 0.900 (+0.500 headroom)
+    "precision": 0.15,   # current: 0.560 (+0.410 headroom)
+    "recall":    0.40,   # current: 2.250 (>1.0 — chunk-level inflation, see Q67)
+    "ndcg":      0.40,   # current: 0.874 (+0.474 headroom)
 }
 ```
 
-Precision@5 has the smallest headroom (0.010) and is the first threshold to breach if retrieval degrades — a useful early-warning signal.
+All thresholds now have substantial headroom. Precision@5 had only 0.010 headroom before Whisper; it jumped to 0.410 because audio transcript chunks are highly relevant to their queries and dominate top results.
 
 **Metric-by-metric analysis**
 
-*Hit Rate@K — 0.70 → 0.80 → 0.80*
+*Hit Rate@K — 0.90 → 0.90 → 0.90*
 
-The jump from K=1 to K=3 (+0.10) means one query's relevant document sits at rank 2 or 3. The plateau at K=5 is the critical signal: no queries are recovered by widening the window from 3 to 5. The two misses ("company mission and vision" and "DocFlow AI") are not in top-5 at all — they are either absent from the index (audio not transcribed) or pushed below rank 5 by RRF. Fetching more candidates will not help; these need upstream fixes. With the two structural misses, the theoretical maximum for hybrid is 0.80 until Whisper is installed and the RRF demotion is addressed. That ceiling is already reached — there is zero headroom for any further regression at K=5.
+Flat across all K values — the 9 hits all land at rank 1, and the one miss (DocFlow AI) is absent from the index at any rank. No improvement from widening the candidate window, confirming the miss is a data/relevance problem not a ranking depth problem. The ceiling with this gold dataset is 0.90 until the DocFlow AI query is resolved (either fix the transcript content match or update the gold query to match what the transcript actually says).
 
-*MRR@K — 0.700 → 0.733 → 0.733*
+*MRR@K — 0.900 → 0.900 → 0.900*
 
-MRR rises slightly from K=1 to K=3 then plateaus. The 0.700 at K=1 means 7 out of 10 queries have their relevant document at rank 1 exactly — a strong result. The additional 0.033 gained at K=3 comes from one query whose relevant doc lands at rank 2 or 3 (contributing 0.5 or 0.33 to the mean). The two miss queries contribute 0 regardless of K, capping MRR at 0.733. For a RAG system this matters because the first retrieved chunk dominates the LLM's context window (lost-in-the-middle effect). MRR@1 = 0.70 means the LLM gets the right chunk first on 7/10 queries without any reranking — a solid baseline.
+Perfect flat profile. Every hit lands at rank 1, giving RR=1.00 per query. The pre-Whisper GlobalFinance outlier (RR=0.50, relevant doc at rank 2) is now rank 1 — audio content shifted RRF rankings enough to push the correct chunk to the top. This is a meaningful improvement: the LLM receives the right chunk first on 9/10 queries.
 
-*Precision@K — 0.700 → 0.267 → 0.160*
+*Precision@K — 0.900 → 0.633 → 0.560*
 
-This is the steepest drop across K values and is expected, not a problem. Precision@K = relevant results / K. With most queries having only 1 relevant document, as K grows the denominator grows faster than new relevant docs appear and precision dilutes. K=1: 7 hit at rank 1 → Precision = 0.70. K=5: roughly 1 relevant doc per 6.25 results on average → 0.160. The only way Precision@5 stays high is if queries have many relevant documents — this corpus does not. In a RAG context, 1 relevant chunk out of 5 is often sufficient for the LLM to answer correctly. Precision@5 = 0.160 is the tightest metric against its threshold (gap of only 0.010) and is the earliest-warning signal for regression.
+Still declines with K (expected — denominator grows faster than relevant results), but substantially higher than before. The K=1 jump from 0.700 to 0.900 directly reflects 2 additional queries hitting at rank 1 (mission/vision and GlobalFinance). The K=5 value of 0.560 means on average 2.8 out of 5 returned results are relevant — well above the 0.15 threshold and indicating the corpus is dense with relevant content.
 
-*Recall@K — 0.600 → 0.800 → 0.900*
+*Recall@K — 0.750 → 1.550 → 2.250*
 
-The strongest story in the results. The steady climb (+0.20 from K=1→3, +0.10 from K=3→5) shows the retriever consistently finds relevant documents — it just sometimes needs more candidates. The 0.900 at K=5 is near the ceiling for this corpus; the remaining 0.10 gap is the two structural misses. Note from Q67: Recall can report >1.0 when a relevant document has multiple chunks in top-K (chunk-level vs document-level ambiguity). Values ≤1.0 here suggest either single-chunk relevant documents or working deduplication — worth verifying after corpus expansion.
+Values above 1.0 are now confirmed in production (Q67). This is chunk-level recall inflation: multiple chunks from the same relevant document appear in top-K, each counted as a separate relevant result but divided by `total_relevant = 1`. The jump from pre-Whisper (0.90 at K=5) to current (2.250 at K=5) is entirely explained by audio transcript chunks joining the index — for queries like "PTO policy" or "learning budget", both a handbook text chunk and an audio chunk about the same topic now appear in top-5. Not a metric to trust at face value; use Hit Rate and MRR as primary signals.
 
-*NDCG@K — 0.700 → 0.756 → 0.756*
+*NDCG@K — 0.900 → 0.884 → 0.874*
 
-The plateau at K=3→5 mirrors Hit Rate and MRR: once the 8 retrievable queries have their relevant docs within top-3, adding positions 4 and 5 contributes no new DCG gain. The 0.756 at K=5 is high — relevant documents are consistently near the top of the ranked list, not buried at ranks 3–5. The delta between NDCG@K=1 (0.700) and NDCG@K=5 (0.756) is only 0.056, confirming most hits land at rank 1. If this delta were large (e.g. 0.700 → 0.900), it would indicate relevant docs are present but poorly ranked and a reranker would help significantly.
+Slight downward slope with K, which is normal: as K increases, slightly less-relevant chunks fill positions 4–5 and gently reduce DCG. The 0.874 at K=5 is excellent — relevant documents are consistently at the top of the ranked list. The pre-Whisper plateau (0.756 flat from K=3 to K=5) has been replaced by a gradual decline, which is the healthier pattern — it means positions 4–5 now contain partially-relevant content rather than completely irrelevant noise.
 
-*Latency — 312ms mean, 748ms P95*
+*Latency — 308ms mean, 903ms P95*
 
-312ms mean is reasonable for Ollama local (the embedding API call dominates — nomic-embed-text on CPU takes ~150–250ms per query). The P95/mean ratio of 2.4× indicates occasional slow outliers, likely cold-start embedding requests when Ollama has not recently used the model. With a GPU or hosted embedding API both figures drop to <100ms mean / <200ms P95. The 10s P95 threshold in `test_latency` has enormous headroom (748ms vs 10,000ms) — tighten it to 2,000ms for a realistic production CI gate.
+Mean is virtually unchanged (308ms vs 312ms). P95 jumped from 748ms to 903ms — the first query after Whisper ingestion hit a cold-start embedding delay of 1447ms (Ollama loading the model into memory for the first time). In steady-state operation (Ollama model already loaded) all queries run at ~150–350ms. The 10s P95 threshold has ample headroom; tighten to 2,000ms for a realistic CI gate.
 
-**Per-query analysis**
+**Remaining miss: DocFlow AI**
 
-7 of 10 queries land at RR=1.00 — unusually clean for an untuned RAG system, reflecting that most documents in this corpus are topically distinct with little competition between chunks at the top of the ranked list.
+"What is DocFlow AI and how does it process documents?" still fails at RR=0.00 despite `Recording2.mp3` now being transcribed. The transcript exists in the DB but the query doesn't match. To diagnose: inspect the actual chunk content with:
 
-*GlobalFinance at RR=0.50* is the interesting outlier. The relevant source is `client-review-globalfinance` or `Recording4`. RR=0.50 means it lands at rank 2. The rank-1 result is likely a chunk from `company-overview` or `technical-architecture-guide` that semantically overlaps with "loan processing success story" language. A reranker or more specific query phrasing would fix this.
+```sql
+SELECT content FROM chunks
+WHERE document_id = (SELECT id FROM documents WHERE source ILIKE '%Recording2%');
+```
 
-**The two misses in detail**
-
-*"Company mission and vision" — structural RRF issue.* `mission-and-goals.md` ranks well in semantic (conceptual match) but weakly in text ("mission", "vision", "values" are generic terms appearing across many chunks, giving no keyword advantage). After RRF a keyword-rich chunk from `company-overview.md` accumulates enough score from the text leg to overtake `mission-and-goals.md` in the merged ranking. Fix options: raise `match_count` per leg before RRF (fetch 20 candidates instead of 10), increase `default_text_weight`, or add metadata-based boosting for document type.
-
-*"DocFlow AI" — missing data.* Content lives entirely in `Recording2.mp3`. Without Whisper the audio is stored as `[Error: Could not transcribe audio file...]` — a useless stub chunk. No amount of retrieval tuning fixes a missing document. Fix: `pip install openai-whisper`, ensure FFmpeg is in PATH, re-ingest.
+If the transcript uses different terminology (e.g. "document processing platform" rather than "DocFlow AI"), either update the gold query to match the transcript vocabulary, or expand `relevant_sources` for this entry to include additional source stems.
 
 **What to act on, ranked by impact**
 
 | Priority | Action | Expected gain |
 |---|---|---|
-| 1 | Install Whisper, re-ingest audio | Hit Rate@5: 0.80 → 0.90 |
-| 2 | Raise `match_count` per leg to 20 before RRF | Likely recovers "mission and vision", Hit Rate@5: 0.90 → 1.00 |
-| 3 | Expand gold dataset to 50+ queries | Reduces metric variance from ±0.10 to ±0.03 |
-| 4 | Add keyword-heavy queries to gold dataset | Will reveal whether hybrid truly beats semantic on this corpus |
-| 5 | Tighten P95 latency threshold from 10s → 2s | More realistic CI gate |
-| 6 | Enable reranker and re-measure | GlobalFinance (RR=0.50) is the main candidate to benefit |
+| 1 | Inspect Recording2 transcript, fix gold query or relevant_sources | Hit Rate@5: 0.90 → 1.00 |
+| 2 | Expand gold dataset to 50+ queries | Reduces metric variance from ±0.10 to ±0.03 |
+| 3 | Add keyword-heavy queries to gold dataset | Text search dropped to 0.40; need queries that expose where hybrid beats semantic |
+| 4 | Tighten P95 latency threshold from 10s → 2s | More realistic CI gate |
+| 5 | Fix Recall metric to count distinct documents | Remove >1.0 inflation so Recall becomes a meaningful signal |
+| 6 | Enable reranker and re-measure | All queries now hit; reranker value is in improving ranking within hits |
 
 ---
 

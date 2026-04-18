@@ -14,7 +14,11 @@
       "Bash(python -m pytest rag/tests/test_rag_agent.py::TestRAGAgentIntegration::test_agent_run_specific_query -v)",
       "Bash(python -m pytest rag/tests/test_rag_agent.py::TestRAGAgentIntegration::test_agent_run_specific_query -v --log-cli-level=INFO --tb=short)",
       "Bash(python -m pytest rag/tests/test_postgres_store.py -v)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(ffmpeg -version)",
+      "Bash(pip install *)",
+      "Bash(conda install *)",
+      "Bash(/c/Users/rohan/anaconda3/Scripts/conda install *)"
     ]
   }
 }
