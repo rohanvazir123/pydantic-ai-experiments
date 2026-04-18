@@ -77,6 +77,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q68. Why are unit tests and integration tests in the same file?](#q68)
 - [Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?](#q69)
 - [Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?](#q69a)
+- [Q69b. Where in the code are retrieval metrics collected?](#q69b)
 - [Q70. What does Langfuse trace in this project?](#q70)
 - [Q71. Why `ContextVar` rather than function arguments?](#q71)
 - [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
@@ -943,6 +944,142 @@ THRESHOLDS_K5 = {
 ```
 
 Precision@5 has the smallest headroom (0.010) and is the first threshold to breach if retrieval degrades — a useful early-warning signal.
+
+**Metric-by-metric analysis**
+
+*Hit Rate@K — 0.70 → 0.80 → 0.80*
+
+The jump from K=1 to K=3 (+0.10) means one query's relevant document sits at rank 2 or 3. The plateau at K=5 is the critical signal: no queries are recovered by widening the window from 3 to 5. The two misses ("company mission and vision" and "DocFlow AI") are not in top-5 at all — they are either absent from the index (audio not transcribed) or pushed below rank 5 by RRF. Fetching more candidates will not help; these need upstream fixes. With the two structural misses, the theoretical maximum for hybrid is 0.80 until Whisper is installed and the RRF demotion is addressed. That ceiling is already reached — there is zero headroom for any further regression at K=5.
+
+*MRR@K — 0.700 → 0.733 → 0.733*
+
+MRR rises slightly from K=1 to K=3 then plateaus. The 0.700 at K=1 means 7 out of 10 queries have their relevant document at rank 1 exactly — a strong result. The additional 0.033 gained at K=3 comes from one query whose relevant doc lands at rank 2 or 3 (contributing 0.5 or 0.33 to the mean). The two miss queries contribute 0 regardless of K, capping MRR at 0.733. For a RAG system this matters because the first retrieved chunk dominates the LLM's context window (lost-in-the-middle effect). MRR@1 = 0.70 means the LLM gets the right chunk first on 7/10 queries without any reranking — a solid baseline.
+
+*Precision@K — 0.700 → 0.267 → 0.160*
+
+This is the steepest drop across K values and is expected, not a problem. Precision@K = relevant results / K. With most queries having only 1 relevant document, as K grows the denominator grows faster than new relevant docs appear and precision dilutes. K=1: 7 hit at rank 1 → Precision = 0.70. K=5: roughly 1 relevant doc per 6.25 results on average → 0.160. The only way Precision@5 stays high is if queries have many relevant documents — this corpus does not. In a RAG context, 1 relevant chunk out of 5 is often sufficient for the LLM to answer correctly. Precision@5 = 0.160 is the tightest metric against its threshold (gap of only 0.010) and is the earliest-warning signal for regression.
+
+*Recall@K — 0.600 → 0.800 → 0.900*
+
+The strongest story in the results. The steady climb (+0.20 from K=1→3, +0.10 from K=3→5) shows the retriever consistently finds relevant documents — it just sometimes needs more candidates. The 0.900 at K=5 is near the ceiling for this corpus; the remaining 0.10 gap is the two structural misses. Note from Q67: Recall can report >1.0 when a relevant document has multiple chunks in top-K (chunk-level vs document-level ambiguity). Values ≤1.0 here suggest either single-chunk relevant documents or working deduplication — worth verifying after corpus expansion.
+
+*NDCG@K — 0.700 → 0.756 → 0.756*
+
+The plateau at K=3→5 mirrors Hit Rate and MRR: once the 8 retrievable queries have their relevant docs within top-3, adding positions 4 and 5 contributes no new DCG gain. The 0.756 at K=5 is high — relevant documents are consistently near the top of the ranked list, not buried at ranks 3–5. The delta between NDCG@K=1 (0.700) and NDCG@K=5 (0.756) is only 0.056, confirming most hits land at rank 1. If this delta were large (e.g. 0.700 → 0.900), it would indicate relevant docs are present but poorly ranked and a reranker would help significantly.
+
+*Latency — 312ms mean, 748ms P95*
+
+312ms mean is reasonable for Ollama local (the embedding API call dominates — nomic-embed-text on CPU takes ~150–250ms per query). The P95/mean ratio of 2.4× indicates occasional slow outliers, likely cold-start embedding requests when Ollama has not recently used the model. With a GPU or hosted embedding API both figures drop to <100ms mean / <200ms P95. The 10s P95 threshold in `test_latency` has enormous headroom (748ms vs 10,000ms) — tighten it to 2,000ms for a realistic production CI gate.
+
+**Per-query analysis**
+
+7 of 10 queries land at RR=1.00 — unusually clean for an untuned RAG system, reflecting that most documents in this corpus are topically distinct with little competition between chunks at the top of the ranked list.
+
+*GlobalFinance at RR=0.50* is the interesting outlier. The relevant source is `client-review-globalfinance` or `Recording4`. RR=0.50 means it lands at rank 2. The rank-1 result is likely a chunk from `company-overview` or `technical-architecture-guide` that semantically overlaps with "loan processing success story" language. A reranker or more specific query phrasing would fix this.
+
+**The two misses in detail**
+
+*"Company mission and vision" — structural RRF issue.* `mission-and-goals.md` ranks well in semantic (conceptual match) but weakly in text ("mission", "vision", "values" are generic terms appearing across many chunks, giving no keyword advantage). After RRF a keyword-rich chunk from `company-overview.md` accumulates enough score from the text leg to overtake `mission-and-goals.md` in the merged ranking. Fix options: raise `match_count` per leg before RRF (fetch 20 candidates instead of 10), increase `default_text_weight`, or add metadata-based boosting for document type.
+
+*"DocFlow AI" — missing data.* Content lives entirely in `Recording2.mp3`. Without Whisper the audio is stored as `[Error: Could not transcribe audio file...]` — a useless stub chunk. No amount of retrieval tuning fixes a missing document. Fix: `pip install openai-whisper`, ensure FFmpeg is in PATH, re-ingest.
+
+**What to act on, ranked by impact**
+
+| Priority | Action | Expected gain |
+|---|---|---|
+| 1 | Install Whisper, re-ingest audio | Hit Rate@5: 0.80 → 0.90 |
+| 2 | Raise `match_count` per leg to 20 before RRF | Likely recovers "mission and vision", Hit Rate@5: 0.90 → 1.00 |
+| 3 | Expand gold dataset to 50+ queries | Reduces metric variance from ±0.10 to ±0.03 |
+| 4 | Add keyword-heavy queries to gold dataset | Will reveal whether hybrid truly beats semantic on this corpus |
+| 5 | Tighten P95 latency threshold from 10s → 2s | More realistic CI gate |
+| 6 | Enable reranker and re-measure | GlobalFinance (RR=0.50) is the main candidate to benefit |
+
+---
+
+<a id="q69b"></a>
+**Q69b. Where in the code are retrieval metrics collected?**
+
+All collection lives in `rag/tests/test_retrieval_metrics.py`. Here is the full pipeline:
+
+**1. Gold dataset — lines 34–75**
+
+Static list of 10 queries and the document filename stems considered relevant. No DB involved.
+
+```python
+GOLD_DATASET: list[dict] = [
+    {"query": "What does NeuralFlow AI do?",
+     "relevant_sources": ["company-overview", "mission-and-goals"]},
+    ...
+]
+```
+
+**2. Raw retrieval — `_run_gold_dataset` (lines 286–310)**
+
+Loops over every gold query, calls the real `retriever.retrieve()` against PostgreSQL, times each call, and converts results to a binary relevance list.
+
+```python
+t0 = time.perf_counter()
+results = await retriever.retrieve(query=entry["query"], match_count=k, search_type=search_type)
+latencies.append((time.perf_counter() - t0) * 1000)
+rel_list = build_relevance_list(results, entry["relevant_sources"])
+```
+
+**3. Relevance judgement — `is_relevant` / `build_relevance_list` (lines 94–102)**
+
+Substring match — if a `relevant_sources` stem (e.g. `"team-handbook"`) appears anywhere in the result's `document_source` path, the result is marked relevant (`1`), otherwise `0`. No LLM judge; no human annotation at query time.
+
+```python
+def is_relevant(document_source: str, relevant_sources: list[str]) -> bool:
+    src_lower = document_source.lower()
+    return any(stem.lower() in src_lower for stem in relevant_sources)
+```
+
+**4. Metric computation — pure functions (lines 105–165)**
+
+Each metric is a standalone function that operates only on the binary relevance list — no I/O, fully unit-testable in isolation:
+
+| Function | Lines | Formula |
+|---|---|---|
+| `hit_rate(rel)` | 105–107 | `1.0` if any `1` in list, else `0.0` |
+| `reciprocal_rank(rel)` | 110–115 | `1 / position` of first `1` |
+| `precision_at_k(rel, k)` | 118–122 | `sum(rel[:k]) / k` |
+| `recall_at_k(rel, k, total)` | 125–129 | `sum(rel[:k]) / total_relevant` |
+| `ndcg_at_k(rel, k)` | 132–144 | `DCG@K / IDCG@K` |
+
+All five are aggregated in `compute_all_metrics` (lines 147–165), which takes the full list of per-query relevance lists and returns mean values across all queries.
+
+**5. Latency percentile — `percentile` (lines 168–175)**
+
+Linear interpolation between adjacent sorted values. Called as `percentile(latencies, 95)` for P95.
+
+**6. Logging — `_log_metrics_table` + `_log_per_query_detail` (lines 312–347)**
+
+Prints the metrics table and per-query breakdown (query text, ✓/✗, RR, latency) to test stdout via `logger.info`. Display only — does not affect assertions.
+
+**7. CI assertions — individual test methods (lines 354–474)**
+
+Each test method calls `_run_gold_dataset`, computes metrics, and asserts against `THRESHOLDS_K5`. `test_semantic_vs_text_hit_rate` (line 437) and `test_hybrid_beats_semantic_alone` (line 451) produce the 0.90 / 0.80 / 0.60 search-type comparison.
+
+**Data flow**
+
+```
+GOLD_DATASET (static)
+       │
+       ▼
+retriever.retrieve()          ← rag/retrieval/retriever.py
+       │  (real PostgreSQL + Ollama)
+       ▼
+build_relevance_list()        ← substring match on document_source
+       │
+       ▼
+compute_all_metrics()         ← pure math, no I/O
+       │
+       ▼
+_log_metrics_table()          ← prints table to test stdout
+assert score >= threshold     ← CI gate
+```
+
+The retriever (`rag/retrieval/retriever.py`) is where the actual hybrid search executes. `_run_gold_dataset` is purely a timing harness that loops over queries and measures wall-clock time around each `retrieve()` call.
 
 ---
 
