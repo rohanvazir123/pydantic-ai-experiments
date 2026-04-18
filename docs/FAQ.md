@@ -78,6 +78,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?](#q69)
 - [Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?](#q69a)
 - [Q69b. Where in the code are retrieval metrics collected?](#q69b)
+- [Q69c. Which evaluation metrics do we implement and which do we skip — and why?](#q69c)
 - [Q70. What does Langfuse trace in this project?](#q70)
 - [Q71. Why `ContextVar` rather than function arguments?](#q71)
 - [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
@@ -1099,6 +1100,48 @@ assert score >= threshold     ← CI gate
 ```
 
 The retriever (`rag/retrieval/retriever.py`) is where the actual hybrid search executes. `_run_gold_dataset` is purely a timing harness that loops over queries and measures wall-clock time around each `retrieve()` call.
+
+---
+
+<a id="q69c"></a>
+**Q69c. Which evaluation metrics do we implement and which do we skip — and why?**
+
+A complete RAG evaluation covers three stages: retrieval quality, generation quality, and system performance. Here is where this project stands across all three.
+
+**1. Retrieval metrics — all implemented** (`rag/tests/test_retrieval_metrics.py`)
+
+| Metric | Current (K=5) | What it tells you |
+|---|---|---|
+| Hit Rate@K | 0.900 | Did at least one relevant doc appear in top-K? Binary pass/fail per query |
+| MRR@K | 0.900 | How high is the *first* relevant result ranked? Critical for RAG — the LLM reads top chunks first |
+| Precision@K | 0.560 | What fraction of returned results are relevant? High means less noise in the LLM context |
+| Recall@K | 2.250* | What fraction of relevant docs were retrieved? *>1.0 due to chunk-level inflation — see Q67 |
+| NDCG@K | 0.874 | Are the most relevant docs ranked highest? Rewards rank 1 more than rank 5 via log discount |
+| Mean latency | 308ms | Average retrieval time per query end-to-end |
+| P95 latency | 903ms | Worst-case latency for 95% of queries — the CI gate metric |
+
+NDCG specifically: despite being described as a "sophisticated" metric, it tells the same story as MRR when binary relevance is used (0 or 1 per result). It becomes more informative with graded relevance (0, 1, 2 scores). At MRR=0.900 and NDCG=0.874, both confirm relevant docs land near rank 1 — NDCG just penalises slightly for the one miss and marginal position variation.
+
+**2. Generation metrics — not implemented**
+
+| Metric | Why skipped |
+|---|---|
+| **Faithfulness / Groundedness** | Requires an LLM judge to score each answer against its retrieved chunks on every CI run — adds cost and latency, and scores vary between runs making thresholds unreliable. Meaningful once retrieval quality is solved and generation is the bottleneck. |
+| **Answer Relevance** | Same LLM-as-judge requirement. Also partially covered by the retrieval metrics: if the right chunk is retrieved (Hit Rate=0.9) and ranked first (MRR=0.9), the LLM has the information it needs. |
+| **Answer Correctness** | Requires ground-truth answers for every gold query. The gold dataset has ground-truth *documents* only. Building answer-level ground truth is a separate manual annotation effort. |
+| **BLEU / ROUGE / METEOR** | Measure word-overlap between generated text and a reference answer. Poor proxies for factual correctness in LLM outputs — a correctly paraphrased answer scores low, a fluent hallucination can score high. Widely considered outdated for generative evaluation. |
+
+**3. System & operational metrics — partially implemented**
+
+| Metric | Status | Notes |
+|---|---|---|
+| Latency (mean + P95) | ✓ Implemented | Per-query wall-clock time in `_run_gold_dataset` |
+| Cost per query | ✗ Skipped | Ollama is local — cost is zero. Add when switching to a hosted provider; instrument by logging `usage.prompt_tokens` and `usage.completion_tokens` from the LLM response |
+| Token usage | ✗ Skipped | Not instrumented. Would require intercepting LLM call responses. Low priority on local Ollama where there is no per-token billing |
+
+**When to add generation metrics**
+
+Add Faithfulness and Answer Relevance when: (a) retrieval Hit Rate@5 is ≥0.90 and generation quality becomes the dominant failure mode, (b) you switch to a hosted LLM where per-token cost makes prompt efficiency worth tracking, or (c) you add a human feedback loop (thumbs up/down in the Streamlit UI) and want to correlate automated scores with user ratings. A practical starting point is [RAGAS](https://github.com/explodinggradients/ragas), which wraps LLM-as-judge scoring for Faithfulness and Answer Relevance with a single `evaluate()` call against the same gold dataset structure used here.
 
 ---
 
