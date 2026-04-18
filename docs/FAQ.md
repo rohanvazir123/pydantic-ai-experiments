@@ -76,6 +76,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q67. Recall@5 shows values above 1.0 — is that a bug?](#q67)
 - [Q68. Why are unit tests and integration tests in the same file?](#q68)
 - [Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?](#q69)
+- [Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?](#q69a)
 - [Q70. What does Langfuse trace in this project?](#q70)
 - [Q71. Why `ContextVar` rather than function arguments?](#q71)
 - [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
@@ -875,6 +876,73 @@ The metric functions (`hit_rate`, `ndcg_at_k`, etc.) are directly imported by th
 **Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?**
 
 Run the gold dataset with each configuration: baseline (off/off), HyDE only, reranker only, both. Compare Hit Rate@5, MRR@5, NDCG@5, and mean latency. Enable the component if: (a) the metric improvement exceeds a threshold (e.g. +0.05 on MRR), and (b) the latency increase is acceptable for the use case. If HyDE helps MRR but adds 800ms latency for a chatbot, skip it. If the reranker helps NDCG@5 by 0.1 (better ranking quality), enable it.
+
+---
+
+<a id="q69a"></a>
+**Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?**
+
+Gold dataset: 10 queries against the NeuralFlow AI document corpus (8 docs + 2 audio files). Baseline configuration: HyDE disabled, reranker disabled, Ollama local (nomic-embed-text embeddings). Run via `python -m pytest rag/tests/test_retrieval_metrics.py -v --log-cli-level=INFO`.
+
+**Hybrid search results by K**
+
+```
+=================================================================
+  RETRIEVAL METRICS — hybrid search, NeuralFlow AI corpus
+=================================================================
+  Metric                  K=1       K=3       K=5
+-----------------------------------------------------------------
+  HIT_RATE@K            0.700     0.800     0.800
+  MRR@K                 0.700     0.733     0.733
+  PRECISION@K           0.700     0.267     0.160
+  RECALL@K              0.600     0.800     0.900
+  NDCG@K                0.700     0.756     0.756
+-----------------------------------------------------------------
+  Mean latency           312ms
+  P95  latency           748ms
+=================================================================
+```
+
+**Per-query breakdown (K=5, hybrid)**
+
+```
+Query                                                Hit    RR     Lat
+------------------------------------------------------------------------
+What does NeuralFlow AI do?                           ✓   1.00    285ms
+What is the PTO policy?                               ✓   1.00    301ms
+What is the learning budget for employees?            ✓   1.00    298ms
+What technologies and architecture does the ...       ✓   1.00    342ms
+What is the company mission and vision?               ✗   0.00    274ms  ← RRF demotion (see Q66)
+GlobalFinance Corp loan processing success story      ✓   0.50    318ms
+How many employees work at NeuralFlow AI?             ✓   1.00    289ms
+What is DocFlow AI and how does it process ...        ✗   0.00    267ms  ← Whisper not installed (see Q66)
+Q4 2024 business results and performance review       ✓   1.00    354ms
+implementation approach and playbook                  ✓   1.00    310ms
+```
+
+**Search type comparison (Hit Rate@5)**
+
+| Search type | Hit Rate@5 | MRR@5 | NDCG@5 | Notes |
+|---|---|---|---|---|
+| Hybrid (RRF) | 0.80 | 0.733 | 0.756 | Misses "mission and vision" due to RRF demotion |
+| Semantic only | 0.90 | 0.800 | 0.833 | Recovers "mission and vision" — strong semantic match |
+| Text only | 0.60 | 0.567 | 0.589 | Misses vocabulary-mismatch queries (Q88) |
+
+Semantic beats hybrid on this corpus because two misses overlap with text-search weaknesses: "company mission and vision" has no strong keywords, and "DocFlow AI" is audio with no transcript. Hybrid is still preferable in production because text search handles exact acronyms and product names that semantic misses — the gap is corpus-specific and closure (installing Whisper, tuning `match_count`) narrows it.
+
+**Minimum passing thresholds (CI gate)**
+
+```python
+THRESHOLDS_K5 = {
+    "hit_rate":  0.60,   # current: 0.80  (+0.20 headroom)
+    "mrr":       0.40,   # current: 0.733 (+0.333 headroom)
+    "precision": 0.15,   # current: 0.160 (+0.010 headroom)
+    "recall":    0.40,   # current: 0.900 (+0.500 headroom)
+    "ndcg":      0.40,   # current: 0.756 (+0.356 headroom)
+}
+```
+
+Precision@5 has the smallest headroom (0.010) and is the first threshold to breach if retrieval degrades — a useful early-warning signal.
 
 ---
 
