@@ -5,18 +5,24 @@ Code references: line numbers point to files under `rag/` in this repo.
 ---
 ## Table of Contents
 
-- [Q1. What is RAG and why is it preferred over fine-tuning for knowledge-intensive tasks?](#q1)
+### RAG Fundamentals
+- [Q1. What is RAG and why is it preferred over fine-tuning?](#q1)
 - [Q2. What are the main failure modes of a naive RAG pipeline?](#q2)
 - [Q3. What is the difference between standard RAG and agentic RAG?](#q3)
 - [Q4. How does chunking strategy affect retrieval quality?](#q4)
 - [Q5. What is the "lost in the middle" problem and how does chunk ordering help?](#q5)
 - [Q6. Why store the full document alongside chunks?](#q6)
+
+### Hybrid Search & RRF
 - [Q7. Explain hybrid search. What problem does each leg solve?](#q7)
 - [Q8. Walk through RRF. What is the formula and what does k=60 do?](#q8)
 - [Q9. When does text search win over semantic search?](#q9)
 - [Q10. When does semantic search win?](#q10)
 - [Q11. Semantic Hit Rate@5 = 0.90 vs hybrid = 0.80. How do you explain this?](#q11)
 - [Q12. If you had to drop one leg, which would you keep?](#q12)
+- [Q86. RRF scores of 0.01–0.03 — why isn't this low confidence?](#q86)
+
+### PostgreSQL & Vector Storage
 - [Q13. Why PostgreSQL over a dedicated vector DB?](#q13)
 - [Q14. What is IVFFlat and how does it trade accuracy for speed?](#q14)
 - [Q15. What does `register_vector` do and why in `init=`?](#q15)
@@ -31,70 +37,30 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q23. Why is a GIN index better than B-tree for tsvector?](#q23)
 - [Q24. "30 days PTO" — the number 30 is dropped. Why? How would you handle numeric search?](#q24)
 - [Q25. What happens when `plainto_tsquery` produces an empty query?](#q25)
+- [Q74. Two-table schema (documents + chunks) — why not one table?](#q74)
+- [Q116. At what scale would you move away from PostgreSQL/pgvector to a dedicated vector database?](#q116)
+- [Q116a. Why aren't we using `pg_textsearch` (Timescale's BM25 extension)?](#q116a)
+- [Q116b. What other PostgreSQL text search extensions exist?](#q116b)
+- [Q116c. What indexes currently exist on the `chunks` table?](#q116c)
+- [Q116d. How does re-indexing happen on the fly?](#q116d)
+- [Q116e. How are new documents auto-ingested and re-indexed?](#q116e)
+- [Q116f. Which tests are currently failing and what needs to be done to fix them?](#q116f)
+- [Q116g. How do I inspect what's actually stored in the `chunks` table?](#q116g)
+- [Q116h. Why doesn't the SELECT query show trigram data?](#q116h)
+- [Q117. What does the PostgreSQL data model look like — entity diagram and sample records?](#q117)
+
+### Document Ingestion & Chunking
 - [Q26. What does Docling's `HybridChunker` do that sliding-window cannot?](#q26)
 - [Q27. What is `contextualize()` and why does it improve embedding quality?](#q27)
 - [Q28. Describe the fallback chunking path exactly.](#q28)
 - [Q29. Why is `DocumentConverter` cached via `_get_converter()`?](#q29)
 - [Q30. What is `merge_peers=True`?](#q30)
 - [Q31. Why cache `DocumentConverter` as an instance attribute, not a module-level singleton?](#q31)
-- [Q32. What does `nomic-embed-text` produce and why 768 dimensions?](#q32)
-- [Q33. Cosine similarity vs Euclidean distance — why cosine?](#q33)
-- [Q34. The embedder has an in-memory cache — what is the cache keyed on and what are its limits?](#q34)
-- [Q35. Switching from nomic-embed-text (768-dim) to text-embedding-3-small (1536-dim) — what changes?](#q35)
-- [Q36. Symmetric vs asymmetric embedding models — which for RAG?](#q36)
-- [Q37. Explain HyDE. Why might it outperform raw query embedding?](#q37)
-- [Q38. What are the risks of HyDE?](#q38)
-- [Q39. When would you enable HyDE?](#q39)
-- [Q40. How is HyDE implemented in the retriever?](#q40)
-- [Q41. What problem does a cross-encoder solve that bi-encoder retrieval cannot?](#q41)
-- [Q42. LLM reranker vs CrossEncoder — trade-offs?](#q42)
-- [Q43. Why `asyncio.gather` for LLM reranker scoring?](#q43)
-- [Q44. At what corpus size or query volume would you enable the reranker?](#q44)
-- [Q45. Retrieval recall vs reranking precision — how do they compose?](#q45)
-- [Q46. What makes this system "agentic"?](#q46)
-- [Q47. How does Pydantic AI's tool system work?](#q47)
-- [Q47a. How does the LLM know which tool to call — does Pydantic AI register tool names with it?](#q47a)
-- [Q48. What is `RAGState` and why are its attributes `PrivateAttr`?](#q48)
-- [Q49. Why `ContextVar` for Langfuse trace context?](#q49)
-- [Q50. Why is per-user state important in a multi-user chat app?](#q50)
-- [Q51. How does the agent handle tool call failures?](#q51)
-- [Q52. What problem does Mem0 solve that conversation history cannot?](#q52)
-- [Q53. How is Mem0 stored in this project?](#q53)
-- [Q54. `add()` vs `get_context_string()` — difference?](#q54)
-- [Q55. Why is Mem0 disabled by default?](#q55)
-- [Q56. How would you prevent Mem0 from storing sensitive information?](#q56)
-- [Q57. Why must all I/O be async? What happens with a blocking call?](#q57)
-- [Q58. What is an asyncpg connection pool and why use it?](#q58)
-- [Q59. Maximum latency improvement from `asyncio.gather` on semantic + text search?](#q59)
-- [Q60. Why `init=register_vector` rather than registering after pool creation?](#q60)
-- [Q61. If `asyncio.gather` has two coroutines and one raises an exception — what happens?](#q61)
-- [Q62. Hit Rate@K vs Precision@K — when do they diverge?](#q62)
-- [Q63. What does MRR measure that Hit Rate doesn't?](#q63)
-- [Q64. Walk through the NDCG formula.](#q64)
-- [Q65. Is 10 queries a sufficient gold dataset?](#q65)
-- [Q66. Why do "company mission and vision" and "DocFlow AI" miss consistently?](#q66)
-- [Q67. Recall@5 shows values above 1.0 — is that a bug?](#q67)
-- [Q68. Why are unit tests and integration tests in the same file?](#q68)
-- [Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?](#q69)
-- [Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?](#q69a)
-- [Q69b. Where in the code are retrieval metrics collected?](#q69b)
-- [Q69c. Which evaluation metrics do we implement and which do we skip — and why?](#q69c)
-- [Q70. What does Langfuse trace in this project?](#q70)
-- [Q71. Why `ContextVar` rather than function arguments?](#q71)
-- [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
-- [Q73. Trace vs span vs generation in Langfuse?](#q73)
-- [Q74. Two-table schema (documents + chunks) — why not one table?](#q74)
 - [Q75. Walk through ingestion of a raw PDF to a searchable chunk.](#q75)
-- [Q76. Scale to 10M documents — what breaks first?](#q76)
 - [Q77. Implementing true incremental ingestion with deduplication.](#q77)
-- [Q78. Is multi-tenancy supported? What would it take to make this prototype production-ready for multiple tenants?](#q78)
 - [Q79. Risk of changing the embedding model after ingestion.](#q79)
-- [Q80. Sub-100ms latency — what to sacrifice first?](#q80)
-- [Q81. Why `pydantic-settings` instead of `os.environ`?](#q81)
-- [Q82. What does `ruff` check for vs `flake8 + black`?](#q82)
-- [Q83. Why Pydantic models for `ChunkData` and `SearchResult` instead of plain dataclasses?](#q83)
-- [Q84. Why `from collections.abc import Callable` rather than `callable`?](#q84)
-- [Q85. How does `IngestionConfig` → `ChunkingConfig` separation keep concerns clean?](#q85)
+- [Q88. Query "PTO" — what happens in tsvector and why might it miss "paid time off"?](#q88)
+- [Q90. Changing `chunk_overlap` from 100 to 0 — improve some metrics, hurt others?](#q90)
 - [Q91. Walk through full ingestion step by step.](#q91)
 - [Q92. How does `DocumentConverter` differ from PyPDF2 / pdfplumber?](#q92)
 - [Q93. What internal representation does `DoclingDocument` provide and how does `HybridChunker` use it?](#q93)
@@ -108,37 +74,95 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q101. Incremental ingestion — walk through all four cases.](#q101)
 - [Q102. Why `_result_cache.clear()` after ingestion?](#q102)
 - [Q103. YAML frontmatter — where stored, how used?](#q103)
-- [Q104. Top three bottlenecks at 10,000 docs/day and fixes.](#q104)
 - [Q105. Parallelizing ingestion while sharing `DocumentConverter` and the asyncpg pool.](#q105)
 - [Q106. Zero-downtime re-index when `clean_before_ingest=True`.](#q106)
 - [Q107. Scanned PDFs with no text layer.](#q107)
 - [Q108. Why return both markdown string and `DoclingDocument`?](#q108)
 - [Q109. Audio files — how are they different from PDF chunks?](#q109)
 - [Q110. Impact of raw text fallback when PDF conversion fails.](#q110)
-- [Q86. RRF scores of 0.01–0.03 — why isn't this low confidence?](#q86)
-- [Q87. After re-ingestion, previously passing tests now fail. Possible causes.](#q87)
-- [Q88. Query "PTO" — what happens in tsvector and why might it miss "paid time off"?](#q88)
+- [Q122. Is this project using semantic chunking or fixed-size chunking with overlaps?](#q122)
+
+### Embeddings
+- [Q32. What does `nomic-embed-text` produce and why 768 dimensions?](#q32)
+- [Q33. Cosine similarity vs Euclidean distance — why cosine?](#q33)
+- [Q34. The embedder has an in-memory cache — what is the cache keyed on and what are its limits?](#q34)
+- [Q35. Switching from nomic-embed-text (768-dim) to text-embedding-3-small (1536-dim) — what changes?](#q35)
+- [Q36. Symmetric vs asymmetric embedding models — which for RAG?](#q36)
+- [Q114. What models can be swapped in to improve retrieval precision?](#q114)
+- [Q115. How would you benchmark and choose between embedding models for this corpus?](#q115)
+
+### Query Enhancement: HyDE
+- [Q37. Explain HyDE. Why might it outperform raw query embedding?](#q37)
+- [Q38. What are the risks of HyDE?](#q38)
+- [Q39. When would you enable HyDE?](#q39)
+- [Q40. How is HyDE implemented in the retriever?](#q40)
+
+### Reranking
+- [Q41. What problem does a cross-encoder solve that bi-encoder retrieval cannot?](#q41)
+- [Q42. What reranker implementations exist in this codebase?](#q42)
+- [Q42b. LLM reranker vs CrossEncoder vs ColBERT — full trade-off comparison](#q42b)
+- [Q43. Why `asyncio.gather` for LLM reranker scoring?](#q43)
+- [Q44. At what corpus size or query volume would you enable the reranker?](#q44)
+- [Q45. Retrieval recall vs reranking precision — how do they compose?](#q45)
 - [Q89. LLM reranker with partial failure (rate limiting).](#q89)
-- [Q90. Changing `chunk_overlap` from 100 to 0 — improve some metrics, hurt others?](#q90)
+
+### Agentic RAG & Pydantic AI
+- [Q46. What makes this system "agentic"?](#q46)
+- [Q47. How does Pydantic AI's tool system work?](#q47)
+- [Q47a. How does the LLM know which tool to call?](#q47a)
+- [Q48. What is `RAGState` and why are its attributes `PrivateAttr`?](#q48)
+- [Q50. Why is per-user state important in a multi-user chat app?](#q50)
+- [Q51. How does the agent handle tool call failures?](#q51)
+- [Q118. How does the Pydantic AI agent loop work — agent creation, RunContext, deps, and the tool execution cycle?](#q118)
+
+### Memory (Mem0)
+- [Q52. What problem does Mem0 solve that conversation history cannot?](#q52)
+- [Q53. How is Mem0 stored in this project?](#q53)
+- [Q54. `add()` vs `get_context_string()` — difference?](#q54)
+- [Q55. Why is Mem0 disabled by default?](#q55)
+- [Q56. How would you prevent Mem0 from storing sensitive information?](#q56)
+
+### Async & Concurrency
+- [Q57. Why must all I/O be async? What happens with a blocking call?](#q57)
+- [Q58. What is an asyncpg connection pool and why use it?](#q58)
+- [Q59. Maximum latency improvement from `asyncio.gather` on semantic + text search?](#q59)
+- [Q60. Why `init=register_vector` rather than registering after pool creation?](#q60)
+- [Q61. If `asyncio.gather` has two coroutines and one raises an exception — what happens?](#q61)
+
+### Evaluation & Retrieval Metrics
+- [Q62. Hit Rate@K vs Precision@K — when do they diverge?](#q62)
+- [Q63. What does MRR measure that Hit Rate doesn't?](#q63)
+- [Q64. Walk through the NDCG formula.](#q64)
+- [Q65. Is 10 queries a sufficient gold dataset?](#q65)
+- [Q66. Why do "company mission and vision" and "DocFlow AI" miss consistently?](#q66)
+- [Q67. Recall@5 shows values above 1.0 — is that a bug?](#q67)
+- [Q68. Why are unit tests and integration tests in the same file?](#q68)
+- [Q69. How would you use these metrics to decide whether to enable HyDE or the reranker?](#q69)
+- [Q69a. What were the measured retrieval metrics on the NeuralFlow AI corpus?](#q69a)
+- [Q69b. Where in the code are retrieval metrics collected?](#q69b)
+- [Q69c. Which evaluation metrics do we implement and which do we skip — and why?](#q69c)
+
+### Observability & Langfuse
+- [Q49. Why `ContextVar` for Langfuse trace context?](#q49)
+- [Q70. What does Langfuse trace in this project?](#q70)
+- [Q71. Why `ContextVar` rather than function arguments?](#q71)
+- [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
+- [Q73. Trace vs span vs generation in Langfuse?](#q73)
+
+### Scale & Performance
+- [Q76. Scale to 10M documents — what breaks first?](#q76)
+- [Q80. Sub-100ms latency — what to sacrifice first?](#q80)
+- [Q104. Top three bottlenecks at 10,000 docs/day and fixes.](#q104)
 - [Q111. What are the main scale bottlenecks in this system at 1M documents?](#q111)
 - [Q112. What are the ingestion latency bottlenecks and how would you profile them?](#q112)
 - [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
-- [Q114. What models can be swapped in to improve retrieval precision?](#q114)
-- [Q115. How would you benchmark and choose between embedding models for this corpus?](#q115)
-- [Q116. At what scale would you move away from PostgreSQL/pgvector to a dedicated vector database?](#q116)
-- [Q116a. Why aren't we using `pg_textsearch` (Timescale's BM25 extension) instead of `tsvector`/`ts_rank`?](#q116a)
-- [Q116b. What other PostgreSQL text search extensions exist, which does this project use, and what would each add?](#q116b)
-- [Q116c. What indexes currently exist on the `chunks` table?](#q116c)
-- [Q116d. How does re-indexing happen on the fly?](#q116d)
-- [Q116e. How are new documents auto-ingested and re-indexed?](#q116e)
-- [Q116f. Which tests are currently failing and what needs to be done to fix them?](#q116f)
-- [Q116g. How do I inspect what's actually stored in the `chunks` table?](#q116g)
-- [Q116h. Why doesn't the SELECT query show trigram data? How do I see what the trigram index stores?](#q116h)
-- [Q117. What does the PostgreSQL data model look like — entity diagram and sample records?](#q117)
-- [Q118. How does the Pydantic AI agent loop work in this codebase — agent creation, RunContext, deps, and the tool execution cycle?](#q118)
+
+### Production Readiness
+- [Q78. Is multi-tenancy supported? What would it take to make this production-ready?](#q78)
 - [Q120. What are all the changes needed to make this RAG system production-ready?](#q120)
-- [Q122. Is this project using semantic chunking or fixed-size chunking with overlaps?](#q122)
-- [Q121. What are all the tunables in this RAG system and how should they be set for performance?](#q121)
+- [Q121. What are all the tunables in this RAG system and how should they be set?](#q121)
+
+### REST API
 - [Q123. What HTTP endpoints does the REST API expose?](#q123)
 - [Q124. How does `POST /v1/chat` work under the hood?](#q124)
 - [Q125. How does streaming work — what is the SSE format?](#q125)
@@ -148,6 +172,16 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q129. How is the asyncpg pool lifecycle managed across HTTP requests?](#q129)
 - [Q130. How would you add authentication to the REST API?](#q130)
 - [Q131. How do I fire off a query over the REST API?](#q131)
+
+### Code Quality & Tooling
+- [Q81. Why `pydantic-settings` instead of `os.environ`?](#q81)
+- [Q82. What does `ruff` check for vs `flake8 + black`?](#q82)
+- [Q83. Why Pydantic models for `ChunkData` and `SearchResult` instead of plain dataclasses?](#q83)
+- [Q84. Why `from collections.abc import Callable` rather than `callable`?](#q84)
+- [Q85. How does `IngestionConfig` → `ChunkingConfig` separation keep concerns clean?](#q85)
+
+### Debugging & Troubleshooting
+- [Q87. After re-ingestion, previously passing tests now fail. Possible causes.](#q87)
 
 ---
 
@@ -590,35 +624,180 @@ In `retriever.py`, if `settings.hyde_enabled` is True, before the search step th
 <a id="q41"></a>
 **Q41. What problem does a cross-encoder solve that bi-encoder retrieval cannot?**
 
-Bi-encoders embed query and document independently — they cannot compare them token-by-token. A cross-encoder takes the (query, document) pair concatenated as input and scores relevance jointly with full cross-attention. This is much more accurate because the model sees both texts simultaneously and can model fine-grained interactions ("the document mentions '20 days' in the context of vacation, which matches the query about PTO"). The cost is O(n) cross-encoder calls where n = candidate count.
+To understand reranking you first need to understand why bi-encoder retrieval falls short on its own.
+
+**Bi-encoder retrieval (what we do in stage 1):** The query is embedded into a vector independently of the documents. Each document chunk was also embedded independently at ingestion time. Similarity is computed as cosine distance between the query vector and each chunk vector. This is fast — O(1) per query with an ANN index — but it has a fundamental limitation: the model never sees the query and document *together*. It cannot reason about whether "20 days" in a document refers to PTO, a project deadline, or a payment term. It only knows the two vectors are geometrically close.
+
+**Cross-encoder reranking (stage 2):** The cross-encoder receives the query and a candidate document concatenated as a single input: `[CLS] query [SEP] document [SEP]`. Full transformer self-attention runs across *both* texts simultaneously. Every query token attends to every document token and vice versa. This lets the model resolve ambiguities that bi-encoders cannot — "20 days" in the context of "paid time off" clearly matches a PTO query; "20 days" in the context of "sprint velocity" does not. The trade-off: you cannot pre-compute cross-encoder scores because they depend on the query, so they must be computed at query time for every candidate. This is O(n) model forward passes where n = number of candidates.
+
+**Why not use cross-encoders for everything?** At 10M chunks, even 100ms per cross-encoder call × 10M chunks = 11 days per query. Bi-encoders with ANN indexes run in milliseconds. The two-stage design (fast bi-encoder retrieval → accurate cross-encoder reranking on a small candidate set) gets the best of both.
+
+---
 
 <a id="q42"></a>
-**Q42. LLM reranker vs CrossEncoder — trade-offs?**
+**Q42. What reranker implementations exist in this codebase?**
 
-| | LLM reranker | CrossEncoder |
-|---|---|---|
-| Model | Remote LLM API (same as generation) | Local `sentence-transformers` model |
-| Quality | High (powerful model) | High (specialized for reranking) |
-| Latency | ~1s per chunk via API | ~100ms per chunk, local |
-| Cost | API cost per chunk scored | Hardware cost only |
-| Privacy | Chunks sent to API | Data stays local |
+Three implementations live in `rag/retrieval/rerankers.py`, all sharing the `BaseReranker` abstract interface:
 
-LLM reranker is the default because it requires no additional model deployment. CrossEncoder is better for latency-sensitive or privacy-sensitive deployments.
+```python
+class BaseReranker(ABC):
+    async def rerank(self, query: str, results: list[SearchResult], top_k: int) -> list[SearchResult]:
+        ...
+```
+
+**CrossEncoderReranker** (lines 129–219)
+
+Uses `sentence-transformers` `CrossEncoder` locally. Takes (query, document) pairs and returns a relevance score for each. Model is lazy-loaded on first call (`_load_model`).
+
+```python
+pairs = [(query, r.content) for r in results]
+scores = model.predict(pairs)          # synchronous, CPU/GPU batch
+scored_results.sort(key=lambda x: x[1], reverse=True)
+```
+
+The original RRF score is preserved in `result.metadata["original_score"]` so you can compare before/after. Recommended models in order of quality vs speed:
+
+| Model | Size | Latency (CPU) | Quality |
+|---|---|---|---|
+| `BAAI/bge-reranker-large` | 560MB | ~300ms/batch | Best |
+| `BAAI/bge-reranker-base` *(default)* | 280MB | ~150ms/batch | Good balance |
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | 84MB | ~50ms/batch | Fastest |
+
+**LLMReranker** (lines 322–452)
+
+Uses the same LLM API already configured for generation (Ollama or any OpenAI-compatible endpoint). For each candidate chunk it sends a prompt asking for a relevance score 0–10:
+
+```
+Rate how relevant the following document is to the query.
+Return ONLY a number from 0 to 10...
+
+Query: {query}
+Document: {content[:1500]}
+Relevance score (0-10):
+```
+
+The response is parsed with a regex (`r"(\d+(?:\.\d+)?)"`) and normalised to 0–1. All chunks are scored concurrently via `asyncio.gather` (see Q43). Default model: `llama3.1:8b` via Ollama.
+
+**ColBERTReranker** (lines 222–319)
+
+ColBERT uses *late interaction*: query and document are encoded into per-token embeddings separately, then relevance is computed as the sum of maximum similarities between query tokens and document tokens (`MaxSim`). This is more expressive than a single vector dot product but more efficient than full cross-attention. The current implementation is a simplified fallback — full ColBERT requires pre-indexed document token embeddings, which this codebase does not yet maintain. It falls back to a bi-encoder dot product using the ColBERT checkpoint via `SentenceTransformer`.
+
+**Selecting a reranker** via `create_reranker()` factory (lines 455–481):
+
+```python
+reranker = create_reranker("cross_encoder")   # or "llm", "colbert"
+reranker = create_reranker("cross_encoder", model_name="BAAI/bge-reranker-large")
+reranker = create_reranker("llm", model="llama3.1:8b", base_url="http://localhost:11434/v1")
+```
+
+Controlled in production via `settings.reranker_type` (env var `RERANKER_TYPE`).
+
+---
+
+<a id="q42b"></a>
+**Q42b. LLM reranker vs CrossEncoder vs ColBERT — full trade-off comparison**
+
+| | LLM reranker | CrossEncoder | ColBERT |
+|---|---|---|---|
+| **Model** | Remote LLM API (Ollama / OpenAI) | Local sentence-transformers | Local (simplified in this codebase) |
+| **Scoring mechanism** | Natural language prompt → 0–10 score | Joint query+doc attention → logit | Per-token MaxSim |
+| **Quality** | High (reasoning-capable model) | High (purpose-trained for reranking) | High (full implementation) |
+| **Latency per chunk** | ~500ms–1s (API round-trip) | ~50–300ms (local, CPU) | ~100ms (local) |
+| **Concurrency** | `asyncio.gather` — all chunks scored in parallel | Synchronous `model.predict(pairs)` — batched | Synchronous, batched |
+| **Effective latency (10 chunks)** | ~500ms (parallel) | ~300ms (batch) | ~100ms (batch) |
+| **Cost** | API tokens per chunk scored | Hardware only | Hardware only |
+| **Privacy** | Chunks sent to external API | Data stays local | Data stays local |
+| **Extra dependency** | None (reuses LLM client) | `pip install sentence-transformers` | `pip install colbert-ai sentence-transformers` |
+| **Best for** | Already using hosted LLM; want zero new infra | Latency-sensitive or privacy-sensitive deployments | High-precision production (requires full implementation) |
+
+**Current default:** `llm` — chosen because it requires no additional model or infrastructure beyond what is already running for generation.
+
+---
 
 <a id="q43"></a>
 **Q43. Why `asyncio.gather` for LLM reranker scoring?**
 
-Each chunk scoring is an independent LLM API call. `asyncio.gather` fires all calls concurrently, so n chunks take approximately the time of one call (network-bound), not n × one call (sequential). Without it, reranking 10 candidates at 500ms each = 5 seconds; with `asyncio.gather` ≈ 500ms.
+Each chunk scoring is a separate network round-trip to the LLM API. These calls are completely independent of each other — the score for chunk 3 does not depend on the score for chunk 1. `asyncio.gather` fires all coroutines concurrently within the same event loop:
+
+```python
+scores = await asyncio.gather(
+    *[self._score_document(client, query, r.content) for r in results]
+)
+```
+
+**Why this matters for latency:**
+
+| Approach | 10 chunks × 500ms each | Effective time |
+|---|---|---|
+| Sequential `for` loop | 10 × 500ms | **5,000ms** |
+| `asyncio.gather` | All in flight simultaneously | **~500ms** |
+
+The network is the bottleneck, not the CPU. While waiting for chunk 1's response, chunks 2–10 are already being processed by the LLM. The event loop multiplexes all 10 connections and collects responses as they arrive.
+
+**Failure handling:** `asyncio.gather` with default `return_exceptions=False` cancels remaining tasks if any raises. The current implementation catches exceptions inside `_score_document` and returns `0.5` as a neutral fallback score (lines 450–452), so individual chunk failures don't abort the whole rerank. A chunk that fails to score gets a mid-range score and may or may not appear in the final top-K depending on other results.
+
+---
 
 <a id="q44"></a>
 **Q44. At what corpus size or query volume would you enable the reranker?**
 
-Enable when: (a) the corpus is large enough that top-K retrieval frequently returns marginally relevant results (usually >50K chunks), or (b) precision matters more than latency (e.g. agent needs exactly the right chunk to answer a specific factual question). For this 13-document, ~150-chunk corpus the retrieval precision is already high and reranking adds latency for marginal gain.
+**Current state: disabled** (`reranker_enabled = False` in settings). With Hit Rate@5 = 0.90 and MRR@5 = 0.90 on this corpus, 9 out of 10 queries already get the right chunk at rank 1 without reranking. Adding 500ms latency for a 0% improvement in hit rate is not justified.
+
+**Enable when any of the following are true:**
+
+| Trigger | Why reranking helps |
+|---|---|
+| Corpus grows to >50K chunks | More candidates compete for top-K; bi-encoder similarity becomes less discriminative at scale |
+| Precision@1 drops below 0.70 | The right chunk is retrieved but not ranked first — reranking fixes the ordering |
+| Multi-hop questions appear | Reranker can score chunks on joint relevance to a complex query that bi-encoder splits across dimensions |
+| Top-K passed directly to LLM without further filtering | Every position matters; rank 5 is read less carefully than rank 1 (lost in the middle) |
+| Users report correct-but-not-cited answers | The LLM has the right chunk but it's buried — reranker surfaces it |
+
+**Enabling in this codebase:**
+
+```bash
+# .env
+RERANKER_ENABLED=true
+RERANKER_TYPE=cross_encoder          # or "llm"
+RERANKER_MODEL=BAAI/bge-reranker-base
+RERANKER_OVERFETCH_FACTOR=3          # fetch 3× candidates before reranking
+```
+
+---
 
 <a id="q45"></a>
 **Q45. Retrieval recall vs reranking precision — how do they compose?**
 
-First stage (retrieval): maximize recall — use `match_count * reranker_overfetch_factor` to fetch more candidates than needed. If recall is 80% at K=5 but 95% at K=20, over-fetch to K=20. Second stage (reranker): maximize precision — take the top-K of the 20 reranked candidates. The two-stage pipeline lets you optimize each stage independently. If the first stage misses the relevant chunk (recall failure), no reranker can recover it — this is why recall in retrieval is the first thing to fix.
+Reranking is a two-stage pipeline and the two stages have a strict dependency: **the reranker can only re-order what retrieval already found**. If a relevant chunk is not in the candidate set after stage 1, no reranker can surface it.
+
+**Stage 1 — Retrieval: maximise recall**
+
+Fetch `match_count × reranker_overfetch_factor` candidates. The retriever does this automatically when `reranker_enabled = True`:
+
+```python
+fetch_count = min(
+    match_count * self.settings.reranker_overfetch_factor,
+    self.settings.max_match_count,
+)
+```
+
+With `match_count=5` and `overfetch_factor=3`, the DB returns 15 candidates. This trades retrieval precision (more noise) for recall (more chance the right chunk is included). At K=5 this corpus has Recall=0.90; at K=15 it would be close to 1.0 — the overfetch is what gives the reranker its full working set.
+
+**Stage 2 — Reranking: maximise precision**
+
+The reranker re-scores all 15 candidates and returns the top 5. The LLM then receives only those 5. Precision improves because the reranker's joint query–document scoring is more accurate than RRF at distinguishing rank 1 from rank 5 within a small candidate set.
+
+**The composition:**
+
+```
+Retrieval recall @ 15   ×   Reranker precision @ 5 from 15
+      ~1.00             ×           high
+= final Hit Rate ≈ 1.00,  MRR ≈ 0.95+
+```
+
+**The failure mode to avoid:** If you reduce `reranker_overfetch_factor` to 1 (no overfetch), the reranker receives exactly the same set it would return anyway — it can only shuffle within a set that's already optimal by retrieval's measure. The value of overfetching is that it exposes candidates that ranked 6–15 by RRF but score higher by the reranker's more accurate joint scoring.
+
+**Rule of thumb:** Fix recall first (raise `match_count` or overfetch factor until relevant chunks are in the candidate set), then add reranking to improve precision within that set. Reranking a low-recall candidate set is wasted compute.
 
 ---
 
