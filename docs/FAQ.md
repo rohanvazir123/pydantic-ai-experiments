@@ -494,6 +494,29 @@ From outside psql (PowerShell), use the `-f` flag:
 psql $env:DATABASE_URL -f "C:\path\to\file.sql"
 ```
 
+**Pooler vs direct connection**
+
+Neon provides two connection endpoints:
+
+| | Pooler | Direct |
+|---|---|---|
+| Host | `ep-xxxx-pooler.region.aws.neon.tech` | `ep-xxxx.region.aws.neon.tech` |
+| Use for | App / asyncpg (high concurrency) | `psql`, migrations, DDL |
+| Mode | PgBouncer transaction mode | Native PostgreSQL |
+
+The pooler uses PgBouncer in **transaction mode**, which drops the connection between statements. Running `psql` or multi-statement `.sql` files through it causes `SSL connection has been closed unexpectedly`. Always use the **direct** URL for interactive sessions.
+
+Remove `-pooler` from the host to get the direct URL:
+```
+# Pooler (app use)
+ep-twilight-wildflower-af091b1z-pooler.c-2.us-west-2.aws.neon.tech
+
+# Direct (psql / migrations)
+ep-twilight-wildflower-af091b1z.c-2.us-west-2.aws.neon.tech
+```
+
+You can also switch between them in the Neon console: **Connection Details → Pooled / Direct** dropdown.
+
 **Setting `DATABASE_URL` as a persistent environment variable (Windows)**
 
 ```powershell
