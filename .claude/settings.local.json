@@ -19,7 +19,8 @@
       "Bash(pip install *)",
       "Bash(conda install *)",
       "Bash(/c/Users/rohan/anaconda3/Scripts/conda install *)",
-      "Bash(ls *)"
+      "Bash(ls *)",
+      "Bash(setx DIRECT_DATABASE_URL *)"
     ]
   }
 }

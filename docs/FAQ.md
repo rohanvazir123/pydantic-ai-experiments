@@ -474,8 +474,14 @@ psql "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
 Use the `DATABASE_URL` from your `.env` file. To avoid pasting the password in plaintext you can load it in one shot:
 
 ```powershell
-# PowerShell — reads DATABASE_URL from .env and connects
-psql "$(python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('DATABASE_URL'))")"
+# PowerShell — reads DIRECT_DATABASE_URL from .env and connects (no pooler drops)
+psql "$(python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('DIRECT_DATABASE_URL'))")"
+```
+
+Or, once the env var is set as a system variable (see below):
+
+```powershell
+psql $env:DIRECT_DATABASE_URL
 ```
 
 The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
@@ -517,16 +523,29 @@ ep-twilight-wildflower-af091b1z.c-2.us-west-2.aws.neon.tech
 
 You can also switch between them in the Neon console: **Connection Details → Pooled / Direct** dropdown.
 
-**Setting `DATABASE_URL` as a persistent environment variable (Windows)**
+**Setting connection URLs as persistent environment variables (Windows)**
+
+Keep two env vars — one for the app (pooler), one for `psql` (direct):
 
 ```powershell
-setx DATABASE_URL "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
+setx DATABASE_URL "postgresql://<user>:<password>@<host>-pooler.region.aws.neon.tech/neondb?sslmode=require"
+setx DIRECT_DATABASE_URL "postgresql://<user>:<password>@<host>.region.aws.neon.tech/neondb?sslmode=require"
 ```
 
-After running `setx`, open a new terminal for it to take effect. You can then connect with:
+Also add both to your `.env` file:
+```bash
+DATABASE_URL=postgresql://<user>:<password>@<host>-pooler.region.aws.neon.tech/neondb?sslmode=require
+DIRECT_DATABASE_URL=postgresql://<user>:<password>@<host>.region.aws.neon.tech/neondb?sslmode=require
+```
+
+After `setx`, open a new terminal for changes to take effect. Then:
 
 ```powershell
-psql $env:DATABASE_URL
+# psql interactive session (always use DIRECT)
+psql $env:DIRECT_DATABASE_URL
+
+# Run a .sql file
+psql $env:DIRECT_DATABASE_URL -f "C:\path\to\file.sql"
 ```
 
 **Useful one-liners**
