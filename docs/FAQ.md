@@ -463,11 +463,22 @@ Open a new terminal for the change to take effect. Verify with `psql --version`.
 
 **Connecting to Neon**
 
+Running `psql` with no arguments attempts to connect to a local PostgreSQL server on `localhost:5432` using your OS username. That will fail with `FATAL: password authentication failed` (or a connection refused) because there is no local server — the database lives on Neon.
+
+Always pass the full connection string explicitly:
+
 ```bash
 psql "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
 ```
 
-Use the connection string from your `.env` file (`DATABASE_URL`). The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
+Use the `DATABASE_URL` from your `.env` file. To avoid pasting the password in plaintext you can load it in one shot:
+
+```powershell
+# PowerShell — reads DATABASE_URL from .env and connects
+psql "$(python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('DATABASE_URL'))")"
+```
+
+The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
 
 **Useful one-liners**
 
