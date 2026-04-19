@@ -480,6 +480,32 @@ psql "$(python -c "import os; from dotenv import load_dotenv; load_dotenv(); pri
 
 The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
 
+**Running a `.sql` file**
+
+From inside the `neondb=>` prompt use `\i` with forward slashes:
+
+```sql
+\i C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/your_file.sql
+```
+
+From outside psql (PowerShell), use the `-f` flag:
+
+```powershell
+psql $env:DATABASE_URL -f "C:\path\to\file.sql"
+```
+
+**Setting `DATABASE_URL` as a persistent environment variable (Windows)**
+
+```powershell
+setx DATABASE_URL "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
+```
+
+After running `setx`, open a new terminal for it to take effect. You can then connect with:
+
+```powershell
+psql $env:DATABASE_URL
+```
+
 **Useful one-liners**
 
 ```bash
