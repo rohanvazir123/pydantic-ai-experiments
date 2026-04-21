@@ -1,21 +1,34 @@
--- 1. Create a table with a 'stored' search vector for maximum efficiency
-CREATE TABLE IF NOT EXISTS articles (
+-- First, create a helper function to strip HTML tags using RegEx
+CREATE OR REPLACE FUNCTION strip_html(input text) RETURNS text AS $$
+    -- Replaces everything between < and > with a space to prevent merging words
+    SELECT regexp_replace($1, '<[^>]*>', ' ', 'g');
+$$ LANGUAGE SQL IMMUTABLE;
+
+DROP TABLE articles;
+
+CREATE TABLE articles (
     id SERIAL PRIMARY KEY,
-    title TEXT NOT NULL,
-    body TEXT,
-    -- The generated column combines title and body into a searchable format
+    html_content TEXT,
+    json_metadata JSONB,
+    -- Combined search vector:
+    -- 1. Strips HTML tags from the content
+    -- 2. Extracts all string values from the JSONB
     search_vector tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(title, '')), 'A') || 
-        setweight(to_tsvector('english', coalesce(body, '')), 'B')
+        to_tsvector('english', coalesce(strip_html(html_content), '')) || 
+        jsonb_to_tsvector('english', coalesce(json_metadata, '{}'), '["all"]')
     ) STORED
 );
 
--- 2. Populate with sample data
-INSERT INTO articles (title, body) VALUES
-('PostgreSQL Full Text Search', 'PostgreSQL provides powerful tools for searching text efficiently.'),
-('Mastering Postgres Indexing', 'Learn how to scale your database for high traffic using GIN and GiST.'),
-('Phrase Search Techniques', 'Different search techniques, including phrase-based searching, are vital.'),
-('Cooking with Postgres', 'A guide to baking delicious database queries.');
+-- Optimize with a GIN index
+CREATE INDEX idx_articles_search ON articles USING GIN (search_vector);
 
-
-
+-- Insert HTML and json
+INSERT INTO articles (html_content, json_metadata) VALUES
+(
+    '<h1>Postgres Full Text</h1><p>Learn how to search <b>html</b> easily.</p>', 
+    '{"author": "Jane Doe", "tags": ["database", "sql"], "priority": 1}'
+),
+(
+    '<div>Advanced <i>Phrase Search</i> features are built-in.</div>', 
+    '{"author": "John Smith", "category": "Tutorial"}'
+);

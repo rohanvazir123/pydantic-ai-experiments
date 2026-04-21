@@ -15,10 +15,11 @@ One-stop reference for the entire RAG system. Read this first; dive into the oth
 - [7. Mem0 Memory Layer](#7-mem0-memory-layer)
 - [8. Langfuse Observability](#8-langfuse-observability)
 - [9. Streamlit Apps](#9-streamlit-apps)
-- [10. Configuration (.env Quick Reference)](#10-configuration-env-quick-reference)
-- [11. Key File Map](#11-key-file-map)
-- [12. How to Run](#12-how-to-run)
-- [13. Further Reading](#13-further-reading)
+- [10. MCP Server](#10-mcp-server)
+- [11. Configuration (.env Quick Reference)](#11-configuration-env-quick-reference)
+- [12. Key File Map](#12-key-file-map)
+- [13. How to Run](#13-how-to-run)
+- [14. Further Reading](#14-further-reading)
 
 ---
 
@@ -42,6 +43,7 @@ An **agentic RAG (Retrieval-Augmented Generation)** system that:
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Interfaces                                                         │
 │  CLI agent · Streamlit RAG app · Streamlit Mem0 app                │
+│  REST API (FastAPI)  · MCP Server (Claude Desktop / Claude Code)   │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │
                                 ▼
@@ -325,6 +327,7 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ## 9. Streamlit Apps
 
+
 ### `streamlit_mem0_app.py` — Chat with Memory (simple)
 - `@st.cache_resource`: `get_mem0_store()`, `get_agent()`
 - Uses `Mem0Store.get_context_string()` to prepend user context to every prompt
@@ -338,7 +341,70 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ---
 
-## 10. Configuration (`.env` Quick Reference)
+## 10. MCP Server
+
+**Key file**: `rag/mcp/server.py`
+
+**Transport**: stdio — Claude Desktop / Claude Code launches the process; no port is bound.
+
+**Design principle**: same transport-layer separation as the REST API. Both `rag/api/app.py` and `rag/mcp/server.py` call the same underlying `traced_agent_run`, `create_pipeline`, and `PostgresHybridStore` — no duplication.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  MCP Client (Claude Desktop / Claude Code)              │
+└─────────────────────────┬───────────────────────────────┘
+                          │  stdio (MCP protocol)
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  rag/mcp/server.py  (FastMCP)                           │
+│  search()   retrieve()   ingest()   health()            │
+└──────┬──────────────┬──────────────┬────────────────────┘
+       │              │              │
+       ▼              ▼              ▼
+  traced_agent_run  Retriever   create_pipeline
+  (same as REST)   .retrieve_  (same as REST)
+                   as_context()
+```
+
+**Tools**
+
+| Tool | Args | What it does |
+|------|------|-------------|
+| `search` | `query`, `user_id?`, `session_id?` | Full agent run → LLM answer (mirrors POST /v1/chat) |
+| `retrieve` | `query`, `match_count?`, `search_type?` | Raw hybrid retrieval → formatted chunks, no LLM |
+| `ingest` | `documents_folder?`, `clean?`, `chunk_size?`, `max_tokens?` | Trigger ingestion pipeline (mirrors POST /v1/ingest) |
+| `health` | — | DB + embedding API + LLM API connectivity check |
+
+**Registration**
+
+Claude Desktop — `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["-m", "rag.mcp.server"],
+      "cwd": "C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments"
+    }
+  }
+}
+```
+
+Claude Code — `.mcp.json` in the project root:
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["-m", "rag.mcp.server"]
+    }
+  }
+}
+```
+
+---
+
+## 11. Configuration (`.env` Quick Reference)
 
 ```bash
 # Database
@@ -379,7 +445,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 11. Key File Map
+## 12. Key File Map
 
 | Purpose | File |
 |---------|------|
@@ -394,6 +460,8 @@ LANGFUSE_SECRET_KEY=
 | Rerankers (LLM + CrossEncoder) | `rag/retrieval/rerankers.py` |
 | RAG agent + RAGState | `rag/agent/rag_agent.py` |
 | Agent system prompts | `rag/agent/prompts.py` |
+| REST API (FastAPI) | `rag/api/app.py` |
+| MCP server (FastMCP) | `rag/mcp/server.py` |
 | CLI entry point | `rag/main.py` |
 | Mem0 memory layer | `rag/memory/mem0_store.py` |
 | Streamlit (memory chat) | `streamlit_mem0_app.py` |
@@ -403,7 +471,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 12. How to Run
+## 13. How to Run
 
 ```bash
 # 1. Install
@@ -426,16 +494,22 @@ streamlit run streamlit_mem0_app.py
 # 7. Run Streamlit (full RAG agent)
 streamlit run rag/agent/streamlit_app.py
 
-# 8. Run tests
+# 8. Run REST API
+uvicorn rag.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+# 9. Run MCP server (normally launched automatically by Claude Desktop/Code)
+python -m rag.mcp.server
+
+# 10. Run tests
 python -m pytest rag/tests/ -v
 
-# 9. Lint
+# 11. Lint
 ruff check --fix rag/ && ruff format rag/
 ```
 
 ---
 
-## 13. Further Reading
+## 14. Further Reading
 
 | Doc | What's in it |
 |-----|-------------|

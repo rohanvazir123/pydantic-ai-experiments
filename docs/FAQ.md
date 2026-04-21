@@ -37,6 +37,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q23. Why is a GIN index better than B-tree for tsvector?](#q23)
 - [Q24. "30 days PTO" — the number 30 is dropped. Why? How would you handle numeric search?](#q24)
 - [Q25. What happens when `plainto_tsquery` produces an empty query?](#q25)
+- [Q25b. Where in the codebase is tsvector full-text search actually leveraged?](#q25b)
 - [Q74. Two-table schema (documents + chunks) — why not one table?](#q74)
 - [Q116. At what scale would you move away from PostgreSQL/pgvector to a dedicated vector database?](#q116)
 - [Q116a. Why aren't we using `pg_textsearch` (Timescale's BM25 extension)?](#q116a)
@@ -156,11 +157,20 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q111. What are the main scale bottlenecks in this system at 1M documents?](#q111)
 - [Q112. What are the ingestion latency bottlenecks and how would you profile them?](#q112)
 - [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
+- [Q113b. How does tsvector full-text search scale with millions of documents?](#q113b)
 
 ### Production Readiness
 - [Q78. Is multi-tenancy supported? What would it take to make this production-ready?](#q78)
 - [Q120. What are all the changes needed to make this RAG system production-ready?](#q120)
 - [Q121. What are all the tunables in this RAG system and how should they be set?](#q121)
+
+### MCP Server
+- [Q132. What is the MCP server and what tools does it expose?](#q132)
+- [Q133. How does the MCP server relate to the REST API — when to use which?](#q133)
+- [Q134. How do I register the MCP server with Claude Desktop or Claude Code?](#q134)
+- [Q135. How does the MCP server handle resource lifecycle (connections, pools)?](#q135)
+- [Q136. How do I test the MCP server locally without Claude Desktop?](#q136)
+- [Q137. What does the MCP server test suite cover and how does it work?](#q137)
 
 ### REST API
 - [Q123. What HTTP endpoints does the REST API expose?](#q123)
@@ -598,6 +608,53 @@ Numbers are stop words under the `'english'` configuration. `to_tsvector('englis
 **Q25. What happens when `plainto_tsquery` produces an empty query?**
 
 If all query words are stop words (e.g. "what is the"), `plainto_tsquery` returns an empty `tsquery`. The `@@` operator against an empty tsquery returns `false` for every row, so the text search leg returns 0 results. In the hybrid search, this means only the semantic leg contributes. The codebase handles this gracefully because both searches run in parallel and the RRF merger works fine with one empty result list — it just returns the semantic results ordered by their semantic rank.
+
+<a id="q25b"></a>
+**Q25b. Where in the codebase is tsvector full-text search actually leveraged?**
+
+Four distinct places — schema, query, hybrid merge, and the PDF Question Generator:
+
+**1. Schema — `postgres.py:184`**
+
+`content_tsv` is declared as a generated column:
+```sql
+content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+```
+PostgreSQL auto-populates it on every INSERT/UPDATE. A GIN index (`chunks_content_tsv_idx`, `postgres.py:202`) sits on top for fast lookups.
+
+**2. Text search query — `postgres.py:358` (`text_search` method)**
+
+```sql
+WHERE c.content_tsv @@ plainto_tsquery('english', $1)
+ORDER BY ts_rank(c.content_tsv, plainto_tsquery('english', $1)) DESC
+```
+`plainto_tsquery` converts the user query to stemmed tokens; `@@` is the match operator; `ts_rank` scores by term frequency for ordering.
+
+**3. Hybrid search — `postgres.py:569` + `retriever.py:302`**
+
+In `search_type="hybrid"` (the default), `asyncio.gather` fires both legs in parallel:
+```python
+asyncio.gather(
+    store.semantic_search(...),   # pgvector <=> operator
+    store.text_search(...),       # tsvector @@ plainto_tsquery  ← here
+)
+```
+Results are merged with RRF (k=60). The tsvector leg makes exact keyword queries (product names, codes, acronyms like "PTO") reliable when semantic alone would drift.
+
+**4. PDF Question Store — `pdf_question_store.py:115,133`**
+
+The same pattern is replicated for the PDF Question Generator's tables. Both `pdf_questions` and `pdf_chunks` have their own `question_tsv` / `content_tsv` generated columns, GIN indexes, and `plainto_tsquery` queries (lines 373, 418, 508, 554).
+
+**Call chain (main RAG path):**
+```
+agent.search_knowledge_base()
+  → retriever.retrieve()
+      → asyncio.gather(
+            store.semantic_search(),   # pgvector
+            store.text_search()        # tsvector ← this
+        )
+      → RRF merge → rerank (optional) → return
+```
 
 ---
 
@@ -1876,6 +1933,63 @@ Current retrieval path latency breakdown (approximate, local Ollama):
 6. **Connection pooling** — asyncpg pool avoids TCP handshake + SSL per query. Already in place.
 7. **Co-locate** — run PostgreSQL and the app on the same machine or in the same datacenter to cut network RTT.
 
+<a id="q113b"></a>
+**Q113b. How does tsvector full-text search scale with millions of documents?**
+
+**Why GIN indexes become a problem at scale**
+
+A GIN index stores one posting list per lexeme (stemmed token). With 1M chunks at ~500 words each, the GIN index is typically 10–30% of the raw text size — manageable. At 10M chunks it can reach 20–50 GB, which no longer fits in `shared_buffers`. Every search then hits disk, and latency spikes from ~5ms to 100ms+.
+
+Two compounding issues:
+
+1. **Write amplification** — GIN has a `fastupdate` pending list that batches writes and flushes in bulk. At high ingest rates the flush pauses both writes and queries. This is the knob most often tuned first (`gin_pending_list_limit`).
+
+2. **Common-term posting list scans** — For rare terms, GIN is O(posting list length) and posting lists are short — fast. For common terms ("company", "policy"), the posting list can be millions of rows. `ts_rank` must scan all of them before sorting. This cannot be index-optimised away; it is inherent to inverted indexes.
+
+**Practical thresholds**
+
+| Scale | Behaviour | Action |
+|---|---|---|
+| < 1M chunks | GIN fits in RAM, queries 2–10ms | No action needed |
+| 1M–5M chunks | Index may spill to disk on complex queries | Increase `shared_buffers`, tune `work_mem` per query, add read replica for search |
+| 5M–10M chunks | GIN flush pauses become visible; `ts_rank` slow on common terms | Partition `chunks` by hash range → smaller per-partition GIN indexes; route searches to replica |
+| 10M+ chunks | Single-node PostgreSQL text search becomes the bottleneck | Replace text leg with a dedicated engine (see below) |
+
+**Partitioning as the first scaling lever**
+
+Range-partition `chunks` on a hash of `document_id`. Each partition has its own GIN index (smaller, more cache-friendly). PostgreSQL's query planner scans only relevant partitions, and partition-level parallel workers can run simultaneously:
+
+```sql
+CREATE TABLE chunks (...)  PARTITION BY HASH (document_id);
+CREATE TABLE chunks_0 PARTITION OF chunks FOR VALUES WITH (modulus 4, remainder 0);
+-- repeat for 1, 2, 3
+-- each partition gets its own GIN index
+```
+
+**Replacing the text leg at 10M+ documents**
+
+At this scale, drop the tsvector leg from the retriever and route keyword queries to a dedicated search engine. The retriever's `asyncio.gather` structure already makes this a local change — swap `store.text_search()` for an Elasticsearch/Typesense client call; RRF merge stays the same.
+
+| Option | Strengths | Trade-off |
+|---|---|---|
+| **Elasticsearch / OpenSearch** | Battle-tested, BM25 scoring, horizontal sharding | Separate cluster to operate |
+| **Typesense** | Simpler ops, fast, good for exact + fuzzy | Less mature at very large scale |
+| **ParadeDB / pg_search** | Stays in PostgreSQL, BM25 (better than ts_rank), columnar index | Newer extension, less production history |
+| **Meilisearch** | Easy to run, great UX | Limited horizontal scaling |
+
+**BM25 vs ts_rank**
+
+`ts_rank` is a term-frequency heuristic — it does not account for document length or inverse document frequency (IDF). BM25 (used by Elasticsearch and pg_search) does both, giving significantly better relevance ranking at scale. If retrieval quality degrades as the corpus grows, replacing `ts_rank` with BM25 is often the highest-leverage fix before switching engines entirely.
+
+**Summary: what to do in this project**
+
+Current scale (hundreds of documents) — no action needed. If the corpus grows:
+1. Add a read replica and route `text_search` + `semantic_search` queries to it.
+2. Partition `chunks` by `document_id` hash (4–8 partitions covers up to ~5M chunks).
+3. At 10M+ chunks, replace `store.text_search()` with a pg_search or Elasticsearch call — the RRF merge layer does not need to change.
+
+---
+
 <a id="q114"></a>
 **Q114. What models can be swapped in to improve retrieval precision?**
 
@@ -3129,6 +3243,160 @@ For RAG specifically, a smaller model is often sufficient — the LLM is summari
 | `command_timeout` | 60s | postgres.py | Reliability | Lower to 10–15s in production |
 | `llm_model` | llama3.1:8b | settings | Answer quality | Upgrade when answer synthesis is the bottleneck |
 | `reranker_model` | bge-reranker-base | settings | Reranking precision | Upgrade to bge-reranker-large for better precision |
+
+---
+
+## MCP Server
+
+<a id="q132"></a>
+**Q132. What is the MCP server and what tools does it expose?**
+
+The MCP (Model Context Protocol) server (`rag/mcp/server.py`) exposes the RAG system as native tools that Claude Desktop, Claude Code, and any other MCP-compatible client can call directly — no HTTP wiring, no curl, no API keys to configure.
+
+It runs over **stdio**: the MCP client launches the Python process and communicates via stdin/stdout using the MCP protocol. The server never binds to a port.
+
+Four tools are exposed, mirroring the REST API surface:
+
+| Tool | What it does |
+|------|-------------|
+| `search(query, user_id?, session_id?)` | Full agentic RAG run → LLM-synthesised answer |
+| `retrieve(query, match_count?, search_type?)` | Raw hybrid retrieval → formatted source chunks, no LLM |
+| `ingest(documents_folder?, clean?, chunk_size?, max_tokens?)` | Trigger the ingestion pipeline |
+| `health()` | Check DB, embedding API, and LLM API connectivity |
+
+---
+
+<a id="q133"></a>
+**Q133. How does the MCP server relate to the REST API — when to use which?**
+
+Both are transport layers over the same core logic. The choice depends on the client:
+
+| | REST API (`rag/api/app.py`) | MCP Server (`rag/mcp/server.py`) |
+|---|---|---|
+| **Client** | HTTP clients, Streamlit UI, curl, external apps | Claude Desktop, Claude Code, MCP clients |
+| **Transport** | HTTP (port 8000) | stdio (process launched by client) |
+| **Auth** | Add middleware to FastAPI | Handled by the MCP client / host |
+| **Streaming** | SSE via `/v1/chat/stream` | Not yet (MCP streaming is in-progress in the spec) |
+| **Use for** | Web app, programmatic integration | AI assistant direct tool use |
+
+Both call the same `traced_agent_run`, `create_pipeline`, and `PostgresHybridStore` — no logic is duplicated.
+
+---
+
+<a id="q134"></a>
+**Q134. How do I register the MCP server with Claude Desktop or Claude Code?**
+
+**Claude Desktop (Windows)**
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["-m", "rag.mcp.server"],
+      "cwd": "C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments"
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The `search`, `retrieve`, `ingest`, and `health` tools will appear in the tool list.
+
+**Claude Code (project-scoped)**
+
+Create `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "rag": {
+      "command": "python",
+      "args": ["-m", "rag.mcp.server"]
+    }
+  }
+}
+```
+
+No `cwd` needed — Claude Code runs from the project root. Reload the window or restart Claude Code.
+
+**Conda environment**
+
+If your dependencies are in a conda env, point `command` at the env's Python directly:
+
+```json
+{
+  "command": "C:/Users/rohan/miniconda3/envs/pydantic_ai_agents/python.exe",
+  "args": ["-m", "rag.mcp.server"]
+}
+```
+
+---
+
+<a id="q135"></a>
+**Q135. How does the MCP server handle resource lifecycle (connections, pools)?**
+
+Each tool call manages its own lifecycle using the same patterns as the REST API:
+
+- **`search`** — calls `traced_agent_run`, which creates a `RAGState`, uses it, then `await state.close()` in `finally`. One asyncpg pool per call, closed after.
+- **`retrieve`** — creates a `RAGState`, calls `retrieve_as_context`, then `await state.close()` in `finally`. Same pattern.
+- **`ingest`** — calls `create_pipeline`, runs `initialize → ingest_documents`, then `pipeline.close()` in `finally`.
+- **`health`** — creates a `PostgresHybridStore`, initializes, checks, then closes — all within the call.
+
+This matches the stateless REST API design. A future optimisation would be a module-level shared pool (FastMCP supports lifespan context for exactly this) to avoid pool creation overhead per call.
+
+---
+
+<a id="q136"></a>
+**Q136. How do I test the MCP server locally without Claude Desktop?**
+
+Install the MCP development CLI and use `mcp dev`:
+
+```bash
+pip install "mcp[cli]"
+mcp dev rag/mcp/server.py
+```
+
+This opens the **MCP Inspector** in your browser — a web UI where you can call each tool, inspect inputs/outputs, and see errors without needing Claude Desktop.
+
+Alternatively, launch the server and interact with it directly — useful for checking startup errors:
+
+```bash
+python -m rag.mcp.server
+```
+
+The full unit test suite lives in `rag/tests/test_mcp_server.py` — see Q137 for coverage details.
+
+---
+
+<a id="q137"></a>
+**Q137. What does the MCP server test suite cover and how does it work?**
+
+**Key insight — why direct function calls work**
+
+`FastMCP`'s `@mcp.tool()` decorator registers the function as an MCP tool but returns the original function unchanged. This means the tool functions (`search`, `retrieve`, `ingest`, `health`) are importable and callable as plain async functions — no subprocess, no stdio, no MCP client needed in tests.
+
+```python
+from rag.mcp.server import search, retrieve, ingest, health
+```
+
+All external dependencies are mocked with `unittest.mock.patch` / `AsyncMock` — same pattern as `test_api.py`.
+
+**Coverage (21 tests, all pass — `rag/tests/test_mcp_server.py`)**
+
+| Class | Tests | What's verified |
+|---|---|---|
+| `TestSearch` | 5 | Answer returned; `user_id`/`session_id` forwarded; defaults to `None`; exception propagates to MCP layer; non-string output coerced via `str()` |
+| `TestRetrieve` | 6 | Context string returned; empty string → `"No results found."`; `None` → `"No results found."`; `match_count`/`search_type` forwarded; `state.close()` called on success; `state.close()` called on error (finally block) |
+| `TestIngest` | 5 | Summary string with doc/chunk counts; all params forwarded to `create_pipeline`; per-document errors appear in output; `pipeline.close()` on success; `pipeline.close()` on error (finally block) |
+| `TestHealth` | 5 | All ok → `"status: ok"` + 3 ✓; DB down → `"degraded"` + `db: ✗`; all down → `"unhealthy"` + 3 ✗; HTTP 500 from API → treated as failure; output always lists all three components |
+
+**Running the tests**
+
+```bash
+python -m pytest rag/tests/test_mcp_server.py -v
+```
 
 ---
 
