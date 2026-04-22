@@ -159,6 +159,19 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
 - [Q113b. How does tsvector full-text search scale with millions of documents?](#q113b)
 
+### Knowledge Graph (Graphiti + Neo4j)
+- [Q138. Is there a knowledge graph / graph DB in this project?](#q138)
+- [Q139. What is Graphiti and how does it differ from querying Neo4j directly?](#q139)
+- [Q140. Why isn't the knowledge graph wired into the main RAG pipeline yet?](#q140)
+- [Q141. How would graph retrieval be wired into the main RAG pipeline?](#q141)
+
+### Legal Documents & GraphRAG
+- [Q142. Why does legal document RAG need a knowledge graph?](#q142)
+- [Q143. Where can I download public domain legal documents?](#q143)
+- [Q144. What is the implementation plan for wiring in GraphRAG for legal documents?](#q144)
+- [Q145. What entities and relationships should be extracted from legal documents?](#q145)
+- [Q146. How does CUAD help bootstrap and validate the legal graph?](#q146)
+
 ### Production Readiness
 - [Q78. Is multi-tenancy supported? What would it take to make this production-ready?](#q78)
 - [Q120. What are all the changes needed to make this RAG system production-ready?](#q120)
@@ -2692,6 +2705,253 @@ result2 = await agent.run(
 ```
 
 `result.new_messages()` returns the messages from that run (user prompt + tool calls + tool results + assistant response). Passing them as `message_history` on the next call appends them before the new user message, giving the LLM full conversation context. This is how `traced_agent_run` supports multi-turn chat in the Streamlit UI.
+
+---
+
+## Knowledge Graph (Graphiti + Neo4j)
+
+<a id="q138"></a>
+**Q138. Is there a knowledge graph / graph DB in this project?**
+
+Yes — there is a full graph database layer, but it is a **separate experimental module** that is not yet wired into the main RAG pipeline.
+
+**What exists:**
+
+| File | What it does |
+|---|---|
+| `rag/knowledge_graph/graphiti_config.py` | Configures Graphiti client: Neo4j connection + Ollama LLM/embeddings |
+| `rag/knowledge_graph/graphiti_store.py` | `GraphitiStore` wrapper — `add_episode()`, `search()`, `search_nodes()`, `search_as_context()` |
+| `rag/knowledge_graph/graphiti_agent.py` | Separate Pydantic AI agent with `search_knowledge_graph` + `search_entities` tools; persists conversation turns back to graph |
+| `rag/agent/kg_agent.py` | Lower-level approach — LLM generates raw Cypher queries directly against Neo4j |
+
+**Backend**: Neo4j (`bolt://localhost:7687` for local, or Neo4j Aura cloud). Credentials via `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` in `.env`.
+
+**Framework**: `graphiti-core` — ingests unstructured text as "episodes", runs the LLM to extract entities and relationships automatically, stores them as a temporal knowledge graph in Neo4j.
+
+**What is NOT connected**: `rag_agent.py`, `retriever.py`, and the ingestion pipeline have no knowledge of the graph. The main RAG pipeline is entirely pgvector-based. To use the graph today you must explicitly call `run_graphiti_agent()` or `kg_agent`.
+
+---
+
+<a id="q139"></a>
+**Q139. What is Graphiti and how does it differ from querying Neo4j directly?**
+
+Neo4j is the storage layer. Graphiti (`graphiti-core`) is a framework that sits on top of it and handles everything between raw text and a queryable graph:
+
+| | Raw Neo4j (`kg_agent.py`) | Graphiti (`graphiti_store.py`) |
+|---|---|---|
+| **Entity extraction** | LLM writes Cypher manually | Graphiti runs LLM automatically, extracts entities + relationships |
+| **Relationship schema** | You define node/edge types | Graphiti infers schema from text |
+| **Temporal tracking** | Manual | Built-in — `valid_at` / `invalid_at` per edge |
+| **Search** | Raw Cypher queries | Hybrid search (vector + BM25) over nodes and edges |
+| **Ingestion API** | `session.run(cypher)` | `client.add_episode(content, name)` |
+| **Best for** | Known, structured domain | Unstructured documents, evolving facts |
+
+For legal documents, Graphiti is the right choice — contracts are unstructured, entity schemas vary by document type, and temporal validity (effective dates, amendments) is a first-class concern.
+
+---
+
+<a id="q140"></a>
+**Q140. Why isn't the knowledge graph wired into the main RAG pipeline yet?**
+
+Two reasons:
+
+1. **Different retrieval strengths** — chunk retrieval (pgvector) handles "what does section 4 say?" well. Graph retrieval handles "what are all of Party A's obligations?" The integration point (when to call which) requires careful design so the agent uses the right tool.
+
+2. **Infrastructure dependency** — the main RAG pipeline requires only PostgreSQL + Ollama. Adding Neo4j adds a third service. The module was built experimentally first; the wiring is a planned next step, specifically motivated by the legal documents use case.
+
+---
+
+<a id="q141"></a>
+**Q141. How would graph retrieval be wired into the main RAG pipeline?**
+
+**Option A — second agent tool (recommended)**
+
+Add `search_knowledge_graph` as a second tool in `rag_agent.py` alongside the existing `search_knowledge_base`. The LLM decides which to call per query.
+
+```python
+# In rag/agent/rag_agent.py
+@agent.tool
+async def search_knowledge_graph(ctx, query: str, num_results: int = 10) -> str:
+    """Search the knowledge graph for entity relationships and facts."""
+    kg = await state.get_kg_store()          # lazy-init GraphitiStore on RAGState
+    return await kg.search_as_context(query, num_results)
+```
+
+Changes required:
+- `RAGState`: add `_kg_store: GraphitiStore | None` `PrivateAttr`, lazy-init behind `KG_ENABLED` flag
+- `Settings`: add `kg_enabled: bool`, `neo4j_uri`, `neo4j_user`, `neo4j_password`
+- `DocumentIngestionPipeline`: add KG ingestion step — call `graphiti_store.add_episode()` per document after chunk+embed
+- New tool registered on the existing `agent` — no other changes to agent or retriever
+
+**Option B — always-on at retriever level**
+
+Modify `Retriever.retrieve_as_context()` to also call `GraphitiStore.search_as_context()` and append graph facts to the context string. Simpler but always adds KG latency, even for queries that don't need it.
+
+Option A is preferred: the LLM reliably distinguishes chunk questions from relational questions, and graph search only fires when needed.
+
+---
+
+## Legal Documents & GraphRAG
+
+<a id="q142"></a>
+**Q142. Why does legal document RAG need a knowledge graph?**
+
+Pure chunk retrieval (pgvector) answers "what does clause 4 say?" but fails at the kinds of questions legal work actually requires:
+
+| Question type | Chunk RAG | Graph RAG |
+|---|---|---|
+| "What does Section 4.2 say?" | ✓ Good | — |
+| "Who are the parties to this contract?" | Partial | ✓ |
+| "What are all of Party A's obligations?" | ✗ Misses cross-chunk obligations | ✓ Graph traversal |
+| "What terms are defined and where are they used?" | ✗ Misses references | ✓ Nodes + edges |
+| "Does this amendment supersede clause 3?" | ✗ No temporal awareness | ✓ Graphiti `valid_at` / `invalid_at` |
+| "Does this NDA conflict with the MSA?" | ✗ No cross-document reasoning | ✓ Graph spans documents |
+
+**What a legal knowledge graph captures that chunks cannot:**
+- **Defined terms** — "Confidential Information" defined in §1, referenced 40× downstream — graph edge per reference
+- **Cross-clause references** — "As defined in Section 2.1" — explicit edge, not similarity
+- **Party obligations** — all `[PARTY_A]-[OBLIGATED_TO]->[ACTION]` edges queryable in one hop
+- **Temporal validity** — amendment dates, termination clauses, sunset provisions as edge metadata
+- **Cross-document relationships** — master agreement → statement of work → amendment — all linked
+
+---
+
+<a id="q143"></a>
+**Q143. Where can I download public domain legal documents?**
+
+| Source | Content | Format | URL |
+|---|---|---|---|
+| **CUAD** (HuggingFace) | 500 commercial contracts (NDAs, MSAs, employment), annotated with 41 clause types | PDF + JSON | `datasets` library: `load_dataset("cuad")` |
+| **EDGAR (SEC)** | All public company material contracts — 10-K exhibit 10s, merger agreements, credit facilities | HTML/text | `efts.sec.gov/LATEST/search-index?q="EX-10"` |
+| **CourtListener / RECAP** | US federal court opinions, filings, briefs | JSON/PDF | `courtlistener.com/api/` |
+| **Case.law (Harvard)** | 6.7M US court opinions, free API | JSON | `case.law` |
+| **EUR-Lex** | EU regulations, directives, ECJ rulings | PDF/XML | `eur-lex.europa.eu/data/dataset` |
+| **legislation.gov.uk** | All UK acts and statutory instruments | XML/PDF | `legislation.gov.uk/developer/datasets` |
+| **US Code (GPO)** | Federal statutes | XML | `uscode.house.gov/download` |
+| **MultiLegal Pile** (HuggingFace) | Legal text across 24 jurisdictions | text | `load_dataset("joelito/Multi_Legal_Pile")` |
+
+**Best starting point: CUAD**
+
+500 real commercial contracts with expert annotations marking exactly which clauses contain: parties, payment terms, termination rights, liability caps, IP ownership, governing law. The annotations let you verify whether Graphiti extracts the right entities — invaluable for calibrating extraction before running on unannotated documents.
+
+```python
+from datasets import load_dataset
+ds = load_dataset("cuad")
+# Each example: {"title": ..., "context": full_contract_text, "qas": [{question, answers}]}
+```
+
+**For UK/EU legal work**: EUR-Lex and legislation.gov.uk have structured XML with article numbers preserved — better for cross-reference extraction than plain PDF.
+
+---
+
+<a id="q144"></a>
+**Q144. What is the implementation plan for wiring in GraphRAG for legal documents?**
+
+Four steps, in order:
+
+**Step 1 — Settings**
+
+Add to `rag/config/settings.py`:
+```python
+kg_enabled: bool = Field(default=False)
+neo4j_uri: str = Field(default="bolt://localhost:7687")
+neo4j_user: str = Field(default="neo4j")
+neo4j_password: str = Field(default="")
+```
+Controlled by `KG_ENABLED=true` in `.env` — the main pipeline is unaffected when disabled.
+
+**Step 2 — Ingestion**
+
+In `DocumentIngestionPipeline._ingest_single_document()`, after the existing chunk+embed step, add:
+```python
+if settings.kg_enabled:
+    await self._kg_store.add_episode(
+        content=document_text,
+        name=title,
+        source_description=file_path,
+    )
+```
+Graphiti runs the LLM to extract entities and relationships automatically — no manual schema definition.
+
+**Step 3 — RAGState + agent tool**
+
+Add `_kg_store: GraphitiStore | None` as a `PrivateAttr` to `RAGState` with lazy-init behind the `kg_enabled` flag. Register a second tool on the existing agent:
+```python
+@agent.tool
+async def search_knowledge_graph(ctx, query: str, num_results: int = 10) -> str:
+    """Search for entity relationships and legal facts in the knowledge graph.
+    Use for: party obligations, defined terms, cross-clause references, conflicts."""
+    kg = await state.get_kg_store()
+    return await kg.search_as_context(query, num_results)
+```
+The tool docstring is critical — it is what the LLM reads to decide when to call it vs `search_knowledge_base`.
+
+**Step 4 — Tests**
+
+- Unit: mock `GraphitiStore.search_as_context`, verify tool returns formatted string
+- Integration: ingest one CUAD contract, query "who are the parties?", assert entity nodes exist in Neo4j
+
+---
+
+<a id="q145"></a>
+**Q145. What entities and relationships should be extracted from legal documents?**
+
+Graphiti extracts these automatically from text — but knowing the target schema helps craft the ingestion prompt and verify output.
+
+**Nodes (entities)**
+
+| Type | Examples |
+|---|---|
+| `Party` | "Acme Corp", "John Smith", "the Licensor" |
+| `DefinedTerm` | "Confidential Information", "Effective Date", "Territory" |
+| `Clause` | "Section 4.2", "Article III", "Schedule A" |
+| `Obligation` | "shall deliver", "must notify within 30 days" |
+| `Right` | "may terminate", "has the right to audit" |
+| `Date` | "2024-01-01", "30 days after notice" |
+| `Jurisdiction` | "England and Wales", "State of Delaware" |
+| `Document` | "Master Services Agreement", "Amendment No. 2" |
+
+**Relationships (edges)**
+
+| Edge | Example |
+|---|---|
+| `PARTY_TO` | `[Acme Corp]-[PARTY_TO]->[NDA]` |
+| `OBLIGATED_TO` | `[Party A]-[OBLIGATED_TO {by: "Section 4"}]->[deliver reports]` |
+| `DEFINED_IN` | `[Confidential Information]-[DEFINED_IN]->[Section 1.1]` |
+| `REFERENCED_IN` | `[Confidential Information]-[REFERENCED_IN]->[Section 5.2]` |
+| `SUPERSEDES` | `[Amendment 2]-[SUPERSEDES {valid_at: date}]->[Clause 3]` |
+| `GOVERNED_BY` | `[Agreement]-[GOVERNED_BY]->[English law]` |
+| `AMENDS` | `[Amendment 1]-[AMENDS]->[Master Agreement]` |
+
+---
+
+<a id="q146"></a>
+**Q146. How does CUAD help bootstrap and validate the legal graph?**
+
+CUAD provides 41 annotated clause categories per contract — experts have marked exactly where in each document the answer to questions like "who is the governing law?" and "what are the termination rights?" appears.
+
+This gives you a ground-truth evaluation set before running in production:
+
+1. Ingest a CUAD contract into both pgvector (chunks) and Neo4j (via Graphiti)
+2. For each of the 41 clause types, run the corresponding query against both retrieval paths
+3. Compare retrieved content against the CUAD gold annotation
+4. For relational questions (parties, obligations, defined terms) — graph should win
+5. For verbatim clause questions (specific wording) — chunks should win
+
+This tells you exactly which question types benefit from graph retrieval and informs the tool docstring that guides the LLM's tool choice.
+
+```python
+# Example validation loop
+from datasets import load_dataset
+ds = load_dataset("cuad")["train"]
+
+for example in ds:
+    contract_text = example["context"]
+    for qa in example["qas"]:
+        question = qa["question"]          # e.g. "What is the governing law?"
+        gold_answer = qa["answers"]["text"] # expert annotation
+        # Run against both RAG paths, measure hit rate
+```
 
 ---
 
