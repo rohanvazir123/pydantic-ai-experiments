@@ -1,0 +1,49 @@
+# Docker Compose for Apache AGE (PostgreSQL + graph extension)
+#
+# Apache AGE adds openCypher graph queries to PostgreSQL.
+# Used as the knowledge graph backend when KG_BACKEND=age.
+#
+# Usage:
+#   docker compose up -d          # start AGE in background
+#   docker compose down           # stop (data preserved in volume)
+#   docker compose down -v        # stop + delete data
+#
+# After starting:
+#   Add to .env:
+#     KG_BACKEND=age
+#     AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
+#
+# Then build the graph:
+#   python -m rag.knowledge_graph.cuad_kg_builder
+#
+# Connection details:
+#   Host:     localhost
+#   Port:     5433  (5432 is reserved for any local PostgreSQL)
+#   Database: legal_graph
+#   User:     age_user
+#   Password: age_pass
+
+version: "3.9"
+
+services:
+  age:
+    image: apache/age:PG16_1.5.0
+    container_name: rag_age
+    environment:
+      POSTGRES_DB: legal_graph
+      POSTGRES_USER: age_user
+      POSTGRES_PASSWORD: age_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - age_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U age_user -d legal_graph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  age_data:
+    driver: local

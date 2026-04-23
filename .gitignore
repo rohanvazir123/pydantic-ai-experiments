@@ -1,3 +1,17 @@
+# Legal datasets (large, downloaded separately)
+/rag/documents/legal/
+/rag/legal/cuad_eval.json
+C:/hf/
+
+# HuggingFace dataset cache
+/.cache/huggingface/
+**/datasets/
+**/*.parquet
+**/*.arrow
+
+# Apache AGE / Docker local data (volumes managed by Docker, not tracked)
+# docker-compose.yml is committed; data lives in the named volume 'age_data'
+
 /.mypy_cache
 /data
 /fais-indexes

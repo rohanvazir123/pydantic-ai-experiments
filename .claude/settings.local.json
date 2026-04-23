@@ -20,7 +20,12 @@
       "Bash(conda install *)",
       "Bash(/c/Users/rohan/anaconda3/Scripts/conda install *)",
       "Bash(ls *)",
-      "Bash(setx DIRECT_DATABASE_URL *)"
+      "Bash(setx DIRECT_DATABASE_URL *)",
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(nvidia-smi *)",
+      "Bash(curl *)",
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"^---$\" /c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md)"
     ]
   }
 }

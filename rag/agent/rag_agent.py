@@ -123,6 +123,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
+from rag.knowledge_graph.pg_graph_store import PgGraphStore
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
@@ -193,6 +194,7 @@ class RAGState(BaseModel):
     _store: PostgresHybridStore | None = PrivateAttr(default=None)
     _retriever: Retriever | None = PrivateAttr(default=None)
     _mem0: Mem0Store | None = PrivateAttr(default=None)
+    _kg_store: PgGraphStore | None = PrivateAttr(default=None)
     _initialized: bool = PrivateAttr(default=False)
     _init_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
@@ -210,6 +212,14 @@ class RAGState(BaseModel):
                 )
         return self._retriever
 
+    async def get_kg_store(self) -> PgGraphStore:
+        """Get or create the PostgreSQL knowledge graph store (lazy init)."""
+        if self._kg_store is None:
+            self._kg_store = PgGraphStore()
+            await self._kg_store.initialize()
+            logger.info("[PROFILE] Lazy-initialized PgGraphStore")
+        return self._kg_store
+
     def get_mem0(self) -> Mem0Store:
         """Get or create the Mem0 store."""
         if self._mem0 is None:
@@ -221,6 +231,9 @@ class RAGState(BaseModel):
         if self._store:
             await self._store.close()
             self._initialized = False
+        if self._kg_store:
+            await self._kg_store.close()
+            self._kg_store = None
 
 
 # Create the RAG agent
@@ -327,6 +340,68 @@ async def search_knowledge_base(
     except Exception as e:
         logger.exception(f"Error searching knowledge base: {e}")
         return f"Error searching knowledge base: {str(e)}"
+
+
+@agent.tool
+async def search_knowledge_graph(
+    ctx: PydanticRunContext,
+    query: str,
+    entity_type: str | None = None,
+    limit: int | None = 15,
+) -> str:
+    """
+    Search the legal knowledge graph for entities and relationships.
+
+    Use this tool when the question asks about:
+    - Parties to contracts ("who are the parties?")
+    - Governing law / jurisdiction ("which contracts are governed by X law?")
+    - Specific clause types (termination, license, non-compete, liability)
+    - Relationships between companies and contracts
+
+    Args:
+        ctx: Agent runtime context
+        query: Natural-language search query (entity names, clause types, etc.)
+        entity_type: Optional filter — one of: Party, Jurisdiction, Date,
+                     LicenseClause, TerminationClause, RestrictionClause,
+                     IPClause, LiabilityClause, Clause, Contract
+        limit: Max relationships to return (default: 15)
+
+    Returns:
+        Formatted knowledge-graph facts as context for the LLM.
+    """
+    deps = ctx.deps
+    state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
+
+    local_kg: PgGraphStore | None = None
+    try:
+        if state is not None and isinstance(state, RAGState):
+            kg = await state.get_kg_store()
+        else:
+            local_kg = PgGraphStore()
+            await local_kg.initialize()
+            kg = local_kg
+
+        actual_limit = limit or 15
+
+        if entity_type:
+            entities = await kg.search_entities(query, entity_type=entity_type, limit=actual_limit)
+            if not entities:
+                return f"No {entity_type} entities found for: {query!r}"
+            lines = [
+                f"- [{e['entity_type']}] {e['name']}"
+                + (f"  (contract: {e['document_title']})" if e.get("document_title") else "")
+                for e in entities
+            ]
+            return f"## Knowledge Graph — {entity_type} entities\n" + "\n".join(lines)
+
+        return await kg.search_as_context(query, limit=actual_limit)
+
+    except Exception as e:
+        logger.exception(f"Error searching knowledge graph: {e}")
+        return f"Error searching knowledge graph: {str(e)}"
+    finally:
+        if local_kg is not None:
+            await local_kg.close()
 
 
 class RunContext:

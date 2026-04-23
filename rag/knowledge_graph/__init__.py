@@ -13,61 +13,57 @@
 # limitations under the License.
 
 """
-Knowledge Graph module for RAG using Graphiti.
+Knowledge Graph module for RAG.
 
-This module provides integration with Graphiti for building and querying
-knowledge graphs from documents, enabling entity-relationship based retrieval.
+PostgreSQL-backed knowledge graph (entities + relationships) built from
+CUAD legal contract annotations.  No Neo4j or Graphiti required.
 
-Components:
-    - GraphitiStore: High-level wrapper for graph operations
-    - graphiti_config: Configuration and client creation
-    - graphiti_agent: LangGraph agent with Graphiti integration
+Primary components:
+    PgGraphStore    — entities/relationships in PostgreSQL (kg_entities, kg_relationships)
+    CuadKgBuilder   — populates the graph from cuad_eval.json annotations
+
+Legacy Graphiti/Neo4j components (kept for reference, not wired into main pipeline):
+    GraphitiStore, graphiti_config, graphiti_agent, kg_agent
 
 Usage:
-    from rag.knowledge_graph import GraphitiStore, create_graphiti_client
+    from rag.knowledge_graph import PgGraphStore, CuadKgBuilder
 
-    # Using the store wrapper
-    store = GraphitiStore()
+    store = PgGraphStore()
     await store.initialize()
-    await store.add_episode("content", name="Document")
-    results = await store.search("query")
-
-    # Using the raw client
-    client = create_graphiti_client()
-    await client.add_episode(...)
+    context = await store.search_as_context("governing law Delaware")
+    await store.close()
 """
 
-from rag.knowledge_graph.graphiti_config import (
-    GraphitiConfig,
-    create_graphiti_client,
-    get_graphiti_config,
-    initialize_graphiti,
-)
-from rag.knowledge_graph.graphiti_store import GraphitiStore
+from rag.knowledge_graph.pg_graph_store import PgGraphStore
+from rag.knowledge_graph.age_graph_store import AgeGraphStore
+from rag.knowledge_graph.cuad_kg_builder import CuadKgBuilder
+
+
+from rag.config.settings import load_settings
+
+
+def create_kg_store() -> PgGraphStore | AgeGraphStore:
+    """
+    Return the configured knowledge graph store.
+
+    Reads ``KG_BACKEND`` from settings:
+    - ``"postgres"`` (default) → PgGraphStore  — entity/relationship tables in Neon
+    - ``"age"``               → AgeGraphStore  — Apache AGE Cypher graph (docker-compose)
+
+    Switching backends requires only one line in .env::
+
+        KG_BACKEND=age
+        AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
+    """
+    settings = load_settings()
+    if settings.kg_backend == "age":
+        return AgeGraphStore()
+    return PgGraphStore()
+
 
 __all__ = [
-    # Store
-    "GraphitiStore",
-    # Config
-    "GraphitiConfig",
-    "create_graphiti_client",
-    "get_graphiti_config",
-    "initialize_graphiti",
+    "PgGraphStore",
+    "AgeGraphStore",
+    "CuadKgBuilder",
+    "create_kg_store",
 ]
-
-# Agent exports (Pydantic AI based)
-from rag.knowledge_graph.graphiti_agent import (  # noqa: F401
-    GraphitiAgentDeps,
-    create_graphiti_session,
-    graphiti_agent,
-    run_graphiti_agent,
-)
-
-__all__.extend(
-    [
-        "graphiti_agent",
-        "GraphitiAgentDeps",
-        "run_graphiti_agent",
-        "create_graphiti_session",
-    ]
-)

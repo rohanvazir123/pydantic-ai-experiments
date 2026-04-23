@@ -204,7 +204,7 @@ class Settings(BaseSettings):
         default="mem0_memories", description="Collection name for Mem0 memories"
     )
 
-    # Neo4j Configuration
+    # Neo4j Configuration (legacy — Graphiti/Neo4j not wired into main pipeline)
     neo4j_uri: str = Field(
         default="bolt://localhost:7687", description="Neo4j connection URI"
     )
@@ -212,6 +212,27 @@ class Settings(BaseSettings):
     neo4j_username: str = Field(default="neo4j", description="Neo4j username")
 
     neo4j_password: str = Field(default="", description="Neo4j password")
+
+    # Knowledge Graph backend
+    # "postgres" — entity/relationship tables in the existing Neon DB (default, works now)
+    # "age"      — Apache AGE Cypher graph (requires AGE container, see docker-compose.yml)
+    kg_backend: str = Field(
+        default="postgres",
+        description="Knowledge graph backend: 'postgres' (SQL tables) or 'age' (Apache AGE Cypher)",
+    )
+
+    # Apache AGE connection (used when kg_backend = "age")
+    age_database_url: str | None = Field(
+        default=None,
+        description="Connection string for the Apache AGE PostgreSQL instance "
+                    "(e.g. postgresql://age_user:age_pass@localhost:5433/legal_graph). "
+                    "Defaults to AGE_DATABASE_URL env var.",
+    )
+
+    age_graph_name: str = Field(
+        default="legal_graph",
+        description="Name of the AGE graph to use (created automatically on initialize).",
+    )
 
     # Vision Model Configuration (for multimodal processing)
     vision_model_provider: str = Field(
