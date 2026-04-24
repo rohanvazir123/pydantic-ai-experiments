@@ -171,6 +171,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q144. What is the implementation plan for wiring in GraphRAG for legal documents?](#q144)
 - [Q145. What entities and relationships should be extracted from legal documents?](#q145)
 - [Q146. How does CUAD help bootstrap and validate the legal graph?](#q146)
+- [Q147b. What is the CUAD knowledge graph — what's in it and how is it built?](#q147b)
 - [Q148. How do I ingest CUAD contracts into the RAG system?](#q148)
 - [Q149. Why are legal datasets excluded from git?](#q149)
 - [Q151. How are retrieval quality tests structured for the legal corpus?](#q151)
@@ -2970,6 +2971,98 @@ for example in ds:
 
 ---
 
+<a id="q147b"></a>
+**Q147b. What is the CUAD knowledge graph — what's in it and how is it built?**
+
+**CUAD** (Contract Understanding Atticus Dataset) is a public dataset of 510 real commercial contracts, each annotated by legal experts across 41 clause categories — things like "Who are the parties?", "What law governs?", "What are the termination rights?".
+
+The **CUAD knowledge graph** turns those annotations into a structured graph of entities and relationships, stored in either PostgreSQL (`kg_entities` + `kg_relationships` tables) or Apache AGE (native Cypher graph). No LLM is needed — the annotations already tell you the entity type and the extracted text, so extraction is deterministic.
+
+---
+
+**What's in the graph (after a full build):**
+
+| Entity type | Count | Example |
+|---|---|---|
+| `Clause` | ~6,500 | "Change of Control", "Anti-Assignment" provisions |
+| `Party` | ~2,500 | "Acme Corp", "Electric City of Illinois LLC" |
+| `Date` | ~1,250 | Agreement dates, expiration dates, effective dates |
+| `LicenseClause` | ~930 | License grant / non-transferable / perpetual terms |
+| `RestrictionClause` | ~745 | Non-compete, exclusivity, no-solicit provisions |
+| `Jurisdiction` | ~460 | "Delaware", "New York", "California" |
+| `LiabilityClause` | ~275 | Cap on liability, liquidated damages |
+| `Contract` | ~505 | One node per ingested document |
+| `IPClause` | ~65 | IP ownership assignment, source code escrow |
+| **Total** | **~13,300** | |
+
+Relationships connect entity nodes to their `Contract` node (e.g. `Party --PARTY_TO--> Contract`, `Jurisdiction --GOVERNED_BY_LAW--> Contract`).
+
+---
+
+**How it's built — `CuadKgBuilder`:**
+
+```
+cuad_eval.json          PgGraphStore (Neon)          AgeGraphStore / PgGraphStore
+     │                        │                               │
+     │  for each Q&A pair:    │                               │
+     │  - contract_title ─────┼──► look up document UUID      │
+     │  - question_type ──────┼──► map to entity_type         │
+     │  - answer text ────────┼──► upsert Entity node ────────┤
+     │                        │    upsert Contract node        │
+     │                        │    create relationship ────────►
+```
+
+1. Read `rag/legal/cuad_eval.json` — 6,702 Q&A pairs across 509 contracts
+2. For each pair with a non-empty answer, map the CUAD question type → entity type using `ENTITY_TYPE_MAP` (35 mappings)
+3. Look up the contract's `document_id` in Neon (documents are always in Neon, regardless of graph backend)
+4. Upsert a `Contract` entity + the answer entity, then create the relationship between them
+
+The 41 CUAD question types collapse into 9 entity types:
+
+| CUAD question type | Entity type | Relationship |
+|---|---|---|
+| Parties | Party | PARTY_TO |
+| Governing Law | Jurisdiction | GOVERNED_BY_LAW |
+| Agreement Date / Effective Date / Expiration Date | Date | DATE_OF |
+| License Grant / Non-Transferable / … (6 types) | LicenseClause | HAS_LICENSE |
+| Termination for Convenience / Cause | TerminationClause | HAS_TERMINATION |
+| Non-Compete / Exclusivity / No-Solicit (3 types) | RestrictionClause | HAS_RESTRICTION |
+| IP Ownership / Joint IP / Source Code Escrow | IPClause | HAS_IP_CLAUSE |
+| Cap on Liability / Liquidated Damages / … | LiabilityClause | HAS_LIABILITY |
+| Everything else | Clause | HAS_CLAUSE |
+
+---
+
+**Building the graph:**
+
+```bash
+# PostgreSQL tables (default, works on Neon)
+python -m rag.knowledge_graph.cuad_kg_builder
+
+# Apache AGE (requires docker compose up -d)
+KG_BACKEND=age \
+AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
+python -m rag.knowledge_graph.cuad_kg_builder
+
+# Test with 50 pairs first
+python -m rag.knowledge_graph.cuad_kg_builder --limit 50
+```
+
+Build time: ~4.5 minutes for all 6,702 pairs (AGE backend).
+
+---
+
+**What the graph enables that plain vector search can't:**
+
+- *"Which contracts are governed by Delaware law?"* — single hop: `Jurisdiction(Delaware) --GOVERNED_BY_LAW--> Contract`
+- *"Which contracts have both a non-compete and a cap on liability?"* — multi-hop intersection query
+- *"Who are all the parties in contracts that expire in 2025?"* — join Dates + Parties through Contract
+- *"Show me all jurisdiction nodes"* — enumerable entity catalog, no embedding similarity needed
+
+The RAG agent's `search_knowledge_graph` tool uses this graph to augment LLM context before or after vector retrieval.
+
+---
+
 <a id="q148"></a>
 **Q148. How do I ingest CUAD contracts into the RAG system?**
 
@@ -4399,12 +4492,13 @@ All vertices share a single label `Entity` with `entity_type` as a property. Thi
 
 ```cypher
 -- Upsert a Party entity (MERGE = create-or-match)
+-- Note: AGE 1.7 does not support ON CREATE SET — use COALESCE instead
 MERGE (e:Entity {
-    normalized_name: 'acme corp',
-    entity_type: 'Party',
-    document_id: 'doc-uuid'
+    normalized_name: "acme corp",
+    entity_type: "Party",
+    document_id: "doc-uuid"
 })
-ON CREATE SET e.uuid = 'new-uuid', e.name = 'Acme Corp'
+SET e.uuid = COALESCE(e.uuid, "new-uuid"), e.name = "Acme Corp"
 RETURN e.uuid
 ```
 
@@ -4431,13 +4525,52 @@ The `agtype` columns come back as quoted strings (`"Acme Corp"`) — `_unquote_a
 
 ---
 
-**Every connection needs AGE loaded** — registered as an asyncpg pool `init` callback:
+**Every connection needs AGE loaded and search_path set — re-applied on each acquire:**
+
+asyncpg resets connection state (`RESET ALL`) when connections are returned to the pool — this clears both `LOAD 'age'` and the custom `search_path`. The pool `init` callback alone is NOT sufficient. `AgeGraphStore._conn()` is a context manager that re-runs setup before every acquire:
 
 ```python
-async def _age_init(conn: asyncpg.Connection) -> None:
-    await conn.execute("LOAD 'age'")
-    await conn.execute("SET search_path = ag_catalog, \"$user\", public")
+@asynccontextmanager
+async def _conn(self):
+    async with self.pool.acquire() as conn:
+        await conn.execute("LOAD 'age'")
+        await conn.execute("SET search_path = ag_catalog, \"$user\", public")
+        yield conn
 ```
+
+All methods use `async with self._conn() as conn:` — never `self.pool.acquire()` directly.
+
+---
+
+**AGE 1.7 Cypher compatibility notes:**
+
+| Feature | Status |
+|---|---|
+| `MERGE ... SET` | ✓ Supported |
+| `MERGE ... ON CREATE SET` | ✗ Not supported (syntax error at `ON`) |
+| `COALESCE(e.uuid, 'new')` in SET | ✓ Supported — use to preserve uuid on match |
+| Double-quoted strings `"..."` | ✓ Safe in `$$...$$` context, handles apostrophes |
+| Single-quoted strings `'...'` | ⚠ Breaks on apostrophes in data |
+
+All Cypher string literals use **double quotes** in `AgeGraphStore`. The dollar-quote `$$...$$` SQL wrapper never conflicts with double quotes inside.
+
+---
+
+**`CuadKgBuilder` with AGE — document lookup split:**
+
+Documents live in Neon (`PgGraphStore`). Graph entities/relationships go to AGE. The builder accepts a separate `doc_store` for the Neon lookup:
+
+```python
+pg_store = PgGraphStore()   # document lookup → Neon
+age_store = AgeGraphStore() # graph writes → AGE Docker
+
+builder = CuadKgBuilder(age_store, doc_store=pg_store)
+await builder.build()
+```
+
+The CLI (`python -m rag.knowledge_graph.cuad_kg_builder`) handles this automatically when `KG_BACKEND=age`.
+
+**Document title normalization:** Docling escapes underscores as `\_` in Markdown titles (e.g. `LIMEENERGYCO\_09\_09\_1999…`), while CUAD eval JSON uses plain underscores. `_get_document_id` strips the escaping on both sides before comparing.
 
 ---
 

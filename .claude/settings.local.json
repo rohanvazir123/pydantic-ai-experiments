@@ -25,7 +25,23 @@
       "Bash(nvidia-smi *)",
       "Bash(curl *)",
       "Bash(xargs grep *)",
-      "Bash(grep -n \"^---$\" /c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md)"
+      "Bash(grep -n \"^---$\" /c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md)",
+      "Bash(docker compose up *)",
+      "Bash(docker info *)",
+      "Bash(docker context ls *)",
+      "Bash(docker context *)",
+      "Bash(docker search *)",
+      "Bash(docker pull *)",
+      "Bash(docker exec *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(docker compose *)",
+      "Bash(docker run *)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph python *)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder --limit 10)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder --limit 10 --verbose)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder --limit 20)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m pytest rag/tests/test_age_graph_store.py -v -r s)",
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder)"
     ]
   }
 }

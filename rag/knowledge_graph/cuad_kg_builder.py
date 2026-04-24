@@ -158,22 +158,44 @@ def relationship_type_for(entity_type: str) -> str:
 
 
 class CuadKgBuilder:
-    """Populates kg_entities / kg_relationships from cuad_eval.json annotations."""
+    """Populates the knowledge graph from cuad_eval.json annotations.
 
-    def __init__(self, store: PgGraphStore) -> None:
+    ``store`` is the graph backend (PgGraphStore or AgeGraphStore).
+    ``doc_store`` is the PostgreSQL store where the ``documents`` table lives
+    (always Neon/PgGraphStore).  When omitted it defaults to ``store``, which
+    is correct for the PgGraphStore backend.  When using AgeGraphStore, pass
+    a separate PgGraphStore so document lookups still hit Neon.
+    """
+
+    def __init__(
+        self,
+        store: PgGraphStore,
+        doc_store: PgGraphStore | None = None,
+    ) -> None:
         self.store = store
+        self._doc_store: PgGraphStore = doc_store if doc_store is not None else store  # type: ignore[assignment]
         self._doc_id_cache: dict[str, str | None] = {}
 
     async def _get_document_id(self, contract_title: str) -> str | None:
-        """Look up the document UUID by title (cached per run)."""
+        """Look up the document UUID by title (cached per run).
+
+        Docling escapes underscores in titles (``\\_``) when converting to
+        Markdown, so stored titles may differ from the raw CUAD eval titles.
+        We normalise both sides by stripping backslash-escaping before comparing.
+        """
         if contract_title in self._doc_id_cache:
             return self._doc_id_cache[contract_title]
 
-        assert self.store.pool
-        async with self.store.pool.acquire() as conn:
+        # Normalise: strip backslash-escaping that Docling adds to underscores
+        normalized = contract_title.replace("\\_", "_")
+
+        assert self._doc_store.pool
+        async with self._doc_store.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id FROM documents WHERE title = $1 LIMIT 1",
-                contract_title,
+                # REPLACE strips stored \_  so both sides compare as plain _
+                "SELECT id FROM documents "
+                "WHERE REPLACE(title, '\\_', '_') = $1 LIMIT 1",
+                normalized,
             )
         doc_id = str(row["id"]) if row else None
         self._doc_id_cache[contract_title] = doc_id
@@ -303,17 +325,32 @@ async def main() -> None:
     )
 
     console.print(f"[cyan]Loading eval pairs from[/] {args.eval_path}")
-    store = PgGraphStore()
-    await store.initialize()
+
+    from rag.config.settings import load_settings
+    from rag.knowledge_graph import create_kg_store
+
+    settings = load_settings()
+    graph_store = create_kg_store()
+    await graph_store.initialize()
+
+    # Document lookups always go to Neon (PgGraphStore).
+    # When the graph backend is AGE, we need a separate PgGraphStore for that.
+    if settings.kg_backend == "age":
+        doc_store = PgGraphStore()
+        await doc_store.initialize()
+    else:
+        doc_store = None  # graph_store IS the PgGraphStore
 
     try:
-        builder = CuadKgBuilder(store)
+        builder = CuadKgBuilder(graph_store, doc_store=doc_store)  # type: ignore[arg-type]
         stats = await builder.build(
             eval_path=Path(args.eval_path),
             limit=args.limit,
         )
     finally:
-        await store.close()
+        await graph_store.close()
+        if doc_store is not None:
+            await doc_store.close()
 
     table = Table(title="CUAD Knowledge Graph Build Summary", show_header=True)
     table.add_column("Metric", style="cyan")
@@ -328,7 +365,8 @@ async def main() -> None:
 
 
 async def _print_kg_stats() -> str:
-    store = PgGraphStore()
+    from rag.knowledge_graph import create_kg_store
+    store = create_kg_store()
     await store.initialize()
     try:
         s = await store.get_graph_stats()

@@ -63,6 +63,7 @@ import json
 import logging
 import re
 import uuid as _uuid
+from contextlib import asynccontextmanager
 from typing import Any
 
 import asyncpg
@@ -135,7 +136,7 @@ class AgeGraphStore:
             command_timeout=60,
             init=_age_init,
         )
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             # Create the graph if it doesn't exist
             try:
                 await conn.execute(
@@ -176,6 +177,20 @@ class AgeGraphStore:
     # Write
     # ------------------------------------------------------------------
 
+    @asynccontextmanager
+    async def _conn(self):
+        """Acquire a pool connection with AGE loaded and search_path set.
+
+        asyncpg resets connection state (RESET ALL) when connections are
+        returned to the pool, which clears both ``LOAD 'age'`` and the
+        custom ``search_path``.  This context manager re-applies both on
+        every acquire so callers don't need to think about it.
+        """
+        async with self.pool.acquire() as conn:
+            for stmt in _AGE_SETUP:
+                await conn.execute(stmt)
+            yield conn
+
     def _cypher(self, cypher_body: str) -> str:
         """Wrap Cypher in the AGE SQL function call."""
         return f"SELECT * FROM ag_catalog.cypher('{self._graph}', $${cypher_body}$$)"
@@ -192,23 +207,28 @@ class AgeGraphStore:
         normalized = _normalize(name)
         entity_uuid = str(_uuid.uuid4())
         doc_id_str = document_id or ""
-        meta_str = json.dumps(metadata or {}).replace("'", "\\'")
-        name_escaped = name.replace("'", "\\'")
-        meta_escaped = meta_str.replace('"', '\\"')
+        # Use double-quoted Cypher string literals throughout — they are safe
+        # inside $$…$$ dollar-quoting and allow apostrophes without escaping.
+        # Only double-quotes in the value itself need escaping as \".
+        name_esc = name.replace("\\", "\\\\").replace('"', '\\"')
+        meta_esc = json.dumps(metadata or {}).replace("\\", "\\\\").replace('"', '\\"')
+        norm_esc = normalized.replace("\\", "\\\\").replace('"', '\\"')
 
         cypher = (
-            f"MERGE (e:Entity {{"
-            f"normalized_name: '{normalized}', "
-            f"entity_type: '{entity_type}', "
-            f"document_id: '{doc_id_str}'"
-            f"}}) "
-            f"ON CREATE SET e.uuid = '{entity_uuid}', "
-            f"e.name = '{name_escaped}', "
-            f"e.metadata = '{meta_escaped}' "
-            f"RETURN e.uuid"
+            f'MERGE (e:Entity {{'
+            f'normalized_name: "{norm_esc}", '
+            f'entity_type: "{entity_type}", '
+            f'document_id: "{doc_id_str}"'
+            f'}}) '
+            # AGE 1.7 does not support ON CREATE SET — use COALESCE to
+            # preserve the existing uuid on MATCH, set a new one on CREATE.
+            f'SET e.uuid = COALESCE(e.uuid, "{entity_uuid}"), '
+            f'e.name = "{name_esc}", '
+            f'e.metadata = "{meta_esc}" '
+            f'RETURN e.uuid'
         )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher) + " AS (uuid agtype)"
             )
@@ -228,21 +248,21 @@ class AgeGraphStore:
         """Create a directed edge between two Entity vertices (by UUID)."""
         assert self.pool, "Call initialize() first"
         doc_id_str = document_id or ""
-        props_str = json.dumps(properties or {}).replace("'", "\\'").replace('"', '\\"')
+        props_esc = json.dumps(properties or {}).replace("\\", "\\\\").replace('"', '\\"')
         rel_uuid = str(_uuid.uuid4())
 
         cypher = (
-            f"MATCH (s:Entity {{uuid: '{source_id}'}}), "
-            f"(t:Entity {{uuid: '{target_id}'}}) "
-            f"CREATE (s)-[r:{relationship_type} {{"
-            f"uuid: '{rel_uuid}', "
-            f"document_id: '{doc_id_str}', "
-            f"properties: '{props_str}'"
-            f"}}]->(t) "
-            f"RETURN r.uuid"
+            f'MATCH (s:Entity {{uuid: "{source_id}"}}), '
+            f'(t:Entity {{uuid: "{target_id}"}}) '
+            f'CREATE (s)-[r:{relationship_type} {{'
+            f'uuid: "{rel_uuid}", '
+            f'document_id: "{doc_id_str}", '
+            f'properties: "{props_esc}"'
+            f'}}]->(t) '
+            f'RETURN r.uuid'
         )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher) + " AS (uuid agtype)"
             )
@@ -254,11 +274,12 @@ class AgeGraphStore:
     async def clear_for_document(self, document_id: str) -> None:
         """Delete all Entity vertices (and edges) for a document."""
         assert self.pool, "Call initialize() first"
+        doc_id_esc = document_id.replace("\\", "\\\\").replace('"', '\\"')
         cypher = (
-            f"MATCH (e:Entity {{document_id: '{document_id}'}}) "
-            f"DETACH DELETE e"
+            f'MATCH (e:Entity {{document_id: "{doc_id_esc}"}}) '
+            f'DETACH DELETE e'
         )
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             await conn.execute(self._cypher(cypher) + " AS (r agtype)")
 
     # ------------------------------------------------------------------
@@ -273,25 +294,26 @@ class AgeGraphStore:
     ) -> list[dict[str, Any]]:
         """Case-insensitive substring search over entity names."""
         assert self.pool, "Call initialize() first"
-        query_esc = query.lower().replace("'", "\\'")
+        query_esc = query.lower().replace("\\", "\\\\").replace('"', '\\"')
 
         if entity_type:
+            etype_esc = entity_type.replace("\\", "\\\\").replace('"', '\\"')
             cypher = (
-                f"MATCH (e:Entity) "
-                f"WHERE e.entity_type = '{entity_type}' "
-                f"AND toLower(e.name) CONTAINS '{query_esc}' "
-                f"RETURN e.uuid, e.name, e.entity_type, e.document_id "
-                f"LIMIT {limit}"
+                f'MATCH (e:Entity) '
+                f'WHERE e.entity_type = "{etype_esc}" '
+                f'AND toLower(e.name) CONTAINS "{query_esc}" '
+                f'RETURN e.uuid, e.name, e.entity_type, e.document_id '
+                f'LIMIT {limit}'
             )
         else:
             cypher = (
-                f"MATCH (e:Entity) "
-                f"WHERE toLower(e.name) CONTAINS '{query_esc}' "
-                f"RETURN e.uuid, e.name, e.entity_type, e.document_id "
-                f"LIMIT {limit}"
+                f'MATCH (e:Entity) '
+                f'WHERE toLower(e.name) CONTAINS "{query_esc}" '
+                f'RETURN e.uuid, e.name, e.entity_type, e.document_id '
+                f'LIMIT {limit}'
             )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
                 + " AS (uuid agtype, name agtype, entity_type agtype, document_id agtype)"
@@ -317,21 +339,22 @@ class AgeGraphStore:
         """Return entities connected to entity_id (both directions)."""
         assert self.pool, "Call initialize() first"
 
+        eid_esc = entity_id.replace("\\", "\\\\").replace('"', '\\"')
         if relationship_type:
             cypher = (
-                f"MATCH (s:Entity {{uuid: '{entity_id}'}})"
-                f"-[r:{relationship_type}]-(t:Entity) "
-                f"RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type "
-                f"LIMIT {limit}"
+                f'MATCH (s:Entity {{uuid: "{eid_esc}"}})'
+                f'-[r:{relationship_type}]-(t:Entity) '
+                f'RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type '
+                f'LIMIT {limit}'
             )
         else:
             cypher = (
-                f"MATCH (s:Entity {{uuid: '{entity_id}'}})-[r]-(t:Entity) "
-                f"RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type "
-                f"LIMIT {limit}"
+                f'MATCH (s:Entity {{uuid: "{eid_esc}"}})-[r]-(t:Entity) '
+                f'RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type '
+                f'LIMIT {limit}'
             )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
                 + " AS (uuid agtype, name agtype, entity_type agtype, rel_type agtype)"
@@ -356,24 +379,25 @@ class AgeGraphStore:
         """Return contract document_ids that contain the given named entity."""
         assert self.pool, "Call initialize() first"
         normalized = _normalize(entity_name)
-        norm_esc = normalized.replace("'", "\\'")
+        norm_esc = normalized.replace("\\", "\\\\").replace('"', '\\"')
 
         if entity_type:
+            etype_esc = entity_type.replace("\\", "\\\\").replace('"', '\\"')
             cypher = (
-                f"MATCH (e:Entity {{normalized_name: '{norm_esc}', entity_type: '{entity_type}'}})"
-                f"-[r]->(c:Entity {{entity_type: 'Contract'}}) "
-                f"RETURN DISTINCT c.name, c.document_id "
-                f"LIMIT {limit}"
+                f'MATCH (e:Entity {{normalized_name: "{norm_esc}", entity_type: "{etype_esc}"}})'
+                f'-[r]->(c:Entity {{entity_type: "Contract"}}) '
+                f'RETURN DISTINCT c.name, c.document_id '
+                f'LIMIT {limit}'
             )
         else:
             cypher = (
-                f"MATCH (e:Entity {{normalized_name: '{norm_esc}'}})"
-                f"-[r]->(c:Entity {{entity_type: 'Contract'}}) "
-                f"RETURN DISTINCT c.name, c.document_id "
-                f"LIMIT {limit}"
+                f'MATCH (e:Entity {{normalized_name: "{norm_esc}"}})'
+                f'-[r]->(c:Entity {{entity_type: "Contract"}}) '
+                f'RETURN DISTINCT c.name, c.document_id '
+                f'LIMIT {limit}'
             )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher) + " AS (title agtype, document_id agtype)"
             )
@@ -393,17 +417,17 @@ class AgeGraphStore:
     ) -> str:
         """Search entities + their relationships; return as LLM-ready context."""
         assert self.pool, "Call initialize() first"
-        query_esc = query.lower().replace("'", "\\'")
+        query_esc = query.lower().replace("\\", "\\\\").replace('"', '\\"')
 
         cypher = (
-            f"MATCH (e:Entity)-[r]->(t:Entity) "
-            f"WHERE toLower(e.name) CONTAINS '{query_esc}' "
-            f"   OR toLower(t.name) CONTAINS '{query_esc}' "
-            f"RETURN e.name, e.entity_type, type(r) AS rel, t.name, t.entity_type "
-            f"LIMIT {limit}"
+            f'MATCH (e:Entity)-[r]->(t:Entity) '
+            f'WHERE toLower(e.name) CONTAINS "{query_esc}" '
+            f'   OR toLower(t.name) CONTAINS "{query_esc}" '
+            f'RETURN e.name, e.entity_type, type(r) AS rel, t.name, t.entity_type '
+            f'LIMIT {limit}'
         )
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
                 + " AS (src_name agtype, src_type agtype, rel agtype,"
@@ -429,7 +453,7 @@ class AgeGraphStore:
         """Return vertex and edge counts broken down by type."""
         assert self.pool, "Call initialize() first"
 
-        async with self.pool.acquire() as conn:
+        async with self._conn() as conn:
             vertex_rows = await conn.fetch(
                 self._cypher(
                     "MATCH (e:Entity) RETURN e.entity_type, count(*) AS cnt"
