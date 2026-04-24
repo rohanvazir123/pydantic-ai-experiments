@@ -12,14 +12,15 @@ One-stop reference for the entire RAG system. Read this first; dive into the oth
 - [4. Ingestion Pipeline](#4-ingestion-pipeline)
 - [5. Retrieval Pipeline](#5-retrieval-pipeline)
 - [6. RAG Agent](#6-rag-agent)
-- [7. Mem0 Memory Layer](#7-mem0-memory-layer)
-- [8. Langfuse Observability](#8-langfuse-observability)
-- [9. Streamlit Apps](#9-streamlit-apps)
-- [10. MCP Server](#10-mcp-server)
-- [11. Configuration (.env Quick Reference)](#11-configuration-env-quick-reference)
-- [12. Key File Map](#12-key-file-map)
-- [13. How to Run](#13-how-to-run)
-- [14. Further Reading](#14-further-reading)
+- [7. Knowledge Graph Layer](#7-knowledge-graph-layer)
+- [8. Mem0 Memory Layer](#8-mem0-memory-layer)
+- [9. Langfuse Observability](#9-langfuse-observability)
+- [10. Streamlit Apps](#10-streamlit-apps)
+- [11. MCP Server](#11-mcp-server)
+- [12. Configuration (.env Quick Reference)](#12-configuration-env-quick-reference)
+- [13. Key File Map](#13-key-file-map)
+- [14. How to Run](#14-how-to-run)
+- [15. Further Reading](#15-further-reading)
 
 ---
 
@@ -28,10 +29,13 @@ One-stop reference for the entire RAG system. Read this first; dive into the oth
 An **agentic RAG (Retrieval-Augmented Generation)** system that:
 1. **Ingests** documents (PDF, DOCX, audio, Markdown, …) into PostgreSQL/pgvector
 2. **Retrieves** relevant chunks via hybrid search (vector + full-text, fused with RRF)
-3. **Answers** questions through a Pydantic AI agent that calls the retrieval tool
+3. **Answers** questions through a Pydantic AI agent that calls the retrieval tool and/or knowledge graph tool
 4. **Remembers** users across sessions via Mem0 (pgvector-backed user memory)
 5. **Observes** itself with optional Langfuse tracing
 6. **Deep-processes PDFs** via a separate PDF Question Generator workflow — uses RAGAnything/MinerU to extract multimodal content (tables, images, equations), processes each with specialised LLM/vision processors, then generates structured Q&A pairs stored in their own PostgreSQL tables
+7. **Builds a knowledge graph** from structured annotations (CUAD legal contracts) — 13,262 entities and 13,603 relationships across 509 contracts, queryable via a dedicated agent tool
+
+**Corpus**: 518 documents (509 CUAD legal contracts + 9 NeuralFlow AI docs), 13,965 chunks
 
 ---
 
@@ -51,38 +55,53 @@ An **agentic RAG (Retrieval-Augmented Generation)** system that:
                  │  Pydantic AI Agent               │
                  │  rag/agent/rag_agent.py           │
                  │  search_knowledge_base()          │
+                 │  search_knowledge_graph()         │
                  │  remember_user_context()          │
                  └──────────┬──────────────┬─────────┘
                             │              │
-                            ▼              ▼
-         ┌──────────────────────┐   ┌──────────────────────────────┐
-         │  Retriever           │   │  Mem0Store                   │
-         │  rag/retrieval/      │   │  memory/mem0_store.py        │
-         │                      │   │                              │
-         │  1. HyDE (opt.)      │   │  pgvector similarity search  │
-         │  2. Embed query      │   │  over user memory facts      │
-         │  3. Hybrid search    │   │                              │
-         │     (RRF)            │   │  · fact extraction           │
-         │  4. Rerank (opt.)    │   │  · embed memories            │
-         │     LLM or CrossEnc  │   │                              │
-         └──────────┬───────────┘   └──────────────┬───────────────┘
-                    │                               │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
+                 ┌──────────┘              │
+                 │                         │
+                 ▼                         ▼
+         ┌────────────────────┐   ┌────────────────────────────────┐
+         │  Retriever         │   │  Mem0Store                     │
+         │  rag/retrieval/    │   │  memory/mem0_store.py          │
+         │                    │   │                                │
+         │  1. HyDE (opt.)    │   │  pgvector similarity search    │
+         │  2. Embed query    │   │  over user memory facts        │
+         │  3. Hybrid search  │   │                                │
+         │     (RRF)          │   │  · fact extraction             │
+         │  4. Rerank (opt.)  │   │  · embed memories              │
+         │     LLM or CrossEnc│   │                                │
+         └──────────┬─────────┘   └──────────────┬─────────────────┘
+                    │                             │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
          ┌──────────────────────────────────────────────────────────┐
          │  PostgreSQL / Neon  (pgvector extension)                 │
          │  ├── documents        ← metadata + file hash             │
          │  ├── chunks           ← vector(768) + tsvector           │
-         │  └── mem0_memories    ← user memory facts                │
+         │  ├── mem0_memories    ← user memory facts                │
+         │  ├── kg_entities      ← KG nodes (name, type, doc_id)   │
+         │  └── kg_relationships ← KG edges (src, tgt, type)       │
          └──────────────────────────────────────────────────────────┘
-                                    ▲
-                                    │  (ingest)
-         ┌──────────────────────────┴───────────────────────────────┐
-         │  Ingestion Pipeline  (rag/ingestion/pipeline.py)         │
-         │  Docling (PDF/DOCX/audio) → chunk → embed → store       │
-         │  Note: MinerU/RAGAnything is PDF Question Generator only │
-         └──────────────────────────────────────────────────────────┘
+                                    ▲                ▲
+                                    │  (ingest)      │  (KG build)
+         ┌──────────────────────────┴───┐   ┌────────┴─────────────┐
+         │  Ingestion Pipeline          │   │  CuadKgBuilder        │
+         │  (rag/ingestion/pipeline.py) │   │  knowledge_graph/     │
+         │  Docling → chunk → embed     │   │  cuad_kg_builder.py  │
+         │  Note: MinerU/RAGAnything is │   │  509 contracts →     │
+         │  PDF Question Generator only │   │  13,262 entities     │
+         └──────────────────────────────┘   └──────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Knowledge Graph (alternative backend — Apache AGE)             │
+  │  docker-compose.yml → apache/age:latest on port 5433            │
+  │  AgeGraphStore (rag/knowledge_graph/age_graph_store.py)         │
+  │  Vertex label: Entity  ·  Edge labels: relationship type strings│
+  │  Switch via KG_BACKEND=age in .env                              │
+  └─────────────────────────────────────────────────────────────────┘
 ```
 
 **AI service calls** — which component calls what and when:
@@ -275,18 +294,25 @@ For each document file:
 
 **`RAGState`** — Pydantic BaseModel passed as `deps` to the agent; holds lazy-initialized resources:
 ```python
-_store:       PostgresHybridStore  (PrivateAttr)
-_retriever:   Retriever            (PrivateAttr)
-_mem0:        Mem0Store            (PrivateAttr, if mem0_enabled)
-_initialized: bool                 (PrivateAttr)
-_init_lock:   asyncio.Lock         (PrivateAttr)
+_store:       PostgresHybridStore      (PrivateAttr)
+_retriever:   Retriever                (PrivateAttr)
+_mem0:        Mem0Store                (PrivateAttr, if mem0_enabled)
+_kg_store:    PgGraphStore | None      (PrivateAttr)
+_initialized: bool                     (PrivateAttr)
+_init_lock:   asyncio.Lock             (PrivateAttr)
 ```
 
-**`search_knowledge_base` tool** — the agent's only retrieval tool:
+**`search_knowledge_base` tool** — primary retrieval tool:
 1. `RAGState.get_retriever()` — lazy-init store + retriever (thread-safe via asyncio.Lock)
 2. `retriever.retrieve_as_context(query)` — hybrid search → formatted chunk string
 3. `mem0_store.get_context_string(query, user_id)` — user memory facts
 4. Return combined context to LLM
+
+**`search_knowledge_graph` tool** — second retrieval tool (knowledge graph):
+1. Accepts `query` (str), `entity_type` (optional filter), `limit` (default 10)
+2. Calls `RAGState._kg_store.search_entities(query, entity_type, limit)` — SQL ILIKE search on `kg_entities`
+3. Fetches relationships for matched entities via `get_relationships(entity_id)`
+4. Returns structured entity + relationship context string to LLM
 
 **`traced_agent_run(query, user_id, session_id, message_history)`**:
 - Creates `RAGState(user_id=user_id)`, passes as `deps=state`
@@ -295,7 +321,52 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ---
 
-## 7. Mem0 Memory Layer
+## 7. Knowledge Graph Layer
+
+**Key directory**: `rag/knowledge_graph/`
+
+Two interchangeable backends, selected by `KG_BACKEND` env var:
+
+### PgGraphStore (default — `KG_BACKEND=postgres`)
+
+**File**: `rag/knowledge_graph/pg_graph_store.py`
+
+- Stores the graph as two SQL tables (`kg_entities`, `kg_relationships`) in the same Neon database
+- Uses asyncpg pool (same pool pattern as `PostgresHybridStore`)
+- Entity deduplication via `UNIQUE INDEX` on `(normalized_name, entity_type, document_id)`
+- Key methods: `add_entity()`, `add_relationship()`, `search_entities()`, `get_relationships()`, `get_entity_subgraph()`
+
+### AgeGraphStore (`KG_BACKEND=age`)
+
+**File**: `rag/knowledge_graph/age_graph_store.py`
+
+- Uses Apache AGE (Cypher query language) running in Docker on port 5433
+- All vertices use label `Entity`; `entity_type` property distinguishes types
+- Edge labels are relationship type strings (`PARTY_TO`, `GOVERNED_BY_LAW`, etc.)
+- asyncpg gotcha: `LOAD 'age'` + `SET search_path = ag_catalog` must be issued before every connection acquire — handled by `_conn()` context manager (pool resets state on release)
+- AGE 1.7 limitation: no `ON CREATE SET`; uses `COALESCE(e.uuid, 'new')` pattern instead
+- All Cypher string literals use double quotes (apostrophes in legal names break single-quoted Cypher strings)
+
+### Factory
+
+**File**: `rag/knowledge_graph/__init__.py` — `create_kg_store()` reads `KG_BACKEND` env var and returns the appropriate store instance.
+
+### CuadKgBuilder
+
+**File**: `rag/knowledge_graph/cuad_kg_builder.py`
+
+- Reads CUAD contract JSON annotations (41 question types → 9 entity types + 9 relationship types)
+- Entity types: `Party`, `Jurisdiction`, `Date`, `LicenseClause`, `TerminationClause`, `RestrictionClause`, `IPClause`, `LiabilityClause`, `Clause`
+- Relationship types: `PARTY_TO`, `GOVERNED_BY_LAW`, `DATE_OF`, `HAS_LICENSE`, `HAS_TERMINATION`, `HAS_RESTRICTION`, `HAS_IP_CLAUSE`, `HAS_LIABILITY`, `HAS_CLAUSE`
+- Result: 509 contracts → 13,262 entities, 13,603 relationships
+
+### Docker (Apache AGE)
+
+`docker-compose.yml` defines `apache/age:latest` on port 5433 with `legal_graph` graph name.
+
+---
+
+## 8. Mem0 Memory Layer
 
 **Key file**: `rag/memory/mem0_store.py` → `Mem0Store`, `create_mem0_store()`
 
@@ -315,7 +386,7 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ---
 
-## 8. Langfuse Observability
+## 9. Langfuse Observability
 
 **Controlled by**: `LANGFUSE_ENABLED=true` (+ public/secret keys in `.env`)
 
@@ -325,7 +396,7 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ---
 
-## 9. Streamlit Apps
+## 10. Streamlit Apps
 
 
 ### `streamlit_mem0_app.py` — Chat with Memory (simple)
@@ -341,7 +412,7 @@ _init_lock:   asyncio.Lock         (PrivateAttr)
 
 ---
 
-## 10. MCP Server
+## 11. MCP Server
 
 **Key file**: `rag/mcp/server.py`
 
@@ -404,7 +475,7 @@ Claude Code — `.mcp.json` in the project root:
 
 ---
 
-## 11. Configuration (`.env` Quick Reference)
+## 12. Configuration (`.env` Quick Reference)
 
 ```bash
 # Database
@@ -437,6 +508,11 @@ RERANKER_OVERFETCH_FACTOR=3
 # Mem0
 MEM0_ENABLED=false
 
+# Knowledge Graph
+KG_BACKEND=postgres          # or "age"
+AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
+AGE_GRAPH_NAME=legal_graph
+
 # Langfuse
 LANGFUSE_ENABLED=false
 LANGFUSE_PUBLIC_KEY=
@@ -445,7 +521,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 12. Key File Map
+## 13. Key File Map
 
 | Purpose | File |
 |---------|------|
@@ -464,6 +540,11 @@ LANGFUSE_SECRET_KEY=
 | MCP server (FastMCP) | `rag/mcp/server.py` |
 | CLI entry point | `rag/main.py` |
 | Mem0 memory layer | `rag/memory/mem0_store.py` |
+| KG store — PostgreSQL backend | `rag/knowledge_graph/pg_graph_store.py` |
+| KG store — Apache AGE backend | `rag/knowledge_graph/age_graph_store.py` |
+| KG builder (CUAD annotations) | `rag/knowledge_graph/cuad_kg_builder.py` |
+| KG store factory | `rag/knowledge_graph/__init__.py` |
+| Apache AGE Docker container | `docker-compose.yml` |
 | Streamlit (memory chat) | `streamlit_mem0_app.py` |
 | Streamlit (RAG chat) | `rag/agent/streamlit_app.py` |
 | CLI chat | `rag/agent/agent_main.py` |
@@ -471,7 +552,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 13. How to Run
+## 14. How to Run
 
 ```bash
 # 1. Install
@@ -500,16 +581,22 @@ uvicorn rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 # 9. Run MCP server (normally launched automatically by Claude Desktop/Code)
 python -m rag.mcp.server
 
-# 10. Run tests
+# 10. Build knowledge graph (CUAD legal contracts, requires ingested docs)
+python -m rag.knowledge_graph.cuad_kg_builder
+
+# 11. Start Apache AGE (alternative KG backend)
+docker-compose up -d
+
+# 12. Run tests
 python -m pytest rag/tests/ -v
 
-# 11. Lint
+# 13. Lint
 ruff check --fix rag/ && ruff format rag/
 ```
 
 ---
 
-## 14. Further Reading
+## 15. Further Reading
 
 | Doc | What's in it |
 |-----|-------------|

@@ -59,28 +59,40 @@ python -m pytest rag/tests/ -v
 ```
 rag/
 ├── config/
-│   └── settings.py          # Pydantic Settings configuration
+│   └── settings.py              # Pydantic Settings configuration
 ├── ingestion/
-│   ├── pipeline.py           # Document ingestion pipeline
-│   ├── embedder.py           # Embedding generation (OpenAI-compatible)
-│   ├── models.py             # Data models (ChunkData, SearchResult, etc.)
+│   ├── pipeline.py               # Document ingestion pipeline
+│   ├── embedder.py               # Embedding generation (OpenAI-compatible)
+│   ├── models.py                 # Data models (ChunkData, SearchResult, etc.)
 │   └── chunkers/
-│       └── docling.py        # Docling HybridChunker integration
+│       └── docling.py            # Docling HybridChunker integration
 ├── storage/
 │   └── vector_store/
-│       └── postgres.py       # PostgresHybridStore (vector + text search via pgvector)
+│       └── postgres.py           # PostgresHybridStore (vector + text search via pgvector)
 ├── retrieval/
-│   └── retriever.py          # Search orchestrator
+│   └── retriever.py              # Search orchestrator
 ├── agent/
-│   ├── rag_agent.py          # Pydantic AI agent with search tool
-│   └── prompts.py            # System prompts
-├── documents/                # Sample documents for ingestion
-├── tests/                    # Test suite
-│   ├── test_config.py        # Configuration tests
-│   ├── test_ingestion.py     # Ingestion model tests
-│   ├── test_postgres_store.py # PostgreSQL connection & index tests
-│   └── test_rag_agent.py     # RAG agent integration tests
-└── main.py                   # CLI entry point
+│   ├── rag_agent.py              # Pydantic AI agent (search_knowledge_base + search_knowledge_graph tools)
+│   └── prompts.py                # System prompts
+├── knowledge_graph/
+│   ├── __init__.py               # create_kg_store() factory (reads KG_BACKEND env var)
+│   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (Neon)
+│   ├── age_graph_store.py        # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
+│   └── cuad_kg_builder.py        # CuadKgBuilder: CUAD annotations → graph (509 contracts)
+├── memory/
+│   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
+├── documents/                    # Sample documents for ingestion
+├── tests/                        # Test suite
+│   ├── test_config.py            # Configuration tests
+│   ├── test_ingestion.py         # Ingestion model tests
+│   ├── test_postgres_store.py    # PostgreSQL connection & index tests
+│   ├── test_rag_agent.py         # RAG agent integration tests
+│   ├── test_pg_graph_store.py    # PgGraphStore unit tests (40, no external deps)
+│   ├── test_age_graph_store.py   # AgeGraphStore unit + 1 integration test (24 total)
+│   └── test_legal_retrieval.py   # Legal retrieval tests (16; 4 integration)
+└── main.py                       # CLI entry point
+
+docker-compose.yml                # Apache AGE container (apache/age:latest, port 5433)
 ```
 
 ---

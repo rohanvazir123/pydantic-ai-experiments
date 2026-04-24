@@ -47,6 +47,9 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_pdf_question_generator.py` | 23 | PostgreSQL + Ollama | PDF question generator with pgvector |
 | `test_mem0_store.py` | 15+ | PostgreSQL + Ollama | Mem0 memory store with pgvector |
 | `test_raganything.py` | 10+ | Ollama + raganything | Multimodal processors (tables, equations, images) |
+| `test_pg_graph_store.py` | 40 | None (all unit) | PgGraphStore SQL tables, entity/relationship CRUD, search |
+| `test_age_graph_store.py` | 24 | None (unit) / AGE (integration) | AgeGraphStore Cypher ops; 1 integration test skipped unless `AGE_DATABASE_URL` set |
+| `test_legal_retrieval.py` | 16 | Neon + Ollama (4 integration) | Legal contract retrieval quality; 4 integration tests require live services |
 
 ---
 
@@ -258,21 +261,76 @@ Tests:
 - Image processing with ImageModalProcessor
 - LightRAG integration tests
 
+#### Knowledge Graph Tests — PgGraphStore
+```bash
+python -m pytest rag/tests/test_pg_graph_store.py -v
+```
+
+**Requirements:** None (all 40 tests are pure unit tests — no external dependencies)
+
+Tests cover:
+- `TestPgGraphStoreInit` — store initialization and settings
+- `TestPgGraphStoreEntityCRUD` — `add_entity()`, `get_entity()`, `delete_entity()`, deduplication via UNIQUE INDEX
+- `TestPgGraphStoreRelationshipCRUD` — `add_relationship()`, `get_relationships()`, cascade deletes
+- `TestPgGraphStoreSearch` — `search_entities()` ILIKE queries, `entity_type` filtering, `limit` parameter
+- `TestPgGraphStoreSubgraph` — `get_entity_subgraph()` with depth parameter
+- `TestPgGraphStoreClean` — `clean()` truncates both tables
+- `TestPgGraphStoreSchema` — verifies SQL DDL for `kg_entities` and `kg_relationships` tables and indexes
+
+#### Knowledge Graph Tests — AgeGraphStore
+```bash
+python -m pytest rag/tests/test_age_graph_store.py -v
+```
+
+**Requirements:** None for unit tests (23 tests). 1 integration test requires `AGE_DATABASE_URL` env var pointing to a live Apache AGE instance; skipped otherwise.
+
+Tests cover:
+- `TestAgeGraphStoreInit` — store initialization, graph name config
+- `TestAgeGraphStoreConnContext` — `_conn()` context manager issues `LOAD 'age'` + `SET search_path` on every acquire
+- `TestAgeGraphStoreCypher` — Cypher vertex/edge merge, `COALESCE` upsert pattern, double-quote string literals
+- `TestAgeGraphStoreEntityOps` — `add_entity()`, `get_entity()`, entity type filtering
+- `TestAgeGraphStoreRelationshipOps` — `add_relationship()`, edge label creation, relationship queries
+- `TestAgeGraphStoreSearchOps` — `search_entities()` with optional `entity_type` filter
+- `TestAgeGraphStoreIntegration` (1 test, integration) — full round-trip against live AGE instance
+
+#### Legal Retrieval Tests
+```bash
+python -m pytest rag/tests/test_legal_retrieval.py -v
+```
+
+**Requirements:** 12 unit tests run without external deps. 4 integration tests require Neon (with ingested CUAD data) + Ollama running.
+
+Tests cover:
+- `TestLegalRetrievalUnit` (12 tests) — entity type mapping from CUAD questions, normalization logic, relationship type resolution, builder config validation
+- `TestLegalRetrievalIntegration` (4 tests, skipped without live services):
+  - `test_kg_entity_search` — search `kg_entities` for known CUAD party names
+  - `test_kg_relationship_query` — verify `kg_relationships` links party to contract
+  - `test_agent_kg_tool` — agent calls `search_knowledge_graph` for a legal question
+  - `test_hybrid_rag_kg` — combined RAG + KG retrieval on a contract clause query
+
 ---
 
 ## Test Categories
 
 ### Unit Tests (Fast, No External Dependencies)
 ```bash
-python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py -v
+python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py \
+    rag/tests/test_pg_graph_store.py rag/tests/test_age_graph_store.py \
+    rag/tests/test_legal_retrieval.py -v -k "not Integration"
 ```
 
-These tests run quickly (~1 second) and don't require any external services.
+These tests run quickly and don't require any external services. Includes the 40 PgGraphStore tests, 23 AgeGraphStore unit tests, and 12 legal retrieval unit tests.
 
 ### Integration Tests (Require Database)
 ```bash
-# PostgreSQL tests
+# PostgreSQL/vector store tests
 python -m pytest rag/tests/test_postgres_store.py -v
+
+# AGE graph store integration (requires AGE_DATABASE_URL)
+python -m pytest rag/tests/test_age_graph_store.py -v -k "Integration"
+
+# Legal retrieval integration (requires Neon + Ollama)
+python -m pytest rag/tests/test_legal_retrieval.py -v -k "Integration"
 ```
 
 ### End-to-End Tests (Require Database + LLM)
@@ -283,6 +341,22 @@ python -m pytest rag/tests/test_rag_agent.py rag/tests/test_agent_flow.py -v
 These require:
 1. PostgreSQL/Neon with pgvector and ingested data
 2. Ollama running with llama3.2:3b and nomic-embed-text models
+
+### Knowledge Graph Tests (All Backends)
+```bash
+# PgGraphStore — no deps
+python -m pytest rag/tests/test_pg_graph_store.py -v
+
+# AgeGraphStore — unit tests only
+python -m pytest rag/tests/test_age_graph_store.py -v -k "not Integration"
+
+# AgeGraphStore — with live AGE instance
+AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
+    python -m pytest rag/tests/test_age_graph_store.py -v
+
+# Legal retrieval
+python -m pytest rag/tests/test_legal_retrieval.py -v
+```
 
 #### Retrieval Metrics Tests
 ```bash
@@ -508,6 +582,15 @@ python -m pytest rag/tests/test_agent_flow.py -v -s
 # Mem0 memory store tests
 python -m pytest rag/tests/test_mem0_store.py -v
 
+# Knowledge graph — PgGraphStore (no deps, all unit)
+python -m pytest rag/tests/test_pg_graph_store.py -v
+
+# Knowledge graph — AgeGraphStore (unit only, skip integration)
+python -m pytest rag/tests/test_age_graph_store.py -v -k "not Integration"
+
+# Legal retrieval
+python -m pytest rag/tests/test_legal_retrieval.py -v
+
 # Everything
 python -m pytest rag/tests/ -v
 ```
@@ -516,16 +599,24 @@ python -m pytest rag/tests/ -v
 
 ## Expected Test Counts
 
-| Test File | Expected Passed |
-|-----------|-----------------|
-| test_config.py | 13 |
-| test_ingestion.py | 14 |
-| test_postgres_store.py | 18 |
-| test_rag_agent.py | 25+ |
-| test_retrieval_metrics.py | 28 (19 unit + 9 integration) |
-| test_agent_flow.py | 3 |
-| test_pdf_question_generator.py | 23 |
-| test_mem0_store.py | 15+ (integration tests require MEM0_ENABLED=true) |
-| test_raganything.py | 10+ (if raganything installed) |
+| Test File | Expected Passed | Skipped | Notes |
+|-----------|-----------------|---------|-------|
+| `test_config.py` | 13 | 0 | |
+| `test_ingestion.py` | 14 | 0 | |
+| `test_postgres_store.py` | 18 | 0 | Requires PostgreSQL/Neon |
+| `test_rag_agent.py` | 25+ | 0 | Requires PostgreSQL + Ollama |
+| `test_retrieval_metrics.py` | 28 | 0 | 19 unit + 9 integration |
+| `test_agent_flow.py` | 3 | 0 | Requires PostgreSQL + Ollama |
+| `test_pdf_question_generator.py` | 23 | 0 | Requires PostgreSQL + Ollama |
+| `test_mem0_store.py` | 15+ | varies | Integration tests require `MEM0_ENABLED=true` |
+| `test_raganything.py` | 10+ | 0 | Requires raganything + lightrag installed |
+| `test_pg_graph_store.py` | 40 | 0 | All unit, no external deps |
+| `test_age_graph_store.py` | 23 unit + 1 integration | 1 (unless `AGE_DATABASE_URL` set) | |
+| `test_legal_retrieval.py` | 16 | 4 (unless Neon + Ollama live) | 12 unit always pass |
 
-**Total with PostgreSQL setup:** ~123+ tests
+**Current totals (full suite, live services):** 297 passed, 12 skipped, 0 failed
+
+The 12 skipped tests are all integration tests that require live services not always available:
+- Mem0 integration tests (require `MEM0_ENABLED=true`)
+- AGE graph integration test (requires `AGE_DATABASE_URL`)
+- Legal retrieval integration tests (require Neon + Ollama)
