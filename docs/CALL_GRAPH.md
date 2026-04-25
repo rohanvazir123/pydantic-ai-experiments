@@ -26,41 +26,41 @@ rag/main.py:main()                                                L100
   ├── validate_config()                                           L46
   │     └── load_settings()
   └── run_ingestion_pipeline()                                    L633
-        └── DocumentIngestionPipeline                             L135
-              ├── __init__(config, documents_folder, clean)       L138
+        └── DocumentIngestionPipeline                             L136
+              ├── __init__(config, documents_folder, clean)       L136
               │     ├── load_settings()
-              │     ├── create_chunker()                          L302
-              │     ├── create_embedder()                         L308
-              │     └── PostgresHybridStore()                     L119
-              ├── initialize()                                     L173
-              │     └── store.initialize()                        L125
+              │     ├── create_chunker()
+              │     ├── create_embedder()
+              │     └── PostgresHybridStore()
+              ├── initialize()
+              │     └── store.initialize()
               │           ├── asyncpg.create_pool(DATABASE_URL)
               │           ├── CREATE EXTENSION IF NOT EXISTS vector
               │           ├── CREATE TABLE documents
               │           ├── CREATE TABLE chunks (embedding vector(768))
               │           └── CREATE INDEX (IVFFlat, GIN, B-tree)
-              ├── ingest_documents(progress_callback)              L470
-              │     ├── store.clean_collections()                  L502
-              │     ├── _find_document_files()                     L189
+              ├── ingest_documents(progress_callback)              L479
+              │     ├── store.clean_collections()
+              │     ├── _find_document_files()
               │     └── [for each file]:
-              │           _ingest_single_document(file_path)       L404
-              │             ├── _read_document(file_path)          L230
+              │           _ingest_single_document(file_path)       L413
+              │             ├── _read_document(file_path)
               │             │     ├── [PDF/DOCX] Docling DocumentConverter
-              │             │     ├── [Audio]    _transcribe_audio()  L299
+              │             │     ├── [Audio]    _transcribe_audio()
               │             │     └── [MD/TXT]   direct file read
-              │             ├── _extract_title()                   L347
-              │             ├── _extract_document_metadata()       L373
-              │             │     └── _compute_file_hash()         L357
-              │             ├── chunker.chunk_document()           L142
+              │             ├── _extract_title()
+              │             ├── _extract_document_metadata()
+              │             │     └── _compute_file_hash()
+              │             ├── chunker.chunk_document()
               │             │     ├── Docling HybridChunker
-              │             │     └── _simple_fallback_chunk()     L228
-              │             ├── embedder.embed_chunks(chunks)      L204
-              │             │     └── generate_embeddings_batch()  L181
-              │             │           └── _cached_embed()        L117
-              │             ├── store.save_document(...)           L467
-              │             └── store.add(chunks, document_id)     L214
-              └── close()                                          L182
-                    └── store.close()                              L206
+              │             │     └── _simple_fallback_chunk()
+              │             ├── embedder.embed_chunks(chunks)
+              │             │     └── generate_embeddings_batch()
+              │             │           └── _cached_embed()
+              │             ├── store.save_document(...)
+              │             └── store.add(chunks, document_id)
+              └── close()
+                    └── store.close()
 ```
 
 **Key files**:
@@ -68,11 +68,11 @@ rag/main.py:main()                                                L100
 | File | Symbol | Line |
 |------|--------|------|
 | [`rag/main.py`](../rag/main.py#L100) | `main()` | L100 |
-| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L135) | `DocumentIngestionPipeline` | L135 |
-| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L470) | `ingest_documents()` | L470 |
-| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L404) | `_ingest_single_document()` | L404 |
-| [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py#L108) | `DoclingHybridChunker` | L108 |
-| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L132) | `EmbeddingGenerator` | L132 |
+| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L136) | `DocumentIngestionPipeline` | L136 |
+| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L479) | `ingest_documents()` | L479 |
+| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L413) | `_ingest_single_document()` | L413 |
+| [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py) | `DoclingHybridChunker` | |
+| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L135) | `EmbeddingGenerator` | L135 |
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
 
 ---
@@ -130,8 +130,8 @@ Retriever.retrieve_as_context(query, match_count, search_type)    L334
 
 | Cache | File | Line | Key | TTL | Size |
 |-------|------|------|-----|-----|------|
-| Embedding cache (`async_lru`) | [`embedder.py`](../rag/ingestion/embedder.py#L117) | L117 | `(text, model)` | None | 1000 |
-| Result cache (`ResultCache`) | [`retriever.py`](../rag/retrieval/retriever.py#L126) | L126 | `(query, type, count)` | 5 min | 100 |
+| Embedding cache (`async_lru`) | [`embedder.py`](../rag/ingestion/embedder.py) | | `(text, model)` | None | 1000 |
+| Result cache (`ResultCache`) | [`retriever.py`](../rag/retrieval/retriever.py#L96) | L96 | `(query, type, count)` | 5 min | 100 |
 
 ---
 
@@ -147,50 +147,46 @@ agent_main.py:stream_agent_interaction()                          L75
         └── agent.iter(query, deps=deps, message_history=...)
               └── [async for node in run]
                     ├── UserPromptNode
-                    │     └── _debug_print()                       L69
                     ├── ModelRequestNode  (LLM decides)
-                    │   └── _handle_model_request_node(node, ctx)
-                    │         └── node.stream() yields:
-                    │               PartStartEvent / PartDeltaEvent / FinalResultEvent
+                    │   └── node.stream() yields:
+                    │         PartStartEvent / PartDeltaEvent / FinalResultEvent
                     ├── CallToolsNode  (tool execution)
-                    │   └── _handle_tool_call_node(node, ctx)
-                    │         └── node.stream() yields:
-                    │               FunctionToolCallEvent
-                    │                 → search_knowledge_base(ctx, query, ...)  L225
-                    │                     ├── RAGState.get_retriever()           L194
-                    │                     │     └── PostgresHybridStore.initialize()  L125
-                    │                     ├── retriever.retrieve_as_context()    L299
-                    │                     │     └── [see Query & Retrieval]
-                    │                     ├── mem0_store.get_context_string()    L207
-                    │                     └── return combined_context
-                    │               FunctionToolResultEvent
+                    │   └── node.stream() yields:
+                    │         FunctionToolCallEvent
+                    │           → search_knowledge_base(ctx, query, ...)  L244
+                    │               ├── RAGState.get_retriever()           L201
+                    │               │     └── PostgresHybridStore.initialize()
+                    │               ├── retriever.retrieve_as_context()    L334
+                    │               │     └── [see Query & Retrieval]
+                    │               ├── mem0_store.get_context_string()
+                    │               └── return combined_context
+                    │         FunctionToolResultEvent
                     ├── ModelRequestNode  (LLM final answer)
                     └── EndNode
 
-RAGState lazy init (first get_retriever() call):                   L194
-  ├── PostgresHybridStore().initialize()                           L125
+RAGState lazy init (first get_retriever() call):                   L201
+  ├── PostgresHybridStore().initialize()
   ├── EmbeddingGenerator()                                         L135
-  ├── Retriever(store, embedder)                                   L214
-  └── Mem0Store()  (if mem0_enabled)                               L101
+  ├── Retriever(store, embedder)                                   L181
+  └── Mem0Store()  (if mem0_enabled)
 ```
 
 **Key files**:
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L225) | `search_knowledge_base()` tool | L225 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L171) | `RAGState` | L171 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L194) | `RAGState.get_retriever()` | L194 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L357) | `traced_agent_run()` | L357 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L244) | `search_knowledge_base()` tool | L244 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L176) | `RAGState` | L176 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L201) | `RAGState.get_retriever()` | L201 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L437) | `traced_agent_run()` | L437 |
 | [`rag/agent/agent_main.py`](../rag/agent/agent_main.py#L75) | `stream_agent_interaction()` | L75 |
-| [`rag/agent/agent_main.py`](../rag/agent/agent_main.py#L58) | `set_verbose_debug()` | L58 |
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
-| [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L126) | `PostgresHybridStore.initialize()` | L126 |
-| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L132) | `EmbeddingGenerator` | L132 |
+| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L135) | `EmbeddingGenerator` | L135 |
 | [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L181) | `Retriever` | L181 |
+| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L234) | `Retriever.retrieve()` | L234 |
 | [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L334) | `Retriever.retrieve_as_context()` | L334 |
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L93) | `Mem0Store` | L93 |
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L196) | `Mem0Store.get_context_string()` | L196 |
+| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L96) | `ResultCache` | L96 |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L94) | `Mem0Store` | L94 |
 
 ---
 
@@ -227,10 +223,10 @@ Get Context (called by agent tool at L225):
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L93) | `Mem0Store` | L93 |
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L101) | `__init__()` | L101 |
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L112) | `_parse_database_url()` | L112 |
-| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L146) | `_get_memory()` | L146 |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L94) | `Mem0Store` | L94 |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py) | `__init__()` | |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py) | `_parse_database_url()` | |
+| [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py) | `_get_memory()` | |
 
 ---
 
@@ -367,16 +363,16 @@ Page rerun lifecycle:
 Streamlit UI (streamlit_mem0_app.py)
     │
     ▼
-PydanticAI Agent  rag/agent/rag_agent.py:L171
+PydanticAI Agent  rag/agent/rag_agent.py:L176
     │
     ├──────────────────────────────────┐
     ▼                                  ▼
-search_knowledge_base()  L225     Mem0Store  L93
+search_knowledge_base()  L244     Mem0Store  L94
     │                                  │
     ▼                                  │
-Retriever  L211                        │
+Retriever  L181                        │
     │                                  │
-    ├── EmbeddingGenerator  L132       │
+    ├── EmbeddingGenerator  L135       │
     │                                  │
     ▼                                  ▼
 PostgresHybridStore  L116 ←───────────┘
@@ -396,6 +392,6 @@ PDF Question Generator  (separate workflow)
           └── PostgreSQL (pdf_documents, pdf_questions, pdf_chunks)
 
 Ingestion CLI  rag/main.py:L100
-  └── DocumentIngestionPipeline  L135
+  └── DocumentIngestionPipeline  L136
         └── PostgresHybridStore  L116
 ```

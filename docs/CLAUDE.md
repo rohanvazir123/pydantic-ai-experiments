@@ -62,6 +62,7 @@ rag/
 │   └── settings.py              # Pydantic Settings configuration
 ├── ingestion/
 │   ├── pipeline.py               # Document ingestion pipeline
+│   ├── cuad_ingestion.py         # CUAD dataset ingestion (510 legal contracts)
 │   ├── embedder.py               # Embedding generation (OpenAI-compatible)
 │   ├── models.py                 # Data models (ChunkData, SearchResult, etc.)
 │   └── chunkers/
@@ -74,6 +75,10 @@ rag/
 ├── agent/
 │   ├── rag_agent.py              # Pydantic AI agent (search_knowledge_base + search_knowledge_graph tools)
 │   └── prompts.py                # System prompts
+├── api/
+│   └── app.py                    # FastAPI REST API (GET /health, POST /v1/chat, /v1/chat/stream, /v1/ingest)
+├── mcp/
+│   └── server.py                 # MCP server (FastMCP, stdio transport)
 ├── knowledge_graph/
 │   ├── __init__.py               # create_kg_store() factory (reads KG_BACKEND env var)
 │   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (Neon)
@@ -81,12 +86,18 @@ rag/
 │   └── cuad_kg_builder.py        # CuadKgBuilder: CUAD annotations → graph (509 contracts)
 ├── memory/
 │   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
+├── legal/
+│   └── __init__.py               # Legal document ingestion and evaluation utilities
 ├── documents/                    # Sample documents for ingestion
+│   └── legal/                    # CUAD contract Markdown files (git-ignored)
 ├── tests/                        # Test suite
-│   ├── test_config.py            # Configuration tests
-│   ├── test_ingestion.py         # Ingestion model tests
-│   ├── test_postgres_store.py    # PostgreSQL connection & index tests
-│   ├── test_rag_agent.py         # RAG agent integration tests
+│   ├── test_config.py            # Configuration tests (13, no deps)
+│   ├── test_ingestion.py         # Ingestion model tests (14, no deps)
+│   ├── test_postgres_store.py    # PostgreSQL connection & index tests (18)
+│   ├── test_rag_agent.py         # RAG agent integration tests (25+)
+│   ├── test_api.py               # FastAPI REST API tests (14, all mocked)
+│   ├── test_mcp_server.py        # MCP server tests (21, all mocked)
+│   ├── test_cuad_ingestion.py    # CUAD ingestion unit tests (34, all mocked)
 │   ├── test_pg_graph_store.py    # PgGraphStore unit tests (40, no external deps)
 │   ├── test_age_graph_store.py   # AgeGraphStore unit + 1 integration test (24 total)
 │   └── test_legal_retrieval.py   # Legal retrieval tests (16; 4 integration)
@@ -201,6 +212,12 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short 
 | `test_ingestion.py` | Data models, chunking config validation | None |
 | `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL/Neon |
 | `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
+| `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
+| `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
+| `test_cuad_ingestion.py` | CUAD parsing, file extraction, eval pairs, pipeline | None (mocked) |
+| `test_pg_graph_store.py` | PgGraphStore entity/relationship CRUD, search | None (all unit) |
+| `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
+| `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus | Neon + Ollama (4 integration) |
 
 ### Sample Test Queries (from test_rag_agent.py)
 

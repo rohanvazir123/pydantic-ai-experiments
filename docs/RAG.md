@@ -1650,6 +1650,8 @@ async def multi_vector_search(
 
 ## 10. Knowledge Graph RAG with Graphiti
 
+> **Note**: This section documents an exploratory Graphiti-based approach. The production knowledge graph implementation uses `PgGraphStore` (PostgreSQL tables `kg_entities` / `kg_relationships`) and `AgeGraphStore` (Apache AGE / Cypher). See `docs/ARCHITECTURE_SUMMARY.md §7` for the live implementation. `rag/knowledge_graph/graphiti_store.py` is retained as an alternative backend.
+
 ### Overview
 
 [Graphiti](https://github.com/getzep/graphiti) is a Python framework by Zep AI for building temporally-aware knowledge graphs designed for AI agents. Unlike traditional RAG which retrieves chunks of text, Knowledge Graph RAG (GraphRAG) retrieves structured facts and relationships between entities.

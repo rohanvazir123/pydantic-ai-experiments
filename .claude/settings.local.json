@@ -43,5 +43,9 @@
       "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m pytest rag/tests/test_age_graph_store.py -v -r s)",
       "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "postgresql"
+  ],
+  "enableAllProjectMcpServers": true
 }

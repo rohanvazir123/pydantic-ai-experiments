@@ -50,6 +50,9 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_pg_graph_store.py` | 40 | None (all unit) | PgGraphStore SQL tables, entity/relationship CRUD, search |
 | `test_age_graph_store.py` | 24 | None (unit) / AGE (integration) | AgeGraphStore Cypher ops; 1 integration test skipped unless `AGE_DATABASE_URL` set |
 | `test_legal_retrieval.py` | 16 | Neon + Ollama (4 integration) | Legal contract retrieval quality; 4 integration tests require live services |
+| `test_api.py` | 14 | None (all mocked) | FastAPI REST API endpoint tests (chat, stream, ingest, health) |
+| `test_mcp_server.py` | 21 | None (all mocked) | MCP server tool tests (search, retrieve, ingest, health) |
+| `test_cuad_ingestion.py` | 34 | None (all mocked/unit) | CUAD dataset ingestion — parsing, file extraction, eval pairs, pipeline wiring |
 
 ---
 
@@ -308,6 +311,50 @@ Tests cover:
   - `test_agent_kg_tool` — agent calls `search_knowledge_graph` for a legal question
   - `test_hybrid_rag_kg` — combined RAG + KG retrieval on a contract clause query
 
+#### REST API Tests
+```bash
+python -m pytest rag/tests/test_api.py -v
+```
+
+**Requirements:** None — all external dependencies (DB, LLM, ingestion pipeline) are mocked.
+
+Tests cover (`TestChatEndpoint`, `TestChatStreamEndpoint`, `TestIngestEndpoint`, `TestHealthEndpoint`):
+- `test_chat_returns_answer` — POST /v1/chat returns answer from `traced_agent_run`
+- `test_chat_propagates_user_id` / `test_chat_propagates_session_id` — optional fields forwarded
+- `test_chat_error_handling` — 500 response on agent failure
+- `test_chat_stream_*` — POST /v1/chat/stream returns SSE tokens, handles errors
+- `test_ingest_*` — POST /v1/ingest triggers pipeline, returns stats, handles validation
+- `test_health_*` — GET /health checks DB + embedding + LLM connectivity
+
+#### MCP Server Tests
+```bash
+python -m pytest rag/tests/test_mcp_server.py -v
+```
+
+**Requirements:** None — all external dependencies are mocked.
+
+Tests cover (`TestSearch`, `TestRetrieve`, `TestIngest`, `TestHealth`):
+- `TestSearch` — `search()` tool: calls `traced_agent_run`, propagates `user_id`/`session_id`, handles errors
+- `TestRetrieve` — `retrieve()` tool: calls `retrieve_as_context`, passes `match_count`/`search_type`, error recovery
+- `TestIngest` — `ingest()` tool: calls ingestion pipeline, optional params, handles failures
+- `TestHealth` — `health()` tool: connectivity checks for DB, embedding API, LLM
+
+#### CUAD Ingestion Tests
+```bash
+python -m pytest rag/tests/test_cuad_ingestion.py -v
+```
+
+**Requirements:** None — filesystem I/O uses `tmp_path`; pipeline is mocked.
+
+Tests cover (`TestExtractQuestionType`, `TestExtractContractType`, `TestSafeFilename`, `TestLoadCuad`, `TestWriteContractFiles`, `TestSaveEvalPairs`, `TestRunIngestion`):
+- `TestExtractQuestionType` — maps CUAD question strings to entity type labels
+- `TestExtractContractType` — extracts contract type from CUAD title strings
+- `TestSafeFilename` — path sanitization for contract filenames
+- `TestLoadCuad` — parses CUAD JSON, validates `CuadContract` / `CuadQA` dataclasses
+- `TestWriteContractFiles` — writes 510 contract Markdown files to `rag/documents/legal/`
+- `TestSaveEvalPairs` — saves Q&A evaluation pairs to `rag/legal/cuad_eval.json`
+- `TestRunIngestion` — full pipeline mock: load → write → ingest with `--limit`, `--dry-run`, `--no-clean`
+
 ---
 
 ## Test Categories
@@ -316,10 +363,12 @@ Tests cover:
 ```bash
 python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py \
     rag/tests/test_pg_graph_store.py rag/tests/test_age_graph_store.py \
-    rag/tests/test_legal_retrieval.py -v -k "not Integration"
+    rag/tests/test_legal_retrieval.py rag/tests/test_api.py \
+    rag/tests/test_mcp_server.py rag/tests/test_cuad_ingestion.py \
+    -v -k "not Integration"
 ```
 
-These tests run quickly and don't require any external services. Includes the 40 PgGraphStore tests, 23 AgeGraphStore unit tests, and 12 legal retrieval unit tests.
+These tests run quickly and don't require any external services. Includes the 40 PgGraphStore tests, 23 AgeGraphStore unit tests, 12 legal retrieval unit tests, 14 REST API tests, 21 MCP server tests, and 34 CUAD ingestion tests.
 
 ### Integration Tests (Require Database)
 ```bash
@@ -591,6 +640,15 @@ python -m pytest rag/tests/test_age_graph_store.py -v -k "not Integration"
 # Legal retrieval
 python -m pytest rag/tests/test_legal_retrieval.py -v
 
+# REST API (all mocked, no external deps)
+python -m pytest rag/tests/test_api.py -v
+
+# MCP server (all mocked, no external deps)
+python -m pytest rag/tests/test_mcp_server.py -v
+
+# CUAD ingestion (all mocked, no external deps)
+python -m pytest rag/tests/test_cuad_ingestion.py -v
+
 # Everything
 python -m pytest rag/tests/ -v
 ```
@@ -613,8 +671,11 @@ python -m pytest rag/tests/ -v
 | `test_pg_graph_store.py` | 40 | 0 | All unit, no external deps |
 | `test_age_graph_store.py` | 23 unit + 1 integration | 1 (unless `AGE_DATABASE_URL` set) | |
 | `test_legal_retrieval.py` | 16 | 4 (unless Neon + Ollama live) | 12 unit always pass |
+| `test_api.py` | 14 | 0 | All unit/mocked, no external deps |
+| `test_mcp_server.py` | 21 | 0 | All unit/mocked, no external deps |
+| `test_cuad_ingestion.py` | 34 | 0 | All unit/mocked, no external deps |
 
-**Current totals (full suite, live services):** 297 passed, 12 skipped, 0 failed
+**Current totals (full suite, live services):** ~366 passed, 12 skipped, 0 failed
 
 The 12 skipped tests are all integration tests that require live services not always available:
 - Mem0 integration tests (require `MEM0_ENABLED=true`)

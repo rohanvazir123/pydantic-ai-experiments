@@ -1,9 +1,11 @@
 # RAG Module - Code Review Report
 
+> **Historical snapshot — December 16, 2025.** This review covers the initial scaffold (~198 LOC). The codebase has grown substantially since then: the ingestion pipeline, retrieval stack, Pydantic AI agent, knowledge graph (PostgreSQL + Apache AGE), Mem0 memory layer, REST API, MCP server, CUAD legal ingestion, and a comprehensive test suite have all been added. For the current architecture see `docs/ARCHITECTURE_SUMMARY.md`.
+
 **Review Date:** December 16, 2025
 **Module Path:** `/rag`
-**Total Lines of Code:** ~198 lines (excluding empty `__init__.py` files)
-**Status:** Functional with areas for improvement
+**Total Lines of Code:** ~198 lines (excluding empty `__init__.py` files) — initial scaffold only
+**Status:** Functional with areas for improvement (since resolved — see current docs)
 
 ---
 

@@ -16,11 +16,13 @@ One-stop reference for the entire RAG system. Read this first; dive into the oth
 - [8. Mem0 Memory Layer](#8-mem0-memory-layer)
 - [9. Langfuse Observability](#9-langfuse-observability)
 - [10. Streamlit Apps](#10-streamlit-apps)
-- [11. MCP Server](#11-mcp-server)
-- [12. Configuration (.env Quick Reference)](#12-configuration-env-quick-reference)
-- [13. Key File Map](#13-key-file-map)
-- [14. How to Run](#14-how-to-run)
-- [15. Further Reading](#15-further-reading)
+- [11. REST API](#11-rest-api)
+- [12. MCP Server](#12-mcp-server)
+- [13. CUAD Legal Contract Ingestion](#13-cuad-legal-contract-ingestion)
+- [14. Configuration (.env Quick Reference)](#14-configuration-env-quick-reference)
+- [15. Key File Map](#15-key-file-map)
+- [16. How to Run](#16-how-to-run)
+- [17. Further Reading](#17-further-reading)
 
 ---
 
@@ -412,7 +414,26 @@ Two interchangeable backends, selected by `KG_BACKEND` env var:
 
 ---
 
-## 11. MCP Server
+## 11. REST API
+
+**Key file**: `rag/api/app.py` (FastAPI)
+
+**Run**: `uvicorn rag.api.app:app --host 0.0.0.0 --port 8000 --reload`
+
+**Design principle**: thin transport layer — delegates everything to the same `traced_agent_run`, `create_pipeline`, and `PostgresHybridStore` as the MCP server.
+
+| Endpoint | Method | What it does |
+|----------|--------|-------------|
+| `/health` | GET | Checks DB + embedding API + LLM API connectivity |
+| `/v1/chat` | POST | Non-streaming query via `traced_agent_run` → JSON `{answer}` |
+| `/v1/chat/stream` | POST | Streaming query → SSE token stream |
+| `/v1/ingest` | POST | Triggers ingestion pipeline, returns `{documents_processed, chunks_created}` |
+
+Interactive docs: `http://localhost:8000/docs`
+
+---
+
+## 12. MCP Server
 
 **Key file**: `rag/mcp/server.py`
 
@@ -475,7 +496,47 @@ Claude Code — `.mcp.json` in the project root:
 
 ---
 
-## 12. Configuration (`.env` Quick Reference)
+## 13. CUAD Legal Contract Ingestion
+
+**Key file**: `rag/ingestion/cuad_ingestion.py`
+
+A standalone ingestion script for the [CUAD dataset](https://huggingface.co/datasets/theatticusproject/cuad) (Contract Understanding Atticus Dataset):
+
+- **510 commercial contracts** (NDAs, MSAs, distribution, co-branding, …) with 41 expert-annotated question types each
+- **20,910 total Q&A pairs** — 6,702 answered, 14,208 not applicable
+- Writes contracts as Markdown files into `rag/documents/legal/`
+- Saves evaluation Q&A pairs to `rag/legal/cuad_eval.json`
+- Feeds contracts through the existing `DocumentIngestionPipeline` so all are chunked, embedded, and stored in PostgreSQL
+
+**Usage**:
+```bash
+# Dry run — extract files + eval pairs, no DB ingestion
+python -m rag.ingestion.cuad_ingestion --dry-run
+
+# Test run — ingest first 10 contracts
+python -m rag.ingestion.cuad_ingestion --limit 10
+
+# Full run — all 510 contracts
+python -m rag.ingestion.cuad_ingestion
+
+# Incremental — skip already-ingested contracts
+python -m rag.ingestion.cuad_ingestion --no-clean
+```
+
+**Download CUAD dataset**:
+```python
+from huggingface_hub import hf_hub_download
+hf_hub_download(
+    repo_id="theatticusproject/cuad",
+    filename="CUAD_v1/CUAD_v1.json",
+    repo_type="dataset",
+    local_dir="C:/hf/cuad",
+)
+```
+
+---
+
+## 14. Configuration (`.env` Quick Reference)
 
 ```bash
 # Database
@@ -521,7 +582,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 13. Key File Map
+## 15. Key File Map
 
 | Purpose | File |
 |---------|------|
@@ -544,6 +605,8 @@ LANGFUSE_SECRET_KEY=
 | KG store — Apache AGE backend | `rag/knowledge_graph/age_graph_store.py` |
 | KG builder (CUAD annotations) | `rag/knowledge_graph/cuad_kg_builder.py` |
 | KG store factory | `rag/knowledge_graph/__init__.py` |
+| CUAD dataset ingestion | `rag/ingestion/cuad_ingestion.py` |
+| Legal document utilities | `rag/legal/__init__.py` |
 | Apache AGE Docker container | `docker-compose.yml` |
 | Streamlit (memory chat) | `streamlit_mem0_app.py` |
 | Streamlit (RAG chat) | `rag/agent/streamlit_app.py` |
@@ -552,7 +615,7 @@ LANGFUSE_SECRET_KEY=
 
 ---
 
-## 14. How to Run
+## 16. How to Run
 
 ```bash
 # 1. Install
@@ -581,22 +644,29 @@ uvicorn rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 # 9. Run MCP server (normally launched automatically by Claude Desktop/Code)
 python -m rag.mcp.server
 
-# 10. Build knowledge graph (CUAD legal contracts, requires ingested docs)
+# 10. Ingest CUAD legal contracts (requires CUAD_v1.json downloaded)
+python -m rag.ingestion.cuad_ingestion --limit 10   # test with 10 contracts
+python -m rag.ingestion.cuad_ingestion               # all 510 contracts
+
+# 11. Build knowledge graph (CUAD legal contracts, requires ingested docs)
 python -m rag.knowledge_graph.cuad_kg_builder
 
-# 11. Start Apache AGE (alternative KG backend)
+# 12. Start Apache AGE (alternative KG backend)
 docker-compose up -d
 
-# 12. Run tests
+# 13. Run REST API
+uvicorn rag.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+# 14. Run tests
 python -m pytest rag/tests/ -v
 
-# 13. Lint
+# 15. Lint
 ruff check --fix rag/ && ruff format rag/
 ```
 
 ---
 
-## 15. Further Reading
+## 17. Further Reading
 
 | Doc | What's in it |
 |-----|-------------|
