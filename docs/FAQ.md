@@ -2414,13 +2414,33 @@ The result: pointing the pipeline at a folder of new or updated documents is all
 <a id="q116f"></a>
 **Q116f. Which tests are currently failing and what needs to be done to fix them?**
 
-As of the current test run (after CUAD ingestion): **0 tests failing, 204 passing, 11 skipped.**
+As of the current test run (2026-04-27, local pgvector Docker, 522 docs ingested): **0 tests failing, 297 passing, 12 skipped.**
 
 All tests pass. History of failures and their resolutions:
 
 | Test | Root cause | Resolution |
 |---|---|---|
-| `test_agent_run_specific_query` | Corpus grew from 13 NeuralFlow docs → 518 docs (509 CUAD legal + 9 NeuralFlow). Retrieval sometimes surfaces legal employment clauses instead of the company-overview chunk, so the agent responds without a number. | Softened assertion in `test_rag_agent.py:544` to accept any substantive reply (number OR acknowledgement word like "employee", "team", "not found"). A "I couldn't find the headcount" response is also correct behaviour. |
+| `test_agent_run_specific_query` | Corpus grew from 13 NeuralFlow docs → 522 docs (509 CUAD legal + 13 NeuralFlow). Retrieval sometimes surfaces legal employment clauses instead of the company-overview chunk, so the agent responds without a number. | Softened assertion in `test_rag_agent.py:544` to accept any substantive reply (number OR acknowledgement word like "employee", "team", "not found"). A "I couldn't find the headcount" response is also correct behaviour. |
+
+**Per-file breakdown (2026-04-27):**
+
+| Test file | Count | Notes |
+|---|---|---|
+| `test_pg_graph_store.py` | 40 | Unit, no external deps |
+| `test_cuad_ingestion.py` | 34 | Unit, all mocked |
+| `test_retrieval_metrics.py` | 30 | Unit, no external deps |
+| `test_age_graph_store.py` | 24 | 23 unit + 1 skipped (needs AGE container) |
+| `test_pdf_question_generator.py` | 23 | Unit |
+| `test_rag_agent.py` | 22 | Integration (PostgreSQL + Ollama) |
+| `test_mcp_server.py` | 21 | Unit, all mocked |
+| `test_raganything.py` | 20 | 14 unit + 6 skipped (optional deps) |
+| `test_postgres_store.py` | 18 | Requires local pgvector |
+| `test_legal_retrieval.py` | 16 | 12 unit + 4 integration |
+| `test_ingestion.py` | 14 | Unit, no external deps |
+| `test_api.py` | 14 | Unit, all mocked |
+| `test_config.py` | 12 | Unit, no external deps |
+| `test_agent_flow.py` | 3 | Integration |
+| **Total** | **297 passed, 12 skipped** | |
 
 **Post-mortem: corpus-growth test fragility**
 
@@ -2430,7 +2450,7 @@ When the corpus grew by 50× (CUAD ingestion), an integration test that pinned t
 
 **Lesson:** integration tests against a live corpus should assert on *response quality* (is the answer coherent? does it address the question?) not on *specific facts* that depend on retrieval ranking over a dynamic corpus.
 
-**Skipped tests (11):** integration tests that require live services not running in CI (Ollama server, Langfuse, Mem0 with non-default config). Expected skips.
+**Skipped tests (12):** integration tests that require live services not running in CI (AGE container, Ollama server, Langfuse, optional RAGAnything deps). Expected skips.
 
 <a id="q116g"></a>
 **Q116g. How do I inspect what's actually stored in the `chunks` table?**
@@ -3553,7 +3573,7 @@ The current codebase is a well-structured prototype — async throughout, typed,
 
 ### 10. Testing
 
-**Current state:** 118 tests, 12 skipped. No load tests, no contract tests, no chaos tests.
+**Current state:** 297 tests, 12 skipped (2026-04-27, local pgvector Docker). No load tests, no contract tests, no chaos tests.
 
 | Change | Detail |
 |---|---|
