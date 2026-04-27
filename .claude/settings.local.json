@@ -41,11 +41,24 @@
       "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder --limit 10 --verbose)",
       "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder --limit 20)",
       "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m pytest rag/tests/test_age_graph_store.py -v -r s)",
-      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder)"
+      "Bash(AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph KG_BACKEND=age python -m rag.knowledge_graph.cuad_kg_builder)",
+      "Bash(pip show *)",
+      "PowerShell(pg_ctl reload *)",
+      "Bash(cp ~/Downloads/names.zip \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/coding_fun/misc/datasets/baby_names.zip\")",
+      "Bash(cp ~/Downloads/API_NY.GDP.MKTP.CD_DS2_en_excel_v2_121619.xls \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/coding_fun/misc/datasets/world_bank_gdp/\")",
+      "WebFetch(domain:api.github.com)",
+      "Bash(gh release *)",
+      "PowerShell(Get-PSDrive C | Select-Object @{N='Used_GB';E={[math]::Round\\($_.Used/1GB,1\\)}}, @{N='Free_GB';E={[math]::Round\\($_.Free/1GB,1\\)}}, @{N='Total_GB';E={[math]::Round\\(\\($_.Used+$_.Free\\)/1GB,1\\)}})",
+      "PowerShell($drive = Get-PSDrive C; Write-Host \"Used: $\\([math]::Round\\($drive.Used/1GB,1\\)\\) GB | Free: $\\([math]::Round\\($drive.Free/1GB,1\\)\\) GB | Total: $\\([math]::Round\\(\\($drive.Used+$drive.Free\\)/1GB,1\\)\\) GB\")",
+      "PowerShell($drive = Get-PSDrive C; Write-Host \"Free: $\\([math]::Round\\($drive.Free/1GB,1\\)\\) GB | Used: $\\([math]::Round\\($drive.Used/1GB,1\\)\\) GB\")",
+      "Read(//c/Users/rohan/AppData/Local/Temp/**)",
+      "Read(//c/Users/rohan/AppData/**)",
+      "Bash(conda run *)",
+      "Bash(/c/Users/rohan/anaconda3/envs/pydantic_ai_agents/python.exe *)"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "postgresql"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

@@ -144,7 +144,12 @@ class PostgresHybridStore:
             try:
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-                await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
+                try:
+                    await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
+                except Exception:
+                    # pg_search (ParadeDB) is optional — only needed for bm25_search().
+                    # Standard vector + tsvector search works without it.
+                    pass
             finally:
                 await temp_conn.close()
 
@@ -210,12 +215,17 @@ class PostgresHybridStore:
                     USING GIN(content gin_trgm_ops)
                 """)
 
-                await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS chunks_bm25_idx
-                    ON {self.settings.postgres_table_chunks}
-                    USING bm25 (id, content)
-                    WITH (key_field='id')
-                """)
+                try:
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS chunks_bm25_idx
+                        ON {self.settings.postgres_table_chunks}
+                        USING bm25 (id, content)
+                        WITH (key_field='id')
+                    """)
+                except Exception:
+                    # bm25 access method requires pg_search (ParadeDB).
+                    # Falls back to tsvector full-text search when not available.
+                    pass
 
                 await conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS documents_source_idx

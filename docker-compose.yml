@@ -26,6 +26,25 @@
 version: "3.9"
 
 services:
+  pgvector:
+    image: pgvector/pgvector:pg17
+    container_name: rag_pgvector
+    environment:
+      POSTGRES_DB: rag_db
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_pass
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   age:
     image: apache/age:latest
     container_name: rag_age
@@ -46,5 +65,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  pgvector_data:
+    driver: local
   age_data:
     driver: local

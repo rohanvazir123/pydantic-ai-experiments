@@ -30,7 +30,8 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q17. `ON DELETE CASCADE` — what does it do and why is it critical?](#q17)
 - [Q18. Why UUID primary keys over auto-increment?](#q18)
 - [Q19. `GENERATED ALWAYS AS (...) STORED` — what does this mean?](#q19)
-- [Q19b. How do I install `psql` and connect to the Neon database?](#q19b)
+- [Q19b. How do I install `psql` and connect to PostgreSQL (Neon or local Docker)?](#q19b)
+- [Q19c. How do I move from Neon to a local pgvector Docker container?](#q19c)
 - [Q20. What is a `tsvector` and how does it differ from the original text?](#q20)
 - [Q21. What does stemming do and when can it cause false positives?](#q21)
 - [Q22. Why `plainto_tsquery` instead of `to_tsquery` for user input?](#q22)
@@ -472,7 +473,7 @@ Auto-increment integers are sequential and predictable (an attacker who gets chu
 It is a PostgreSQL *generated column*. The value of `content_tsv` is automatically computed by PostgreSQL as `to_tsvector('english', content)` whenever a row is `INSERT`ed or `UPDATE`d. `STORED` means the computed value is written to disk (not recomputed at query time). You never write to this column manually — PostgreSQL enforces this (`GENERATED ALWAYS` prevents explicit writes). On `UPDATE` to `content`, the column is recalculated automatically.
 
 <a id="q19b"></a>
-**Q19b. How do I install `psql` and connect to the Neon database?**
+**Q19b. How do I install `psql` and connect to PostgreSQL (Neon or local Docker)?**
 
 `psql` is the PostgreSQL command-line client. It is not bundled with Windows — it must be installed separately.
 
@@ -595,6 +596,71 @@ psql "$DATABASE_URL" -c "SELECT name, installed_version FROM pg_available_extens
 # Check table row counts
 psql "$DATABASE_URL" -c "SELECT 'documents' AS tbl, COUNT(*) FROM documents UNION ALL SELECT 'chunks', COUNT(*) FROM chunks;"
 ```
+
+**Connecting to local Docker pgvector (port 5434)**
+
+If you have migrated to the local Docker container (see Q19c), the connection is simpler — no SSL, no pooler:
+
+```bash
+# Interactive session
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db"
+
+# Run a .sql file
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -f "path/to/file.sql"
+```
+
+In DBeaver: New Connection → PostgreSQL → host `localhost`, port `5434`, database `rag_db`, user `rag_user`, password `rag_pass`.
+
+---
+
+<a id="q19c"></a>
+**Q19c. How do I move from Neon to a local pgvector Docker container?**
+
+**Why move?** Neon is a managed cloud database — great for production, but adds network latency and requires credentials. For local development, a Docker container gives faster queries, offline operation, and no cost.
+
+**Why Docker and not local PostgreSQL 18?** pgvector requires a compiled C extension. Pre-built Windows binaries for PostgreSQL 18 are not yet available from the pgvector project. Docker (`pgvector/pgvector:pg17`) ships with the extension pre-installed.
+
+**Steps**
+
+1. The `docker-compose.yml` in the repo root already has the `pgvector` service on port 5434. Start it:
+
+```bash
+docker compose up -d pgvector
+```
+
+2. Enable the vector extension (one-time):
+
+```bash
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+3. Update `.env` — swap `DATABASE_URL` and `DIRECT_DATABASE_URL`:
+
+```bash
+DATABASE_URL=postgresql://rag_user:rag_pass@localhost:5434/rag_db
+DIRECT_DATABASE_URL=postgresql://rag_user:rag_pass@localhost:5434/rag_db
+```
+
+4. Re-run ingestion:
+
+```bash
+python -m rag.main --ingest --documents rag/documents
+```
+
+**What is not available without Neon?**
+
+| Feature | Neon | Local Docker |
+|---------|------|-------------|
+| `vector` (pgvector) | ✅ | ✅ |
+| `pg_trgm` (trigram) | ✅ | ✅ |
+| `pg_search` / BM25 (ParadeDB) | ✅ | ❌ (optional, falls back to `ts_rank`) |
+| Hybrid search (RRF) | ✅ | ✅ |
+| Branching / point-in-time restore | ✅ | ❌ |
+| Serverless scale-to-zero | ✅ | ❌ |
+
+The `pg_search` extension is the only functional difference for the RAG pipeline. The system gracefully skips the BM25 index creation if `pg_search` is absent and falls back to native PostgreSQL `ts_rank` for the text leg of hybrid search.
+
+**To roll back to Neon**, comment back in the Neon URLs in `.env` — they are preserved as comments.
 
 **Alternative: Neon MCP tools**
 
