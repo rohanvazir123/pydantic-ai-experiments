@@ -56,7 +56,18 @@
       "Bash(conda run *)",
       "Bash(/c/Users/rohan/anaconda3/envs/pydantic_ai_agents/python.exe *)",
       "Bash(grep -n \"^### \\\\|^---$\\\\|Q117\\\\|Q116h\\\\|Q116i\" \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md\")",
-      "Bash(grep -n \"^<a id=\\\\\"q118\\\\\"\\\\|^---$\" \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md\")"
+      "Bash(grep -n \"^<a id=\\\\\"q118\\\\\"\\\\|^---$\" \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md\")",
+      "Bash(npx -y @modelcontextprotocol/server-postgres --version)",
+      "Bash(npx -y @modelcontextprotocol/server-postgres \"postgresql://rag_user:rag_pass@localhost:5434/rag_db\")",
+      "Bash(kill %1)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(where npx *)",
+      "Bash(npm --version)",
+      "Bash(npm root *)",
+      "Bash(where node *)",
+      "mcp__postgresql__query"
     ]
   },
   "enableAllProjectMcpServers": true,

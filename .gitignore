@@ -22,6 +22,7 @@ C:/hf/
 **/.ipynb_checkpoints/
 /.env
 coding_fun/**/.env
+.claude/settings.local.json
 venv/
 .git
 \__pycache__/

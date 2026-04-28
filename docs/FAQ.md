@@ -30,8 +30,8 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q17. `ON DELETE CASCADE` — what does it do and why is it critical?](#q17)
 - [Q18. Why UUID primary keys over auto-increment?](#q18)
 - [Q19. `GENERATED ALWAYS AS (...) STORED` — what does this mean?](#q19)
-- [Q19b. How do I install `psql` and connect to PostgreSQL (Neon or local Docker)?](#q19b)
-- [Q19c. How do I move from Neon to a local pgvector Docker container?](#q19c)
+- [Q19b. How do I install `psql` and connect to local PostgreSQL?](#q19b)
+- [Q19c. How is the local PostgreSQL Docker setup configured and what extensions are available?](#q19c)
 - [Q20. What is a `tsvector` and how does it differ from the original text?](#q20)
 - [Q21. What does stemming do and when can it cause false positives?](#q21)
 - [Q22. Why `plainto_tsquery` instead of `to_tsquery` for user input?](#q22)
@@ -192,6 +192,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q135. How does the MCP server handle resource lifecycle (connections, pools)?](#q135)
 - [Q136. How do I test the MCP server locally without Claude Desktop?](#q136)
 - [Q137. What does the MCP server test suite cover and how does it work?](#q137)
+- [Q155. What is the `postgresql` MCP server in `.mcp.json` and how does it differ from `rag/mcp/server.py`?](#q155)
 
 ### REST API
 - [Q123. What HTTP endpoints does the REST API expose?](#q123)
@@ -474,7 +475,7 @@ Auto-increment integers are sequential and predictable (an attacker who gets chu
 It is a PostgreSQL *generated column*. The value of `content_tsv` is automatically computed by PostgreSQL as `to_tsvector('english', content)` whenever a row is `INSERT`ed or `UPDATE`d. `STORED` means the computed value is written to disk (not recomputed at query time). You never write to this column manually — PostgreSQL enforces this (`GENERATED ALWAYS` prevents explicit writes). On `UPDATE` to `content`, the column is recalculated automatically.
 
 <a id="q19b"></a>
-**Q19b. How do I install `psql` and connect to PostgreSQL (Neon or local Docker)?**
+**Q19b. How do I install `psql` and connect to local PostgreSQL?**
 
 `psql` is the PostgreSQL command-line client. It is not bundled with Windows — it must be installed separately.
 
@@ -498,109 +499,7 @@ After installation, add the bin directory to your PATH permanently (run in Power
 ```
 Open a new terminal for the change to take effect. Verify with `psql --version`.
 
-**Connecting to Neon**
-
-Running `psql` with no arguments attempts to connect to a local PostgreSQL server on `localhost:5432` using your OS username. That will fail with `FATAL: password authentication failed` (or a connection refused) because there is no local server — the database lives on Neon.
-
-Always pass the full connection string explicitly:
-
-```bash
-psql "postgresql://<user>:<password>@<host>/neondb?sslmode=require"
-```
-
-Use the `DATABASE_URL` from your `.env` file. To avoid pasting the password in plaintext you can load it in one shot:
-
-```powershell
-# PowerShell — reads DIRECT_DATABASE_URL from .env and connects (no pooler drops)
-psql "$(python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('DIRECT_DATABASE_URL'))")"
-```
-
-Or, once the env var is set as a system variable (see below):
-
-```powershell
-psql $env:DIRECT_DATABASE_URL
-```
-
-The version mismatch warning (`psql 18.x, server 17.x`) is harmless — the client is newer than the server.
-
-**Running a `.sql` file**
-
-From inside the `neondb=>` prompt use `\i` with forward slashes:
-
-```sql
-\i C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/your_file.sql
-```
-
-From outside psql (PowerShell), use the `-f` flag:
-
-```powershell
-psql $env:DATABASE_URL -f "C:\path\to\file.sql"
-```
-
-**Pooler vs direct connection**
-
-Neon provides two connection endpoints:
-
-| | Pooler | Direct |
-|---|---|---|
-| Host | `ep-xxxx-pooler.region.aws.neon.tech` | `ep-xxxx.region.aws.neon.tech` |
-| Use for | App / asyncpg (high concurrency) | `psql`, migrations, DDL |
-| Mode | PgBouncer transaction mode | Native PostgreSQL |
-
-The pooler uses PgBouncer in **transaction mode**, which drops the connection between statements. Running `psql` or multi-statement `.sql` files through it causes `SSL connection has been closed unexpectedly`. Always use the **direct** URL for interactive sessions.
-
-Remove `-pooler` from the host to get the direct URL:
-```
-# Pooler (app use)
-ep-twilight-wildflower-af091b1z-pooler.c-2.us-west-2.aws.neon.tech
-
-# Direct (psql / migrations)
-ep-twilight-wildflower-af091b1z.c-2.us-west-2.aws.neon.tech
-```
-
-You can also switch between them in the Neon console: **Connection Details → Pooled / Direct** dropdown.
-
-**Setting connection URLs as persistent environment variables (Windows)**
-
-Keep two env vars — one for the app (pooler), one for `psql` (direct):
-
-```powershell
-setx DATABASE_URL "postgresql://<user>:<password>@<host>-pooler.region.aws.neon.tech/neondb?sslmode=require"
-setx DIRECT_DATABASE_URL "postgresql://<user>:<password>@<host>.region.aws.neon.tech/neondb?sslmode=require"
-```
-
-Also add both to your `.env` file:
-```bash
-DATABASE_URL=postgresql://<user>:<password>@<host>-pooler.region.aws.neon.tech/neondb?sslmode=require
-DIRECT_DATABASE_URL=postgresql://<user>:<password>@<host>.region.aws.neon.tech/neondb?sslmode=require
-```
-
-After `setx`, open a new terminal for changes to take effect. Then:
-
-```powershell
-# psql interactive session (always use DIRECT)
-psql $env:DIRECT_DATABASE_URL
-
-# Run a .sql file
-psql $env:DIRECT_DATABASE_URL -f "C:\path\to\file.sql"
-```
-
-**Useful one-liners**
-
-```bash
-# Check PostgreSQL version
-psql "$DATABASE_URL" -c "SELECT version();"
-
-# List available extensions
-psql "$DATABASE_URL" -c "SELECT name, installed_version FROM pg_available_extensions WHERE name IN ('vector', 'pg_trgm', 'pg_search');"
-
-# Check table row counts
-psql "$DATABASE_URL" -c "SELECT 'documents' AS tbl, COUNT(*) FROM documents UNION ALL SELECT 'chunks', COUNT(*) FROM chunks;"
-```
-
-**Connecting to local Docker pgvector (port 5434)**
-
-If you have migrated to the local Docker container (see Q19c), the connection is simpler — no SSL, no pooler:
+**Connecting to the local Docker container (port 5434)**
 
 ```bash
 # Interactive session
@@ -612,60 +511,113 @@ psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -f "path/to/file.sql
 
 In DBeaver: New Connection → PostgreSQL → host `localhost`, port `5434`, database `rag_db`, user `rag_user`, password `rag_pass`.
 
+**Running a `.sql` file**
+
+From inside the `rag_db=>` prompt use `\i` with forward slashes:
+
+```sql
+\i /path/to/your_file.sql
+```
+
+From outside psql (PowerShell), use the `-f` flag:
+
+```powershell
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -f "C:\path\to\file.sql"
+```
+
+**Useful one-liners**
+
+```bash
+# Check PostgreSQL version
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT version();"
+
+# List available extensions
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT name, installed_version FROM pg_available_extensions WHERE name IN ('vector', 'pg_trgm', 'pg_search');"
+
+# Check table row counts
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT 'documents' AS tbl, COUNT(*) FROM documents UNION ALL SELECT 'chunks', COUNT(*) FROM chunks;"
+```
+
 ---
 
 <a id="q19c"></a>
-**Q19c. How do I move from Neon to a local pgvector Docker container?**
+**Q19c. How is the local PostgreSQL Docker setup configured and what extensions are available?**
 
-**Why move?** Neon is a managed cloud database — great for production, but adds network latency and requires credentials. For local development, a Docker container gives faster queries, offline operation, and no cost.
+The project uses two Docker containers defined in `docker-compose.yml` at the project root.
 
-**Why Docker and not local PostgreSQL 18?** pgvector requires a compiled C extension. Pre-built Windows binaries for PostgreSQL 18 are not yet available from the pgvector project. Docker (`pgvector/pgvector:pg17`) ships with the extension pre-installed.
+**Container 1 — main RAG database (`pgvector`)**
 
-**Steps**
+| Setting | Value |
+|---------|-------|
+| Image | `pgvector/pgvector:pg17` |
+| Container name | `rag_pgvector` |
+| Host port | `5434` (maps to container port 5432) |
+| Database | `rag_db` |
+| User | `rag_user` |
+| Password | `rag_pass` |
+| Data volume | `pgvector_data` (Docker-managed, persists across restarts) |
 
-1. The `docker-compose.yml` in the repo root already has the `pgvector` service on port 5434. Start it:
+**Container 2 — Apache AGE knowledge graph (`age`)**
+
+| Setting | Value |
+|---------|-------|
+| Image | `apache/age:latest` |
+| Container name | `rag_age` |
+| Host port | `5433` (maps to container port 5432) |
+| Database | `legal_graph` |
+| User | `age_user` |
+| Password | `age_pass` |
+| Data volume | `age_data` (Docker-managed) |
+
+**Starting / stopping**
 
 ```bash
+# Start both containers in background
+docker compose up -d
+
+# Start only the RAG DB (no AGE)
 docker compose up -d pgvector
+
+# Stop containers (data preserved in volumes)
+docker compose down
+
+# Stop and delete all data
+docker compose down -v
 ```
 
-2. Enable the vector extension (one-time):
+**PostgreSQL extensions**
 
-```bash
-psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
+Extensions are enabled automatically by `PostgresHybridStore.initialize()` on first startup. No manual SQL required.
 
-3. Update `.env` — swap `DATABASE_URL` and `DIRECT_DATABASE_URL`:
+| Extension | Container | Status | Purpose |
+|-----------|-----------|--------|---------|
+| `vector` (pgvector) | `pgvector` | Always enabled | Dense vector storage + IVFFlat/HNSW ANN search |
+| `pg_trgm` | `pgvector` | Always enabled | Trigram similarity — fuzzy matching, `LIKE`/`ILIKE` acceleration |
+| `pg_search` (ParadeDB) | `pgvector` | Optional — skipped gracefully if absent | BM25 full-text search via `bm25` index + `@@@` operator |
+| `age` | `age` | Pre-installed in image | openCypher graph queries (`MATCH`, `MERGE`, `CREATE`) |
+
+The `pg_search` extension is the only optional one. If it's not available, the system falls back to native `ts_rank` for the text leg of hybrid search. The `pgvector/pgvector:pg17` image does not include ParadeDB, so BM25 search is not active by default.
+
+**Connection pooling**
+
+`PostgresHybridStore` manages an asyncpg connection pool configured via `settings.py`:
+
+| Setting | Default | Env var override |
+|---------|---------|-----------------|
+| `db_pool_min_size` | 1 | `DB_POOL_MIN_SIZE` |
+| `db_pool_max_size` | 10 | `DB_POOL_MAX_SIZE` |
+
+`register_vector` is passed as the `init` callback so pgvector type codecs are registered once per new connection (not once globally). The pool is created lazily on first use and shared for the lifetime of the `PostgresHybridStore` instance.
+
+**Environment variables (`.env`)**
 
 ```bash
 DATABASE_URL=postgresql://rag_user:rag_pass@localhost:5434/rag_db
-DIRECT_DATABASE_URL=postgresql://rag_user:rag_pass@localhost:5434/rag_db
+
+# AGE (only needed when KG_BACKEND=age)
+KG_BACKEND=pg   # or 'age'
+AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
 ```
-
-4. Re-run ingestion:
-
-```bash
-python -m rag.main --ingest --documents rag/documents
-```
-
-**What is not available without Neon?**
-
-| Feature | Neon | Local Docker |
-|---------|------|-------------|
-| `vector` (pgvector) | ✅ | ✅ |
-| `pg_trgm` (trigram) | ✅ | ✅ |
-| `pg_search` / BM25 (ParadeDB) | ✅ | ❌ (optional, falls back to `ts_rank`) |
-| Hybrid search (RRF) | ✅ | ✅ |
-| Branching / point-in-time restore | ✅ | ❌ |
-| Serverless scale-to-zero | ✅ | ❌ |
-
-The `pg_search` extension is the only functional difference for the RAG pipeline. The system gracefully skips the BM25 index creation if `pg_search` is absent and falls back to native PostgreSQL `ts_rank` for the text leg of hybrid search.
-
-**To roll back to Neon**, comment back in the Neon URLs in `.env` — they are preserved as comments.
-
-**Alternative: Neon MCP tools**
-
-If you are running inside Claude Code, the Neon MCP server is available and can run SQL queries against your project directly without `psql` or any local installation.
 
 ---
 
@@ -1696,20 +1648,18 @@ Cons: schema migration (adding a column) must run against every tenant schema �
 
 ---
 
-**Option 3 — Database/branch per tenant (Neon)**
+**Option 3 — Separate database per tenant**
 
-Each tenant gets their own Neon branch or project. Maximum isolation — one tenant's load cannot affect another's query latency. `DATABASE_URL` is tenant-specific and stored in a tenant registry.
+Each tenant gets their own PostgreSQL database. Maximum isolation — one tenant's load cannot affect another's query latency. `DATABASE_URL` is tenant-specific and stored in a tenant registry.
 
 ```python
 # Tenant registry (e.g. stored in a separate "control plane" DB)
 tenant_db_urls = {
-    "acme":  "postgresql://user:pass@acme.neon.tech/rag",
-    "globex": "postgresql://user:pass@globex.neon.tech/rag",
+    "acme":  "postgresql://rag_user:rag_pass@localhost:5434/acme_rag",
+    "globex": "postgresql://rag_user:rag_pass@localhost:5434/globex_rag",
 }
 store = PostgresHybridStore(database_url=tenant_db_urls[tenant_id])
 ```
-
-Neon's branching is particularly well-suited: create a branch per tenant from a template branch that already has the schema and indexes set up.
 
 Cons: connection pool per tenant (memory cost), cross-tenant analytics require federated queries.
 
@@ -1728,7 +1678,7 @@ Cons: connection pool per tenant (memory cost), cross-tenant analytics require f
 | **Embedding model lock** | None | Store `embedding_model` + `embedding_dimension` per tenant; block re-ingestion with wrong model |
 | **Soft deletes** | None | `deleted_at` column instead of hard DELETE, for audit trail |
 | **Billing hooks** | None | Count chunks/queries per tenant for usage-based billing |
-| **Backup/restore** | None | Per-tenant pg_dump or Neon branch snapshot |
+| **Backup/restore** | None | Per-tenant `pg_dump` |
 | **Zero-downtime re-index** | None | Shadow table swap (Q106) per tenant |
 | **Search result ACL** | None | Document-level permissions within a tenant (not just tenant-level) |
 
@@ -1908,7 +1858,7 @@ The current `clean_collections()` drops all data before re-ingesting — there i
 3. Atomically swap table names (PostgreSQL `ALTER TABLE RENAME` is transactional).
 4. Drop the old tables.
 
-Or use PostgreSQL table inheritance / partitioning with a read view that spans both versions during migration. Neon's branching feature makes this even cleaner — ingest on a branch, then merge.
+Or use PostgreSQL table inheritance / partitioning with a read view that spans both versions during migration.
 
 <a id="q107"></a>
 **Q107. Scanned PDFs with no text layer.**
@@ -1976,7 +1926,7 @@ At 1M documents the system hits three hard limits:
 
 2. **PostgreSQL table scan for text search** — GIN index on `content_tsv` scales well to millions of rows, but the `ts_rank` scoring function re-scores every matched row. At 1M chunks, a broad query like "company policy" may match 100K rows that all need ranking. Fix: limit via metadata filters (tenant_id, date range) before full-text scoring.
 
-3. **Single PostgreSQL instance write throughput** — 1M documents × 20 chunks × 768-dim float32 vectors = ~60GB of vector data. A single Postgres instance hits I/O limits during bulk ingestion. Fix: Neon's branching for parallel ingest on separate branches, then merge; or partition `chunks` by `document_id` hash across multiple Postgres instances.
+3. **Single PostgreSQL instance write throughput** — 1M documents × 20 chunks × 768-dim float32 vectors = ~60GB of vector data. A single Postgres instance hits I/O limits during bulk ingestion. Fix: partition `chunks` by `document_id` hash across multiple Postgres instances, or ingest in parallel into separate temporary tables then merge.
 
 <a id="q112"></a>
 **Q112. What are the ingestion latency bottlenecks and how would you profile them?**
@@ -2259,7 +2209,7 @@ Both `tsvector` and BM25 drop stop words and use stemming — so "PTO" → `'pto
 |---|---|---|---|
 | `tsvector` / `tsquery` (built-in) | **Yes** | Stemming, stop-word removal, lexeme indexing via GIN | General keyword search, already in every PostgreSQL install |
 | `pg_trgm` | **Yes** | Trigram similarity — splits text into 3-char grams, supports fuzzy `%` and `<->` operators | Typo tolerance, fuzzy matching, `LIKE`/`ILIKE` acceleration |
-| `pg_textsearch` (Timescale) | No — not on Neon | BM25 ranking via `bm25` index + `<@>` operator, Block-Max WAND top-k | Better ranking quality than `ts_rank`, faster top-k at scale |
+| `pg_textsearch` (Timescale) | No | BM25 ranking via `bm25` index + `<@>` operator, Block-Max WAND top-k | Better ranking quality than `ts_rank`, faster top-k at scale |
 | `pg_search` (ParadeDB) | **Yes** | BM25 via `bm25` index + `@@@` operator, also supports fuzzy, phrase, boost queries | Full Elasticsearch-like search inside PostgreSQL |
 | `pgvector` | **Yes** | Dense vector storage + IVFFlat/HNSW ANN search | Semantic/embedding-based retrieval |
 
@@ -2366,7 +2316,7 @@ In all cases, the semantic (pgvector) leg remains unchanged — the text search 
 <a id="q116c"></a>
 **Q116c. What indexes currently exist on the `chunks` table?**
 
-The following indexes are active in the Neon database as of the current deployment. Each serves a different search path in the hybrid retrieval pipeline:
+The following indexes are active in the local PostgreSQL database. Each serves a different search path in the hybrid retrieval pipeline:
 
 | Index | Type | Column(s) | Search path |
 |---|---|---|---|
@@ -2456,7 +2406,7 @@ When the corpus grew by 50× (CUAD ingestion), an integration test that pinned t
 <a id="q116g"></a>
 **Q116g. How do I inspect what's actually stored in the `chunks` table?**
 
-Run this in the Neon console (or via `psql`) to see a sample of real rows including the generated tsvector and embedding columns:
+Run this via `psql` to see a sample of real rows including the generated tsvector and embedding columns:
 
 ```sql
 SELECT
@@ -2668,7 +2618,7 @@ conn.execute("ATTACH 'postgresql://postgres:postgres@localhost:5432/postgres' AS
 | rag_db | `FROM rag.main.documents` |
 | local_pg | `FROM local_pg.main.baby_names` |
 
-**Implementation:** `C:\Users\rohan\Documents\deltalake-projects\nlp_sql\nlp_sql_postgres_v1.py`
+**Implementation:** `nlp_sql_postgres_v1.py` (in the `deltalake-projects/nlp_sql` repo)
 
 The script uses:
 - `UnifiedDataSource` — registers GCS views (`httpfs`) and attaches both PostgreSQL databases
@@ -3139,7 +3089,7 @@ Relationships connect entity nodes to their `Contract` node (e.g. `Party --PARTY
 **How it's built — `CuadKgBuilder`:**
 
 ```
-cuad_eval.json          PgGraphStore (Neon)          AgeGraphStore / PgGraphStore
+cuad_eval.json          PgGraphStore (PostgreSQL)    AgeGraphStore / PgGraphStore
      │                        │                               │
      │  for each Q&A pair:    │                               │
      │  - contract_title ─────┼──► look up document UUID      │
@@ -3151,7 +3101,7 @@ cuad_eval.json          PgGraphStore (Neon)          AgeGraphStore / PgGraphStor
 
 1. Read `rag/legal/cuad_eval.json` — 6,702 Q&A pairs across 509 contracts
 2. For each pair with a non-empty answer, map the CUAD question type → entity type using `ENTITY_TYPE_MAP` (35 mappings)
-3. Look up the contract's `document_id` in Neon (documents are always in Neon, regardless of graph backend)
+3. Look up the contract's `document_id` in PostgreSQL (documents are always in the PostgreSQL DB, regardless of graph backend)
 4. Upsert a `Contract` entity + the answer entity, then create the relationship between them
 
 The 41 CUAD question types collapse into 9 entity types:
@@ -3173,7 +3123,7 @@ The 41 CUAD question types collapse into 9 entity types:
 **Building the graph:**
 
 ```bash
-# PostgreSQL tables (default, works on Neon)
+# PostgreSQL tables (default)
 python -m rag.knowledge_graph.cuad_kg_builder
 
 # Apache AGE (requires docker compose up -d)
@@ -3304,7 +3254,7 @@ python -m rag.ingestion.cuad_ingestion
 <a id="q153"></a>
 **Q153. How is the PostgreSQL knowledge graph designed and how does it replace Graphiti/Neo4j?**
 
-Instead of running a separate Neo4j instance with the Graphiti library, the knowledge graph is stored directly in the existing Neon/PostgreSQL database using two new tables.
+Instead of running a separate Neo4j instance with the Graphiti library, the knowledge graph is stored directly in the existing PostgreSQL database using two new tables.
 
 **Schema — two tables alongside `documents` and `chunks`:**
 
@@ -3343,11 +3293,11 @@ CREATE TABLE kg_relationships (
 
 | | Neo4j + Graphiti | PostgreSQL KG |
 |---|---|---|
-| Infrastructure | Separate process / cloud instance | Same Neon DB you already have |
+| Infrastructure | Separate process / cloud instance | Same PostgreSQL DB you already have |
 | Query language | Cypher | SQL + recursive CTEs |
 | Entity extraction | LLM call per document (slow, non-deterministic) | CUAD annotations (instant, deterministic) |
 | Deployment complexity | 2 databases to manage | 0 extra services |
-| Cost | Neo4j AuraDB pricing | Included in existing Neon plan |
+| Cost | Neo4j AuraDB pricing | No additional cost |
 | Graph traversal | Native Cypher `MATCH (a)-[r]->(b)` | SQL JOIN / recursive CTE |
 
 **Entity extraction from CUAD (no LLM needed):**
@@ -3646,7 +3596,7 @@ The current codebase is a well-structured prototype — async throughout, typed,
 | Docker Compose | `app` + `postgres` + `ollama` services for local dev parity |
 | Kubernetes / managed container | Deploy FastAPI app as a `Deployment` with HPA (scale on CPU/request rate); separate `Job` for ingestion |
 | CI/CD pipeline | On merge to main: build image → run tests → push to registry → deploy to staging → smoke test → promote to prod |
-| Environment promotion | `dev` → `staging` → `prod` with separate Neon branches or databases per environment |
+| Environment promotion | `dev` → `staging` → `prod` with separate databases per environment |
 | Graceful shutdown | Handle `SIGTERM`: stop accepting new requests, drain in-flight requests, close asyncpg pool, flush Langfuse |
 
 ---
@@ -4083,7 +4033,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
     "rag": {
       "command": "python",
       "args": ["-m", "rag.mcp.server"],
-      "cwd": "C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments"
+      "cwd": "/path/to/pydantic-ai-experiments"
     }
   }
 }
@@ -4114,7 +4064,7 @@ If your dependencies are in a conda env, point `command` at the env's Python dir
 
 ```json
 {
-  "command": "C:/Users/rohan/miniconda3/envs/pydantic_ai_agents/python.exe",
+  "command": "C:/Users/<user>/miniconda3/envs/pydantic_ai_agents/python.exe",
   "args": ["-m", "rag.mcp.server"]
 }
 ```
@@ -4184,6 +4134,49 @@ All external dependencies are mocked with `unittest.mock.patch` / `AsyncMock` �
 ```bash
 python -m pytest rag/tests/test_mcp_server.py -v
 ```
+
+---
+
+<a id="q155"></a>
+**Q155. What is the `postgresql` MCP server in `.mcp.json` and how does it differ from `rag/mcp/server.py`?**
+
+There are two separate MCP integrations in this project — they serve different purposes and should not be confused.
+
+| | `postgresql` (`.mcp.json`) | `rag/mcp/server.py` |
+|---|---|---|
+| **Package** | `@modelcontextprotocol/server-postgres` (npm) | `FastMCP` (Python) |
+| **Transport** | stdio, launched by Claude Code via `node` | stdio, launched by Claude Desktop / Claude Code via `python -m rag.mcp.server` |
+| **What it exposes** | A single `query` tool — run any read-only SQL against the database | Four semantic tools: `search`, `retrieve`, `ingest`, `health` |
+| **Who uses it** | Developer / Claude Code for direct DB inspection | End-users and agents querying the RAG system |
+| **Auth / safety** | Read-only enforced by the package | No raw SQL exposed; all access goes through the RAG pipeline |
+
+**`.mcp.json` configuration** (project root):
+
+```json
+{
+  "mcpServers": {
+    "postgresql": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://rag_user:rag_pass@localhost:5434/rag_db"
+      ]
+    }
+  }
+}
+```
+
+Claude Code reads `.mcp.json` on startup and spawns the Node.js process automatically. The tool `mcp__postgresql__query` then becomes available in the conversation, allowing SQL queries like:
+
+```sql
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
+SELECT * FROM documents ORDER BY created_at DESC LIMIT 5;
+```
+
+**When to use which:**
+- Use `mcp__postgresql__query` for ad-hoc inspection, debugging, and schema exploration during development.
+- Use `rag/mcp/server.py` (and its tools) when building agents or chat interfaces that need RAG-backed answers, not raw SQL.
 
 ---
 
@@ -4568,7 +4561,7 @@ Running `--ingest --documents rag/documents` picks up the `legal/` subdirectory 
 <a id="q154"></a>
 **Q154. Why add Apache AGE if the PostgreSQL tables work? How do we switch later?**
 
-**Short answer:** The SQL tables (`kg_entities` + `kg_relationships`) work fine on Neon *today*. Apache AGE is the future upgrade path — native Cypher graph queries, multi-hop traversal, and graph algorithms — but it requires a separate PostgreSQL instance because Neon does not support the AGE extension. We built both backends now and wired them behind a one-line switch so the upgrade is zero-risk when we're ready.
+**Short answer:** The SQL tables (`kg_entities` + `kg_relationships`) work fine on the local PostgreSQL instance today. Apache AGE is the future upgrade path — native Cypher graph queries, multi-hop traversal, and graph algorithms — but it requires a separate PostgreSQL instance with the AGE extension compiled in. We built both backends now and wired them behind a one-line switch so the upgrade is zero-risk when we're ready.
 
 ---
 
@@ -4576,12 +4569,12 @@ Running `--ingest --documents rag/documents` picks up the `legal/` subdirectory 
 
 | | `PgGraphStore` (SQL tables) | `AgeGraphStore` (Apache AGE) |
 |---|---|---|
-| **Works on Neon** | Yes | No — AGE extension not available on Neon |
+| **Extension requirement** | None — uses built-in SQL | Requires AGE extension (separate Docker container, port 5433) |
 | **Setup** | Zero — reuses existing DB | Docker: `docker compose up -d` |
 | **Query language** | SQL JOINs | openCypher (`MATCH`, `MERGE`, `CREATE`) |
 | **Multi-hop traversal** | Manual recursive CTEs | Native: `MATCH (a)-[*1..3]->(b)` |
 | **Graph algorithms** | Not supported | Shortest path, betweenness centrality, etc. |
-| **Production readiness** | Today | When switching off Neon |
+| **Production readiness** | Today | When AGE Docker is running |
 
 ---
 
@@ -4695,11 +4688,11 @@ All Cypher string literals use **double quotes** in `AgeGraphStore`. The dollar-
 
 **`CuadKgBuilder` with AGE — document lookup split:**
 
-Documents live in Neon (`PgGraphStore`). Graph entities/relationships go to AGE. The builder accepts a separate `doc_store` for the Neon lookup:
+Documents live in the main PostgreSQL DB (`PgGraphStore`). Graph entities/relationships go to AGE. The builder accepts a separate `doc_store` for document lookup:
 
 ```python
-pg_store = PgGraphStore()   # document lookup → Neon
-age_store = AgeGraphStore() # graph writes → AGE Docker
+pg_store = PgGraphStore()   # document lookup → PostgreSQL (port 5434)
+age_store = AgeGraphStore() # graph writes → AGE Docker (port 5433)
 
 builder = CuadKgBuilder(age_store, doc_store=pg_store)
 await builder.build()
@@ -4717,7 +4710,7 @@ The CLI (`python -m rag.knowledge_graph.cuad_kg_builder`) handles this automatic
 2. Run `CuadKgBuilder` against AGE: set `KG_BACKEND=age` and rebuild graph
 3. Validate with `get_graph_stats()` — should match SQL table counts
 4. Flip `.env` to `KG_BACKEND=age` in production
-5. (Optional) Drop `kg_entities` / `kg_relationships` tables from Neon
+5. (Optional) Drop `kg_entities` / `kg_relationships` tables from the main PostgreSQL DB
 
 The two stores share the same public interface (`upsert_entity`, `add_relationship`, `search_as_context`, `get_graph_stats`) so the agent tool `search_knowledge_graph` in `rag_agent.py` requires no changes when switching.
 
