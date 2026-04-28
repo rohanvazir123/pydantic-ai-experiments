@@ -54,7 +54,9 @@
       "Read(//c/Users/rohan/AppData/Local/Temp/**)",
       "Read(//c/Users/rohan/AppData/**)",
       "Bash(conda run *)",
-      "Bash(/c/Users/rohan/anaconda3/envs/pydantic_ai_agents/python.exe *)"
+      "Bash(/c/Users/rohan/anaconda3/envs/pydantic_ai_agents/python.exe *)",
+      "Bash(grep -n \"^### \\\\|^---$\\\\|Q117\\\\|Q116h\\\\|Q116i\" \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md\")",
+      "Bash(grep -n \"^<a id=\\\\\"q118\\\\\"\\\\|^---$\" \"/c/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ.md\")"
     ]
   },
   "enableAllProjectMcpServers": true,

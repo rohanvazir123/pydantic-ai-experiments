@@ -50,6 +50,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q116g. How do I inspect what's actually stored in the `chunks` table?](#q116g)
 - [Q116h. Why doesn't the SELECT query show trigram data?](#q116h)
 - [Q117. What does the PostgreSQL data model look like — entity diagram and sample records?](#q117)
+- [Q117b. How do I run natural language queries over PostgreSQL tables and GCS Parquet files together?](#q117b)
 
 ### Document Ingestion & Chunking
 - [Q26. What does Docling's `HybridChunker` do that sliding-window cannot?](#q26)
@@ -2635,6 +2636,56 @@ ORDER BY score DESC
 LIMIT 20;
 
 -- Results merged in Python via RRF, then joined back to documents for title/source
+```
+
+<a id="q117b"></a>
+**Q117b. How do I run natural language queries over PostgreSQL tables and GCS Parquet files together?**
+
+Use **DuckDB as the single query engine** — it can attach PostgreSQL databases alongside GCS Parquet views in one in-memory session, so the LLM generates SQL that can freely JOIN across all sources.
+
+**Why not pg_parquet or duckdb_fdw?**
+
+| Option | Direction | Problem |
+|---|---|---|
+| `duckdb_fdw` | PostgreSQL → DuckDB | Wrong direction — PG becomes the bottleneck, FDW is complex to set up on Windows |
+| `pg_parquet` | PostgreSQL → Parquet | Limited SQL, no GCS auth story, can't JOIN with existing DuckDB Parquet views |
+| **DuckDB postgres_scanner** | DuckDB → PostgreSQL + GCS | One engine for everything, zero PostgreSQL-side changes |
+
+**Setup (three lines):**
+
+```python
+conn = duckdb.connect(":memory:")
+conn.execute("INSTALL postgres; LOAD postgres;")
+conn.execute("ATTACH 'postgresql://rag_user:rag_pass@localhost:5434/rag_db' AS rag (TYPE postgres, READ_ONLY)")
+conn.execute("ATTACH 'postgresql://postgres:postgres@localhost:5432/postgres' AS local_pg (TYPE postgres, READ_ONLY)")
+```
+
+**SQL naming convention the LLM must follow:**
+
+| Source | Example SQL |
+|---|---|
+| GCS Parquet views | `FROM orders` |
+| rag_db | `FROM rag.main.documents` |
+| local_pg | `FROM local_pg.main.baby_names` |
+
+**Implementation:** `C:\Users\rohan\Documents\deltalake-projects\nlp_sql\nlp_sql_postgres_v1.py`
+
+The script uses:
+- `UnifiedDataSource` — registers GCS views (`httpfs`) and attaches both PostgreSQL databases
+- `generate_schema()` — introspects all sources and builds a unified schema string for the LLM prompt
+- `ConversationManager` — maintains multi-turn history and two-level cache (NL match + SQL hash)
+- GPT-4o via LangChain for SQL generation
+
+The prompt instructs the model on the naming convention, so cross-source JOINs work out of the box:
+
+```sql
+-- Example: join GCS sales with local_pg GDP data
+SELECT o.product, SUM(o.revenue) AS total_rev, g.gdp_usd
+FROM orders o
+JOIN local_pg.main.world_gdp g ON o.country = g.country_name
+WHERE g.year = 2020
+GROUP BY o.product, g.gdp_usd
+ORDER BY total_rev DESC
 ```
 
 ---
