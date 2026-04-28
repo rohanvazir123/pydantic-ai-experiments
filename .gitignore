@@ -20,8 +20,8 @@ C:/hf/
 !notebook/ingestion_pipeline.ipynb
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
-/.env
-coding_fun/**/.env
+**/.env
+delta_lake/output/
 .claude/settings.local.json
 venv/
 .git
