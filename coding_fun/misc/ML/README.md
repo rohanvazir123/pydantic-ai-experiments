@@ -179,22 +179,22 @@ item_embs                        shape: (n_items × 32)
 
 **Q: What does the full inference pipeline look like?**
 
-Inference splits into two phases. The item tower runs **once offline** over the entire catalogue and its output is cached. Only the user tower runs at query time.
+Inference splits into two phases. **Offline inference** runs the item tower once over the full catalogue (frozen weights) to populate the shared embedding space and build the ANN index. **Online inference** runs the user tower at query time.
 
 ```
-OFFLINE  (run once after training, results cached / stored in vector DB)
-────────────────────────────────────────────────────────────────────────
+OFFLINE INFERENCE  (frozen weights, run once per retrain cycle)
+───────────────────────────────────────────────────────────────
 
 all_item_ids  [0, 1, 2, ..., n_items-1]
         │
         ▼
-Item Tower:
+Item Tower:  (frozen weights)
   nn.Embedding  ──►  nn.Linear  ──►  F.normalize
         │
         ▼
-item_embs                        shape: (n_items × 32)   ← one row per film
+item_embs                        shape: (n_items × 32)   ← items in shared space
         │
-        └──► store in memory / Faiss / pgvector
+        └──► ANN index built (Faiss / pgvector) and deployed
 
 
 ONLINE  (runs at query time for each user request, microseconds)
@@ -245,81 +245,92 @@ Key insight: the item tower never runs at query time. Serving a recommendation i
 
 ---
 
-**Q: Why is offline inference needed? Why not run the item tower at query time?**
+**Q: Why is the item embedding step called "offline"? Isn't it just a forward pass — i.e. inference?**
 
-The short answer: the item catalogue is static between model retrains, but user queries arrive constantly. Running the item tower at query time would repeat identical work millions of times per second for no benefit.
+Yes, exactly. Running the item tower over all items post-training IS inference — it is a standard forward pass with frozen weights. The word "offline" only describes *when* it runs relative to user queries: before any request arrives, not in response to one. A more precise name is **post-training embedding generation**.
 
-**The maths of the problem**
+**What training actually produced**
 
-Suppose you have 10 million items and serve 5,000 user queries per second. If you ran the item tower at query time for every query:
-
-```
-10,000,000 items × 5,000 queries/sec = 50,000,000,000 item tower passes/sec
-```
-
-That is impossible. Even a tiny item tower (one embedding + one linear, dim=32) cannot run 50 billion times per second.
-
-**Why items can be pre-computed but users cannot**
+Training optimised both towers jointly so that user and item vectors land in the same shared geometric space — cosine similarity in that space equals "how much this user would like this item". That shared space is the output of training. The item embeddings are not a separate concept; they are the item tower's contribution to that space, frozen once training ends.
 
 ```
-ITEM EMBEDDINGS                         USER EMBEDDINGS
-───────────────                         ───────────────
-Depend only on item_id                  Depend only on user_id
-Item catalogue changes rarely           New users arrive constantly
-  (new film added once a week)            (every second)
-Same embedding valid until retrain      Same embedding valid until retrain
-→ compute once offline, reuse forever   → must compute at query time, but
-                                          there is only ONE user per request
-                                          so cost is trivial (1 forward pass)
+TRAINING OUTPUT
+───────────────
+
+Frozen User Tower weights    Frozen Item Tower weights
+         │                            │
+         ▼                            ▼
+  user_id  ──►  u_emb          item_id  ──►  i_emb
+                  └──────────────────────┘
+                    shared dot-product space
+                    (cosine similarity meaningful here)
 ```
 
-The item tower output is deterministic given fixed weights — `item_tower(id=42)` returns the same vector every time until the model is retrained. There is zero reason to recompute it per query.
+**Why item embeddings are generated once post-training, not per query**
 
-**What "offline" actually means in practice**
+The item tower is deterministic given frozen weights — `item_tower(id=42)` returns the same vector on every call until the model is retrained. Running it again per user query would recompute identical results:
 
 ```
-MODEL RETRAIN  (e.g. nightly job)
-        │
-        ▼
-Item tower runs once over full catalogue
-        │
-        ▼
-item_embs  (n_items × dim)             ← this is the offline step
-        │
-        ▼
-ANN index built  (Faiss HNSW, pgvector, etc.)
-        │
-        ▼
-Index deployed to serving infrastructure
-        │
-        ▼
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  QUERY TIME  (every user request, real-time)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        │
-        ▼
-User tower runs once  (1 forward pass, ~microseconds)
-        │
-        ▼
-user_emb (1 × dim)  →  ANN index.search(user_emb, k=10)
-        │
-        ▼
-Top-k recommendations returned
+10,000,000 items × 5,000 user queries/sec
+  = 50,000,000,000 redundant item tower passes/sec   ← absurd
 ```
 
-The ANN index serves millions of queries against the same pre-built item embeddings, paying the item tower cost only once per retrain cycle rather than once per query.
+Instead, generate all item embeddings once right after training, build an ANN index from them, and serve millions of user queries against that fixed index:
+
+```
+OFFLINE INFERENCE  (frozen weights, once per retrain cycle)
+────────────────────────────────────────────────────────────
+
+Item Tower  (frozen)
+        │
+        ▼  over all item IDs
+item_embs  (n_items × dim)   ← items projected into the shared space
+        │
+        ▼
+ANN index built  (Faiss HNSW / pgvector / Pinecone)
+  index.add(item_embs)
+        │
+        ▼
+Index deployed  ←──────────────────────────────────────────┐
+                                                            │
+QUERY TIME  (per user request, real-time)                  │
+─────────────────────────────────────────                  │
+                                                            │
+Frozen User Tower                                           │
+        │                                                   │
+        ▼  forward pass for this one user                   │
+user_emb  (1 × dim)   ← user projected into the shared space
+        │                                                   │
+        └──► ANN index.search(user_emb, k=10) ─────────────┘
+                        │
+                        ▼
+             Top-k item IDs returned
+```
+
+**Item vs user: why the asymmetry**
+
+```
+ITEM EMBEDDINGS                        USER EMBEDDINGS
+───────────────                        ───────────────
+Deterministic until next retrain       Deterministic until next retrain
+Catalogue changes rarely               Each query involves exactly 1 user
+  (new film added once a week)         Cost of 1 user tower pass: trivial
+Cost of ALL items: paid once           → always computed at query time
+→ computed once post-training,
+  cached in ANN index
+```
 
 **What happens when new items are added between retrains?**
 
-New items have no embedding in the current index — they are invisible to the retrieval system until the next retrain. This is called the **item cold-start problem**. Common mitigations:
+New items have no vector in the current index — they are invisible to the retrieval system. This is the **item cold-start problem**. Common mitigations:
 
-- Run a lightweight incremental index update for new items only (re-run the item tower on just the new IDs and `index.add()` the new vectors)
-- Fall back to a content-based model (use item metadata features directly) for items younger than one retrain cycle
+- Incremental update: re-run the item tower on just the new IDs and `index.add()` the new vectors without a full retrain
+- Content-based fallback: use item metadata features (genre, description) directly for items younger than one retrain cycle
 - Retrain more frequently (hourly instead of nightly)
 
-**Why the notebook skips all of this**
+**Why the notebook skips the ANN index**
 
-MovieLens 100k has only 1,682 items. Running `item_tower(all_item_ids)` at eval time takes milliseconds, and `torch.topk` over 1,682 scores is instant. The offline/online split only becomes necessary when the catalogue is large enough that query-time item tower execution becomes a latency or throughput bottleneck — typically above ~100k items for real-time serving.
+MovieLens 100k has only 1,682 items. `torch.topk` over 1,682 scores takes microseconds, so there is no practical reason to build an ANN index. The split only matters once the catalogue is large enough that a brute-force scan becomes a throughput or latency bottleneck — typically above ~100k items in a real-time serving context.
 
 ---
 

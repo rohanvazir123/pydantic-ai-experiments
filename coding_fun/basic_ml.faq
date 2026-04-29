@@ -1,0 +1,256 @@
+BASIC ML FAQ
+============
+General concepts applicable across all neural network architectures.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HIDDEN LAYERS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q: What is a hidden layer?
+
+A hidden layer is any layer that sits between the input and the output. The
+word "hidden" just means it is not directly visible as raw input data or a
+final prediction — it is an intermediate stage of computation.
+
+Every hidden layer does exactly three things in sequence:
+
+  1. Receive the activations from the previous layer (or raw input)
+  2. Apply a learned linear transformation (weights + bias)
+  3. Pass the result through a non-linear activation function
+
+The output of step 3 — the post-activation values — is what gets passed to
+the next layer. These post-activation values are called activations.
+
+---
+
+Q: What is the difference between weights and activations? People confuse them.
+
+They are completely different things:
+
+  WEIGHTS (parameters)               ACTIVATIONS (intermediate outputs)
+  ──────────────────────             ──────────────────────────────────
+  Learned during training            Computed during forward pass
+  Fixed after training               Change with every new input
+  Stored in the model file           Discarded after each forward pass*
+  Shape: (in_features, out_features) Shape: (batch_size, out_features)
+  Updated by backprop + optimizer    Never directly updated
+  Represent WHAT the layer does      Represent WHAT the layer sees
+
+  *unless you explicitly cache them (e.g. for visualisation or transfer learning)
+
+Analogy: weights are the recipe (fixed), activations are the dish produced
+each time you cook it (changes with ingredients = input data).
+
+---
+
+Q: Why are non-linear activation functions necessary?
+
+Without a non-linearity, stacking N linear layers is mathematically identical
+to a single linear layer — no matter how deep the network, it can only learn
+a linear mapping from input to output. Non-linearities (ReLU, GELU, sigmoid,
+tanh) break this collapse, letting the network approximate any function given
+enough neurons. This is the Universal Approximation Theorem.
+
+  Layer 1: h1 = W1 @ x + b1              (linear)
+  Layer 2: h2 = W2 @ h1 + b2             (linear)
+  Combined: h2 = W2 @ (W1 @ x + b1) + b2
+               = (W2 @ W1) @ x + (W2 @ b1 + b2)
+               = W_combined @ x + b_combined   ← still just one linear layer
+
+  With ReLU between them:
+  h1     = W1 @ x + b1
+  h1_act = ReLU(h1)                       ← non-linear: negative values → 0
+  h2     = W2 @ h1_act + b2              ← now genuinely a deeper function
+
+---
+
+Q: What do hidden layers actually learn?
+
+Early layers learn low-level features (edges, frequencies, character n-grams).
+Middle layers combine those into mid-level patterns (shapes, phonemes, phrases).
+Later layers represent high-level semantics (objects, sentiment, intent).
+This hierarchy emerges from training — it is not programmed in.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HIDDEN LAYERS IN SPECIFIC ARCHITECTURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q: What are the hidden layers in a plain feedforward / MLP network?
+
+The simplest case. Each hidden layer is:
+
+  input (batch, in)
+      │
+      ▼
+  nn.Linear(in, out)     →  z = W @ x + b         (weights applied here)
+      │
+      ▼
+  Activation(z)          →  a = ReLU(z)            (activation = output of this layer)
+      │
+      ▼
+  next layer receives a
+
+  Stack N of these between input and output → N hidden layers.
+  Activations are the a values flowing between layers.
+  Weights are the W matrices sitting inside each nn.Linear.
+
+---
+
+Q: What are the hidden layers in a CNN?
+
+CNNs have several distinct hidden layer types, each with different activations:
+
+  RAW IMAGE  (H × W × C)
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  CONVOLUTIONAL LAYER                                    │
+  │  Applies K learned filters (kernels) across the image   │
+  │  Weights: filter bank of shape (K, C, kH, kW)          │
+  │  Activations: feature maps  (H' × W' × K)              │
+  │    → each map = "where does this filter's pattern fire" │
+  │  e.g. filter 1 detects horizontal edges                 │
+  │       filter 2 detects colour blobs, etc.               │
+  └─────────────────────────────────────────────────────────┘
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  ACTIVATION (ReLU / GELU)                               │
+  │  Applied element-wise to feature maps                   │
+  │  Weights: none (no learned parameters)                  │
+  │  Activations: same shape as input, negatives zeroed     │
+  └─────────────────────────────────────────────────────────┘
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  POOLING LAYER  (MaxPool / AvgPool)                     │
+  │  Downsamples each feature map spatially                 │
+  │  Weights: none (no learned parameters)                  │
+  │  Activations: shrunken feature maps  (H'/2 × W'/2 × K) │
+  │    → reduces spatial size, adds translation invariance  │
+  └─────────────────────────────────────────────────────────┘
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  BATCH NORM  (optional)                                 │
+  │  Normalises activations across the batch                │
+  │  Weights: learned scale (γ) and shift (β) per channel   │
+  │  Activations: normalised feature maps, same shape       │
+  └─────────────────────────────────────────────────────────┘
+      │
+      ▼
+  (repeat Conv → ReLU → Pool blocks for N stages)
+      │
+      ▼
+  Flatten  →  FC layers  →  output
+
+  Key insight: in a CNN the "activations" are 3-D tensors (feature maps),
+  not 1-D vectors. The spatial structure is preserved until the flatten step.
+
+---
+
+Q: What are the hidden layers in an RNN / LSTM?
+
+RNNs introduce a new concept: the hidden state, which flows across time steps
+in addition to flowing from layer to layer.
+
+  INPUT SEQUENCE  [x_1, x_2, x_3, ..., x_T]
+      │
+      ▼ (one time step at a time)
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  RNN CELL  (at time step t)                             │
+  │                                                         │
+  │  Inputs:  x_t  (current token)                         │
+  │           h_{t-1}  (hidden state from previous step)   │
+  │                                                         │
+  │  Weights: W_hh  (hidden-to-hidden, shared across time)  │
+  │           W_xh  (input-to-hidden,  shared across time)  │
+  │           b_h   (bias)                                  │
+  │                                                         │
+  │  Computation:                                           │
+  │    z_t = W_hh @ h_{t-1} + W_xh @ x_t + b_h            │
+  │    h_t = tanh(z_t)          ← NEW hidden state         │
+  │                                                         │
+  │  Activations:  h_t  (the hidden state IS the activation)│
+  │    → passed to next time step as h_{t-1}               │
+  │    → and/or passed up to next RNN layer                 │
+  └─────────────────────────────────────────────────────────┘
+
+  LSTM extends this with gates (input, forget, output) and a separate
+  cell state c_t that carries long-range information:
+
+  Weights: W_f, W_i, W_o, W_c  (four weight matrices, one per gate/cell)
+  Activations: h_t (hidden state) and c_t (cell state) — both flow forward
+
+  Key insight: in an RNN the hidden state is simultaneously:
+    - the activation output of the current step
+    - the input to the next time step
+  It is a recurrent activation — hence "recurrent" neural network.
+
+---
+
+Q: What are the hidden layers in a Transformer?
+
+Transformers replace recurrence with attention. Each Transformer block is one
+hidden layer, containing two sub-layers:
+
+  INPUT TOKENS  →  Token Embeddings  (vocab_size → d_model)
+      │
+      ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  TRANSFORMER BLOCK  (repeated N times)                  │
+  │                                                         │
+  │  1. MULTI-HEAD SELF-ATTENTION                           │
+  │     Weights: W_Q, W_K, W_V  (per head), W_O (output)   │
+  │     Computation for each head:                          │
+  │       Q = x @ W_Q,  K = x @ W_K,  V = x @ W_V         │
+  │       scores = softmax(Q @ K.T / sqrt(d_k))            │
+  │       head_out = scores @ V                             │
+  │     Activations: attention-weighted value vectors        │
+  │       → each token's activation now mixes information   │
+  │         from all other tokens in the sequence           │
+  │                                                         │
+  │  2. LAYER NORM  +  RESIDUAL                             │
+  │     x = LayerNorm(x + attention_out)                    │
+  │     Weights: learned scale + shift (γ, β)               │
+  │     Activations: normalised residual-added vectors       │
+  │                                                         │
+  │  3. FEED-FORWARD NETWORK (FFN)                          │
+  │     Two linear layers with a non-linearity between      │
+  │     Weights: W_1 (d_model → 4*d_model), W_2 (back)     │
+  │     Activations: expanded then compressed hidden state  │
+  │       → each token processed independently here         │
+  │                                                         │
+  │  4. LAYER NORM  +  RESIDUAL                             │
+  │     x = LayerNorm(x + ffn_out)                          │
+  └─────────────────────────────────────────────────────────┘
+      │
+      ▼
+  (repeat block N times — GPT-2 small: N=12, GPT-3: N=96)
+      │
+      ▼
+  Final hidden state  →  output head (classification / next token logits)
+
+  Key insight: in a Transformer, every token's activation at layer L is an
+  aggregate of information from all other tokens (via attention) — unlike
+  MLPs and CNNs where each activation depends only on a local neighbourhood.
+  The hidden state is a sequence of vectors, one per token: (seq_len, d_model).
+
+---
+
+Q: Summary table — hidden layers across architectures
+
+  Architecture  │ Hidden layer type    │ Activation shape          │ Weights
+  ──────────────┼──────────────────────┼───────────────────────────┼─────────────────────
+  MLP           │ nn.Linear + ReLU     │ (batch, hidden_dim)       │ W: (in, out), b
+  CNN           │ Conv2d + ReLU + Pool │ (batch, channels, H, W)   │ filter bank (K,C,kH,kW)
+  RNN           │ RNN/LSTM cell        │ h_t: (batch, hidden_dim)  │ W_hh, W_xh (shared in time)
+  LSTM          │ LSTM cell            │ h_t, c_t: (batch, hidden) │ 4× gated weight matrices
+  Transformer   │ Attention + FFN      │ (batch, seq_len, d_model) │ W_Q/K/V/O, W_1/W_2, γ/β
+
+  Common thread across ALL of them:
+    Weights   = learned parameters, fixed after training, define WHAT the layer does
+    Activations = intermediate outputs, change per input, define WHAT the layer sees
