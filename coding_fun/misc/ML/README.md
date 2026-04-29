@@ -436,19 +436,83 @@ self.user_emb.weight[u_ids]   # just row indexing — no multiplication
 
 **So where do the final embeddings (used for ANN) come from?**
 
-The raw embedding rows from `user_emb.weight` / `item_emb.weight` are **not** what gets stored in the ANN index. They pass through one more step first:
+The raw embedding rows from `user_emb.weight` / `item_emb.weight` are **not** what gets stored in the ANN index. They are not similarity scores — they are raw learned representations that haven't yet been aligned or scaled. They must pass through two more steps before they are meaningful for comparison:
 
 ```
-user_emb.weight[user_id]   ← raw trained weight row  (32,)
+user_emb.weight[user_id]
+        │
+        │  Raw weight row — a point in 32-D space.
+        │  NOT a similarity score. NOT comparable to item vectors yet.
+        │  User tower and item tower have separate embedding matrices,
+        │  so their raw rows live in different learned spaces with no
+        │  guarantee of geometric alignment.
         │
         ▼
-user_net(...)              ← linear projection       (32,)
+STEP 1 — LINEAR PROJECTION:  user_net(x) = W @ x + b
+        │
+        │  W is (32 × 32), b is (32,) — both learned during training.
+        │  This is a rotation + scaling of the raw embedding vector.
+        │  Its purpose is to project the user vector into the SAME
+        │  geometric space as the item vectors, so that a dot product
+        │  between them is meaningful.
+        │
+        │  Training optimises W (and the item tower's equivalent) so
+        │  that after projection, liked (user, item) pairs end up close
+        │  and disliked pairs end up far — this is the shared space.
+        │
+        │  Output: still (32,), but now in the shared dot-product space.
+        │  Still NOT a similarity score — norms are unconstrained.
         │
         ▼
-F.normalize(...)           ← unit-norm               (32,)   ← THIS goes into ANN
+STEP 2 — L2 NORMALISATION:  F.normalize(x, p=2, dim=1)
+        │
+        │  Divides the vector by its own L2 norm:
+        │    x_norm = x / ||x||₂
+        │
+        │  This projects every vector onto the UNIT HYPERSPHERE —
+        │  all vectors now have norm = 1, regardless of magnitude.
+        │
+        │  Why this matters:
+        │    dot(u, i) = ||u|| * ||i|| * cos(θ)
+        │    if ||u|| = ||i|| = 1:
+        │    dot(u, i) = cos(θ)   ← pure cosine similarity
+        │
+        │  Without normalisation, a high-norm vector scores highly
+        │  against everything regardless of direction — magnitude
+        │  would dominate over actual similarity.
+        │
+        ▼
+unit-norm vector  (32,)   ← THIS goes into the ANN index
+
+        Are these similarity scores? NO — not yet.
+        They are REPRESENTATIONS (points on the unit hypersphere).
+        The similarity score is computed LATER at query time:
+
+        score = dot(user_vec, item_vec) = cos(θ)   ∈ [-1, 1]
+
+        score =  1.0  →  vectors point in exactly the same direction
+                          (perfect match)
+        score =  0.0  →  vectors are orthogonal (unrelated)
+        score = -1.0  →  vectors point in opposite directions
+                          (strong mismatch)
+
+        torch.topk / ANN index ranks items by this score descending.
+        Rank 1 = highest cosine similarity = strongest predicted match.
 ```
 
-The ANN index stores the post-projection, post-normalisation vectors — not the raw embedding weights directly. The weights themselves stay inside the model file.
+**Summary of what each value is**
+
+```
+VALUE                        IS IT A SIMILARITY SCORE?
+─────────────────────────────────────────────────────────────
+user_emb.weight[user_id]     No  — raw learned representation, unaligned
+after user_net(x)            No  — aligned to shared space, unconstrained norm
+after F.normalize(x)         No  — unit-norm representation (stored in ANN)
+dot(user_vec, item_vec)      YES — cosine similarity score ∈ [-1, 1]
+torch.topk result            YES — top-k items ranked by cosine similarity
+```
+
+The weights themselves stay inside the model file and are never directly stored in the ANN index.
 
 ---
 
@@ -458,19 +522,19 @@ Two separate neural networks (towers) process the user and the item independentl
 
 ---
 
-### Q5: Why filter for ratings ≥ 4? What happens to the 1–3 star ratings?
+### Q6: Why filter for ratings ≥ 4? What happens to the 1–3 star ratings?
 
 Ratings ≥ 4 are treated as genuine positive signals — things the user actually liked. Ratings 1–3 are discarded entirely rather than used as explicit negatives. This is intentional: a 3-star rating is ambiguous (lukewarm, not actively disliked), and using it as a hard negative could confuse the model. The negative signal instead comes from random unrated items, which are almost certainly irrelevant to the user.
 
 ---
 
-### Q6: What exactly is contrastive learning? How does it differ from standard classification?
+### Q7: What exactly is contrastive learning? How does it differ from standard classification?
 
 Standard classification trains on fixed labels (class 0, class 1). Contrastive learning has no fixed output classes — instead it learns by *comparing* examples. The model is told "these two things should be close, those two should be far apart" and adjusts embeddings accordingly. Triplet loss is one form: given an anchor (user), a positive (liked item), and a negative (irrelevant item), the loss is zero only when `dist(anchor, positive) < dist(anchor, negative) - margin`. The model learns geometry, not class boundaries.
 
 ---
 
-### Q7: What is negative sampling and why is the while-loop necessary?
+### Q8: What is negative sampling and why is the while-loop necessary?
 
 Negative sampling picks a random item the user has *not* interacted with to serve as the "wrong answer" for that training step. The while-loop is needed because a randomly chosen item might accidentally be one the user actually rated highly — using it as a negative would give the model a contradictory signal. The loop resamples until the candidate is genuinely unseen by that user:
 
@@ -484,7 +548,7 @@ For large catalogues this loop almost never iterates more than once, since the o
 
 ---
 
-### Q8: What does `margin=0.2` mean in `TripletMarginLoss`?
+### Q9: What does `margin=0.2` mean in `TripletMarginLoss`?
 
 The margin is a safety buffer. The full loss formula is:
 
