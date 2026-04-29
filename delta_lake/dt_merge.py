@@ -27,7 +27,7 @@ MY_SCHEMA = pa.schema([
 
 def validate_target_schema(dt: DeltaTable) -> None:
     """Raise ValueError if the target Delta table is missing any columns from MY_SCHEMA."""
-    target_fields = {f.name for f in dt.schema().to_pyarrow()}
+    target_fields = {f.name for f in dt.schema().to_arrow()}
     missing = {f.name for f in MY_SCHEMA} - target_fields
     if missing:
         raise ValueError(f"Target Delta table missing columns: {missing}")

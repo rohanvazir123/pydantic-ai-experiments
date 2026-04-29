@@ -22,8 +22,17 @@ import datetime
 import tempfile
 from pathlib import Path
 
+import duckdb
 import pyarrow as pa
 from deltalake import DeltaTable, write_deltalake
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+try:
+    from deltalake.exceptions import CommitFailedError, DeltaError
+except ImportError:
+    from deltalake._internal import CommitFailedError, DeltaError  # type: ignore[no-redef]
+
+from dt_merge import validate_target_schema
 
 
 # ---------------------------------------------------------------------------
@@ -117,55 +126,63 @@ def incoming_batch() -> pa.Table:
 # Step 3 — Merge
 # ---------------------------------------------------------------------------
 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_exception_type((DeltaError, CommitFailedError)),
+    reraise=True,
+)
 def run_merge(uri: str, source: pa.Table) -> None:
     """
     Perform an atomic MERGE from source into the Delta table at uri.
 
-    A MERGE is a single atomic commit that can update, insert, and delete rows
-    in one pass — no separate UPDATE/INSERT/DELETE transactions needed.
-    Delta Lake writes all changes to Parquet files and records them in the
-    _delta_log/ as a single version, so readers either see the full new state
-    or the full old state — never a partial update.
+    Follows the same pipeline as run_pydantic_merge() in dt_merge.py:
+      1. Load Delta table & validate schema
+      2. Register source in DuckDB (zero-copy)
+      3. Transform via SQL, stream as RecordBatchReader
+      4. Cast each batch lazily to SCHEMA
+      5. Merge with schema evolution & predicates; retry on commit conflicts
     """
-
-    # Load the current version of the Delta table from disk.
-    # DeltaTable reads the _delta_log/ to find the latest snapshot.
+    # 1. Load latest snapshot & validate schema
     dt = DeltaTable(uri)
+    validate_target_schema(dt)
 
+    # 2. Register in-memory PyArrow table in DuckDB (zero-copy)
+    con = duckdb.connect()
+    con.register("source_tbl", source)
+
+    # 3. Transform via SQL, stream as RecordBatchReader (one batch in RAM at a time)
+    source_reader = con.execute("""
+        SELECT
+            id,
+            status,
+            current_timestamp AT TIME ZONE 'UTC' AS last_updated,
+            new_feature_flag
+        FROM source_tbl
+    """).fetch_record_batch(rows_per_batch=10_000)
+
+    # 4. Cast each batch lazily to SCHEMA — schema mismatch aborts & triggers retry
+    source_reader = pa.RecordBatchReader.from_batches(
+        SCHEMA, (batch.cast(SCHEMA) for batch in source_reader)
+    )
+
+    # 5. Atomic MERGE:
+    #   id=2: INACTIVE != ACTIVE  -> updated
+    #   id=3: ACTIVE   == ACTIVE  -> skipped (predicate false)
+    #   id=5: not in target, flag=true -> inserted
+    #   id=6: INACTIVE, not in source -> deleted
+    #   id=1, id=4: absent from source but not INACTIVE -> kept
     (
         dt.merge(
-            source=source,           # the incoming PyArrow table (or RecordBatchReader)
-            predicate="t.id = s.id", # JOIN key: rows are "matched" when their ids are equal
-            source_alias="s",        # alias for the source table used in predicates below
-            target_alias="t",        # alias for the target (Delta) table
+            source=source_reader,
+            predicate="t.id = s.id",
+            source_alias="s",
+            target_alias="t",
+            merge_schema=True,
         )
-
-        # WHEN MATCHED (id exists in both source and target)
-        # Only update the row if the status value actually changed.
-        # Without this predicate, every matched row would be rewritten even if
-        # nothing changed — wasteful on large tables.
-        #   id=2: INACTIVE != ACTIVE  -> updated
-        #   id=3: ACTIVE   == ACTIVE  -> skipped (predicate is false)
         .when_matched_update_all(predicate="s.status != t.status")
-
-        # WHEN NOT MATCHED (id is in source but NOT in target — a brand-new row)
-        # Only insert if the new_feature_flag is set. This lets us filter out
-        # source rows we don't want to land in the target yet.
-        #   id=5: not in target, flag=true -> inserted
         .when_not_matched_insert_all(predicate="s.new_feature_flag = true")
-
-        # WHEN NOT MATCHED BY SOURCE (id is in target but NOT in source — row disappeared)
-        # Delete stale target rows, but only if they are INACTIVE.
-        # Rows that are ACTIVE or PENDING but absent from the source are left alone —
-        # they may simply not have been included in this batch.
-        #   id=6: INACTIVE, not in source -> deleted
-        #   id=1: ACTIVE,   not in source -> kept
-        #   id=4: PENDING,  not in source -> kept
         .when_not_matched_by_source_delete(predicate="t.status = 'INACTIVE'")
-
-        # Commit all three operations atomically.
-        # This writes new Parquet files and appends a single entry to _delta_log/.
-        # On failure (e.g. concurrent writer), the whole merge is rolled back.
         .execute()
     )
     print("[merge] committed -> version 1")

@@ -23,6 +23,12 @@ import duckdb
 import pyarrow as pa
 from deltalake import DeltaTable, write_deltalake
 from dotenv import load_dotenv
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+try:
+    from deltalake.exceptions import CommitFailedError, DeltaError
+except ImportError:
+    from deltalake._internal import CommitFailedError, DeltaError  # type: ignore[no-redef]
 
 # Load GCS HMAC credentials — looks for .env in the same directory as this file
 load_dotenv(Path(__file__).parent / ".env")
@@ -65,10 +71,10 @@ def _gcs_con() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute(f"""
-        CREATE OR REPLACE SECRET gcs_secret (
-          TYPE    gcs,
-          KEY_ID  '{os.environ["GCS_HMAC_ID"]}',
-          SECRET  '{os.environ["GCS_HMAC_SECRET"]}'
+    CREATE OR REPLACE SECRET gcs_secret (
+        TYPE    gcs,
+        KEY_ID  '{os.environ["GCS_HMAC_ID"]}',
+        SECRET  '{os.environ["GCS_HMAC_SECRET"]}'
         );
     """)
     return con
@@ -135,11 +141,11 @@ def incoming_batch() -> pa.Table:
     """
     Simulate what arrives in the daily incremental run:
 
-      a) New partitions: Jul 28 (134 rows) + Jul 29 (166 rows)
-         These order_ids do not exist in the target -> INSERTED
+    a) New partitions: Jul 28 (134 rows) + Jul 29 (166 rows)
+        These order_ids do not exist in the target -> INSERTED
 
-      b) Quantity corrections: 5 orders from Jul 25 with doubled quantity
-         These match on (order_id, order_date) and quantity differs -> UPDATED
+    b) Quantity corrections: 5 orders from Jul 25 with doubled quantity
+        These match on (order_id, order_date) and quantity differs -> UPDATED
 
     In production, both of these would come from GCS. Here we build
     the corrections manually so the example is fully self-contained.
@@ -163,42 +169,74 @@ def incoming_batch() -> pa.Table:
 
 
 # ---------------------------------------------------------------------------
+# Schema validation (mirrors validate_target_schema in dt_merge.py)
+# ---------------------------------------------------------------------------
+
+def validate_target_schema(dt: DeltaTable) -> None:
+    """Raise ValueError if the target Delta table is missing any columns from SCHEMA."""
+    target_fields = {f.name for f in dt.schema().to_arrow()}
+    missing = {f.name for f in SCHEMA} - target_fields
+    if missing:
+        raise ValueError(f"Target Delta table missing columns: {missing}")
+
+
+# ---------------------------------------------------------------------------
 # Step 3 — Merge
 # ---------------------------------------------------------------------------
 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_exception_type((DeltaError, CommitFailedError)),
+    reraise=True,
+)
 def run_merge(uri: str, source: pa.Table) -> None:
     """
     Atomic MERGE on the composite key (order_id, order_date).
 
-    We use a composite key because order_id alone is not globally unique —
-    the same order_id can appear on different dates as separate orders.
+    Follows the same pipeline as run_pydantic_merge() in dt_merge.py:
+      1. Load Delta table & validate schema
+      2. Register source in DuckDB (zero-copy)
+      3. Transform via SQL, stream as RecordBatchReader
+      4. Cast each batch lazily to SCHEMA
+      5. Merge with schema evolution & predicates; retry on commit conflicts
     """
-
-    # Load the latest snapshot from _delta_log/
+    # 1. Load latest snapshot & validate schema
     dt = DeltaTable(uri)
+    validate_target_schema(dt)
 
+    # 2. Register in-memory PyArrow table in DuckDB (zero-copy)
+    con = duckdb.connect()
+    con.register("source_tbl", source)
+
+    # 3. Transform via SQL, stream as RecordBatchReader (one batch in RAM at a time)
+    source_reader = con.execute("""
+        SELECT
+            order_id,
+            user_id,
+            product_name,
+            quantity,
+            order_date,
+            current_timestamp AT TIME ZONE 'UTC' AS ingested_at
+        FROM source_tbl
+    """).fetch_record_batch(rows_per_batch=10_000)
+
+    # 4. Cast each batch lazily to SCHEMA — schema mismatch aborts & triggers retry
+    source_reader = pa.RecordBatchReader.from_batches(
+        SCHEMA, (batch.cast(SCHEMA) for batch in source_reader)
+    )
+
+    # 5. Atomic MERGE on composite key (order_id, order_date) — not globally unique by id alone
     (
         dt.merge(
-            source=source,
-            # Composite join: match on BOTH order_id and order_date.
-            # A row is "matched" only if both values align — this is safe
-            # because (order_id, order_date) is unique in our dataset.
+            source=source_reader,
             predicate="t.order_id = s.order_id AND t.order_date = s.order_date",
             source_alias="s",
             target_alias="t",
+            merge_schema=True,
         )
-
-        # WHEN MATCHED — same (order_id, order_date) in both source and target
-        # Only rewrite the row if the quantity actually changed.
-        # The 5 correction rows have doubled quantity, so they pass this predicate.
-        # All other Jul 25/26 rows that happen to appear in source are skipped.
         .when_matched_update_all(predicate="s.quantity != t.quantity")
-
-        # WHEN NOT MATCHED — (order_id, order_date) pair is new
-        # The 300 Jul 28/29 rows don't exist in the target at all -> inserted.
         .when_not_matched_insert_all()
-
-        # One atomic _delta_log commit covering all three groups of rows.
         .execute()
     )
     print("[merge] committed -> version 1")
