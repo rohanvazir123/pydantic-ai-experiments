@@ -195,11 +195,11 @@ def run_merge(uri: str, source: pa.Table) -> None:
     Atomic MERGE on the composite key (order_id, order_date).
 
     Follows the same pipeline as run_pydantic_merge() in dt_merge.py:
-      1. Load Delta table & validate schema
-      2. Register source in DuckDB (zero-copy)
-      3. Transform via SQL, stream as RecordBatchReader
-      4. Cast each batch lazily to SCHEMA
-      5. Merge with schema evolution & predicates; retry on commit conflicts
+    1. Load Delta table & validate schema
+    2. Register source in DuckDB (zero-copy)
+    3. Transform via SQL, stream as RecordBatchReader
+    4. Cast each batch lazily to SCHEMA
+    5. Merge with schema evolution & predicates; retry on commit conflicts
     """
     # 1. Load latest snapshot & validate schema
     dt = DeltaTable(uri)
