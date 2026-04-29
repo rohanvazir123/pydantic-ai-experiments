@@ -1,15 +1,48 @@
 # ML Notebooks
 
-| Notebook | Topic |
-|---|---|
-| `two_tower_NN.ipynb` | Two-Tower recommendation model trained with triplet (contrastive) loss |
-| `minerU_2.5.ipynb` | MinerU 2.5 document parsing |
+## Table of Contents
+
+**two_tower_NN.ipynb**
+- [Overview & Contrastive Learning](#two_towernnipynb)
+- [Q1. Training pipeline diagram](#q1-what-does-the-full-training-pipeline-look-like)
+- [Q2. Inference pipeline diagram](#q2-what-does-the-full-inference-pipeline-look-like)
+- [Q3. Why do we need offline inference?](#q3-why-do-we-need-offline-inference-and-why-is-a-forward-pass-called-inference-at-all)
+- [Q4. What is a Two-Tower model?](#q4-what-is-a-two-tower-model-and-why-is-it-called-that)
+- [Q5. Why filter ratings ≥ 4?](#q5-why-filter-for-ratings--4-what-happens-to-the-13-star-ratings)
+- [Q6. What is contrastive learning?](#q6-what-exactly-is-contrastive-learning-how-does-it-differ-from-standard-classification)
+- [Q7. What is negative sampling?](#q7-what-is-negative-sampling-and-why-is-the-while-loop-necessary)
+- [Q8. What does margin=0.2 mean?](#q8-what-does-margin02-mean-in-tripletmarginloss)
+- [Q9. Why call model(u, n) twice?](#q9-why-does-the-model-call-modelu-n-twice--once-for-the-positive-and-once-for-the-negative)
+- [Q10. Why L2-normalise embeddings?](#q10-why-l2-normalise-the-embeddings-what-goes-wrong-without-it)
+- [Q11. What does nn.Linear do on top of the embedding?](#q11-what-does-nnlinear-do-on-top-of-the-embedding-why-not-use-the-raw-embedding-directly)
+- [Q12. Why does loss plateau at ~0.058?](#q12-why-does-loss-stop-improving-after-epoch-6-and-plateau-around-0058)
+- [Q13. How does inference differ from training?](#q13-how-does-inference-work-differently-from-training)
+- [Q14. What does Recall@10 measure?](#q14-what-does-recall10--8715-actually-measure)
+- [Q15. Main limitations](#q15-what-are-the-main-limitations-of-this-implementation)
+- [Q16. Which models can I use?](#q16-which-models-can-i-swap-in-or-experiment-with-in-this-notebook)
+- [Q17. What datasets simulate production?](#q17-what-other-datasets-can-i-use-to-simulate-production-conditions)
+- [Q18. How to take this to production?](#q18-how-would-you-take-this-to-production)
+
+**minerU_2.5.ipynb**
+- [Q1. What is MinerU 2.5?](#q1-what-is-mineru-25)
+- [Q2. What model does it use?](#q2-what-model-does-it-actually-use-under-the-hood)
+- [Q3. What does two_step_extract() do?](#q3-what-does-clienttwo_step_extract-do)
+- [Q4. What block types does it detect?](#q4-what-block-types-does-mineru-detect-and-what-color-is-each-in-the-visualisation)
+- [Q5. What are normalised bounding boxes?](#q5-what-are-normalised-bounding-boxes-and-how-are-they-converted-to-pixels)
+- [Q6. What documents were tested?](#q6-what-documents-were-tested-in-the-notebook)
+- [Q7. What is MinerUClient?](#q7-what-is-mineruclient-and-why-use-it-instead-of-calling-the-model-directly)
+- [Q8. What is magic-pdf.json?](#q8-what-is-magic-pdfjson-and-why-is-it-configured)
+- [Q9. How to run on a PDF from CLI?](#q9-how-do-i-run-mineru-on-a-pdf-from-the-command-line)
+- [Q10. How does the side-by-side display work?](#q10-how-does-the-side-by-side-display-work)
+- [Q11. Does it work without a GPU?](#q11-does-mineru-work-without-a-gpu)
+- [Q12. Why is pip install called twice?](#q12-why-does-the-notebook-call-pip-install--u-mineruall-twice-cell-2-and-cell-23)
+- [Q13. How to use on my own documents?](#q13-how-do-i-use-mineru-on-my-own-documents)
 
 ---
 
 ## two_tower_NN.ipynb
 
-A recommender system trained on MovieLens 100k using a Two-Tower neural network and contrastive learning.
+A recommender system trained on MovieLens 100k using a Two-Tower neural network and contrastive learning. The entire model — embeddings, linear layers, loss, and training loop — is written in **PyTorch** (`torch`, `torch.nn`, `torch.nn.functional`).
 
 ### How contrastive learning is done here
 
@@ -85,11 +118,13 @@ _, top_k = torch.topk(scores, k=10, dim=1)
 
 **Recall@10: 87.15%** — for 87% of users, at least one of their liked films appears in the top-10 predictions (embedding dim=32, RTX 4060).
 
+> **Note:** Average loss reached ~5.8% in just 10 epochs. Fast convergence here is largely a function of data quality — MovieLens 100k is a clean, well-curated dataset with consistent explicit ratings. Noisy or sparse real-world interaction data (clicks, dwell time, implicit signals) typically requires more epochs and harder negative mining to reach comparable loss.
+
 ---
 
 ## FAQ — two_tower_NN.ipynb
 
-**Q: What does the full training pipeline look like?**
+### Q1: What does the full training pipeline look like?
 
 Each training step consumes one batch of triplets `(user_id, pos_item_id, neg_item_id)`. Both towers share weights across all three forward passes — the item tower runs twice (once for the positive, once for the negative).
 
@@ -177,7 +212,7 @@ item_embs                        shape: (n_items × 32)
 
 ---
 
-**Q: What does the full inference pipeline look like?**
+### Q2: What does the full inference pipeline look like?
 
 Inference splits into two phases. **Offline inference** runs the item tower once over the full catalogue (frozen weights) to populate the shared embedding space and build the ANN index. **Online inference** runs the user tower at query time.
 
@@ -197,8 +232,8 @@ item_embs                        shape: (n_items × 32)   ← items in shared sp
         └──► ANN index built (Faiss / pgvector) and deployed
 
 
-ONLINE  (runs at query time for each user request, microseconds)
-────────────────────────────────────────────────────────────────
+ONLINE INFERENCE  (runs at query time for each user request, microseconds)
+───────────────────────────────────────────────────────────────────────────
 
 user_id  (e.g. user 42)
         │
@@ -245,9 +280,35 @@ Key insight: the item tower never runs at query time. Serving a recommendation i
 
 ---
 
-**Q: Why is the item embedding step called "offline"? Isn't it just a forward pass — i.e. inference?**
+### Q3: Why do we need offline inference? And why is a forward pass called "inference" at all?
 
-Yes, exactly. Running the item tower over all items post-training IS inference — it is a standard forward pass with frozen weights. The word "offline" only describes *when* it runs relative to user queries: before any request arrives, not in response to one. A more precise name is **post-training embedding generation**.
+Running the item tower over all items post-training IS inference — it is a standard forward pass with frozen weights. The word "offline" only describes *when* it runs relative to user queries: before any request arrives, not in response to one.
+
+**Every time training runs, offline inference must run too**
+
+Offline inference is not a one-time setup step — it is a mandatory post-step after **every training run**. When training completes, the model weights change. That means all previously computed item embeddings are stale — they were produced by the old weights and no longer reflect the new shared space. The ANN index built from them is therefore also stale and must be rebuilt from scratch:
+
+```
+Training run completes  (new weights)
+        │
+        ▼
+Old item embeddings  ──►  STALE, discard
+Old ANN index        ──►  STALE, discard
+        │
+        ▼
+Offline inference: run item tower (new weights) over all item IDs
+        │
+        ▼
+New item embeddings  (aligned with new shared space)
+        │
+        ▼
+Rebuild ANN index from new embeddings
+        │
+        ▼
+Deploy new index  →  online inference resumes against fresh index
+```
+
+This is why retraining pipelines always include an embedding generation + index rebuild step before the new model goes live. Skipping it means users are queried against an index that doesn't match the new model's geometry — scores would be meaningless.
 
 **What training actually produced**
 
@@ -293,8 +354,8 @@ ANN index built  (Faiss HNSW / pgvector / Pinecone)
         ▼
 Index deployed  ←──────────────────────────────────────────┐
                                                             │
-QUERY TIME  (per user request, real-time)                  │
-─────────────────────────────────────────                  │
+ONLINE INFERENCE  (per user request, real-time)            │
+────────────────────────────────────────────────           │
                                                             │
 Frozen User Tower                                           │
         │                                                   │
@@ -316,8 +377,7 @@ Deterministic until next retrain       Deterministic until next retrain
 Catalogue changes rarely               Each query involves exactly 1 user
   (new film added once a week)         Cost of 1 user tower pass: trivial
 Cost of ALL items: paid once           → always computed at query time
-→ computed once post-training,
-  cached in ANN index
+→ offline inference, cached in ANN
 ```
 
 **What happens when new items are added between retrains?**
@@ -334,25 +394,25 @@ MovieLens 100k has only 1,682 items. `torch.topk` over 1,682 scores takes micros
 
 ---
 
-**Q: What is a Two-Tower model and why is it called that?**
+### Q4: What is a Two-Tower model and why is it called that?
 
 Two separate neural networks (towers) process the user and the item independently and produce embeddings in a shared vector space. They never see each other's raw features during the forward pass — only the final embeddings are compared. The name comes from the two parallel sub-networks standing side by side. This separation is what makes the architecture scalable: at inference time you pre-compute all item embeddings once offline, then a user query is just one tower forward pass + a nearest-neighbour lookup.
 
 ---
 
-**Q: Why filter for ratings ≥ 4? What happens to the 1–3 star ratings?**
+### Q5: Why filter for ratings ≥ 4? What happens to the 1–3 star ratings?
 
 Ratings ≥ 4 are treated as genuine positive signals — things the user actually liked. Ratings 1–3 are discarded entirely rather than used as explicit negatives. This is intentional: a 3-star rating is ambiguous (lukewarm, not actively disliked), and using it as a hard negative could confuse the model. The negative signal instead comes from random unrated items, which are almost certainly irrelevant to the user.
 
 ---
 
-**Q: What exactly is contrastive learning? How does it differ from standard classification?**
+### Q6: What exactly is contrastive learning? How does it differ from standard classification?
 
 Standard classification trains on fixed labels (class 0, class 1). Contrastive learning has no fixed output classes — instead it learns by *comparing* examples. The model is told "these two things should be close, those two should be far apart" and adjusts embeddings accordingly. Triplet loss is one form: given an anchor (user), a positive (liked item), and a negative (irrelevant item), the loss is zero only when `dist(anchor, positive) < dist(anchor, negative) - margin`. The model learns geometry, not class boundaries.
 
 ---
 
-**Q: What is negative sampling and why is the while-loop necessary?**
+### Q7: What is negative sampling and why is the while-loop necessary?
 
 Negative sampling picks a random item the user has *not* interacted with to serve as the "wrong answer" for that training step. The while-loop is needed because a randomly chosen item might accidentally be one the user actually rated highly — using it as a negative would give the model a contradictory signal. The loop resamples until the candidate is genuinely unseen by that user:
 
@@ -366,7 +426,7 @@ For large catalogues this loop almost never iterates more than once, since the o
 
 ---
 
-**Q: What does `margin=0.2` mean in `TripletMarginLoss`?**
+### Q8: What does `margin=0.2` mean in `TripletMarginLoss`?
 
 The margin is a safety buffer. The full loss formula is:
 
@@ -378,7 +438,7 @@ Even if the positive is already closer than the negative, the loss is non-zero u
 
 ---
 
-**Q: Why does the model call `model(u, n)` twice — once for the positive and once for the negative?**
+### Q9: Why does the model call `model(u, n)` twice — once for the positive and once for the negative?
 
 ```python
 u_emb, p_emb = model(u, p)   # user + positive
@@ -389,31 +449,35 @@ _, n_emb     = model(u, n)   # user (discarded) + negative
 
 ---
 
-**Q: Why L2-normalise the embeddings? What goes wrong without it?**
+### Q10: Why L2-normalise the embeddings? What goes wrong without it?
 
 Without normalisation, embeddings can grow to arbitrary magnitudes. A user with a very high-norm vector would score highly against *every* item just because of its scale, not because of genuine similarity. L2 normalisation projects every vector onto the unit hypersphere (all norms = 1), so the dot product becomes pure cosine similarity and scores are bounded in [−1, 1]. It also stabilises training — gradients don't explode through high-norm vectors.
 
 ---
 
-**Q: What does the `nn.Linear` layer do on top of the embedding? Why not use the raw embedding directly?**
+### Q11: What does the `nn.Linear` layer do on top of the embedding? Why not use the raw embedding directly?
 
 The raw embedding is a lookup — it maps an integer ID to a learned dense vector but applies no transformation. The linear layer (`user_net`, `item_net`) rotates and rescales that vector into a *shared* dot-product space where user and item embeddings are geometrically compatible for comparison. Without it, user embeddings and item embeddings live in separate learned spaces with no guarantee they're aligned. The linear layer is the bridge that makes `user_emb · item_emb` meaningful.
 
 ---
 
-**Q: Why does loss stop improving after ~epoch 6 and plateau around 0.058?**
+### Q12: Why does loss stop improving after ~epoch 6 and plateau around 0.058?
 
-Several reasons:
+Reaching ~5.8% loss in only 10 epochs is fast — the main reason is **data quality**. MovieLens 100k is a clean, explicitly rated dataset: every positive is a deliberate 4–5 star rating with no ambiguity, and negatives are genuinely unseen items. That clean signal lets the model converge quickly.
+
+The plateau itself has three causes:
 
 1. **Easy negatives are exhausted.** Random negatives are usually very easy (the model quickly learns they're wrong). Once all easy negatives yield zero loss, only hard negatives still contribute — and there aren't many of those in random sampling.
 2. **Model capacity.** With `dim=32` and a single linear layer per tower, the model has limited expressiveness.
 3. **Data saturation.** 55k positives with 10 epochs means the model has seen every interaction multiple times.
 
+On noisier real-world data (implicit signals like clicks or dwell time), the same architecture would take more epochs and likely plateau at a higher loss — the clean explicit ratings are doing a lot of the work here.
+
 To push the loss lower: use hard negative mining (pick negatives the model currently ranks highest), increase `dim`, or add more layers.
 
 ---
 
-**Q: How does inference work differently from training?**
+### Q13: How does inference work differently from training?
 
 During training both towers run together in the same forward pass and gradients flow through both. At inference (`@torch.no_grad()`):
 
@@ -426,7 +490,7 @@ Step 1 can be pre-computed and cached. Step 2–4 happen at query time in micros
 
 ---
 
-**Q: What does Recall@10 = 87.15% actually measure?**
+### Q14: What does Recall@10 = 87.15% actually measure?
 
 For each user, take their set of positively-rated items (ground truth) and the model's top-10 predicted items. A "hit" is when the intersection is non-empty — at least one liked item appears in the top 10. Recall@10 is the fraction of users who get at least one hit:
 
@@ -440,7 +504,7 @@ return hits / n_users
 
 ---
 
-**Q: What are the main limitations of this implementation?**
+### Q15: What are the main limitations of this implementation?
 
 | Limitation | Impact | Fix |
 |---|---|---|
@@ -453,7 +517,134 @@ return hits / n_users
 
 ---
 
-**Q: How would you take this to production?**
+### Q16: Which models can I swap in or experiment with in this notebook?
+
+The current model is the simplest viable Two-Tower: one embedding + one linear per tower. Everything below plugs into the same training loop and `TripletMarginLoss` — only the `TwoTower` class changes.
+
+**Drop-in tower upgrades (same interface, more capacity)**
+
+```python
+# Current — 1 linear layer
+self.user_net = nn.Linear(dim, dim)
+
+# Deeper MLP tower — more expressive, same input/output shape
+self.user_net = nn.Sequential(
+    nn.Linear(dim, dim * 2),
+    nn.ReLU(),
+    nn.Linear(dim * 2, dim),
+)
+
+# With dropout for regularisation
+self.user_net = nn.Sequential(
+    nn.Linear(dim, dim * 2),
+    nn.ReLU(),
+    nn.Dropout(0.2),
+    nn.Linear(dim * 2, dim),
+)
+```
+
+**Alternative architectures (require more structural changes)**
+
+| Model | What changes | Why try it |
+|---|---|---|
+| **Matrix Factorisation** | Remove linear layers entirely — just `Embedding + F.normalize` | Simplest baseline; shows how much the linear layer helps |
+| **Neural CF (NCF)** | Concatenate user + item embeddings, pass through shared MLP for binary output | Uses BCE loss instead of triplet; classic paper benchmark |
+| **LightGCN** | Replace embedding lookup with graph convolution over user-item interaction graph | State-of-the-art on sparse data; needs `torch_geometric` |
+| **SASRec** | User tower becomes a Transformer over the user's interaction history | Models sequential behaviour — "next item" prediction |
+| **Wide & Deep** | Add raw feature inputs (genre, user age) alongside ID embeddings | Tests whether side features improve over ID-only |
+
+**Larger embedding dim**
+
+The current `dim=32` is small. Try `64`, `128`, or `256` — loss and Recall@10 should both improve at the cost of more memory and a larger ANN index.
+
+**Loss function alternatives**
+
+```python
+# Current
+nn.TripletMarginLoss(margin=0.2)
+
+# BPR loss (Bayesian Personalised Ranking) — equivalent idea, different formulation
+loss = -torch.log(torch.sigmoid(pos_score - neg_score)).mean()
+
+# InfoNCE / in-batch negatives — treat all other items in the batch as negatives
+# more efficient: one forward pass, N-1 negatives per sample for free
+```
+
+---
+
+### Q17: What other datasets can I use to simulate production conditions?
+
+MovieLens 100k is too clean and small to surface real production problems. These datasets add the noise, scale, and implicit signal patterns you'd face in production:
+
+**Larger MovieLens variants (easiest starting point)**
+
+| Dataset | Users | Items | Ratings | Get it |
+|---|---|---|---|---|
+| MovieLens 1M | 6,040 | 3,706 | 1M | `grouplens.org/datasets/movielens/1m/` |
+| MovieLens 10M | 72,000 | 10,681 | 10M | `grouplens.org/datasets/movielens/10m/` |
+| MovieLens 20M | 138,000 | 27,000 | 20M | `grouplens.org/datasets/movielens/20m/` |
+
+Same schema as 100k — just change the URL. Good for benchmarking how Recall@10 and training time scale.
+
+**Implicit feedback datasets (simulate click/view signals, no explicit ratings)**
+
+| Dataset | Domain | Scale | Why useful |
+|---|---|---|---|
+| **Amazon Reviews** | E-commerce (books, electronics, etc.) | Millions | Sparse, noisy, cold-start heavy — closest to real retail |
+| **Yelp Open Dataset** | Restaurants / local business | 7M reviews | Geographic signal, text reviews available for content features |
+| **Steam Games** | Video games | 200k users, 11k games | Implicit playtime signal, strong cold-start problem |
+| **LastFM** | Music listening | 1,000 users, 170k artists | Play counts as implicit signal, good for sequential models |
+| **Pinterest** | Image pinning | 55M interactions | Implicit only, very sparse — tests ANN at scale |
+
+**RecSys challenge datasets (production-grade)**
+
+| Dataset | Domain | What makes it hard |
+|---|---|---|
+| **Criteo** | Display advertising CTR | 45M samples, extreme sparsity, 1-bit implicit signal |
+| **Netflix Prize** | Movies | 100M ratings, temporal drift, 480k users |
+| **Spotify Million Playlist** | Music playlist continuation | Cold-start on new playlists, sequential order matters |
+
+**Loading Amazon Reviews (drop-in replacement)**
+
+```python
+import json, gzip
+
+def load_amazon(path):
+    with gzip.open(path) as f:
+        for line in f:
+            yield json.loads(line)
+
+# Filter: rating >= 4 → positive, same as MovieLens pattern
+rows = [(d['reviewerID'], d['asin'], d['overall'])
+        for d in load_amazon('reviews_Electronics_5.json.gz')
+        if d['overall'] >= 4]
+df = pd.DataFrame(rows, columns=['user_id', 'item_id', 'rating'])
+```
+
+**What production conditions each dataset stresses**
+
+```
+CONDITION                    DATASET TO USE
+─────────────────────────────────────────────────────────
+Scale (millions of items)    Amazon, Netflix Prize, Pinterest
+Implicit-only signal         Steam, LastFM, Pinterest, Criteo
+Cold-start (new items)       Amazon (long tail of rare products)
+Temporal drift               Netflix Prize, MovieLens 20M (use time split)
+Sequential behaviour         Spotify, LastFM (order of interactions matters)
+Side features (text/image)   Amazon (review text), Pinterest (images)
+Extreme sparsity             Criteo, Pinterest
+```
+
+**Recommended progression**
+
+1. Start: MovieLens 1M — same code, 10× data
+2. Add noise: Amazon Electronics — implicit signals, sparse
+3. Test scale: MovieLens 20M with temporal train/val/test split
+4. Stress ANN: Pinterest or Amazon at full scale — build a real Faiss index
+
+---
+
+### Q18: How would you take this to production?
 
 1. Pre-compute all item embeddings and store them in a vector database (e.g. pgvector, Pinecone, Faiss).
 2. At request time, run only the user tower → query the vector DB for nearest neighbours.
@@ -465,13 +656,13 @@ return hits / n_users
 
 ## FAQ — minerU_2.5.ipynb
 
-**Q: What is MinerU 2.5?**
+### Q1: What is MinerU 2.5?
 
 MinerU is an open-source document intelligence toolkit from OpenDataLab. Version 2.5 adds a vision-language (VL) pipeline powered by a fine-tuned Qwen2-VL model. It extracts structured content from document images — titles, headers, body text, tables, figures — and returns them as typed blocks with normalised bounding boxes. It works on scanned PDFs, photos of documents, receipts, ID cards, and technical reports.
 
 ---
 
-**Q: What model does it actually use under the hood?**
+### Q2: What model does it actually use under the hood?
 
 `opendatalab/MinerU2.5-2509-1.2B` — a 1.2 billion parameter vision-language model fine-tuned from Qwen2-VL on document understanding tasks. "2509" in the name is the training checkpoint date (September 2025). It's loaded via HuggingFace Transformers:
 
@@ -485,7 +676,7 @@ model = Qwen2VLForConditionalGeneration.from_pretrained(
 
 ---
 
-**Q: What does `client.two_step_extract()` do?**
+### Q3: What does `client.two_step_extract()` do?
 
 It runs a two-stage pipeline on a single document image:
 
@@ -505,7 +696,7 @@ The result is a list of dicts, one per block:
 
 ---
 
-**Q: What block types does MinerU detect and what color is each in the visualisation?**
+### Q4: What block types does MinerU detect and what color is each in the visualisation?
 
 | Block type | Color | Typical content |
 |---|---|---|
@@ -520,7 +711,7 @@ The result is a list of dicts, one per block:
 
 ---
 
-**Q: What are "normalised bounding boxes" and how are they converted to pixels?**
+### Q5: What are "normalised bounding boxes" and how are they converted to pixels?
 
 The model returns bounding boxes as `[x1, y1, x2, y2]` with values in `[0, 1]` relative to the image dimensions. This makes them resolution-independent. `display_extraction` converts to pixel coordinates for drawing:
 
@@ -534,7 +725,7 @@ A bbox of `[0.1, 0.05, 0.9, 0.12]` on a 1000×800 image becomes the rectangle `[
 
 ---
 
-**Q: What documents were tested in the notebook?**
+### Q6: What documents were tested in the notebook?
 
 Four document types from the `ocr-documents.zip` archive:
 
@@ -549,13 +740,13 @@ This range tests MinerU across very different layouts — structured corporate d
 
 ---
 
-**Q: What is `MinerUClient` and why use it instead of calling the model directly?**
+### Q7: What is `MinerUClient` and why use it instead of calling the model directly?
 
 `MinerUClient` from `mineru-vl-utils` is a thin wrapper that handles the two-step pipeline (layout detection → content extraction) and manages prompt construction for the Qwen2-VL model. Calling the model directly would require you to manually craft the VL prompt, parse the raw output, and convert coordinates — `MinerUClient` abstracts all of that into a single `two_step_extract(image)` call.
 
 ---
 
-**Q: What is `magic-pdf.json` and why is it configured?**
+### Q8: What is `magic-pdf.json` and why is it configured?
 
 MinerU's CLI tool (`mineru`) reads `~/.config/magic-pdf.json` for runtime settings. The notebook sets `device-mode: "cuda"` and points `models-dir` at the HuggingFace cache path so the CLI knows where the downloaded model lives and runs it on GPU:
 
@@ -570,7 +761,7 @@ This only matters when using the CLI (`mineru -p input.pdf`). The Python API (`M
 
 ---
 
-**Q: How do I run MinerU on a PDF from the command line?**
+### Q9: How do I run MinerU on a PDF from the command line?
 
 ```bash
 # GPU
@@ -584,7 +775,7 @@ The output directory will contain Markdown, JSON (structured blocks), and images
 
 ---
 
-**Q: How does the side-by-side display work?**
+### Q10: How does the side-by-side display work?
 
 `display_extraction` produces an inline HTML page rendered directly in the Jupyter output cell:
 
@@ -593,19 +784,19 @@ The output directory will contain Markdown, JSON (structured blocks), and images
 
 ---
 
-**Q: Does MinerU work without a GPU?**
+### Q11: Does MinerU work without a GPU?
 
 Yes, but slowly. The 1.2B parameter model runs on CPU; expect seconds to minutes per page depending on hardware. The notebook checks GPU availability and `magic-pdf.json` sets `device-mode: "cuda"`. For CPU-only use set `device-mode: "cpu"` in the config and remove `CUDA_VISIBLE_DEVICES` from the CLI call. The Python API respects `device_map="auto"` which falls back to CPU automatically.
 
 ---
 
-**Q: Why does the notebook call `!pip install -U "mineru[all]"` twice (cell 2 and cell 23)?**
+### Q12: Why does the notebook call `!pip install -U "mineru[all]"` twice (cell 2 and cell 23)?
 
 Cell 23 is a leftover re-run of the install cell, likely from debugging a missing dependency mid-session. It's harmless (pip is idempotent) but redundant — it can be deleted.
 
 ---
 
-**Q: How do I use MinerU on my own documents?**
+### Q13: How do I use MinerU on my own documents?
 
 ```python
 from mineru_vl_utils import MinerUClient

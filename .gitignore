@@ -15,9 +15,11 @@ C:/hf/
 /.mypy_cache
 /data
 /fais-indexes
-# Jupyter notebooks — all ignored except ingestion_pipeline.ipynb
+# Jupyter notebooks — all ignored except specific tracked ones
 *.ipynb
 !notebook/ingestion_pipeline.ipynb
+!coding_fun/misc/ML/two_tower_NN.ipynb
+!coding_fun/misc/ML/minerU_2.5.ipynb
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 **/.env
