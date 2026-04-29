@@ -514,6 +514,142 @@ torch.topk result            YES — top-k items ranked by cosine similarity
 
 The weights themselves stay inside the model file and are never directly stored in the ANN index.
 
+**Do we compute dot products for every user and every item during offline inference?**
+
+No — offline inference computes **zero dot products**. It only runs the item tower forward pass. Users are not involved at all.
+
+```
+OFFLINE INFERENCE  (item tower only, no users, no dot products)
+────────────────────────────────────────────────────────────────
+
+item_id=0  ──►  item tower  ──►  unit-norm vec  (32,)  ┐
+item_id=1  ──►  item tower  ──►  unit-norm vec  (32,)  │
+item_id=2  ──►  item tower  ──►  unit-norm vec  (32,)  │  stacked into
+   ...                                                  │  item_embs
+item_id=N  ──►  item tower  ──►  unit-norm vec  (32,)  ┘  (N × 32)
+                                                        │
+                                                        ▼
+                                               ANN index.add(item_embs)
+                                               — organise into search
+                                                 structure, no dot
+                                                 products computed here
+                                               — index saved to disk
+
+dot products: 0
+user tower:   never called
+```
+
+Dot products only happen later, at query time, when a specific user's embedding is compared against the index:
+
+```
+WHERE DOT PRODUCTS ACTUALLY HAPPEN
+───────────────────────────────────────────────────────────────────────────────
+OFFLINE INFERENCE    item tower fwd pass over all items    0 dot products
+ANN index build      organise item vectors into graph/     item-item dot products
+                     clusters internally — see note below  (NOT user-item)
+───────────────────────────────────────────────────────────────────────────────
+ONLINE (brute-force) user_emb @ item_embs.T                n_items per query
+ONLINE (ANN/HNSW)    graph traversal, ~200-500 nodes        ≪ n_items per query
+NOTEBOOK EVAL        user_embs @ item_embs.T                n_users × n_items
+```
+
+The separation is the entire point of the architecture: item vectors are computed once offline, user vectors are computed per query, and the ANN index makes sure the dot products at query time are sub-linear rather than exhaustive.
+
+**But how does the ANN index get updated without recomputing similarity scores?**
+
+The ANN index does not store similarity scores. It stores the raw item embedding vectors and organises them into a spatial search structure. Scores are never pre-computed or stored anywhere — they are computed on the fly at query time against whoever is asking.
+
+```
+WHAT THE ANN INDEX ACTUALLY CONTAINS
+──────────────────────────────────────────────────────────────────
+NOT this:
+  user_1 → [film_3: 0.91, film_7: 0.87, film_91: 0.83, ...]   ✗
+  user_2 → [film_7: 0.95, film_1: 0.72, ...]                   ✗
+
+YES this:
+  A spatial data structure over item vectors only.
+  No users. No scores. Just item points in 32-D space.
+
+  film_3  →  [0.12, -0.43, 0.71, ...]   (32,) unit-norm vector
+  film_7  →  [0.55,  0.22, -0.31, ...]  (32,) unit-norm vector
+  film_91 →  [-0.08, 0.61,  0.44, ...]  (32,) unit-norm vector
+  ...
+```
+
+When the model is retrained, the item vectors change (new weights → new geometry). To update the ANN index you rebuild it from the new item vectors. This does involve dot product computations internally — but they are **item-item**, not user-item:
+
+```
+REBUILDING THE ANN INDEX AFTER RETRAIN
+────────────────────────────────────────
+Old item_embs  (stale, from old weights)  →  discard old index
+        │
+        ▼
+Offline inference: item tower (new weights) over all item IDs
+        │
+        ▼
+New item_embs  (N × 32)   ← new vectors in new geometry
+        │
+        ▼
+index = faiss.IndexHNSWFlat(32, M=32)
+index.add(new_item_embs)   ← load new vectors into spatial structure
+        │
+        ▼
+New index deployed  ← scores not stored; no users involved
+```
+
+**What are those internal dot products during index build?**
+
+They are item-item distance computations used to organise the spatial structure. No user is involved. The nature depends on the index type:
+
+```
+HNSW (Hierarchical Navigable Small World)
+  index.add(item_embs):
+    For each new item being inserted, compute dot products against
+    its M nearest neighbours to wire it into the graph.
+    Cost: O(N × M × log N) item-item dot products total.
+    M=32 is typical — each node connects to 32 others.
+    Result: a multi-layer proximity graph over item vectors.
+
+IVF (Inverted File Index)
+  index.train(item_embs):
+    Run k-means on all item vectors to find K centroids.
+    Cost: O(N × K × iterations) item-centroid dot products.
+    Result: K cluster centroids.
+  index.add(item_embs):
+    Assign each item to its nearest centroid.
+    Cost: O(N × K) dot products.
+    Result: items bucketed into K inverted lists.
+```
+
+Both are one-time costs at index build time — paid once per retrain cycle, not per query. The distinction that matters:
+
+```
+INDEX BUILD  →  item-item dot products   (organise spatial structure)
+QUERY TIME   →  user-item dot products   (find nearest items for this user)
+```
+
+Users never appear during index build. Items never need to know about users to form a good spatial structure — they just need to know which other items are nearby in the embedding space.
+
+The scores only appear when a user query arrives:
+
+```
+QUERY TIME  (scores computed here, not before)
+───────────────────────────────────────────────
+user_emb (1 × 32)  arrives
+        │
+        ▼
+index.search(user_emb, k=10)
+  → HNSW traverses its graph, computing dot products against
+    ~200-500 nearby item vectors (not all N)
+  → returns the k item IDs with the highest dot product scores
+        │
+        ▼
+Scores are returned to the caller — they are not stored in the index
+Next query for a different user repeats the same process from scratch
+```
+
+So to directly answer: the ANN index never needs similarity scores to be updated. You update it by replacing the item vectors inside it. The scores are ephemeral — computed per query, returned, then gone.
+
 ---
 
 ### Q5: What is a Two-Tower model and why is it called that?
