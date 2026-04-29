@@ -7,21 +7,22 @@
 - [Q1. Training pipeline diagram](#q1-what-does-the-full-training-pipeline-look-like)
 - [Q2. Inference pipeline diagram](#q2-what-does-the-full-inference-pipeline-look-like)
 - [Q3. Why do we need offline inference?](#q3-why-do-we-need-offline-inference-and-why-is-a-forward-pass-called-inference-at-all)
-- [Q4. What is a Two-Tower model?](#q4-what-is-a-two-tower-model-and-why-is-it-called-that)
-- [Q5. Why filter ratings ≥ 4?](#q5-why-filter-for-ratings--4-what-happens-to-the-13-star-ratings)
-- [Q6. What is contrastive learning?](#q6-what-exactly-is-contrastive-learning-how-does-it-differ-from-standard-classification)
-- [Q7. What is negative sampling?](#q7-what-is-negative-sampling-and-why-is-the-while-loop-necessary)
-- [Q8. What does margin=0.2 mean?](#q8-what-does-margin02-mean-in-tripletmarginloss)
-- [Q9. Why call model(u, n) twice?](#q9-why-does-the-model-call-modelu-n-twice--once-for-the-positive-and-once-for-the-negative)
-- [Q10. Why L2-normalise embeddings?](#q10-why-l2-normalise-the-embeddings-what-goes-wrong-without-it)
-- [Q11. What does nn.Linear do on top of the embedding?](#q11-what-does-nnlinear-do-on-top-of-the-embedding-why-not-use-the-raw-embedding-directly)
-- [Q12. Why does loss plateau at ~0.058?](#q12-why-does-loss-stop-improving-after-epoch-6-and-plateau-around-0058)
-- [Q13. How does inference differ from training?](#q13-how-does-inference-work-differently-from-training)
-- [Q14. What does Recall@10 measure?](#q14-what-does-recall10--8715-actually-measure)
-- [Q15. Main limitations](#q15-what-are-the-main-limitations-of-this-implementation)
-- [Q16. Which models can I use?](#q16-which-models-can-i-swap-in-or-experiment-with-in-this-notebook)
-- [Q17. What datasets simulate production?](#q17-what-other-datasets-can-i-use-to-simulate-production-conditions)
-- [Q18. How to take this to production?](#q18-how-would-you-take-this-to-production)
+- [Q4. Where are embeddings stored? Are they the trained weights?](#q4-where-are-user-and-item-embeddings-stored-in-the-model-are-they-the-trained-weights)
+- [Q5. What is a Two-Tower model?](#q5-what-is-a-two-tower-model-and-why-is-it-called-that)
+- [Q6. Why filter ratings ≥ 4?](#q6-why-filter-for-ratings--4-what-happens-to-the-13-star-ratings)
+- [Q7. What is contrastive learning?](#q7-what-exactly-is-contrastive-learning-how-does-it-differ-from-standard-classification)
+- [Q8. What is negative sampling?](#q8-what-is-negative-sampling-and-why-is-the-while-loop-necessary)
+- [Q9. What does margin=0.2 mean?](#q9-what-does-margin02-mean-in-tripletmarginloss)
+- [Q10. Why call model(u, n) twice?](#q10-why-does-the-model-call-modelu-n-twice--once-for-the-positive-and-once-for-the-negative)
+- [Q11. Why L2-normalise embeddings?](#q11-why-l2-normalise-the-embeddings-what-goes-wrong-without-it)
+- [Q12. What does nn.Linear do on top of the embedding?](#q12-what-does-nnlinear-do-on-top-of-the-embedding-why-not-use-the-raw-embedding-directly)
+- [Q13. Why does loss plateau at ~0.058?](#q13-why-does-loss-stop-improving-after-epoch-6-and-plateau-around-0058)
+- [Q14. How does inference differ from training?](#q14-how-does-inference-work-differently-from-training)
+- [Q15. What does Recall@10 measure?](#q15-what-does-recall10--8715-actually-measure)
+- [Q16. Main limitations](#q16-what-are-the-main-limitations-of-this-implementation)
+- [Q17. Which models can I use?](#q17-which-models-can-i-swap-in-or-experiment-with-in-this-notebook)
+- [Q18. What datasets simulate production?](#q18-what-other-datasets-can-i-use-to-simulate-production-conditions)
+- [Q19. How to take this to production?](#q19-how-would-you-take-this-to-production)
 
 **minerU_2.5.ipynb**
 - [Q1. What is MinerU 2.5?](#q1-what-is-mineru-25)
@@ -262,11 +263,14 @@ user_emb                         shape: (1 × 32)
 │    → skips most of the catalogue, O(log n) or sub-linear    │
 │    → pgvector, Pinecone, Weaviate all do the same thing     │
 │                                                             │
-│  Both return the same shape: top-k item indices             │
+│  Both return k item indices ranked by cosine similarity     │
+│  score (highest first) — rank 1 = most similar to user     │
 └─────────────────────────────────────────────────────────────┘
         │
         ▼
-top_k_item_ids  [film_3, film_91, film_7, ...]   ← recommendations
+top_k_item_ids  [film_3, film_91, film_7, ...]
+  ranked by cosine similarity score (descending)
+  film_3 = highest score = strongest match for this user
 
 
 EVAL  (Recall@10)
@@ -365,7 +369,9 @@ user_emb  (1 × dim)   ← user projected into the shared space
         └──► ANN index.search(user_emb, k=10) ─────────────┘
                         │
                         ▼
-             Top-k item IDs returned
+             Top-k item IDs returned,
+             ranked by cosine similarity score (descending)
+             rank 1 = highest score = strongest match
 ```
 
 **Item vs user: why the asymmetry**
@@ -394,7 +400,59 @@ MovieLens 100k has only 1,682 items. `torch.topk` over 1,682 scores takes micros
 
 ---
 
-### Q4: What is a Two-Tower model and why is it called that?
+### Q4: Where are user and item embeddings stored in the model? Are they the trained weights?
+
+Yes — the embeddings **are** the weights. `nn.Embedding` is nothing more than a learnable matrix stored as a parameter in the model. Looking up an embedding is just indexing a row from that matrix.
+
+```python
+self.user_emb = nn.Embedding(n_users, dim)  # weight matrix: (n_users × 32)
+self.item_emb = nn.Embedding(n_items, dim)  # weight matrix: (n_items × 32)
+```
+
+These are initialised randomly and updated by backprop on every training step, exactly like any other weight in the network. The full set of trained parameters in `TwoTower` is:
+
+```
+PARAMETER              SHAPE           WHAT IT STORES
+──────────────────────────────────────────────────────────────
+user_emb.weight        (n_users × 32)  one row = one user's raw embedding
+item_emb.weight        (n_items × 32)  one row = one item's raw embedding
+user_net.weight        (32 × 32)       linear projection for user tower
+user_net.bias          (32,)
+item_net.weight        (32 × 32)       linear projection for item tower
+item_net.bias          (32,)
+```
+
+**What the embedding lookup actually does**
+
+```python
+# This line:
+self.user_emb(u_ids)
+
+# Is equivalent to:
+self.user_emb.weight[u_ids]   # just row indexing — no multiplication
+```
+
+`u_ids` is a LongTensor of integer user IDs. The embedding layer uses them as row indices to fetch the corresponding rows from `user_emb.weight`. The gradient flows back into those specific rows during backprop, updating only the rows that were looked up in that batch.
+
+**So where do the final embeddings (used for ANN) come from?**
+
+The raw embedding rows from `user_emb.weight` / `item_emb.weight` are **not** what gets stored in the ANN index. They pass through one more step first:
+
+```
+user_emb.weight[user_id]   ← raw trained weight row  (32,)
+        │
+        ▼
+user_net(...)              ← linear projection       (32,)
+        │
+        ▼
+F.normalize(...)           ← unit-norm               (32,)   ← THIS goes into ANN
+```
+
+The ANN index stores the post-projection, post-normalisation vectors — not the raw embedding weights directly. The weights themselves stay inside the model file.
+
+---
+
+### Q5: What is a Two-Tower model and why is it called that?
 
 Two separate neural networks (towers) process the user and the item independently and produce embeddings in a shared vector space. They never see each other's raw features during the forward pass — only the final embeddings are compared. The name comes from the two parallel sub-networks standing side by side. This separation is what makes the architecture scalable: at inference time you pre-compute all item embeddings once offline, then a user query is just one tower forward pass + a nearest-neighbour lookup.
 
@@ -438,7 +496,7 @@ Even if the positive is already closer than the negative, the loss is non-zero u
 
 ---
 
-### Q9: Why does the model call `model(u, n)` twice — once for the positive and once for the negative?
+### Q10: Why does the model call `model(u, n)` twice — once for the positive and once for the negative?
 
 ```python
 u_emb, p_emb = model(u, p)   # user + positive
@@ -449,19 +507,19 @@ _, n_emb     = model(u, n)   # user (discarded) + negative
 
 ---
 
-### Q10: Why L2-normalise the embeddings? What goes wrong without it?
+### Q11: Why L2-normalise the embeddings? What goes wrong without it?
 
 Without normalisation, embeddings can grow to arbitrary magnitudes. A user with a very high-norm vector would score highly against *every* item just because of its scale, not because of genuine similarity. L2 normalisation projects every vector onto the unit hypersphere (all norms = 1), so the dot product becomes pure cosine similarity and scores are bounded in [−1, 1]. It also stabilises training — gradients don't explode through high-norm vectors.
 
 ---
 
-### Q11: What does the `nn.Linear` layer do on top of the embedding? Why not use the raw embedding directly?
+### Q12: What does the `nn.Linear` layer do on top of the embedding? Why not use the raw embedding directly?
 
 The raw embedding is a lookup — it maps an integer ID to a learned dense vector but applies no transformation. The linear layer (`user_net`, `item_net`) rotates and rescales that vector into a *shared* dot-product space where user and item embeddings are geometrically compatible for comparison. Without it, user embeddings and item embeddings live in separate learned spaces with no guarantee they're aligned. The linear layer is the bridge that makes `user_emb · item_emb` meaningful.
 
 ---
 
-### Q12: Why does loss stop improving after ~epoch 6 and plateau around 0.058?
+### Q13: Why does loss stop improving after ~epoch 6 and plateau around 0.058?
 
 Reaching ~5.8% loss in only 10 epochs is fast — the main reason is **data quality**. MovieLens 100k is a clean, explicitly rated dataset: every positive is a deliberate 4–5 star rating with no ambiguity, and negatives are genuinely unseen items. That clean signal lets the model converge quickly.
 
@@ -477,7 +535,7 @@ To push the loss lower: use hard negative mining (pick negatives the model curre
 
 ---
 
-### Q13: How does inference work differently from training?
+### Q14: How does inference work differently from training?
 
 During training both towers run together in the same forward pass and gradients flow through both. At inference (`@torch.no_grad()`):
 
@@ -490,7 +548,7 @@ Step 1 can be pre-computed and cached. Step 2–4 happen at query time in micros
 
 ---
 
-### Q14: What does Recall@10 = 87.15% actually measure?
+### Q15: What does Recall@10 = 87.15% actually measure?
 
 For each user, take their set of positively-rated items (ground truth) and the model's top-10 predicted items. A "hit" is when the intersection is non-empty — at least one liked item appears in the top 10. Recall@10 is the fraction of users who get at least one hit:
 
@@ -504,7 +562,7 @@ return hits / n_users
 
 ---
 
-### Q15: What are the main limitations of this implementation?
+### Q16: What are the main limitations of this implementation?
 
 | Limitation | Impact | Fix |
 |---|---|---|
@@ -517,7 +575,7 @@ return hits / n_users
 
 ---
 
-### Q16: Which models can I swap in or experiment with in this notebook?
+### Q17: Which models can I swap in or experiment with in this notebook?
 
 The current model is the simplest viable Two-Tower: one embedding + one linear per tower. Everything below plugs into the same training loop and `TripletMarginLoss` — only the `TwoTower` class changes.
 
@@ -572,7 +630,7 @@ loss = -torch.log(torch.sigmoid(pos_score - neg_score)).mean()
 
 ---
 
-### Q17: What other datasets can I use to simulate production conditions?
+### Q18: What other datasets can I use to simulate production conditions?
 
 MovieLens 100k is too clean and small to surface real production problems. These datasets add the noise, scale, and implicit signal patterns you'd face in production:
 
@@ -644,7 +702,7 @@ Extreme sparsity             Criteo, Pinterest
 
 ---
 
-### Q18: How would you take this to production?
+### Q19: How would you take this to production?
 
 1. Pre-compute all item embeddings and store them in a vector database (e.g. pgvector, Pinecone, Faiss).
 2. At request time, run only the user tower → query the vector DB for nearest neighbours.
