@@ -23,6 +23,7 @@
 - [Q17. Which models can I use?](#q17-which-models-can-i-swap-in-or-experiment-with-in-this-notebook)
 - [Q18. What datasets simulate production?](#q18-what-other-datasets-can-i-use-to-simulate-production-conditions)
 - [Q19. How to take this to production?](#q19-how-would-you-take-this-to-production)
+- [Q20. How does final ranking work? LightGBM / XGBoost?](#q20-how-does-final-ranking-work-in-production-do-systems-use-lightgbm-or-xgboost)
 
 **minerU_2.5.ipynb**
 - [Q1. What is MinerU 2.5?](#q1-what-is-mineru-25)
@@ -899,6 +900,111 @@ Extreme sparsity             Criteo, Pinterest
 2. Add noise: Amazon Electronics — implicit signals, sparse
 3. Test scale: MovieLens 20M with temporal train/val/test split
 4. Stress ANN: Pinterest or Amazon at full scale — build a real Faiss index
+
+---
+
+### Q20: How does final ranking work in production? Do systems use LightGBM or XGBoost?
+
+Yes — LightGBM and XGBoost are standard for the re-ranking stage. Production recommendation systems are always multi-stage pipelines. The Two-Tower + ANN is just the first stage (retrieval). Here is the full picture:
+
+```
+MULTI-STAGE PRODUCTION PIPELINE
+─────────────────────────────────────────────────────────────────────
+
+STAGE 1 — CANDIDATE RETRIEVAL  (fast, approximate, high recall)
+────────────────────────────────
+Multiple candidate generators run in parallel, each targeting a
+different aspect of user preference:
+
+  Two-Tower ANN        →  top-200  (collaborative: "users like you liked")
+  Content-based ANN    →  top-200  (item features: "similar to what you watched")
+  Trending / Popular   →  top-100  (global or category popularity)
+  Session-based model  →  top-100  (recent browsing context)
+  Editorial / Rules    →  top-50   (new releases, promoted items)
+        │
+        ▼
+  Merge + deduplicate  →  ~500–1000 unique candidates
+        │
+        ▼
+  Each candidate is a (user, item) pair with no final score yet
+
+
+STAGE 2 — SCORING / RE-RANKING  (slower, precise, feature-rich)
+─────────────────────────────────
+For each of the ~500–1000 (user, item) candidates, build a feature
+vector and run a scoring model:
+
+  Features per candidate:
+    ├── user features     : demographics, tenure, avg rating, device
+    ├── item features     : genre, release year, avg CTR, freshness
+    ├── interaction       : dot product score from stage 1, which
+    │                       generator produced this candidate
+    ├── cross features    : (user_genre_affinity × item_genre),
+    │                       (user_activity_level × item_popularity)
+    └── contextual        : time of day, day of week, platform
+
+  Scoring model options:
+    ├── LightGBM / XGBoost   ← most common in industry
+    │     fast inference, handles heterogeneous features well,
+    │     interpretable, robust to missing values
+    │
+    ├── Deep & Cross Network (DCN)
+    │     neural model, learns explicit feature crosses
+    │
+    └── DIN / DIEN (Alibaba)
+          attention over user's historical interactions,
+          weights history by similarity to current candidate
+
+  Output: one score per candidate  (predicted CTR, engagement, rating)
+
+
+STAGE 3 — FINAL RANKING + BUSINESS RULES
+──────────────────────────────────────────
+Sort candidates by score from stage 2, then apply constraints:
+
+  Diversity       : don't show 10 action films in a row
+                    (MMR — Maximal Marginal Relevance)
+  Freshness       : boost items uploaded in last 7 days
+  Deduplication   : remove items user already watched / purchased
+  Sponsored slots : inject paid placements at fixed positions
+  Fairness        : ensure minority-category items get minimum exposure
+  Business rules  : don't show age-restricted content to minors
+        │
+        ▼
+  Final ranked list of top-10 (or top-N) items served to user
+```
+
+**Why not use the Two-Tower score directly for final ranking?**
+
+The Two-Tower score is a single dot product — it only captures collaborative similarity (users-like-you). It has no access to item freshness, current CTR, contextual signals, or business constraints. LightGBM/XGBoost can incorporate all of these as features and is trained directly on the target metric (CTR, watch time, purchase) rather than triplet loss.
+
+```
+TWO-TOWER SCORE              RE-RANKER SCORE
+────────────────             ───────────────────────────────────
+1 number: cos(θ)             1 number: predicted CTR / engagement
+based on: ID embeddings      based on: embeddings + metadata +
+          only                         context + business signals
+trained on: triplet loss     trained on: actual user click labels
+speed: microseconds          speed: milliseconds (500 candidates)
+recall-oriented              precision-oriented
+```
+
+**Why LightGBM / XGBoost specifically?**
+
+- Heterogeneous features: mixes dense embeddings, sparse categoricals, and floats without normalisation
+- Fast inference: scores 500 candidates in ~1ms on CPU
+- Calibrated probabilities: outputs actual CTR estimates, not just ranks
+- Interpretable: SHAP values explain why an item was ranked highly
+- Battle-tested: Netflix, Airbnb, LinkedIn, Twitter all use GBDT re-rankers
+
+**The full stack in one line per stage**
+
+```
+Retrieval (Two-Tower ANN)  →  ~500 candidates  in ~10ms
+Re-ranking (LightGBM)      →  scored list       in ~5ms
+Business rules             →  final top-10      in ~1ms
+Total serving latency      →  ~20ms end-to-end
+```
 
 ---
 
