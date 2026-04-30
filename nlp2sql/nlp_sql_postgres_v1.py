@@ -88,15 +88,14 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Load credentials from both .env files:
-#   pydantic-ai-experiments/.env  -> OPENAI_API_KEY
-#   deltalake-projects/.env       -> GCS_HMAC_ID, GCS_HMAC_SECRET
+# Load credentials from .env files
 # ---------------------------------------------------------------------------
-_DELTALAKE_ENV = Path("C:/Users/rohan/Documents/deltalake-projects/.env")
-
-
 def _load_env() -> None:
-    for env_path in [Path(__file__).parent.parent / ".env", _DELTALAKE_ENV]:
+    paths = [Path(__file__).parent.parent / ".env"]
+    extra = os.environ.get("EXTRA_ENV_PATH")
+    if extra:
+        paths.append(Path(extra))
+    for env_path in paths:
         if env_path.exists():
             load_dotenv(env_path, override=False)
             logger.info("Loaded .env from %s", env_path)
@@ -353,18 +352,12 @@ if __name__ == "__main__":
 
     source = UnifiedDataSource(
         conn=conn,
-        gcs_bucket="eagerbeaver-1",
-        gcs_prefix="partitioned_data/",
-        gcs_user_project="heroic-rain-447418-j7",
+        gcs_bucket=os.environ["GCS_BUCKET"],
+        gcs_prefix=os.environ.get("GCS_PREFIX", "partitioned_data/"),
+        gcs_user_project=os.environ["GCS_USER_PROJECT"],
         postgres_dbs=[
-            PostgresDB(
-                alias="rag",
-                connection_string="postgresql://rag_user:rag_pass@localhost:5434/rag_db",
-            ),
-            PostgresDB(
-                alias="local_pg",
-                connection_string="postgresql://postgres:postgres@localhost:5432/postgres",
-            ),
+            PostgresDB("rag",      os.environ["RAG_DB_URL"]),
+            PostgresDB("local_pg", os.environ["LOCAL_PG_URL"]),
         ],
     )
 

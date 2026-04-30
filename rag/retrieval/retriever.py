@@ -311,6 +311,22 @@ class Retriever:
                 f"[RERANK] {self.settings.reranker_type}: trimmed to {len(results)} results"
             )
 
+        # 6. Relevance threshold guardrail — drop low-confidence chunks
+        threshold = self.settings.min_relevance_score
+        if threshold > 0 and results:
+            before = len(results)
+            results = [r for r in results if r.similarity >= threshold]
+            dropped = before - len(results)
+            if dropped:
+                logger.warning(
+                    "[GUARDRAIL] Relevance threshold %.2f dropped %d/%d chunk(s) "
+                    "(max kept score: %.2f)",
+                    threshold,
+                    dropped,
+                    before,
+                    max((r.similarity for r in results), default=0.0),
+                )
+
         elapsed_ms = (time.time() - start_time) * 1000
         logger.info(f"[RETRIEVE] Done: {len(results)} results in {elapsed_ms:.0f}ms")
 
@@ -348,14 +364,14 @@ class Retriever:
         results = await self.retrieve(query, match_count, search_type)
 
         if not results:
-            return "No relevant information found in the knowledge base."
+            return "No relevant information found in the knowledge base for this query."
 
-        # Format results
-        response_parts = [f"Found {len(results)} relevant documents:\n"]
+        # Format results — chunk_id is included so the agent can cite specific sources
+        response_parts = [f"Found {len(results)} relevant document(s):\n"]
 
         for i, result in enumerate(results, 1):
             response_parts.append(
-                f"\n--- Document {i}: {result.document_title} "
+                f"\n--- Source [{result.chunk_id}] {result.document_title} "
                 f"(relevance: {result.similarity:.2f}) ---"
             )
             response_parts.append(result.content)

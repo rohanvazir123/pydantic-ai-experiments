@@ -221,6 +221,31 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q150. Can we leverage the GPU to speed up CUAD / document ingestion?](#q150)
 - [Q152. `clean=True` wiped all CUAD data when re-ingesting NeuralFlow docs — how to avoid this?](#q152)
 
+### RAG Guardrails
+- [Q199. What categories of guardrails should a production RAG system have?](#q199)
+- [Q200. What guardrails exist in the RAG pipeline?](#q200)
+- [Q201. How does the relevance threshold guardrail work?](#q201)
+- [Q202. How is citation enforcement implemented?](#q202)
+- [Q203. What happens when no chunks pass the relevance threshold?](#q203)
+
+### NLP-to-SQL System
+- [Q210. Walk me through the end-to-end flow of the NLP-to-SQL system.](#q210)
+- [Q211. How does schema discovery work?](#q211)
+- [Q212. Why DuckDB over Spark, Trino, pg_parquet, or duckdb_fdw?](#q212)
+- [Q213. How do cross-source JOINs work?](#q213)
+- [Q214. What are the limitations of this architecture?](#q214)
+- [Q215. How is the model prompted to generate correct SQL?](#q215)
+- [Q216. How are hallucinated table or column names handled?](#q216)
+- [Q217. What happens with semantically valid but semantically wrong SQL?](#q217)
+- [Q218. How is ambiguous natural language handled?](#q218)
+- [Q219. How does ConversationManager maintain context across follow-ups?](#q219)
+- [Q220. How is GCS authentication handled in DuckDB?](#q220)
+- [Q221. What did v2 improve over v1?](#q221)
+- [Q222. What guardrails are built into the NLP-to-SQL pipeline?](#q222)
+- [Q223. How does the SELECT-only guardrail work?](#q223)
+- [Q224. How does the result row cap work?](#q224)
+- [Q225. How does the query timeout work?](#q225)
+
 ---
 
 
@@ -4727,3 +4752,359 @@ python -m pytest rag/tests/test_age_graph_store.py -q
 AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
     python -m pytest rag/tests/test_age_graph_store.py -q
 ```
+
+---
+
+## RAG Guardrails
+
+<a id="q199"></a>
+**Q199. What categories of guardrails should a production RAG system have?**
+
+Guardrails fall across four layers of the pipeline:
+
+**Retrieval guardrails**
+- **Relevance threshold** — if the top-k retrieved chunks all have similarity scores below some floor (e.g. 0.5), skip generation and return "I don't have information on that" instead of hallucinating. This is the single highest-value guardrail for RAG.
+- **Max chunk age** — filter out stale documents by `ingested_at` before retrieval so old info doesn't surface.
+
+**Input guardrails**
+- **Prompt injection detection** — scan the user query for patterns like "ignore previous instructions", "you are now", etc. before it hits the agent. Can be a simple regex or a small classifier call.
+- **Off-topic classifier** — route queries that aren't about the knowledge base domain to a fallback rather than burning tokens on a retrieval + generation that will be useless.
+
+**Generation guardrails**
+- **Groundedness check** — after the agent generates an answer, verify it's actually supported by the retrieved chunks (not pulled from model weights). Can be a second LLM call: *"Is this answer fully supported by the following context? Yes/No + which sentences are unsupported."*
+- **Citation enforcement** — make `search_knowledge_base` return chunk IDs and require the agent's `result_type` to include a `sources: list[str]` field, so every answer is traceable.
+
+**Output guardrails**
+- **Confidence gate** — if reranker scores are low, attach a low-confidence flag to the response so the UI can display a warning.
+- **Structured validation** — since the agent already uses a Pydantic `result_type`, add field-level validators (e.g. `answer` must be non-empty, `sources` must be non-empty).
+
+---
+
+<a id="q200"></a>
+**Q200. What guardrails exist in the RAG pipeline?**
+
+Two production-grade guardrails are wired in:
+
+| Guardrail | Where | What it does |
+|---|---|---|
+| **Relevance threshold** | `retriever.py` step 6, after reranking | Drops chunks with `similarity < MIN_RELEVANCE_SCORE` (default 0.4). Logs how many were dropped. If all chunks are dropped, returns an empty list. |
+| **Citation enforcement** | `prompts.py` + `retriever.py:retrieve_as_context()` | Each source chunk is labelled `[Source-ID: chunk_id]` in the context string. The system prompt mandates `[Source: document_title]` in every answer that uses retrieved content. |
+
+These sit at different layers: the threshold is a retrieval-time structural filter; citation enforcement is an LLM-level behavioral constraint backed by structured context.
+
+---
+
+<a id="q201"></a>
+**Q201. How does the relevance threshold guardrail work?**
+
+After retrieval (and optional reranking), `Retriever.retrieve()` filters results:
+
+```python
+# retriever.py — step 6
+threshold = self.settings.min_relevance_score   # default 0.4; env: MIN_RELEVANCE_SCORE
+if threshold > 0 and results:
+    before = len(results)
+    results = [r for r in results if r.similarity >= threshold]
+    dropped = before - len(results)
+    if dropped:
+        logger.warning("[GUARDRAIL] threshold %.2f dropped %d/%d chunks", ...)
+```
+
+`similarity` is a cosine similarity score in [0, 1]. Configurable in `.env` as `MIN_RELEVANCE_SCORE`. Set to `0.0` to disable.
+
+**Tuning guidance:**
+- `0.4` — good default for general corpora
+- `0.5–0.6` — tighter; for high-precision domains (legal, medical) where hallucination risk is higher
+- `>0.7` — aggressive; risk of dropping valid chunks for paraphrased or domain-shifted queries
+
+---
+
+<a id="q202"></a>
+**Q202. How is citation enforcement implemented?**
+
+Two cooperating changes:
+
+**1. Structured chunk IDs in context (`retriever.py:retrieve_as_context`)**
+
+```python
+f"\n--- Source [{result.chunk_id}] {result.document_title} (relevance: {result.similarity:.2f}) ---"
+```
+
+The chunk UUID is surfaced in the context string so the LLM knows which chunk, which document, and what confidence score.
+
+**2. System prompt mandate (`prompts.py`)**
+
+```
+## Citation Requirements (MANDATORY when you have searched):
+- ALWAYS cite sources using [Source: document_title] after every claim drawn from the knowledge base.
+- Every answer that uses retrieved content MUST include at least one [Source: ...] citation.
+- If the knowledge base returns "No relevant information found", respond with:
+  "I don't have that information in my knowledge base." — do NOT invent an answer.
+```
+
+`result_type` is kept as `str` (changing it to a Pydantic model would break the API, Streamlit, and MCP server). Citations are embedded inline in the answer text.
+
+---
+
+<a id="q203"></a>
+**Q203. What happens when no chunks pass the relevance threshold?**
+
+`retrieve()` returns an empty list. `retrieve_as_context()` converts this to:
+
+```
+"No relevant information found in the knowledge base for this query."
+```
+
+This string is what the agent receives from the tool call. The system prompt then mandates the agent to respond: *"I don't have that information in my knowledge base."* — rather than hallucinating from parametric memory.
+
+---
+
+## NLP-to-SQL System
+
+<a id="q210"></a>
+**Q210. Walk me through the end-to-end flow of the NLP-to-SQL system.**
+
+`ConversationManager.run_query(nl_query)` is called:
+
+1. NL query is normalized (lowercase + whitespace-collapsed) and checked against the NL cache — exact normalized match returns the cached `QueryResult` immediately.
+2. Prompt is built: schema text + last 3 successful conversation turns (Q/SQL/result preview) + the new question.
+3. `agent.run_sync(prompt)` calls GPT-4o (or Claude), which returns SQL.
+4. `strip_sql_fences()` cleans any markdown wrapping.
+5. SQL is MD5-hashed and checked against the SQL hash cache — if the same SQL was already generated for a different question, the cached result is returned.
+6. `conn.execute(sql)` runs the SQL in DuckDB. Column names come from `cursor.description`.
+7. On success: `QueryResult` (with `columns`, `rows`, `attempts`) is stored in both caches and history, then returned.
+8. On failure: the error is fed back to the LLM in a correction prompt and step 3 retries (up to `max_retries`, default 3). If all retries fail, `QueryResult(error=...)` is returned.
+
+---
+
+<a id="q211"></a>
+**Q211. How does schema discovery work?**
+
+`UnifiedDataSource.generate_schema()` introspects all sources at startup:
+
+**GCS Parquet:** Lists blob virtual prefixes with `delimiter="/"` — each subfolder becomes a table name. Creates a DuckDB `VIEW` over `parquet_scan('gs://...')`. Then `DESCRIBE view_name` gives column names and types.
+
+**PostgreSQL:** After attaching via DuckDB's postgres extension, queries `{alias}.information_schema.tables` and `{alias}.information_schema.columns` through DuckDB's catalog.
+
+Everything is serialized into a single schema string prepended to every LLM prompt. Schema is captured once at startup — changes require a restart.
+
+---
+
+<a id="q212"></a>
+**Q212. Why DuckDB over Spark, Trino, pg_parquet, or duckdb_fdw?**
+
+| Option | Problem |
+|---|---|
+| **Spark / Trino** | Cluster-based, heavy infrastructure. Overkill for single-analyst workloads. Adds 10–30s startup latency. |
+| **pg_parquet** | PostgreSQL reads Parquet; limited SQL, no GCS HMAC auth, PostgreSQL is the bottleneck. |
+| **duckdb_fdw** | Wrong direction — PostgreSQL queries DuckDB via FDW. Complex Windows setup, server-side changes required. |
+| **DuckDB postgres_scanner** | DuckDB ATTACHes PostgreSQL as a catalog and JOINs it with GCS Parquets in a single in-process query. Zero server-side changes. Zero extra infrastructure. |
+
+---
+
+<a id="q213"></a>
+**Q213. How do cross-source JOINs work?**
+
+100% inside DuckDB's in-memory engine. GCS Parquets are read lazily via `httpfs` (predicate pushdown where possible). PostgreSQL tables are scanned via `postgres_scanner` (full table scan — no index pushdown). DuckDB handles the JOIN, aggregation, and projection internally. The user writes plain DuckDB SQL; the naming convention (`bare name` vs `alias.main.table`) tells DuckDB which catalog to use.
+
+---
+
+<a id="q214"></a>
+**Q214. What are the limitations of this architecture?**
+
+| Limitation | Detail |
+|---|---|
+| **PostgreSQL full scans** | `postgres_scanner` reads entire PG tables; no index pushdown. Large PG tables (>10M rows) are slow. |
+| **In-memory result sets** | DuckDB defaults to in-memory. Very large results can OOM. No result pagination implemented. |
+| **Static schema** | Captured at startup. Table changes require restart. |
+| **GCS auth** | HMAC keys only. Service account JSON / Workload Identity not implemented. |
+| **No timeout enforcement** | No per-query timeout. |
+| **Semantically wrong SQL** | Syntactically valid but logically incorrect SQL returns wrong results silently. |
+
+---
+
+<a id="q215"></a>
+**Q215. How is the model prompted to generate correct SQL?**
+
+System prompt enforces DuckDB-specific table naming rules:
+- GCS Parquet tables → bare table name (`FROM orders`)
+- rag_db tables → `rag.main.<table>`
+- local_pg tables → `local_pg.main.<table>`
+
+And mandates plain SQL output (no markdown fences, no explanation, no comments).
+
+The schema string (all tables and columns from all sources) is injected in the user-turn prompt. The last 3 successful conversation turns are included as history context for follow-up questions. Zero-shot — no hardcoded few-shot examples.
+
+---
+
+<a id="q216"></a>
+**Q216. How are hallucinated table or column names handled?**
+
+**v1:** No handling. DuckDB throws a `CatalogException`, the `except` block catches it, and `None` is returned.
+
+**v2:** Self-correcting retry loop. The error message is sent back to the LLM:
+
+```
+The following SQL you generated failed:
+Question: {original_nl_query}
+SQL: {bad_sql}
+Error: {duckdb_error_message}
+
+Return ONLY the corrected SQL.
+```
+
+The model reads `"Table orders_2024 does not exist"` and corrects to `FROM orders`. Up to `max_retries` attempts (default 3).
+
+---
+
+<a id="q217"></a>
+**Q217. What happens with semantically valid but semantically wrong SQL?**
+
+Silent failure — the query executes and returns wrong results. No semantic validation layer. The conversation history partially mitigates this: a wrong answer in turn 1 can be corrected in turn 2 if the user notices. Real mitigation would require row count sanity checks, column type validation, or chain-of-thought reasoning before returning SQL.
+
+---
+
+<a id="q218"></a>
+**Q218. How is ambiguous natural language handled?**
+
+It isn't — the model guesses. *"Show me recent findings"* typically produces `ORDER BY created_at DESC LIMIT 10` or `WHERE date > NOW() - INTERVAL '7 days'` based on the model's priors. The fix is to inject current date/time and business-specific term definitions into the prompt, or ask a clarifying question before generating SQL.
+
+---
+
+<a id="q219"></a>
+**Q219. How does ConversationManager maintain context across follow-ups?**
+
+`history: list[tuple[str, str, QueryResult]]` stores every turn as `(nl_query, sql, result)`. `_history_context(n=3)` serializes the last 3 **successful** turns as:
+
+```
+Q: Revenue per customer?
+SQL: SELECT c.name, SUM(s.revenue) ...
+Result preview: [('Alice', 3000.0), ('Bob', 1400.0)]
+```
+
+This block is prepended to every new prompt as "Conversation so far:". Failed turns are recorded in `history` for audit but **excluded** from `_history_context()` so bad SQL examples don't confuse the model.
+
+---
+
+<a id="q220"></a>
+**Q220. How is GCS authentication handled in DuckDB?**
+
+HMAC keys (not service account JSON), stored in `.env` as `GCS_HMAC_ID` + `GCS_HMAC_SECRET`. Registered in DuckDB as:
+
+```sql
+CREATE OR REPLACE SECRET gcs_secret (
+    TYPE gcs,
+    KEY_ID  '{GCS_HMAC_ID}',
+    SECRET  '{GCS_HMAC_SECRET}'
+)
+```
+
+DuckDB's `httpfs` extension picks this up for all `gs://` paths automatically.
+
+---
+
+<a id="q221"></a>
+**Q221. What did v2 improve over v1?**
+
+| | v1 | v2 |
+|---|---|---|
+| **Return type** | Raw `Any` (list of tuples or `None` on error) | `QueryResult` with `.columns`, `.rows`, `.success`, `.error`, `.attempts` |
+| **SQL errors** | Silent `None`, dead end | Self-correcting retry loop: error fed back to LLM, up to `max_retries` (default 3) |
+| **NL cache matching** | Exact string equality | Normalized: lowercase + whitespace-collapsed |
+| **Column names** | Anonymous tuples | Populated from `cursor.description` |
+| **Provider** | OpenAI only, hardcoded Windows path | `provider="openai"` or `"anthropic"`, caller-supplied env paths |
+| **History context** | Includes failed turns | Failed turns excluded from context shown to model |
+| **Guardrails** | None | SELECT-only enforcement, result row cap, query timeout |
+
+---
+
+<a id="q222"></a>
+**Q222. What guardrails are built into the NLP-to-SQL pipeline?**
+
+Three execution-time guardrails run inside `ConversationManager.run_query()` after each SQL generation step but before DuckDB execution:
+
+| Guardrail | When it fires | Effect |
+|---|---|---|
+| **SELECT-only** | Generated SQL contains a write/DDL keyword | Treated as an attempt error; self-correcting retry loop can request a new query from the LLM |
+| **Result row cap** | Generated SQL has no `LIMIT` clause | `LIMIT N` appended automatically (`max_result_rows=10_000` by default) |
+| **Query timeout** | DuckDB query exceeds wall-clock budget | `conn.interrupt()` cancels the running query; error surfaces as a retry-able attempt failure |
+
+All three are applied in sequence on every attempt, so a query that passes the read-only check still gets capped and timed out.
+
+---
+
+<a id="q223"></a>
+**Q223. How does the SELECT-only guardrail work?**
+
+```python
+_WRITE_PATTERN = re.compile(
+    r"\b(DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b",
+    re.IGNORECASE,
+)
+
+def _check_readonly(sql: str) -> str | None:
+    m = _WRITE_PATTERN.search(sql)
+    if m:
+        return f"Only SELECT queries are permitted. Detected keyword: {m.group(0).upper()}"
+    return None
+```
+
+`run_query()` calls `_check_readonly(sql)` after stripping markdown fences. If it returns an error string, that string is stored as `last_error` and the attempt `continue`s — exactly like a DuckDB execution error. Because the self-correcting retry loop feeds `last_error` back to the LLM in the correction prompt, the model has a chance to rewrite the query as a SELECT. After `max_retries` failures the error is returned in the final `QueryResult`.
+
+Why regex rather than SQL parsing? A full parser (e.g. `sqlglot`) would be more precise, but it is an optional dependency with its own versioning surface. The word-boundary regex catches the vast majority of LLM-generated write attempts and has zero false positives on SELECT/CTE queries.
+
+---
+
+<a id="q224"></a>
+**Q224. How does the result row cap work?**
+
+```python
+_LIMIT_PATTERN = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
+
+def _apply_row_cap(sql: str, limit: int) -> str:
+    if not _LIMIT_PATTERN.search(sql):
+        sql = sql.rstrip().rstrip(";")
+        sql = f"{sql}\nLIMIT {limit}"
+    return sql
+```
+
+If the LLM omits a `LIMIT` clause, `_apply_row_cap` appends one before the query reaches DuckDB. The cap defaults to `max_result_rows=10_000` (configurable per `ConversationManager`). If the LLM already includes a `LIMIT`, the original limit is left untouched — the guardrail only adds, never overrides.
+
+The trailing semicolon is stripped before appending because `SELECT * FROM t;\nLIMIT 10` is invalid SQL.
+
+---
+
+<a id="q225"></a>
+**Q225. How does the query timeout work?**
+
+```python
+def _execute_with_timeout(conn, sql, timeout):
+    timed_out = threading.Event()
+
+    def _cancel():
+        timed_out.set()
+        conn.interrupt()
+
+    timer = threading.Timer(timeout, _cancel)
+    timer.start()
+    try:
+        cursor = conn.execute(sql)
+        columns = [d[0] for d in (cursor.description or [])]
+        rows = cursor.fetchall()
+        return columns, rows
+    finally:
+        timer.cancel()
+```
+
+`threading.Timer` fires `_cancel()` on a background thread after `timeout` seconds (default `query_timeout=30.0`). `conn.interrupt()` is DuckDB's thread-safe cancellation API — it signals the running query to abort, causing `conn.execute()` to raise an exception containing "Interrupted". `run_query()` catches that exception, labels it as a timeout error, and lets the retry loop handle it:
+
+```python
+except Exception as exc:
+    err_str = str(exc)
+    if "Interrupted" in err_str or "interrupted" in err_str:
+        last_error = f"Query timed out after {self.query_timeout}s"
+    else:
+        last_error = err_str
+```
+
+`timer.cancel()` in the `finally` block prevents the timer from firing if the query completes normally, avoiding a spurious interrupt on the next query.

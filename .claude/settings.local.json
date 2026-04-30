@@ -89,7 +89,9 @@
       "PowerShell(& \"C:\\\\Users\\\\rohan\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.13.exe\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\delta_lake\\\\_inspect_gcs.py\" 2>&1)",
       "PowerShell(& \"C:\\\\Users\\\\rohan\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.13.exe\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\delta_lake\\\\example_gcs.py\" 2>&1)",
       "PowerShell(& \"C:\\\\Users\\\\rohan\\\\anaconda3\\\\Scripts\\\\conda.exe\" run -n pydantic_ai_agents python -c \"import torch; print\\('version:', torch.__version__\\); print\\('CUDA available:', torch.cuda.is_available\\(\\)\\); print\\('CUDA built with:', torch.version.cuda\\)\" 2>&1)",
-      "Bash(python3.13 -c \"import sys,json; nb=json.load\\(sys.stdin\\); [print\\(f'cell-{i}:', c['source'][:80]\\) for i,c in enumerate\\(nb['cells']\\)]\")"
+      "Bash(python3.13 -c \"import sys,json; nb=json.load\\(sys.stdin\\); [print\\(f'cell-{i}:', c['source'][:80]\\) for i,c in enumerate\\(nb['cells']\\)]\")",
+      "Bash(git mv *)",
+      "Bash(git rm *)"
     ]
   },
   "enableAllProjectMcpServers": true,

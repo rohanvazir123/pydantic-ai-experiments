@@ -149,6 +149,17 @@ class Settings(BaseSettings):
         default=0.3, description="Default text weight for hybrid search (0-1)"
     )
 
+    min_relevance_score: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum similarity score for retrieved chunks (0-1). "
+            "Chunks below this threshold are dropped before being passed to the agent. "
+            "Set to 0.0 to disable. Tune upward (0.5-0.6) for higher-precision corpora."
+        ),
+    )
+
     # HyDE (Hypothetical Document Embeddings) Configuration
     hyde_enabled: bool = Field(
         default=False,
