@@ -10,13 +10,19 @@ Improvements over v1:
 - Separate bounded LRU caches for NL hits and SQL hash hits
 - Provider-agnostic model init: "openai" or "anthropic"
 - No hardcoded filesystem paths -- load_env() accepts extra paths from callers
+- HistoryStore: SQLite-backed persistence so history survives process restarts
+- Execution guardrails: SELECT-only enforcement, result row cap, query timeout
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
+import sqlite3
 import threading
+import time
+import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -175,6 +181,101 @@ class QueryResult:
         except ImportError:
             raise ImportError("Install pandas: pip install pandas") from None
         return pd.DataFrame(self.rows, columns=self.columns)
+
+
+# ---------------------------------------------------------------------------
+# HistoryStore -- SQLite-backed persistence across process restarts
+# ---------------------------------------------------------------------------
+class HistoryStore:
+    """
+    Persists ConversationManager history to a SQLite file.
+
+    Each row stores one conversation turn keyed by session_id, so multiple
+    independent sessions can live in the same file.
+
+    Usage:
+        store = HistoryStore("history.db")              # new session (auto UUID)
+        store = HistoryStore("history.db", session_id)  # resume existing session
+        print(store.sessions())                         # list all session IDs
+    """
+
+    _CREATE = """
+        CREATE TABLE IF NOT EXISTS conversation_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT    NOT NULL,
+            nl_query   TEXT    NOT NULL,
+            sql        TEXT    NOT NULL,
+            columns    TEXT    NOT NULL,
+            rows       TEXT    NOT NULL,
+            error      TEXT,
+            cached     INTEGER NOT NULL,
+            attempts   INTEGER NOT NULL,
+            ts         REAL    NOT NULL
+        )
+    """
+    _INDEX = "CREATE INDEX IF NOT EXISTS idx_session ON conversation_history(session_id, ts)"
+
+    def __init__(self, db_path: str | Path, session_id: str | None = None):
+        self.db_path = str(db_path)
+        self.session_id = session_id or str(uuid.uuid4())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(self._CREATE)
+            conn.execute(self._INDEX)
+        logger.info("HistoryStore: db=%s  session=%s", self.db_path, self.session_id)
+
+    def save(self, nl_query: str, sql: str, qr: "QueryResult") -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO conversation_history
+                    (session_id, nl_query, sql, columns, rows, error, cached, attempts, ts)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    self.session_id,
+                    nl_query,
+                    sql,
+                    json.dumps(qr.columns),
+                    json.dumps([list(r) for r in qr.rows]),
+                    qr.error,
+                    int(qr.cached),
+                    qr.attempts,
+                    time.time(),
+                ),
+            )
+
+    def load(self) -> list[tuple[str, str, "QueryResult"]]:
+        with sqlite3.connect(self.db_path) as conn:
+            db_rows = conn.execute(
+                """
+                SELECT nl_query, sql, columns, rows, error, cached, attempts
+                FROM conversation_history
+                WHERE session_id = ?
+                ORDER BY ts
+                """,
+                (self.session_id,),
+            ).fetchall()
+        history = []
+        for nl_query, sql, cols_json, rows_json, error, cached, attempts in db_rows:
+            qr = QueryResult(
+                nl_query=nl_query,
+                sql=sql,
+                columns=json.loads(cols_json),
+                rows=[tuple(r) for r in json.loads(rows_json)],
+                error=error,
+                cached=bool(cached),
+                attempts=attempts,
+            )
+            history.append((nl_query, sql, qr))
+        return history
+
+    def sessions(self) -> list[str]:
+        """Return all session IDs stored in the database, oldest first."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT session_id FROM conversation_history ORDER BY MIN(ts)",
+            ).fetchall()
+        return [r[0] for r in rows]
 
 
 # ---------------------------------------------------------------------------
