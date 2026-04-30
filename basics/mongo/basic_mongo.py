@@ -904,11 +904,22 @@ async def demo_motor():
     # Async delete
     await users.delete_one({"_id": uid})
 
-    # Async change stream (listen for one event then exit)
+    # Async change stream — watch for one event, trigger it concurrently.
+    # The writer coroutine runs alongside the stream so the stream doesn't hang.
+    # Requires a replica set; change streams are not supported on standalones.
+    async def _write_trigger():
+        # Small sleep lets the stream cursor open before the write fires.
+        await asyncio.sleep(0.1)
+        await posts.insert_one({"title": "motor change stream trigger",
+                                "published": True, "likes": 0})
+
     async with posts.watch(full_document="updateLookup") as stream:
+        writer = asyncio.create_task(_write_trigger())
         async for change in stream:
-            print("motor change:", change["operationType"])
+            print("motor change:", change["operationType"],
+                  change.get("fullDocument", {}).get("title", ""))
             break
+        await writer  # ensure the task is cleaned up
 
     client.close()
 
