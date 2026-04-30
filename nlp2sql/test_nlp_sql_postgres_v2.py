@@ -10,13 +10,15 @@ Strategy:
 """
 
 import hashlib
-from unittest.mock import MagicMock
+import json
+from unittest.mock import AsyncMock, MagicMock
 
 import duckdb
 import pytest
 
 from nlp_sql_postgres_v2 import (
     ConversationManager,
+    HistoryStore,
     PostgresDB,
     QueryResult,
     UnifiedDataSource,
@@ -56,7 +58,7 @@ def _mock_agent(sql: str) -> MagicMock:
     run_result = MagicMock()
     run_result.output = sql
     agent = MagicMock()
-    agent.run_sync.return_value = run_result
+    agent.run = AsyncMock(return_value=run_result)
     return agent
 
 
@@ -156,97 +158,109 @@ class TestQueryResult:
 # ConversationManager
 # ---------------------------------------------------------------------------
 class TestConversationManager:
-    def test_run_query_returns_query_result(self, conn):
+    @pytest.mark.asyncio
+    async def test_run_query_returns_query_result(self, conn):
         mgr = _manager(conn, "SELECT COUNT(*) FROM sales")
-        result = mgr.run_query("How many rows?")
+        result = await mgr.run_query("How many rows?")
         assert isinstance(result, QueryResult)
 
-    def test_successful_result_has_rows(self, conn):
+    @pytest.mark.asyncio
+    async def test_successful_result_has_rows(self, conn):
         mgr = _manager(conn, "SELECT product, SUM(quantity) FROM sales GROUP BY product")
-        result = mgr.run_query("Quantity per product?")
+        result = await mgr.run_query("Quantity per product?")
         assert result.success
         assert len(result.rows) == 2
 
-    def test_result_has_column_names(self, conn):
+    @pytest.mark.asyncio
+    async def test_result_has_column_names(self, conn):
         mgr = _manager(conn, "SELECT product, SUM(quantity) AS total FROM sales GROUP BY product")
-        result = mgr.run_query("Quantity per product?")
+        result = await mgr.run_query("Quantity per product?")
         assert result.columns == ["product", "total"]
 
-    def test_result_added_to_history(self, conn):
+    @pytest.mark.asyncio
+    async def test_result_added_to_history(self, conn):
         mgr = _manager(conn, "SELECT COUNT(*) FROM sales")
-        mgr.run_query("How many rows?")
+        await mgr.run_query("How many rows?")
         assert len(mgr.history) == 1
         assert mgr.history[0][0] == "How many rows?"
 
-    def test_nl_cache_hit_skips_agent(self, conn):
+    @pytest.mark.asyncio
+    async def test_nl_cache_hit_skips_agent(self, conn):
         agent = _mock_agent("SELECT COUNT(*) FROM sales")
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("How many rows?")
-        mgr.run_query("How many rows?")  # exact match -> cache hit
-        assert agent.run_sync.call_count == 1
+        await mgr.run_query("How many rows?")
+        await mgr.run_query("How many rows?")  # exact match -> cache hit
+        assert agent.run.call_count == 1
 
-    def test_nl_cache_normalized_case(self, conn):
+    @pytest.mark.asyncio
+    async def test_nl_cache_normalized_case(self, conn):
         """Lowercase variant should hit the same cache entry."""
         agent = _mock_agent("SELECT COUNT(*) FROM sales")
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("How many rows?")
-        mgr.run_query("how many rows?")
-        assert agent.run_sync.call_count == 1
+        await mgr.run_query("How many rows?")
+        await mgr.run_query("how many rows?")
+        assert agent.run.call_count == 1
 
-    def test_nl_cache_normalized_whitespace(self, conn):
+    @pytest.mark.asyncio
+    async def test_nl_cache_normalized_whitespace(self, conn):
         """Extra internal whitespace should still hit the cache."""
         agent = _mock_agent("SELECT COUNT(*) FROM sales")
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("How many rows?")
-        mgr.run_query("How  many  rows?")
-        assert agent.run_sync.call_count == 1
+        await mgr.run_query("How many rows?")
+        await mgr.run_query("How  many  rows?")
+        assert agent.run.call_count == 1
 
-    def test_sql_hash_cache_skips_reexecution(self, conn):
+    @pytest.mark.asyncio
+    async def test_sql_hash_cache_skips_reexecution(self, conn):
         sql = "SELECT COUNT(*) FROM sales"
         r1, r2 = MagicMock(), MagicMock()
         r1.output = sql
         r2.output = sql
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("Question A?")
+        await mgr.run_query("Question A?")
         cache_size_after_first = len(mgr._sql_cache)
-        mgr.run_query("Question B?")  # different NL, same SQL -> SQL cache hit
+        await mgr.run_query("Question B?")  # different NL, same SQL -> SQL cache hit
 
         assert len(mgr._sql_cache) == cache_size_after_first
 
-    def test_bad_sql_returns_error_result(self, conn):
+    @pytest.mark.asyncio
+    async def test_bad_sql_returns_error_result(self, conn):
         mgr = _manager(conn, "SELECT * FROM nonexistent_table_xyz", max_retries=1)
-        result = mgr.run_query("Anything?")
+        result = await mgr.run_query("Anything?")
         assert not result.success
         assert result.error is not None
 
-    def test_failed_query_still_in_history(self, conn):
+    @pytest.mark.asyncio
+    async def test_failed_query_still_in_history(self, conn):
         mgr = _manager(conn, "SELECT * FROM nonexistent_table_xyz", max_retries=1)
-        mgr.run_query("Bad query?")
+        await mgr.run_query("Bad query?")
         assert len(mgr.history) == 1
         assert not mgr.history[0][2].success
 
-    def test_history_context_excludes_failed_turns(self, conn):
+    @pytest.mark.asyncio
+    async def test_history_context_excludes_failed_turns(self, conn):
         """Failed SQL should not pollute the history shown to the model."""
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT * FROM bad_table"
         r2.output = "SELECT 1"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("Bad question?")
-        mgr.run_query("Good question?")
+        await mgr.run_query("Bad question?")
+        await mgr.run_query("Good question?")
 
-        second_prompt = agent.run_sync.call_args_list[1][0][0]
+        second_prompt = agent.run.call_args_list[1][0][0]
         assert "Bad question?" not in second_prompt
 
-    def test_history_context_limited_to_n_turns(self, conn):
+    @pytest.mark.asyncio
+    async def test_history_context_limited_to_n_turns(self, conn):
         mgr = _manager(conn, "SELECT 1")
         for i in range(5):
-            mgr.run_query(f"Query {i}?")
+            await mgr.run_query(f"Query {i}?")
         context = mgr._history_context(n=3)
         assert "Query 4?" in context
         assert "Query 1?" not in context
@@ -259,37 +273,41 @@ class TestConversationManager:
             mgr._cache_put(mgr._sql_cache, h, qr)
         assert len(mgr._sql_cache) <= 3
 
-    def test_show_history_does_not_raise(self, conn):
+    @pytest.mark.asyncio
+    async def test_show_history_does_not_raise(self, conn):
         mgr = _manager(conn, "SELECT 1")
-        mgr.run_query("A?")
+        await mgr.run_query("A?")
         mgr.show_history()
 
-    def test_prompt_includes_schema(self, conn):
+    @pytest.mark.asyncio
+    async def test_prompt_includes_schema(self, conn):
         agent = _mock_agent("SELECT 1")
         schema = "Table: sales\n  - product (VARCHAR)"
         mgr = ConversationManager(conn, agent, schema, max_retries=1)
-        mgr.run_query("A?")
-        prompt = agent.run_sync.call_args[0][0]
+        await mgr.run_query("A?")
+        prompt = agent.run.call_args[0][0]
         assert "Table: sales" in prompt
 
-    def test_prompt_includes_nl_query(self, conn):
+    @pytest.mark.asyncio
+    async def test_prompt_includes_nl_query(self, conn):
         agent = _mock_agent("SELECT 1")
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("How many laptops were sold?")
-        prompt = agent.run_sync.call_args[0][0]
+        await mgr.run_query("How many laptops were sold?")
+        prompt = agent.run.call_args[0][0]
         assert "How many laptops were sold?" in prompt
 
-    def test_prompt_includes_history_on_second_turn(self, conn):
+    @pytest.mark.asyncio
+    async def test_prompt_includes_history_on_second_turn(self, conn):
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT 1"
         r2.output = "SELECT 2"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("First question?")
-        mgr.run_query("Second question?")
-        second_prompt = agent.run_sync.call_args_list[1][0][0]
+        await mgr.run_query("First question?")
+        await mgr.run_query("Second question?")
+        second_prompt = agent.run.call_args_list[1][0][0]
         assert "First question?" in second_prompt
 
 
@@ -297,75 +315,81 @@ class TestConversationManager:
 # Self-correcting retry behavior
 # ---------------------------------------------------------------------------
 class TestRetryBehavior:
-    def test_succeeds_on_second_attempt(self, conn):
+    @pytest.mark.asyncio
+    async def test_succeeds_on_second_attempt(self, conn):
         """Agent returns bad SQL first, correct SQL second -- should succeed."""
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT * FROM nonexistent_xyz"
         r2.output = "SELECT COUNT(*) FROM sales"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=3)
-        result = mgr.run_query("How many sales?")
+        result = await mgr.run_query("How many sales?")
 
         assert result.success
         assert result.attempts == 2
-        assert agent.run_sync.call_count == 2
+        assert agent.run.call_count == 2
 
-    def test_correction_prompt_contains_error(self, conn):
+    @pytest.mark.asyncio
+    async def test_correction_prompt_contains_error(self, conn):
         """The second prompt must include the SQL error from attempt 1."""
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT * FROM nonexistent_xyz"
         r2.output = "SELECT 1"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=3)
-        mgr.run_query("Test query?")
+        await mgr.run_query("Test query?")
 
-        correction_prompt = agent.run_sync.call_args_list[1][0][0]
+        correction_prompt = agent.run.call_args_list[1][0][0]
         assert "Error" in correction_prompt or "error" in correction_prompt.lower()
 
-    def test_correction_prompt_contains_bad_sql(self, conn):
+    @pytest.mark.asyncio
+    async def test_correction_prompt_contains_bad_sql(self, conn):
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT * FROM bad_table"
         r2.output = "SELECT 1"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=3)
-        mgr.run_query("Test query?")
+        await mgr.run_query("Test query?")
 
-        correction_prompt = agent.run_sync.call_args_list[1][0][0]
+        correction_prompt = agent.run.call_args_list[1][0][0]
         assert "bad_table" in correction_prompt
 
-    def test_all_retries_exhausted_returns_error_result(self, conn):
+    @pytest.mark.asyncio
+    async def test_all_retries_exhausted_returns_error_result(self, conn):
         agent = _mock_agent("SELECT * FROM nonexistent_xyz")
         mgr = ConversationManager(conn, agent, "schema", max_retries=2)
-        result = mgr.run_query("Impossible query?")
+        result = await mgr.run_query("Impossible query?")
 
         assert not result.success
         assert result.error is not None
         assert result.attempts == 2
-        assert agent.run_sync.call_count == 2
+        assert agent.run.call_count == 2
 
-    def test_failed_result_recorded_in_history(self, conn):
+    @pytest.mark.asyncio
+    async def test_failed_result_recorded_in_history(self, conn):
         mgr = ConversationManager(
             conn, _mock_agent("SELECT * FROM bad_table"), "schema", max_retries=1
         )
-        mgr.run_query("Bad query?")
+        await mgr.run_query("Bad query?")
         assert len(mgr.history) == 1
         assert not mgr.history[0][2].success
 
-    def test_successful_retry_not_counted_as_cached(self, conn):
+    @pytest.mark.asyncio
+    async def test_successful_retry_not_counted_as_cached(self, conn):
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT * FROM bad"
         r2.output = "SELECT COUNT(*) FROM sales"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=3)
-        result = mgr.run_query("Count sales?")
+        result = await mgr.run_query("Count sales?")
         assert not result.cached
 
 
@@ -408,20 +432,22 @@ class TestUnifiedDataSourceSchema:
         schema = src.generate_schema()
         assert src.schema_text == schema
 
-    def test_conversation_manager_raises_without_agent_or_schema(self, conn):
+    @pytest.mark.asyncio
+    async def test_conversation_manager_raises_without_agent_or_schema(self, conn):
         src = UnifiedDataSource(
             conn=conn, gcs_bucket="b", gcs_prefix="p/", gcs_user_project="proj"
         )
         with pytest.raises(ValueError):
-            src.conversation_manager()
+            await src.conversation_manager()
 
-    def test_conversation_manager_raises_without_schema(self, conn):
+    @pytest.mark.asyncio
+    async def test_conversation_manager_raises_without_schema(self, conn):
         src = UnifiedDataSource(
             conn=conn, gcs_bucket="b", gcs_prefix="p/", gcs_user_project="proj"
         )
         src.agent = MagicMock()
         with pytest.raises(ValueError):
-            src.conversation_manager()
+            await src.conversation_manager()
 
 
 # ---------------------------------------------------------------------------
@@ -443,42 +469,47 @@ class TestPostgresDB:
 # End-to-end: real DuckDB execution through ConversationManager
 # ---------------------------------------------------------------------------
 class TestEndToEnd:
-    def test_full_query_pipeline(self, conn):
+    @pytest.mark.asyncio
+    async def test_full_query_pipeline(self, conn):
         sql = "SELECT product, SUM(revenue) AS total FROM sales GROUP BY product ORDER BY total DESC"
-        result = _manager(conn, sql).run_query("Total revenue per product?")
+        result = await _manager(conn, sql).run_query("Total revenue per product?")
         assert result.success
         products = [row[0] for row in result.rows]
         assert "Laptop" in products
         assert "Monitor" in products
 
-    def test_result_columns_present(self, conn):
+    @pytest.mark.asyncio
+    async def test_result_columns_present(self, conn):
         mgr = _manager(conn, "SELECT product, SUM(revenue) AS total FROM sales GROUP BY product")
-        result = mgr.run_query("Revenue per product?")
+        result = await mgr.run_query("Revenue per product?")
         assert "product" in result.columns
         assert "total" in result.columns
 
-    def test_aggregate_correct_value(self, conn):
-        result = _manager(conn, "SELECT SUM(quantity) AS s FROM sales").run_query("Total quantity?")
+    @pytest.mark.asyncio
+    async def test_aggregate_correct_value(self, conn):
+        result = await _manager(conn, "SELECT SUM(quantity) AS s FROM sales").run_query("Total quantity?")
         assert result.rows == [(11,)]
 
-    def test_filter_query(self, conn):
-        result = _manager(conn, "SELECT product FROM sales WHERE revenue > 2000").run_query(
+    @pytest.mark.asyncio
+    async def test_filter_query(self, conn):
+        result = await _manager(conn, "SELECT product FROM sales WHERE revenue > 2000").run_query(
             "High revenue products?"
         )
         assert result.rows == [("Laptop",)]
 
-    def test_follow_up_includes_first_turn_in_prompt(self, conn):
+    @pytest.mark.asyncio
+    async def test_follow_up_includes_first_turn_in_prompt(self, conn):
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT SUM(revenue) AS s FROM sales"
         r2.output = "SELECT SUM(revenue) AS s FROM sales WHERE product = 'Laptop'"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(conn, agent, "schema", max_retries=1)
-        mgr.run_query("Total revenue?")
-        mgr.run_query("Only for Laptop?")
+        await mgr.run_query("Total revenue?")
+        await mgr.run_query("Only for Laptop?")
 
-        second_prompt = agent.run_sync.call_args_list[1][0][0]
+        second_prompt = agent.run.call_args_list[1][0][0]
         assert "Total revenue?" in second_prompt
 
 
@@ -567,26 +598,29 @@ Table: rag.main.regions
 
 
 class TestJoinQueries:
-    def test_inner_join_sales_customers(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_inner_join_sales_customers(self, multi_conn):
         sql = """
             SELECT c.name, SUM(s.revenue) AS total_revenue
             FROM sales s
             JOIN customers c ON s.customer_id = c.customer_id
             GROUP BY c.name ORDER BY total_revenue DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue per customer?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue per customer?")
         assert result.success
         names = [row[0] for row in result.rows]
         assert "Alice" in names
         assert "Bob" in names
         assert "Charlie" in names
 
-    def test_result_columns_in_join(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_result_columns_in_join(self, multi_conn):
         sql = "SELECT c.name, SUM(s.revenue) AS total FROM sales s JOIN customers c ON s.customer_id = c.customer_id GROUP BY c.name"
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue per customer?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue per customer?")
         assert result.columns == ["name", "total"]
 
-    def test_three_way_join(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_three_way_join(self, multi_conn):
         sql = """
             SELECT c.name, r.region_name, SUM(s.revenue) AS total
             FROM sales s
@@ -594,35 +628,38 @@ class TestJoinQueries:
             JOIN regions r   ON s.region_id   = r.region_id
             GROUP BY c.name, r.region_name ORDER BY total DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue by customer and region?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Revenue by customer and region?")
         assert result.success
         assert any(row[0] == "Alice" and row[1] == "North America" for row in result.rows)
 
-    def test_join_with_filter(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_join_with_filter(self, multi_conn):
         sql = """
             SELECT c.name, s.product, s.revenue
             FROM sales s JOIN customers c ON s.customer_id = c.customer_id
             WHERE c.country = 'US' ORDER BY s.revenue DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("US customer sales?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("US customer sales?")
         assert result.success
         names = {row[0] for row in result.rows}
         assert names == {"Alice", "Charlie"}
 
-    def test_join_with_aggregation_and_having(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_join_with_aggregation_and_having(self, multi_conn):
         sql = """
             SELECT c.tier, COUNT(DISTINCT s.order_id) AS num_orders, SUM(s.revenue) AS total
             FROM sales s JOIN customers c ON s.customer_id = c.customer_id
             GROUP BY c.tier HAVING SUM(s.revenue) > 1000 ORDER BY total DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Tiers with revenue > 1000?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Tiers with revenue > 1000?")
         assert result.success
         tiers = [row[0] for row in result.rows]
         assert "Gold" in tiers
         assert "Silver" in tiers
         assert "Bronze" in tiers
 
-    def test_join_with_subquery(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_join_with_subquery(self, multi_conn):
         sql = """
             SELECT c.name, top_sales.product, top_sales.revenue
             FROM (
@@ -631,47 +668,51 @@ class TestJoinQueries:
             ) top_sales
             JOIN customers c ON top_sales.customer_id = c.customer_id
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Highest single sale?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Highest single sale?")
         assert result.success
         assert len(result.rows) == 1
         assert result.rows[0][0] == "Alice"
         assert result.rows[0][2] == 2000.0
 
-    def test_join_with_window_function(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_join_with_window_function(self, multi_conn):
         sql = """
             SELECT c.name, s.product, s.revenue,
                    RANK() OVER (PARTITION BY s.product ORDER BY s.revenue DESC) AS rank
             FROM sales s JOIN customers c ON s.customer_id = c.customer_id
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Rank by product revenue?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Rank by product revenue?")
         assert result.success
         laptop_rows = [r for r in result.rows if r[1] == "Laptop"]
         assert len(laptop_rows) == 2
         assert laptop_rows[0][3] == 1
 
-    def test_left_join_shows_all_customers(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_left_join_shows_all_customers(self, multi_conn):
         sql = """
             SELECT c.name, COALESCE(SUM(s.revenue), 0) AS total_revenue
             FROM customers c LEFT JOIN sales s ON c.customer_id = s.customer_id
             GROUP BY c.name ORDER BY c.name
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("All customer revenues?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("All customer revenues?")
         assert result.success
         assert len(result.rows) == 3
 
-    def test_join_with_gdp_weighting(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_join_with_gdp_weighting(self, multi_conn):
         sql = """
             SELECT r.region_name, SUM(s.revenue * r.gdp_index) AS gdp_weighted
             FROM sales s JOIN regions r ON s.region_id = r.region_id
             GROUP BY r.region_name ORDER BY gdp_weighted DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("GDP-weighted revenue?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("GDP-weighted revenue?")
         assert result.success
         region_names = [row[0] for row in result.rows]
         assert "North America" in region_names
         assert "Europe" in region_names
 
-    def test_cte_with_join(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_cte_with_join(self, multi_conn):
         sql = """
             WITH customer_totals AS (
                 SELECT customer_id, SUM(revenue) AS total FROM sales GROUP BY customer_id
@@ -680,13 +721,14 @@ class TestJoinQueries:
             FROM customer_totals ct JOIN customers c ON ct.customer_id = c.customer_id
             WHERE ct.total > 1500 ORDER BY ct.total DESC
         """
-        result = _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Top spenders?")
+        result = await _manager(multi_conn, sql, MULTI_SCHEMA).run_query("Top spenders?")
         assert result.success
         names = [row[0] for row in result.rows]
         assert "Alice" in names
         assert "Bob" not in names
 
-    def test_multi_turn_join_refinement(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_multi_turn_join_refinement(self, multi_conn):
         r1, r2 = MagicMock(), MagicMock()
         r1.output = (
             "SELECT c.name, SUM(s.revenue) AS total FROM sales s "
@@ -699,28 +741,29 @@ class TestJoinQueries:
             "WHERE c.country = 'US' GROUP BY c.name ORDER BY total DESC"
         )
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(multi_conn, agent, MULTI_SCHEMA, max_retries=1)
-        result1 = mgr.run_query("Revenue per customer?")
-        result2 = mgr.run_query("Only US customers?")
+        result1 = await mgr.run_query("Revenue per customer?")
+        result2 = await mgr.run_query("Only US customers?")
 
         assert result1.success and len(result1.rows) == 3
         assert result2.success and len(result2.rows) == 2
 
-        second_prompt = agent.run_sync.call_args_list[1][0][0]
+        second_prompt = agent.run.call_args_list[1][0][0]
         assert "Revenue per customer?" in second_prompt
 
-    def test_retry_corrects_wrong_join_column(self, multi_conn):
+    @pytest.mark.asyncio
+    async def test_retry_corrects_wrong_join_column(self, multi_conn):
         """Agent references a nonexistent column first, corrects on retry."""
         r1, r2 = MagicMock(), MagicMock()
         r1.output = "SELECT c.name FROM sales s JOIN customers c ON s.nonexistent_col = c.customer_id"
         r2.output = "SELECT c.name FROM sales s JOIN customers c ON s.customer_id = c.customer_id"
         agent = MagicMock()
-        agent.run_sync.side_effect = [r1, r2]
+        agent.run = AsyncMock(side_effect=[r1, r2])
 
         mgr = ConversationManager(multi_conn, agent, MULTI_SCHEMA, max_retries=3)
-        result = mgr.run_query("Customer names in sales?")
+        result = await mgr.run_query("Customer names in sales?")
 
         assert result.success
         assert result.attempts == 2
@@ -779,22 +822,24 @@ class TestApplyRowCap:
 class TestReadonlyGuardrailIntegration:
     """SELECT-only guardrail blocks write SQL inside run_query."""
 
-    def test_write_sql_returns_error_result(self, conn):
+    @pytest.mark.asyncio
+    async def test_write_sql_returns_error_result(self, conn):
         mgr = _manager(conn, "DROP TABLE sales", max_retries=1)
-        result = mgr.run_query("Delete everything?")
+        result = await mgr.run_query("Delete everything?")
         assert not result.success
         assert result.error is not None
 
-    def test_write_sql_error_mentions_keyword(self, conn):
+    @pytest.mark.asyncio
+    async def test_write_sql_error_mentions_keyword(self, conn):
         mgr = _manager(conn, "DELETE FROM sales", max_retries=1)
-        result = mgr.run_query("Clear sales?")
+        result = await mgr.run_query("Clear sales?")
         assert "DELETE" in result.error
 
-    def test_write_sql_not_executed(self, conn):
+    @pytest.mark.asyncio
+    async def test_write_sql_not_executed(self, conn):
         """Guardrail fires before DuckDB — table should still exist after."""
         mgr = _manager(conn, "DROP TABLE sales", max_retries=1)
-        mgr.run_query("Drop the table?")
-        # If DROP had executed, this SELECT would fail
+        await mgr.run_query("Drop the table?")
         count = conn.execute("SELECT COUNT(*) FROM sales").fetchone()[0]
         assert count == 4
 
@@ -802,22 +847,129 @@ class TestReadonlyGuardrailIntegration:
 class TestRowCapIntegration:
     """Row cap is applied; query still succeeds."""
 
-    def test_result_capped_when_no_limit(self, conn):
-        # Insert many rows
+    @pytest.mark.asyncio
+    async def test_result_capped_when_no_limit(self, conn):
         conn.execute("INSERT INTO sales SELECT 'X', i, 1, 1.0 FROM range(1, 20) t(i)")
         mgr = ConversationManager(
             conn, _mock_agent("SELECT * FROM sales"), "schema",
             max_retries=1, max_result_rows=5,
         )
-        result = mgr.run_query("All rows?")
+        result = await mgr.run_query("All rows?")
         assert result.success
         assert len(result.rows) <= 5
 
-    def test_existing_limit_respected(self, conn):
+    @pytest.mark.asyncio
+    async def test_existing_limit_respected(self, conn):
         mgr = ConversationManager(
             conn, _mock_agent("SELECT * FROM sales LIMIT 2"), "schema",
             max_retries=1, max_result_rows=10_000,
         )
-        result = mgr.run_query("Two rows?")
+        result = await mgr.run_query("Two rows?")
         assert result.success
         assert len(result.rows) == 2
+
+
+# ---------------------------------------------------------------------------
+# HistoryStore (mocked asyncpg pool — no live database needed)
+# ---------------------------------------------------------------------------
+class TestHistoryStore:
+    def _make_store(self) -> tuple[HistoryStore, MagicMock]:
+        """Return (store, mock_conn) with asyncpg pool fully mocked."""
+        mock_conn = AsyncMock()
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+        return HistoryStore(mock_pool), mock_conn
+
+    @pytest.mark.asyncio
+    async def test_save_calls_execute(self):
+        store, mock_conn = self._make_store()
+        qr = QueryResult(nl_query="Q?", sql="SELECT 1", columns=["n"], rows=[(1,)], attempts=1)
+        await store.save("sess-1", "Q?", "SELECT 1", qr)
+        mock_conn.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_save_serialises_rows_as_json(self):
+        store, mock_conn = self._make_store()
+        qr = QueryResult(nl_query="Q?", sql="SELECT 1", columns=["n"], rows=[(42,)], attempts=1)
+        await store.save("sess-1", "Q?", "SELECT 1", qr)
+        args = mock_conn.execute.call_args[0]
+        # args[5] is the rows JSON string
+        assert json.loads(args[5]) == [[42]]
+
+    @pytest.mark.asyncio
+    async def test_load_reconstructs_query_result(self):
+        store, mock_conn = self._make_store()
+        mock_conn.fetch.return_value = [
+            {
+                "nl_query": "Q?",
+                "sql": "SELECT 1",
+                "columns": ["n"],
+                "rows": [[99]],
+                "error": None,
+                "cached": False,
+                "attempts": 1,
+            }
+        ]
+        history = await store.load("sess-1")
+        assert len(history) == 1
+        nl, sql, qr = history[0]
+        assert nl == "Q?"
+        assert qr.rows == [(99,)]
+        assert qr.success
+
+    @pytest.mark.asyncio
+    async def test_load_empty_session_returns_empty_list(self):
+        store, mock_conn = self._make_store()
+        mock_conn.fetch.return_value = []
+        history = await store.load("unknown-session")
+        assert history == []
+
+    @pytest.mark.asyncio
+    async def test_sessions_returns_list(self):
+        store, mock_conn = self._make_store()
+        mock_conn.fetch.return_value = [{"session_id": "a"}, {"session_id": "b"}]
+        result = await store.sessions()
+        assert result == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_history_store_save_called_on_success(self, conn):
+        store = AsyncMock(spec=HistoryStore)
+        store.session_id = "test"
+        mgr = ConversationManager(
+            conn, _mock_agent("SELECT 1"), "schema",
+            max_retries=1, history_store=store, session_id="test",
+        )
+        await mgr.run_query("A?")
+        store.save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_history_store_save_called_on_failure(self, conn):
+        store = AsyncMock(spec=HistoryStore)
+        store.session_id = "test"
+        mgr = ConversationManager(
+            conn, _mock_agent("SELECT * FROM bad_table"), "schema",
+            max_retries=1, history_store=store, session_id="test",
+        )
+        await mgr.run_query("Bad?")
+        store.save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_history_store_not_called_on_nl_cache_hit(self, conn):
+        store = AsyncMock(spec=HistoryStore)
+        store.session_id = "test"
+        mgr = ConversationManager(
+            conn, _mock_agent("SELECT 1"), "schema",
+            max_retries=1, history_store=store, session_id="test",
+        )
+        await mgr.run_query("A?")       # populates NL cache, saves once
+        await mgr.run_query("A?")       # NL cache hit — no new turn, no save
+        assert store.save.await_count == 1
+
+    def test_initial_history_loaded_into_cache(self, conn):
+        """Resumed history warms the NL and SQL caches immediately."""
+        qr = QueryResult(nl_query="Q?", sql="SELECT 1", columns=["n"], rows=[(1,)], attempts=1)
+        initial = [("Q?", "SELECT 1", qr)]
+        mgr = ConversationManager(conn, _mock_agent("SELECT 1"), "schema", _initial_history=initial)
+        assert mgr._normalize_nl("Q?") in mgr._nl_cache
+        assert mgr._hash("SELECT 1\nLIMIT 10000") in mgr._sql_cache or mgr._hash("SELECT 1") in mgr._sql_cache

@@ -10,24 +10,24 @@ Improvements over v1:
 - Separate bounded LRU caches for NL hits and SQL hash hits
 - Provider-agnostic model init: "openai" or "anthropic"
 - No hardcoded filesystem paths -- load_env() accepts extra paths from callers
-- HistoryStore: SQLite-backed persistence so history survives process restarts
+- HistoryStore: asyncpg-backed persistence so history survives process restarts
 - Execution guardrails: SELECT-only enforcement, result row cap, query timeout
 """
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
 import re
-import sqlite3
 import threading
-import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
+import asyncpg
 import duckdb
 from dotenv import load_dotenv
 from google.cloud import storage
@@ -184,98 +184,117 @@ class QueryResult:
 
 
 # ---------------------------------------------------------------------------
-# HistoryStore -- SQLite-backed persistence across process restarts
+# HistoryStore -- asyncpg-backed persistence across process restarts
 # ---------------------------------------------------------------------------
 class HistoryStore:
     """
-    Persists ConversationManager history to a SQLite file.
+    Persists ConversationManager history to a PostgreSQL table using asyncpg.
 
-    Each row stores one conversation turn keyed by session_id, so multiple
-    independent sessions can live in the same file.
+    One HistoryStore instance (one pool) can serve multiple sessions — session_id
+    is passed per-call so the same store can be shared across ConversationManagers.
 
     Usage:
-        store = HistoryStore("history.db")              # new session (auto UUID)
-        store = HistoryStore("history.db", session_id)  # resume existing session
-        print(store.sessions())                         # list all session IDs
+        store = await HistoryStore.create(dsn)          # creates pool + table
+        store = HistoryStore(existing_pool)             # reuse an existing pool
+        sessions = await store.sessions()               # list all session IDs
+        await store.close()                             # close the pool
     """
 
     _CREATE = """
         CREATE TABLE IF NOT EXISTS conversation_history (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT    NOT NULL,
-            nl_query   TEXT    NOT NULL,
-            sql        TEXT    NOT NULL,
-            columns    TEXT    NOT NULL,
-            rows       TEXT    NOT NULL,
+            id         BIGSERIAL    PRIMARY KEY,
+            session_id TEXT         NOT NULL,
+            nl_query   TEXT         NOT NULL,
+            sql        TEXT         NOT NULL,
+            columns    JSONB        NOT NULL,
+            rows       JSONB        NOT NULL,
             error      TEXT,
-            cached     INTEGER NOT NULL,
-            attempts   INTEGER NOT NULL,
-            ts         REAL    NOT NULL
+            cached     BOOLEAN      NOT NULL,
+            attempts   INTEGER      NOT NULL,
+            ts         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
         )
     """
-    _INDEX = "CREATE INDEX IF NOT EXISTS idx_session ON conversation_history(session_id, ts)"
+    _INDEX = """
+        CREATE INDEX IF NOT EXISTS idx_ch_session
+        ON conversation_history(session_id, ts)
+    """
 
-    def __init__(self, db_path: str | Path, session_id: str | None = None):
-        self.db_path = str(db_path)
-        self.session_id = session_id or str(uuid.uuid4())
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(self._CREATE)
-            conn.execute(self._INDEX)
-        logger.info("HistoryStore: db=%s  session=%s", self.db_path, self.session_id)
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
 
-    def save(self, nl_query: str, sql: str, qr: "QueryResult") -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
+    @classmethod
+    async def create(cls, dsn: str, **pool_kwargs) -> "HistoryStore":
+        """Create a pool, ensure the schema exists, and return a HistoryStore."""
+        pool = await asyncpg.create_pool(dsn, **pool_kwargs)
+        store = cls(pool)
+        await store._init_schema()
+        logger.info("HistoryStore ready (pool min=%s max=%s)",
+                    pool_kwargs.get("min_size", 1), pool_kwargs.get("max_size", 5))
+        return store
+
+    async def _init_schema(self) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(self._CREATE)
+            await conn.execute(self._INDEX)
+
+    async def save(self, session_id: str, nl_query: str, sql: str, qr: "QueryResult") -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
                 """
                 INSERT INTO conversation_history
-                    (session_id, nl_query, sql, columns, rows, error, cached, attempts, ts)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (session_id, nl_query, sql, columns, rows, error, cached, attempts)
+                VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
                 """,
-                (
-                    self.session_id,
-                    nl_query,
-                    sql,
-                    json.dumps(qr.columns),
-                    json.dumps([list(r) for r in qr.rows]),
-                    qr.error,
-                    int(qr.cached),
-                    qr.attempts,
-                    time.time(),
-                ),
+                session_id,
+                nl_query,
+                sql,
+                json.dumps(qr.columns),
+                json.dumps([list(r) for r in qr.rows]),
+                qr.error,
+                qr.cached,
+                qr.attempts,
             )
 
-    def load(self) -> list[tuple[str, str, "QueryResult"]]:
-        with sqlite3.connect(self.db_path) as conn:
-            db_rows = conn.execute(
+    async def load(self, session_id: str) -> list[tuple[str, str, "QueryResult"]]:
+        async with self.pool.acquire() as conn:
+            db_rows = await conn.fetch(
                 """
                 SELECT nl_query, sql, columns, rows, error, cached, attempts
                 FROM conversation_history
-                WHERE session_id = ?
+                WHERE session_id = $1
                 ORDER BY ts
                 """,
-                (self.session_id,),
-            ).fetchall()
-        history = []
-        for nl_query, sql, cols_json, rows_json, error, cached, attempts in db_rows:
-            qr = QueryResult(
-                nl_query=nl_query,
-                sql=sql,
-                columns=json.loads(cols_json),
-                rows=[tuple(r) for r in json.loads(rows_json)],
-                error=error,
-                cached=bool(cached),
-                attempts=attempts,
+                session_id,
             )
-            history.append((nl_query, sql, qr))
+        history = []
+        for row in db_rows:
+            qr = QueryResult(
+                nl_query=row["nl_query"],
+                sql=row["sql"],
+                columns=row["columns"],        # asyncpg decodes JSONB automatically
+                rows=[tuple(r) for r in row["rows"]],
+                error=row["error"],
+                cached=row["cached"],
+                attempts=row["attempts"],
+            )
+            history.append((row["nl_query"], row["sql"], qr))
         return history
 
-    def sessions(self) -> list[str]:
-        """Return all session IDs stored in the database, oldest first."""
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT session_id FROM conversation_history ORDER BY MIN(ts)",
-            ).fetchall()
-        return [r[0] for r in rows]
+    async def sessions(self) -> list[str]:
+        """Return all session IDs, ordered by first-seen time."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT session_id
+                FROM conversation_history
+                GROUP BY session_id
+                ORDER BY MIN(ts)
+                """
+            )
+        return [r["session_id"] for r in rows]
+
+    async def close(self) -> None:
+        await self.pool.close()
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +310,9 @@ class ConversationManager:
         max_retries: int = 3,
         max_result_rows: int = 10_000,
         query_timeout: float = 30.0,
+        history_store: Optional[HistoryStore] = None,
+        session_id: Optional[str] = None,
+        _initial_history: Optional[list] = None,
     ):
         self.conn = conn
         self.agent = agent
@@ -299,9 +321,16 @@ class ConversationManager:
         self.max_retries = max_retries
         self.max_result_rows = max_result_rows
         self.query_timeout = query_timeout
-        self.history: list[tuple[str, str, QueryResult]] = []
+        self.history_store = history_store
+        self.session_id = session_id or str(uuid.uuid4())
+        self.history: list[tuple[str, str, QueryResult]] = list(_initial_history or [])
         self._sql_cache: OrderedDict[str, QueryResult] = OrderedDict()
         self._nl_cache:  OrderedDict[str, QueryResult] = OrderedDict()
+        # Warm caches from any pre-loaded history so resumed sessions get cache hits
+        for nl, sql, qr in self.history:
+            if qr.success:
+                self._cache_put(self._nl_cache, self._normalize_nl(nl), qr)
+                self._cache_put(self._sql_cache, self._hash(sql), qr)
 
     @staticmethod
     def _hash(sql: str) -> str:
@@ -344,10 +373,10 @@ class ConversationManager:
             f"Return ONLY the corrected SQL."
         )
 
-    def run_query(self, nl_query: str) -> QueryResult:
+    async def run_query(self, nl_query: str) -> QueryResult:
         nl_key = self._normalize_nl(nl_query)
 
-        # NL-level cache hit (normalized match)
+        # NL-level cache hit (normalized match) — no new turn, no persistence needed
         if nl_key in self._nl_cache:
             cached = self._nl_cache[nl_key]
             logger.info("NL cache hit -> %s", cached.sql)
@@ -368,7 +397,7 @@ class ConversationManager:
                 if attempt == 1
                 else self._build_correction_prompt(nl_query, sql, last_error)
             )
-            raw = self.agent.run_sync(prompt)
+            raw = await self.agent.run(prompt)
             sql = strip_sql_fences(raw.output)
             logger.info("Attempt %d/%d — SQL: %s", attempt, self.max_retries, sql)
 
@@ -397,6 +426,8 @@ class ConversationManager:
                 )
                 self._cache_put(self._nl_cache, nl_key, qr)
                 self.history.append((nl_query, safe_sql, qr))
+                if self.history_store:
+                    await self.history_store.save(self.session_id, nl_query, safe_sql, qr)
                 return qr
 
             try:
@@ -414,6 +445,8 @@ class ConversationManager:
                 self._cache_put(self._sql_cache, h, qr)
                 self._cache_put(self._nl_cache, nl_key, qr)
                 self.history.append((nl_query, safe_sql, qr))
+                if self.history_store:
+                    await self.history_store.save(self.session_id, nl_query, safe_sql, qr)
                 logger.info("OK — %d row(s), %d col(s)", len(rows), len(columns))
                 return qr
             except Exception as exc:
@@ -435,6 +468,8 @@ class ConversationManager:
             attempts=self.max_retries,
         )
         self.history.append((nl_query, sql, qr))
+        if self.history_store:
+            await self.history_store.save(self.session_id, nl_query, sql, qr)
         return qr
 
     def show_history(self) -> None:
@@ -551,15 +586,22 @@ class UnifiedDataSource:
         logger.info("Agent ready: %s (%s)", model, provider)
         return self.agent
 
-    def conversation_manager(
+    async def conversation_manager(
         self,
         cache_size: int = 20,
         max_retries: int = 3,
         max_result_rows: int = 10_000,
         query_timeout: float = 30.0,
+        history_store: Optional[HistoryStore] = None,
+        session_id: Optional[str] = None,
     ) -> ConversationManager:
         if self.agent is None or self.schema_text is None:
             raise ValueError("Call generate_schema() and init_agent() first.")
+        sid = session_id or str(uuid.uuid4())
+        initial_history: list = []
+        if history_store is not None:
+            initial_history = await history_store.load(sid)
+            logger.info("Resumed session %s — %d prior turn(s)", sid, len(initial_history))
         return ConversationManager(
             self.conn,
             self.agent,
@@ -568,6 +610,9 @@ class UnifiedDataSource:
             max_retries=max_retries,
             max_result_rows=max_result_rows,
             query_timeout=query_timeout,
+            history_store=history_store,
+            session_id=sid,
+            _initial_history=initial_history,
         )
 
 
@@ -586,46 +631,53 @@ class UnifiedDataSource:
 #   LLM_PROVIDER      openai | anthropic (default: openai)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    extra = os.environ.get("EXTRA_ENV_PATH")
-    load_env(*([Path(extra)] if extra else []))
+    async def main() -> None:
+        extra = os.environ.get("EXTRA_ENV_PATH")
+        load_env(*([Path(extra)] if extra else []))
 
-    conn = duckdb.connect(database=":memory:")
-    source = UnifiedDataSource(
-        conn=conn,
-        gcs_bucket=os.environ["GCS_BUCKET"],
-        gcs_prefix=os.environ.get("GCS_PREFIX", "partitioned_data/"),
-        gcs_user_project=os.environ["GCS_USER_PROJECT"],
-        postgres_dbs=[
-            PostgresDB("rag",      os.environ["RAG_DB_URL"]),
-            PostgresDB("local_pg", os.environ["LOCAL_PG_URL"]),
-        ],
-    )
+        conn = duckdb.connect(database=":memory:")
+        source = UnifiedDataSource(
+            conn=conn,
+            gcs_bucket=os.environ["GCS_BUCKET"],
+            gcs_prefix=os.environ.get("GCS_PREFIX", "partitioned_data/"),
+            gcs_user_project=os.environ["GCS_USER_PROJECT"],
+            postgres_dbs=[
+                PostgresDB("rag",      os.environ["RAG_DB_URL"]),
+                PostgresDB("local_pg", os.environ["LOCAL_PG_URL"]),
+            ],
+        )
 
-    source.load_gcs_tables()
-    source.attach_postgres_dbs()
+        source.load_gcs_tables()
+        source.attach_postgres_dbs()
 
-    schema = source.generate_schema()
-    print("\n--- UNIFIED SCHEMA ---")
-    print(schema)
-    print("--- END SCHEMA ---\n")
+        schema = source.generate_schema()
+        print("\n--- UNIFIED SCHEMA ---")
+        print(schema)
+        print("--- END SCHEMA ---\n")
 
-    source.init_agent(
-        model=os.environ.get("LLM_MODEL", "gpt-4o"),
-        provider=os.environ.get("LLM_PROVIDER", "openai"),
-    )
-    chat = source.conversation_manager(max_retries=3)
+        source.init_agent(
+            model=os.environ.get("LLM_MODEL", "gpt-4o"),
+            provider=os.environ.get("LLM_PROVIDER", "openai"),
+        )
 
-    queries = [
-        "What was the total items sold by user?",
-        "Which products have sale numbers above 200?",
-        "How many baby names were registered in 1990?",
-        "Which countries had the highest GDP in 2020?",
-        "How many documents are in the RAG knowledge base?",
-    ]
+        # Optional: persist history across runs.
+        # history_store = await HistoryStore.create(os.environ["LOCAL_PG_URL"])
+        # session_id = os.environ.get("SESSION_ID")  # pass to resume a prior session
+        chat = await source.conversation_manager(max_retries=3)
 
-    for q in queries:
-        result = chat.run_query(q)
-        result.pretty_print()
+        queries = [
+            "What was the total items sold by user?",
+            "Which products have sale numbers above 200?",
+            "How many baby names were registered in 1990?",
+            "Which countries had the highest GDP in 2020?",
+            "How many documents are in the RAG knowledge base?",
+        ]
 
-    print("\n--- Conversation history ---")
-    chat.show_history()
+        for q in queries:
+            result = await chat.run_query(q)
+            result.pretty_print()
+
+        print("\n--- Conversation history ---")
+        chat.show_history()
+
+    asyncio.run(main())
