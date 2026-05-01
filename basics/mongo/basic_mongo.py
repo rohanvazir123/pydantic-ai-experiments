@@ -12,6 +12,13 @@ Run:      python basic_mongo.py  (calls demo_all())
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------
+import sys
+import io
+# Force UTF-8 output on Windows (cp1252 can't encode arrows, ellipses, etc.)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 import asyncio
 from datetime import datetime, timezone, timedelta
 
@@ -30,8 +37,7 @@ from pymongo import (
 )
 from pymongo.errors import BulkWriteError, DuplicateKeyError
 from pymongo.read_preferences import ReadPreference
-from pymongo.operations import BulkWrite
-from pymongo.return_document import ReturnDocument
+from pymongo import ReturnDocument
 
 # ---------------------------------------------------------------------------
 # 1. Connection & Client Options
@@ -535,16 +541,21 @@ def demo_lookup(db):
         {"$project": {"title": 1, "author.username": 1, "author.email": 1}},
     ]
 
-    # Pipeline $lookup — more powerful: join with filter conditions
+    # Pipeline $lookup (MongoDB 5.0+ concise form) — join via localField /
+    # foreignField and then apply extra stages (filter, sort, limit) in a
+    # pipeline.  MongoDB handles the equality match automatically; no need
+    # for `let` or `$$` variables.
     pipeline_lookup = [
         {"$match": {"published": True}},
         {"$lookup": {
-            "from": "comments",
-            "let": {"post_id": "$_id"},          # expose local var to pipeline
+            "from":         "comments",
+            "localField":   "_id",       # field on the outer (posts) document
+            "foreignField": "post_id",   # matching field on the inner (comments) document
             "pipeline": [
-                {"$match": {"$expr": {"$eq": ["$post_id", "$$post_id"]}}},
+                # Extra stages run on the already-joined comments —
+                # `$match` here filters within the joined set, not the join key.
                 {"$match": {"score": {"$gte": 4}}},  # only high-score comments
-                {"$sort": {"score": -1}},
+                {"$sort":  {"score": -1}},
                 {"$limit": 5},
                 {"$project": {"author": 1, "text": 1, "score": 1}},
             ],
@@ -552,6 +563,23 @@ def demo_lookup(db):
         }},
         {"$addFields": {"comment_count": {"$size": "$top_comments"}}},
     ]
+    # When do you still need `let` + `$$`?
+    # Only when the pipeline inside $lookup needs to reference a field from
+    # the *outer* document beyond the join key — e.g. filtering joined docs
+    # by a value that comes from the parent:
+    #
+    #   "let": {"min_score": "$author_min_score"},   # expose outer field
+    #   "pipeline": [
+    #       {"$match": {"$expr": {"$gte": ["$score", "$$min_score"]}}},
+    #                                                  ^^^ $$name = let variable
+    #   ]
+    #
+    # `$$` (double-dollar) always refers to a variable, never a field:
+    #   $$ROOT      — the entire current document
+    #   $$CURRENT   — the current document (same as $$ROOT at top level)
+    #   $$REMOVE    — sentinel that omits the field from $project output
+    #   $$NOW       — current date/time (inside expressions)
+    #   $$<name>    — a variable defined in `let` or $let / $map / $reduce
 
     print("simple lookup:", list(posts.aggregate(simple_lookup)))
     print("pipeline lookup:", list(posts.aggregate(pipeline_lookup)))
@@ -805,6 +833,127 @@ async def demo_change_streams_async():
             break  # demo: process one event then exit
 
 
+async def demo_change_stream() -> None:
+    """
+    Comprehensive change stream — full event anatomy, resume token, and scope levels.
+    Uses Motor (async). Requires a replica set (--replSet rs0).
+
+    Each change event contains:
+      _id             — resume token (opaque dict); persist to disk for resumption
+      operationType   — insert | update | replace | delete | drop | rename | invalidate
+      ns              — {"db": "...", "coll": "..."}
+      documentKey     — {"_id": ObjectId("...")}
+      fullDocument    — current doc state (only with updateLookup / on insert)
+      updateDescription — {"updatedFields": {}, "removedFields": [], "truncatedArrays": []}
+      clusterTime     — BSON Timestamp (logical clock, not wall-clock)
+    """
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    client = AsyncIOMotorClient("mongodb://localhost:27017", serverSelectionTimeoutMS=3000)
+    db = client["blog_demo"]
+    posts = db["cs_posts"]   # dedicated collection so we don't collide with other demos
+    await posts.drop()
+
+    received: list[dict] = []
+    resume_token = None
+
+    # ── 1. Watch insert / update / delete ─────────────────────────────────────
+    # Pipeline filters reduce traffic from the server; unfiltered watch sees ALL ops.
+    pipeline = [{"$match": {"operationType": {"$in": ["insert", "update", "delete"]}}}]
+
+    async def _write_sequence():
+        await asyncio.sleep(0.05)
+        r = await posts.insert_one({"title": "change stream post", "likes": 0})
+        await asyncio.sleep(0.05)
+        await posts.update_one({"_id": r.inserted_id}, {"$inc": {"likes": 1}})
+        await asyncio.sleep(0.05)
+        await posts.delete_one({"_id": r.inserted_id})
+
+    writer = asyncio.create_task(_write_sequence())
+
+    async with posts.watch(pipeline, full_document="updateLookup") as stream:
+        async for event in stream:
+            op   = event["operationType"]
+            key  = event["documentKey"]["_id"]
+            received.append(op)
+            resume_token = event["_id"]   # always update — persist after each event
+
+            if op == "insert":
+                print(f"  INSERT   _id={key}  doc={event['fullDocument']}")
+            elif op == "update":
+                upd = event.get("updateDescription", {})
+                print(f"  UPDATE   _id={key}  updatedFields={upd.get('updatedFields')}")
+            elif op == "delete":
+                print(f"  DELETE   _id={key}")
+
+            if len(received) == 3:
+                break   # got all three; exit without closing the cursor prematurely
+
+    await writer
+
+    # ── 2. Resume token ───────────────────────────────────────────────────────
+    # _id is an opaque BSON dict.  Persist it (e.g. to a separate collection or
+    # Redis) after every processed event.  On restart, pass resume_after=token.
+    #
+    # startAfter=token  — resume AFTER that event (skip the token event itself)
+    # resumeAfter=token — resume FROM that event (re-delivers the token event)
+    # startAtOperationTime=ts — replay from a Timestamp (e.g. from a backup)
+    if resume_token:
+        print(f"  resume_token (type={type(resume_token).__name__}): {resume_token}")
+        # Uncomment to actually resume:
+        # async with posts.watch(resume_after=resume_token) as stream:
+        #     async for event in stream:
+        #         print("resumed:", event["operationType"])
+        #         break
+
+    # ── 3. Scope levels ───────────────────────────────────────────────────────
+    # collection.watch() — one collection
+    # db.watch()         — all collections in the database
+    # client.watch()     — all collections in all databases
+    print("""
+  Scope levels:
+    posts.watch(pipeline)   — this collection only
+    db.watch(pipeline)      — all collections in blog_demo
+    client.watch(pipeline)  — every collection in every database
+
+  Use db/client scope for cross-collection audit logs.
+  Narrow scope = less oplog traffic filtered by the server.
+    """)
+
+    # ── 4. full_document options ──────────────────────────────────────────────
+    print("""
+  full_document options (MongoDB 6.0+):
+    "updateLookup"   — fetches full doc after update (extra round-trip; may race)
+    "whenAvailable"  — returns doc if still in collection, else None
+    "required"       — errors if doc was deleted before the lookup completes
+    omit             — update events carry only updateDescription (diff only)
+
+  Best practice: use diff-only for high-throughput streams; updateLookup for
+  audit logs where you need the full post-update state.
+    """)
+
+    # ── 5. Event anatomy (reference) ─────────────────────────────────────────
+    print("""
+  Update event shape:
+  {
+    "_id":           <resume_token>,        # persist this after every event
+    "operationType": "update",
+    "clusterTime":   Timestamp(1234, 1),    # logical clock, not wall-clock
+    "ns":            {"db": "blog_demo", "coll": "cs_posts"},
+    "documentKey":   {"_id": ObjectId("...")},
+    "updateDescription": {
+        "updatedFields":   {"likes": 1},
+        "removedFields":   [],
+        "truncatedArrays": []
+    },
+    "fullDocument":  {...}                  # only with updateLookup
+  }
+    """)
+
+    await posts.drop()
+    client.close()
+
+
 # ---------------------------------------------------------------------------
 # 17. Replica Sets & Read Preferences
 # ---------------------------------------------------------------------------
@@ -933,7 +1082,12 @@ def demo_mongoengine():
     import mongoengine as me
     from mongoengine import signals
 
-    me.connect("blog", host="localhost", port=27017)
+    # Use a separate DB to avoid colliding with the PyMongo demo collections
+    me.connect("blog_me", host="localhost", port=27017)
+    # Drop previous run's data for a clean slate
+    client = MongoClient("mongodb://localhost:27017/")
+    client.drop_database("blog_me")
+    client.close()
 
     # --- Document definitions ---
 
@@ -1176,6 +1330,8 @@ def demo_16mb_limit(db) -> None:
         {"$match": {"user_id": "user-42"}},
         {"$group": {
             "_id": "$user_id",
+            # $$ROOT = the entire current document (all fields); pushing it
+            # embeds a full copy of every matching doc into the array.
             "all_events": {"$push": "$$ROOT"},   # ← blows up at 16 MB
         }},
     ])
@@ -1216,6 +1372,7 @@ def demo_16mb_limit(db) -> None:
 
     # Or via the aggregation $bsonSize operator (MongoDB 4.4+):
     db.event_log.aggregate([
+        # $$ROOT = the entire current document; $bsonSize returns its byte size.
         {"$project": {"size": {"$bsonSize": "$$ROOT"}}},
         {"$match":   {"size": {"$gt": 8 * 1024 * 1024}}},   # > 8 MB
         {"$sort":    {"size": -1}},
@@ -1336,13 +1493,16 @@ def demo_normalized_query_perf_trap(db) -> None:
         # Stage 4 — for each comment, join commenter profile via graphLookup.
         # graphLookup is breadth-first; here depth 0 just resolves one level,
         # but in an org-chart scenario it fans out exponentially.
-        {"$lookup": {
+        # $graphLookup traverses the pt_authors graph starting from each
+        # comment's author_id.  maxDepth=0 resolves only the direct level
+        # (no recursive org-chart traversal here) to show the stage cost.
+        {"$graphLookup": {
             "from":              "pt_authors",
             "startWith":         "$comments.author_id",
-            "connectFromField":  "author_id",
+            "connectFromField":  "_id",
             "connectToField":    "_id",
             "as":                "comment_authors",
-            "maxDepth":          0,          # just the direct parent level
+            "maxDepth":          0,
             "depthField":        "depth",
         }},
 
@@ -1771,7 +1931,111 @@ def demo_locking_patterns(db) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Updated demo_all — includes new sections 20-23
+# 26. Read-After-Write Consistency
+# ---------------------------------------------------------------------------
+
+def demo_read_after_write(client: MongoClient) -> None:
+    """
+    MongoDB does NOT guarantee read-after-write consistency by default.
+
+    Without explicit settings, a write acknowledged by the primary (w=1) may
+    not yet have replicated to secondaries.  A subsequent read routed to a
+    secondary can return stale or missing data.
+
+    Three settings combine to guarantee it:
+      1. causal_consistency=True on the session — tracks operationTime; every
+         subsequent op sends afterClusterTime so the server waits until it has
+         applied all prior ops in this session before responding.
+      2. WriteConcern(w="majority") — write is ACKed only after a majority of
+         replica set members have applied it (safe from rollback).
+      3. ReadConcern("majority") — reads only majority-committed data.
+    """
+    from pymongo import WriteConcern, ReadPreference
+    from pymongo.read_concern import ReadConcern
+
+    db = client["blog_demo"]
+    posts = db["rac_posts"]
+    posts.drop()
+
+    # ── 1. Default — the risk ─────────────────────────────────────────────────
+    # w=1: primary ACK only.  A secondary may not have replicated yet.
+    # Reading from SECONDARY immediately after can return None (stale read).
+    posts.insert_one({"title": "default write", "rac": True})
+    print("  [default] w=1, no session — secondary reads may be stale")
+
+    # ── 2. Causal consistency session ─────────────────────────────────────────
+    # The session maintains:
+    #   operationTime — logical timestamp of the last op in this session
+    #   clusterTime   — highest cluster time seen by this session
+    # Each subsequent operation sends afterClusterTime, forcing the server
+    # to wait until it has applied all ops up to that point.
+    with client.start_session(causal_consistency=True) as session:
+
+        result = posts.with_options(
+            write_concern=WriteConcern(w="majority"),
+        ).insert_one(
+            {"title": "causal post", "rac": True},
+            session=session,
+        )
+        inserted_id = result.inserted_id
+        print(f"  [causal] inserted _id={inserted_id}  "
+              f"operationTime={session.operation_time}")
+
+        # Guaranteed to see the write — session carries operationTime
+        doc = posts.with_options(
+            read_concern=ReadConcern("majority"),
+        ).find_one({"_id": inserted_id}, session=session)
+        assert doc is not None, "causal consistency guarantee violated"
+        print(f"  [causal] read back: {doc['title']}")
+
+        # PRIMARY_PREFERRED: uses primary if available, secondary otherwise.
+        # With session, even a secondary read is safe — afterClusterTime forces
+        # it to catch up to operationTime before answering.
+        secondary_posts = client.get_database(
+            "blog_demo",
+            read_preference=ReadPreference.PRIMARY_PREFERRED,
+        )["rac_posts"].with_options(read_concern=ReadConcern("majority"))
+        doc2 = secondary_posts.find_one({"_id": inserted_id}, session=session)
+        print(f"  [causal/pref] doc found on preferred node: {doc2 is not None}")
+
+    # ── 3. Write concern reference ────────────────────────────────────────────
+    print("""
+  Write concern:
+    w=1          (default) — primary ACK; secondary reads may be stale
+    w="majority" — majority of replica set ACKs; safe from rollback
+    w=0          — fire and forget; fastest; no error detection
+    j=True       — wait for journal flush (survive primary crash before ACK)
+    wtimeout=ms  — give up after N ms; raises WriteConcernError
+    """)
+
+    # ── 4. Read concern reference ─────────────────────────────────────────────
+    print("""
+  Read concern:
+    "local"        — (default) latest on this node; may be rolled back
+    "majority"     — only majority-committed data; safe from rollback
+    "linearizable" — strongest; blocks until majority confirms most recent write
+                     (high latency — avoid on hot paths)
+    "snapshot"     — consistent point-in-time view within a transaction
+    """)
+
+    # ── 5. Motor / async pattern ──────────────────────────────────────────────
+    print("""
+  Motor (async) equivalent:
+    async with await client.start_session(causal_consistency=True) as session:
+        await collection.with_options(
+            write_concern=WriteConcern(w="majority")
+        ).insert_one(doc, session=session)
+
+        result = await collection.with_options(
+            read_concern=ReadConcern("majority")
+        ).find_one({"_id": doc["_id"]}, session=session)
+    """)
+
+    posts.drop()
+
+
+# ---------------------------------------------------------------------------
+# Updated demo_all — includes new sections 20-26
 # ---------------------------------------------------------------------------
 def demo_all() -> None:
     """Run all demos against a local MongoDB instance."""
@@ -1854,6 +2118,12 @@ def demo_all() -> None:
 
     print("\n--- 24. Locking Patterns ---")
     demo_locking_patterns(db)
+
+    print("\n--- 25. Change Streams ---")
+    asyncio.run(demo_change_stream())
+
+    print("\n--- 26. Read-After-Write Consistency ---")
+    demo_read_after_write(client)
 
     client.close()
     print("\nAll demos complete.")

@@ -25,6 +25,7 @@ conceptual depth for every major topic in the reference script.
 16. [Distributed Transactions](#16-distributed-transactions)
 17. [Locking Patterns](#17-locking-patterns)
 18. [FAQ](#18-faq)
+19. [Read-After-Write Consistency](#19-read-after-write-consistency)
 
 ---
 
@@ -180,6 +181,133 @@ performance implications:
 | `$setWindowFields` | Window functions (5.0+) |
 | `$merge` / `$out` | Write results to a collection |
 
+### `$` vs `$$` — field references vs variables
+
+Inside aggregation expressions MongoDB uses two distinct sigils:
+
+| Syntax | Meaning | Example |
+|---|---|---|
+| `"$field"` | Reference a **field** on the current document | `"$price"`, `"$author.name"` |
+| `"$$name"` | Reference a **variable** — never a field | `"$$ROOT"`, `"$$post_id"` |
+
+`$$` variables come from two sources:
+1. **System variables** — built in, always available
+2. **User-defined variables** — declared in `let` (inside `$lookup`) or `$let` / `$map` / `$reduce` expressions
+
+#### System variables
+
+| Variable | Value |
+|---|---|
+| `$$ROOT` | The entire current document (all fields) |
+| `$$CURRENT` | The current document at this point in the pipeline (same as `$$ROOT` at the top level; differs inside `$lookup` sub-pipelines) |
+| `$$REMOVE` | Sentinel — when used as a field value in `$project` / `$addFields`, the field is **omitted** from the output entirely |
+| `$$NOW` | Current UTC date/time as a `Date` (useful inside expressions, consistent within one command) |
+| `$$PRUNE` | Used with `$redact` — removes the current sub-document |
+| `$$DESCEND` | Used with `$redact` — keeps the current sub-document and recurses into it |
+| `$$KEEP` | Used with `$redact` — keeps the current sub-document and stops recursing |
+
+#### Common `$$ROOT` patterns
+
+```python
+# Measure each document's BSON size (MongoDB 4.4+) — safe, no accumulation
+{"$project": {"size_bytes": {"$bsonSize": "$$ROOT"}}}
+
+# Promote a nested sub-document to be the new root — safe, one-to-one reshape
+{"$replaceRoot": {"newRoot": "$address"}}
+# Merge sub-doc fields with parent fields using $$ROOT:
+{"$replaceRoot": {"newRoot": {"$mergeObjects": ["$$ROOT", "$address"]}}}
+```
+
+#### `$$ROOT` + `$push` — the 16 MB trap
+
+`{"$push": "$$ROOT"}` embeds a **full copy of every matched document** into a single
+array on the group result. Each document in the group adds its entire BSON size to the
+accumulator. Because the 16 MB limit applies to the *output* document from `$group`,
+this blows up silently on small dev datasets and crashes in production once the group
+grows large enough.
+
+```python
+# DANGEROUS — one group document accumulates ALL matched docs:
+db.events.aggregate([
+    {"$match": {"user_id": uid}},
+    {"$group": {
+        "_id": "$user_id",
+        "all_events": {"$push": "$$ROOT"},  # each doc is a full copy — adds up fast
+    }},
+])
+# Error once group exceeds 16 MB:
+# OperationFailure: document too large
+
+# How fast does it blow up?
+# avg doc size 1 KB  → fails after ~16 000 events per user
+# avg doc size 10 KB → fails after ~1 600 events per user
+# avg doc size 100 KB → fails after ~160 events per user
+```
+
+**Alternatives that don't accumulate into one document:**
+
+```python
+# 1. Project only the fields you actually need before pushing
+{"$group": {
+    "_id": "$user_id",
+    "events": {"$push": {"ts": "$ts", "action": "$action"}},  # slim projection
+}}
+
+# 2. Stream into a collection with $merge — each output doc is a small summary
+db.events.aggregate([
+    {"$match": {"user_id": uid}},
+    {"$group": {
+        "_id": {"user": "$user_id",
+                "day":  {"$dateToString": {"format": "%Y-%m-%d", "date": "$ts"}}},
+        "count":   {"$sum": 1},
+        "actions": {"$addToSet": "$action"},   # set of distinct values only
+    }},
+    {"$merge": {"into": "user_daily_summary", "whenMatched": "merge",
+                "whenNotMatched": "insert"}},
+])
+
+# 3. Use $count instead of $push when you only need the total
+{"$group": {"_id": "$user_id", "event_count": {"$sum": 1}}}
+```
+
+**Rule:** treat `{"$push": "$$ROOT"}` as a code smell. It is occasionally justified
+(small bounded groups, debugging pipelines) but almost always means you should either
+project first or rethink the pipeline output strategy.
+
+#### `$$REMOVE` — conditional field omission
+
+```python
+# Include "discount" field only when it exists; omit it entirely otherwise.
+# Without $$REMOVE you'd get "discount": null in the output.
+{"$project": {
+    "price": 1,
+    "discount": {"$cond": [{"$gt": ["$discount", 0]}, "$discount", "$$REMOVE"]},
+}}
+```
+
+#### User-defined variables with `let`
+
+`let` exposes outer-document fields to the sub-pipeline inside `$lookup`.
+`$$name` (double-dollar + name) references the variable inside the pipeline.
+
+```python
+{"$lookup": {
+    "from": "orders",
+    "let":  {"uid": "$_id", "min_val": "$min_order_value"},  # expose outer fields
+    "pipeline": [
+        {"$match": {"$expr": {
+            "$and": [
+                {"$eq":  ["$user_id",  "$$uid"]},      # $$uid    = let variable
+                {"$gte": ["$total",    "$$min_val"]},   # $$min_val = let variable
+            ]
+        }}},
+    ],
+    "as": "qualifying_orders",
+}}
+# Note: if you only need the equality join with no extra outer-field conditions,
+# use localField / foreignField instead — no let / $$ needed.
+```
+
 ---
 
 ## 5. Index Types
@@ -312,38 +440,91 @@ for financial or critical data where durability matters more than latency.
 
 ## 8. Change Streams
 
-### Delivery guarantee
+Change streams expose MongoDB's oplog as a resumable, ordered cursor of DML events.
+They require a **replica set** (or sharded cluster) — the oplog does not exist on standalones.
 
-Change streams provide **at-least-once delivery** — network failures or restarts may replay
-an event. Your consumer must be idempotent. Use the `resume_after` token to re-open the
-stream from where you left off.
+### Event anatomy
 
 ```python
-# Persist token to durable storage
-resume_token = change["_id"]
-
-# Re-open after restart
-collection.watch(resume_after=resume_token)
+{
+    "_id":           <resume_token>,        # opaque dict; persist after every event
+    "operationType": "update",              # insert | update | replace | delete | drop | rename | invalidate
+    "clusterTime":   Timestamp(1234, 1),    # logical clock, NOT wall-clock
+    "ns":            {"db": "blog", "coll": "posts"},
+    "documentKey":   {"_id": ObjectId("...")},
+    "updateDescription": {
+        "updatedFields":   {"likes": 1},    # only changed fields
+        "removedFields":   [],
+        "truncatedArrays": []
+    },
+    "fullDocument":  {...}                  # only with full_document="updateLookup"
+}
 ```
 
-### Requirements
+### Scope levels
 
-- Replica set or sharded cluster (same as transactions).
-- The watched collection must use the WiredTiger storage engine.
+```python
+collection.watch(pipeline)   # one collection
+db.watch(pipeline)           # all collections in the database
+client.watch(pipeline)       # every collection in every database
+```
 
-### Use cases
+Narrower scope means less oplog traffic the server needs to filter. Use `db`/`client` scope for cross-collection audit logs.
 
-- Cache invalidation
-- Real-time dashboards
+### Resume token
+
+The `_id` of each event is the **resume token** — an opaque BSON dict. Persist it (e.g. to a separate MongoDB collection or Redis) after every successfully processed event. On restart:
+
+```python
+# startAfter — resume AFTER the token event (skip it)
+collection.watch(startAfter=resume_token)
+
+# resumeAfter — resume FROM the token event (re-delivers it)
+collection.watch(resumeAfter=resume_token)
+
+# startAtOperationTime — replay from a cluster Timestamp (e.g. from a backup)
+from bson import Timestamp
+collection.watch(startAtOperationTime=Timestamp(unix_seconds, 1))
+```
+
+Delivery is **at-least-once**: network failures may replay the last event. Your consumer must be idempotent.
+
+### `full_document` options
+
+| Option | Behaviour |
+|---|---|
+| omit (default) | Update events carry only `updateDescription` (diff) — no extra round-trip |
+| `"updateLookup"` | Fetches the full document after the update; may race with a subsequent write |
+| `"whenAvailable"` | Returns the doc if still present, `None` if deleted before lookup |
+| `"required"` | Errors if the doc was deleted before lookup completes |
+
+Use diff-only for high-throughput streams; `updateLookup` for audit logs where you need the full post-update state.
+
+### Filtering with a pipeline
+
+```python
+pipeline = [
+    {"$match": {"operationType": {"$in": ["insert", "update"]}}},
+    {"$match": {"fullDocument.status": "published"}},    # filter by field value
+]
+collection.watch(pipeline, full_document="updateLookup")
+```
+
+Filtering happens server-side — only matching events are sent over the wire.
+
+### Requirements and limitations
+
+- Replica set or sharded cluster (oplog required).
+- WiredTiger storage engine.
+- Change stream cursors time out if idle for longer than `cursor.noCursorTimeout` allows — keep the cursor active or re-open on timeout.
+- Payload is bounded by the 16 MB BSON document limit per event.
+
+### Common use cases
+
+- Cache invalidation when a product price changes
+- Real-time dashboards (order status updates)
 - Audit logs / event sourcing
-- Syncing MongoDB data to Elasticsearch or other stores
-
-### `full_document="updateLookup"`
-
-By default, update events only contain the diff (`updateDescription`). Setting
-`full_document="updateLookup"` fetches the full document at the time of the event.
-Be aware: there is a small window where a subsequent write can make the fetched document
-not exactly match the state at the time of the original update.
+- Syncing to Elasticsearch, Kafka, or another store
 
 ---
 
@@ -1092,3 +1273,483 @@ must be set explicitly (`me.CASCADE`, `me.DENY`, `me.NULLIFY`) — there is no a
 cascade by default.
 
 **Q: Can I use PyMongo and Motor in the same project?**
+A: Yes. They connect independently and share no state. Common pattern: Motor for the
+async web layer (FastAPI handlers), PyMongo for sync background workers or Celery tasks
+in the same repo.
+
+**Q: Is `AsyncIOMotorClient` new?**
+A: No. Motor added asyncio support in v1.2 (2015) alongside its original Tornado backend.
+`AsyncIOMotorClient` has been the asyncio entry point since then. Motor 2.0 (2019) made
+asyncio the primary interface; Motor 3.x dropped the Tornado dependency as a requirement.
+The import path (`motor.motor_asyncio`) looks dated but is still correct for current Motor 3.x.
+
+**Q: What are the disadvantages of using Motor (async) over PyMongo (sync)?**
+A: Motor is not truly non-blocking at the OS level — it wraps PyMongo's sync driver in a
+thread pool executor, so you get concurrency, not epoll-style async I/O. The main disadvantages:
+
+| Disadvantage | Detail |
+|---|---|
+| Complexity | `async def` / `await` everywhere; harder stack traces |
+| Silent bugs | Forgotten `await` returns a coroutine object, not an error |
+| Useless in sync contexts | Scripts, notebooks, Flask, Celery — `asyncio.run()` overhead negates any benefit |
+| Heavier testing | Requires `pytest-asyncio`, `AsyncMock`, fixture scope management |
+| No CPU benefit | Aggregation CPU time on the server is unchanged; async only frees the event loop during I/O waits |
+| `threading.local` breaks | Middleware and loggers that rely on thread-local state don't carry across coroutines |
+
+Use Motor only when your framework is already async (FastAPI, Starlette) and you will
+actually run concurrent queries. Use PyMongo for everything else — simpler code, identical throughput.
+
+**Q: What happens to aggregation performance when a collection is sharded?**
+A: Every aggregation over a sharded collection becomes a **distributed query** regardless
+of how simple it looks. mongos sends the pipeline to every shard that holds chunks for the
+collection (scatter-gather), collects the partial results, and merges them — typically on a
+randomly chosen shard called the *merger shard* (or on mongos itself for memory-heavy stages).
+
+The hidden cost is that any stage which cannot be pushed down to individual shards forces
+mongos to act as a **coordinator**, which involves the same two-phase protocol (2PC) used
+by distributed transactions:
+
+```
+Client → mongos (coordinator)
+            ├─→ shard A  (partial pipeline execution)
+            ├─→ shard B  (partial pipeline execution)
+            └─→ shard C  (partial pipeline execution)
+                     ↓
+         mongos merges: $group, $sort, $limit, $lookup across shards
+```
+
+Stages that **stay on each shard** (pushed down — cheap):
+- `$match` on the shard key or a shard-key prefix
+- `$project`, `$addFields`, `$unwind` (document-level, no cross-shard data)
+- `$group` with a shard-key `_id` (each shard groups its own data independently)
+
+Stages that **must merge on mongos** (pulled up — expensive):
+- `$group` on anything other than the full shard key — each shard emits partial
+  accumulators, mongos re-aggregates them (two-pass `$group`)
+- `$sort` without a limit — all shards stream sorted data to the merger
+- `$lookup` — the foreign collection may live on different shards; mongos must
+  coordinate fetch per document
+- `$graphLookup` — recursive traversal fans out to every shard at every depth level
+- `$out` / `$merge` — the merger shard writes the final result; other shards are idle
+
+In practice, a query that runs in 20 ms on a single replica set can take 200–500 ms on
+a 3-shard cluster if mongos is the merger — not because the data is larger, but because
+of the coordination overhead and the extra network round-trips between shards.
+
+**The compound problem: sharding + `$lookup`**
+
+`$lookup` on a sharded cluster is a code smell. If the foreign collection is also
+sharded, mongos must issue a correlated sub-query *per document* across shard boundaries.
+This is functionally a distributed nested-loop join with 2PC coordination on each
+iteration — latency compounds with document count:
+
+```
+# On a single replica set: one query plan, one engine, fast
+# On a sharded cluster: per-document cross-shard lookup, coordination overhead × N docs
+db.orders.aggregate([
+    {"$lookup": {
+        "from":         "products",    # sharded on product_id
+        "localField":   "product_id",
+        "foreignField": "_id",
+        "as":           "product",
+    }},
+])
+```
+
+**How to mitigate:**
+- **Include the shard key in `$match`** — routes to a single shard, no scatter-gather.
+- **Denormalize the hot fields** — embed the fields you'd `$lookup` directly in the
+  document so the join never happens. This is the MongoDB document model working as intended.
+- **Co-locate related collections on the same shard** using zone sharding — `$lookup`
+  between two collections on the same shard stays local, no cross-shard coordination.
+- **Pre-aggregate into a summary collection** with `$merge` so dashboards read one
+  already-computed document rather than running a distributed aggregation on every request.
+- **Avoid sharding until you actually need it** — a well-indexed replica set handles
+  hundreds of millions of documents. Sharding adds operational complexity and turns every
+  aggregation into a distributed systems problem.
+
+**Q: What is the 60-second transaction timeout and why does it catch people off guard?**
+A: MongoDB hard-aborts any transaction that has been open for longer than
+`transactionLifetimeLimitSeconds` (default: **60 seconds**). The abort is server-side and
+unconditional — the driver receives no warning, the transaction just dies mid-flight with:
+
+```
+MongoServerError: Transaction ... has been aborted.
+pymongo.errors.OperationFailure: Transaction ... has been aborted due to timeout
+```
+
+**Why it catches people off guard:**
+
+1. **It is a server setting, not a driver setting.** You cannot raise it from the client.
+   There is no `session.setTimeout(120)` call. The only way to change it is `mongod.conf`
+   or a `setParameter` admin command:
+
+   ```javascript
+   // mongosh — raises the limit to 120 s on a running server (not persisted on restart):
+   db.adminCommand({ setParameter: 1, transactionLifetimeLimitSeconds: 120 })
+   ```
+
+   ```yaml
+   # mongod.conf — persisted:
+   setParameter:
+     transactionLifetimeLimitSeconds: 120
+   ```
+
+   On Atlas you cannot change this at all — 60 s is the hard ceiling.
+
+2. **It fires even under zero contention.** A transaction doing a slow aggregation,
+   waiting on an external service call, or stalled by cache pressure eviction will be
+   killed at exactly 60 s regardless of whether any other writer exists.
+
+3. **It interacts badly with the retry storm.** Under cache pressure, transactions stall
+   (eviction blocks page reads). A stalled transaction approaches the 60 s limit. When it
+   hits the limit and is aborted, the driver retries — but the retry starts a fresh
+   60 s clock on an already-pressured system. Each retry is nearly guaranteed to hit the
+   timeout too, creating a retry loop where every attempt burns a full 60 s before failing:
+
+   ```
+   Attempt 1: stalls at ~58 s → timeout abort at 60 s → retry
+   Attempt 2: stalls at ~58 s → timeout abort at 60 s → retry
+   Attempt 3: ...
+   # wall-clock time consumed: 3 × 60 s = 3 minutes, zero progress
+   ```
+
+4. **The background cleanup job runs on the same 60 s cadence.** MongoDB's transaction
+   reaper runs every `transactionLifetimeLimitSeconds` seconds. If you lower the timeout
+   to 10 s, the reaper also runs every 10 s, adding its own periodic CPU spike.
+
+5. **It applies to the entire transaction wall-clock duration**, not just individual
+   operation time. A transaction that does five fast operations but sleeps between them
+   (waiting for user input, an API call, or a queue message) will be killed just as
+   surely as a slow query.
+
+**What the timeout is actually for:**
+
+It exists to prevent "zombie" transactions — sessions that opened a transaction and then
+crashed or were abandoned — from holding snapshot versions and dirty pages in the cache
+indefinitely. Without it, a single dead client could block WiredTiger cache reclamation
+forever. The 60 s default is a reasonable ceiling for OLTP transactions, not for long-
+running analytical or batch operations.
+
+**Design rules given the constraint:**
+
+| Pattern | Verdict |
+|---|---|
+| Open transaction → call external API → commit | Code smell — external call can stall; never hold a transaction across I/O you don't control |
+| Open transaction → user thinks about it → commit | Code smell — interactive latency easily exceeds 60 s |
+| Open transaction → large aggregation → commit | Code smell — run the aggregation first, outside the transaction, then open and commit |
+| Open transaction → 3–5 fast document reads/writes → commit | Correct — keep transactions short and data-local |
+| Batch job inside a transaction | Code smell — batch over many documents; use `with_transaction` per small batch, not one giant transaction |
+
+**Practical limit to design for:** treat 5–10 seconds as your real budget, not 60.
+Leave the remaining headroom for slow networks, GC pauses, and cache stalls.
+If your transaction logic cannot complete in 5–10 s under normal load, redesign it —
+raising `transactionLifetimeLimitSeconds` only delays the problem.
+
+**Q: Why do I see endless transaction retries in MongoDB even with zero write contention?**
+A: The most common non-obvious cause is **WiredTiger storage engine cache pressure**, not
+lock contention. This shows up frequently in Kubernetes where pod memory limits are set
+too close to what WiredTiger actually needs.
+
+**What happens internally:**
+
+WiredTiger uses MVCC (Multi-Version Concurrency Control). Every in-progress transaction
+holds dirty pages in the cache. When the cache fills, WiredTiger must evict pages to make
+room. If a transaction's dirty pages cannot be evicted without rolling back the transaction,
+WiredTiger does exactly that — it **internally aborts the transaction and surfaces a
+`WriteConflict` error**, even if no other writer touched those documents.
+
+The MongoDB driver sees `WriteConflict`, classifies it as `TransientTransactionError`, and
+retries automatically. But since the underlying cause is memory pressure rather than a
+conflicting write, the pressure doesn't resolve between retries — every retry hits the same
+wall, producing an endless retry loop that looks like contention but isn't.
+
+```
+Transaction starts
+  └─→ dirty pages accumulate in WiredTiger cache
+  └─→ cache hits high-water mark (default: 80% of cache size)
+  └─→ WiredTiger eviction thread can't clear fast enough
+  └─→ WiredTiger aborts transaction → WriteConflict
+  └─→ driver retries (TransientTransactionError)
+  └─→ same pressure → same abort → same retry → loop
+```
+
+**Why Kubernetes makes this worse:**
+
+WiredTiger defaults to using `50% of (total RAM − 1 GB)` or 256 MB, whichever is larger.
+It reads `/proc/meminfo` for total RAM — which in a K8s pod reports the **node's** total
+RAM, not the pod's memory limit. So WiredTiger believes it has, say, 32 GB available and
+sizes its cache accordingly, while the pod limit is 4 GB. The cache grows until the cgroup
+OOM killer fires, or until cache pressure triggers the retry storm described above.
+
+```yaml
+# Pod memory limit:     4Gi
+# WiredTiger sees:      32Gi node RAM
+# WiredTiger cache:     ~15.5 GB (50% of 31 GB)  ← will exceed the pod limit
+```
+
+**How to diagnose:**
+
+```javascript
+// In mongosh — check cache and eviction stats:
+db.serverStatus().wiredTiger.cache
+
+// Key fields to watch:
+// "bytes currently in the cache"                        ← current usage
+// "maximum bytes configured"                            ← cache ceiling
+// "tracked dirty bytes in the cache"                   ← dirty pages held by txns
+// "pages evicted because they exceeded the in-memory maximum"  ← non-zero = pressure
+// "transaction rollback due to cache overflow"          ← the exact counter you want
+
+db.serverStatus().wiredTiger.transaction
+// "transaction rollback due to cache overflow"  > 0 confirms this is the cause
+```
+
+```bash
+# From outside the pod — watch memory approaching the limit:
+kubectl top pod <mongo-pod> --containers
+# If memory usage is consistently > 80% of the limit, you're in the danger zone.
+```
+
+**Fixes:**
+
+1. **Set `wiredTigerCacheSizeGB` explicitly** — the most important fix. Leave at least
+   1–2 GB headroom for the OS page cache, connection threads, and index builds:
+
+   ```yaml
+   # mongod.conf
+   storage:
+     wiredTiger:
+       engineConfig:
+         cacheSizeGB: 2.5   # pod limit is 4Gi; leave 1.5 GB for OS + threads
+   ```
+
+   Or as a flag: `--wiredTigerCacheSizeGB 2.5`
+
+2. **Set K8s memory request = limit** — prevents the scheduler from placing the pod on a
+   node that cannot actually back the limit, and prevents burstable-class throttling:
+
+   ```yaml
+   resources:
+     requests:
+       memory: "4Gi"
+     limits:
+       memory: "4Gi"
+   ```
+
+3. **Use `allowDiskUse: True` for heavy aggregations** — lets WiredTiger spill intermediate
+   results to disk instead of holding them in the cache during large `$group` / `$sort`:
+
+   ```python
+   db.orders.aggregate(pipeline, allowDiskUse=True)
+   ```
+
+4. **Increase the pod memory limit** — if the workload genuinely needs more cache.
+   Rule of thumb: working set (hot data + indexes) should fit comfortably in the cache.
+
+5. **Add a read replica and route analytical queries there** — keeps the primary's cache
+   free for transactional workloads; heavy aggregations run on the replica without
+   competing for primary cache pages.
+
+**The `TransientTransactionError` retry budget:**
+
+`with_transaction` retries indefinitely on `TransientTransactionError`. If you're using
+manual `start_transaction` / `commit_transaction`, add a retry cap:
+
+```python
+MAX_RETRIES = 3
+for attempt in range(MAX_RETRIES):
+    try:
+        with session.start_transaction():
+            do_work(session)
+            session.commit_transaction()
+        break
+    except (WriteConflict, OperationFailure) as e:
+        if "TransientTransactionError" in e.details.get("errorLabels", []):
+            if attempt == MAX_RETRIES - 1:
+                raise   # don't loop forever — surface the real problem
+            continue
+        raise
+```
+
+A cap turns an infinite loop into a visible failure, which surfaces the cache pressure
+in your error logs rather than hiding it behind silent retries.
+
+**The cascading feedback loop:**
+
+Cache pressure does not just cause individual transaction aborts — it creates a
+self-reinforcing death spiral:
+
+```
+Cache pressure
+  → longer transaction duration (eviction stalls block page reads)
+  → longer snapshot retention (MVCC must keep older versions alive for in-flight txns)
+  → more dirty pages accumulate (long-lived txns hold more in-cache state)
+  → deeper cache pressure
+  → more aborts → more retries
+  → retries re-enter the system, adding new transactions on top of already-stalled ones
+  → system load increases → latency increases → transactions run even longer
+  → back to the top, worse than before
+```
+
+Each leg amplifies the next. A cluster that was stable under normal load can tip into
+this loop from a single large aggregation or a temporary memory spike, and will not
+self-recover as long as the retry storm keeps adding new load. The only exit is to
+reduce pressure from outside: kill long-running operations (`db.killOp()`), drop the
+`allowDiskUse` aggregations onto a replica, or reduce the cache ceiling so WiredTiger
+starts rejecting new allocations earlier (before the stall cascades).
+
+This is why treating `TransientTransactionError` as always safe to retry silently is
+dangerous — under cache pressure, each retry is fuel on the fire.
+
+**Q: Given extra RAM, should I expand the WiredTiger cache or put an application cache (Redis) in front of MongoDB?**
+A: Give it to WiredTiger first as the default. MongoDB has no query result cache — WiredTiger's
+page cache is the only layer between your queries and disk I/O. Expanding it directly reduces
+eviction pressure, snapshot retention overhead, and the transaction abort cascades that follow.
+An application cache does nothing for writes and won't stop the abort storm.
+
+**Give the RAM to WiredTiger when:**
+- Your working set is being evicted — `db.serverStatus().wiredTiger.cache` shows a high
+  `"bytes read into cache"` rate relative to `"bytes currently in cache"` (pages are being
+  evicted and re-read constantly)
+- You are seeing transaction aborts or retry storms under low contention (cache pressure
+  cascade — see above)
+- Query patterns are diverse — a Redis cache would have a low hit rate and help little
+
+**Put a cache in front (Redis) when:**
+- You have a small, identifiable hot key set read at very high fan-out: trending content,
+  leaderboards, session tokens, expensive pre-aggregated results
+- Sub-millisecond read latency is required — Redis serves from memory without touching
+  MongoDB's connection pool or query engine at all
+- MongoDB connection pool or CPU is the bottleneck, not storage throughput
+- You can cache computed aggregation results that would otherwise require a full pipeline
+  on every request
+
+**The diagnostic tell:**
+
+```javascript
+const cache = db.serverStatus().wiredTiger.cache;
+const readInRate   = cache["bytes read into cache"];
+const currentBytes = cache["bytes currently in cache"];
+const maxBytes     = cache["maximum bytes configured"];
+
+// High read-in relative to cache size → eviction happening → give RAM to WiredTiger
+// Cache is stable but connections/CPU are high → bottleneck is query throughput → cache in front
+```
+
+**The antipattern:** putting Redis in front of MongoDB to paper over WiredTiger cache
+pressure. It hides the read problem but the abort storms continue on writes — you have
+now added infrastructure complexity without fixing the root cause.
+
+**Rule of thumb:** WiredTiger first until the working set fits comfortably (cache
+utilisation < 80% at peak). If read throughput is still the bottleneck after that,
+add Redis in front for the hot key subset.
+
+**Q: When is `asyncio.gather` better than `$facet`, and vice versa?**
+A: `$facet` runs multiple sub-pipelines in a single round-trip against the **same collection**
+and is always preferable for that case — one query plan, one network call, results arrive
+together. `asyncio.gather` is the right tool when your concurrent queries hit **different
+collections or databases** where `$facet` cannot reach:
+
+```python
+# $facet — one round-trip, same collection (better):
+db.orders.aggregate([{"$facet": {
+    "by_status": [{"$group": {"_id": "$status", "n": {"$sum": 1}}}],
+    "total_revenue": [{"$group": {"_id": None, "rev": {"$sum": "$amount"}}}],
+}}])
+
+# asyncio.gather — concurrent queries across different collections (better):
+counts, revenue, active_users = await asyncio.gather(
+    db.orders.count_documents({"status": "pending"}),
+    db.orders.aggregate(revenue_pipeline).to_list(None),
+    db.users.count_documents({"active": True}),   # different collection
+)
+```
+
+---
+
+## 19. Read-After-Write Consistency
+
+### Why it is not automatic in MongoDB
+
+By default, MongoDB acknowledges a write when the **primary** has applied it (`w=1`).
+Secondaries replicate asynchronously — there is no bound on how far behind they can be.
+If you write to the primary and then read from a secondary (or even re-read from the primary
+after a failover), you may see stale or missing data.
+
+### The three knobs
+
+| Setting | Where | What it does |
+|---|---|---|
+| `causal_consistency=True` | `client.start_session()` | Tracks `operationTime`; every op in the session sends `afterClusterTime` so the server waits until it has applied all prior ops before responding |
+| `WriteConcern(w="majority")` | Collection / operation | Write ACKed only after majority of replica set members confirm it — safe from rollback |
+| `ReadConcern("majority")` | Collection / operation | Returns only majority-committed data — safe from rollback |
+
+All three must be used together to get the guarantee, because:
+- `w=1` + causal session → the secondary may not have the write yet even though `afterClusterTime` is set (secondary hasn't applied it)
+- `w="majority"` without a session → a *different* session's read has no ordering guarantee
+- `w="majority"` + session without `ReadConcern("majority")` → the node may return an older snapshot
+
+### Code pattern
+
+```python
+from pymongo import WriteConcern, ReadPreference
+from pymongo.read_concern import ReadConcern
+
+with client.start_session(causal_consistency=True) as session:
+    # Write — durable on majority
+    result = collection.with_options(
+        write_concern=WriteConcern(w="majority"),
+    ).insert_one({"title": "post"}, session=session)
+
+    # Read — guaranteed to see the write above, even on a secondary
+    doc = collection.with_options(
+        read_concern=ReadConcern("majority"),
+    ).find_one({"_id": result.inserted_id}, session=session)
+    assert doc is not None
+```
+
+### Motor (async) pattern
+
+```python
+async with await client.start_session(causal_consistency=True) as session:
+    result = await collection.with_options(
+        write_concern=WriteConcern(w="majority"),
+    ).insert_one(doc, session=session)
+
+    found = await collection.with_options(
+        read_concern=ReadConcern("majority"),
+    ).find_one({"_id": result.inserted_id}, session=session)
+```
+
+### Write concern reference
+
+| `w=` | Meaning | Latency | Use when |
+|---|---|---|---|
+| `0` | Fire and forget | Lowest | Metrics, log ingestion |
+| `1` (default) | Primary ACK | Low | Most writes where replica lag is acceptable |
+| `"majority"` | Majority ACK | Medium | Financial, inventory, anything causal reads follow |
+| `N` (int) | N members ACK | High | Rarely needed; use majority instead |
+
+`j=True` additionally waits for the journal flush to disk before ACKing — survives a primary crash between ACK and fsync.
+`wtimeout=ms` caps how long to wait; raises `WriteConcernError` on timeout (write may or may not have committed).
+
+### Read concern reference
+
+| Level | Sees | Safe from rollback | Notes |
+|---|---|---|---|
+| `"local"` (default) | Latest on this node | No | Fast; may return data that gets rolled back on failover |
+| `"majority"` | Majority-committed data | Yes | Needed for causal consistency guarantee |
+| `"linearizable"` | Most recent majority-committed write | Yes | Strongest; blocks until majority confirms; high latency |
+| `"snapshot"` | Consistent point-in-time within a transaction | Yes | Multi-document transactions only |
+
+### Compared to PostgreSQL
+
+| | MongoDB | PostgreSQL |
+|---|---|---|
+| **Default guarantee** | None — eventual consistency on secondaries | Automatic on the primary (READ COMMITTED) |
+| **Configuration needed** | `causal_consistency` + `w=majority` + `rc=majority` | None (primary reads) |
+| **Read replica** | Safe with causal session + rc=majority | Needs `synchronous_commit=remote_apply` or pg_wal_replay_wait |
+| **Cross-session guarantee** | Requires causal session | READ COMMITTED sees all committed data automatically |
+
+---

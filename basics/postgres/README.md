@@ -21,6 +21,14 @@ Domain used throughout: **e-commerce** (users, products, orders, order_items, re
 13. [SKIP LOCKED: Job Queue Pattern](#skip-locked-job-queue-pattern)
 14. [Common Gotchas](#common-gotchas)
 15. [Index Types](#index-types)
+16. [PARTITION BY: Window Function Frame Clauses](#partition-by-window-function-frame-clauses)
+17. [Table Partitioning](#table-partitioning)
+18. [TOAST: Automatic Column-Level Storage](#toast-automatic-column-level-storage)
+19. [JSONB: Advanced Patterns](#jsonb-advanced-patterns)
+20. [BYTEA: Binary Data Storage](#bytea-binary-data-storage)
+21. [MVCC and Pessimistic Locking](#mvcc-and-pessimistic-locking)
+22. [Change Stream (Trigger + LISTEN/NOTIFY)](#change-stream-trigger--listennotify)
+23. [Read-After-Write Consistency](#read-after-write-consistency)
 
 ---
 
@@ -485,6 +493,84 @@ LISTEN/NOTIFY is a lightweight convenience feature, not a replacement for a prop
 
 ---
 
+## Change Stream (Trigger + LISTEN/NOTIFY)
+
+PostgreSQL has no native change stream API, but the same pattern is achievable by combining
+a PL/pgSQL trigger with `NOTIFY` and `LISTEN`.
+
+### How it works
+
+1. A `AFTER INSERT OR UPDATE OR DELETE` trigger fires on every row change.
+2. The trigger function builds a JSON payload from `OLD`/`NEW` and calls `pg_notify(channel, payload)`.
+3. Any client that has run `LISTEN channel` on a dedicated connection receives the event asynchronously.
+
+```sql
+CREATE OR REPLACE FUNCTION orders_change_notify()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE payload JSONB;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        payload := jsonb_build_object('op', 'DELETE', 'id', OLD.id, 'status', OLD.status);
+    ELSIF TG_OP = 'INSERT' THEN
+        payload := jsonb_build_object('op', 'INSERT', 'id', NEW.id, 'status', NEW.status);
+    ELSE
+        payload := jsonb_build_object('op', 'UPDATE', 'id', NEW.id,
+                                      'old_status', OLD.status, 'new_status', NEW.status);
+    END IF;
+    PERFORM pg_notify('order_changes', payload::TEXT);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER orders_change_trigger
+AFTER INSERT OR UPDATE OR DELETE ON orders
+FOR EACH ROW EXECUTE FUNCTION orders_change_notify();
+```
+
+### asyncpg listener
+
+```python
+def on_change(conn, pid, channel, payload):
+    event = json.loads(payload)
+    print(event["op"], event["id"])
+
+listener_conn = await asyncpg.connect(dsn)
+await listener_conn.add_listener("order_changes", on_change)
+# ... run your writes on another connection ...
+await asyncio.sleep(0.1)   # let the event loop deliver notifications
+await listener_conn.remove_listener("order_changes", on_change)
+await listener_conn.close()
+```
+
+`LISTEN` requires a **dedicated connection** that stays open — do not use a pooled connection for it, as `asyncpg.Pool` may recycle or reuse it.
+
+### LISTEN/NOTIFY vs WAL-based CDC
+
+| Feature | LISTEN/NOTIFY | WAL / Debezium |
+|---|---|---|
+| **Durability** | None — fire & forget | Durable (replication slot) |
+| **Resume / replay** | No | Yes (LSN position) |
+| **Payload size** | 8 000 bytes | Unlimited |
+| **Schema changes** | Manual in trigger | Automatic |
+| **Setup complexity** | Low (SQL trigger) | High (connector infra) |
+| **Replica set needed** | No | No (logical replication on any PG) |
+| **Best for** | Cache busting, simple hooks | Full CDC, Kafka, audit pipelines |
+
+### Compared to MongoDB change streams
+
+| | MongoDB | PostgreSQL |
+|---|---|---|
+| **Mechanism** | Oplog-backed cursor | Trigger + pg_notify |
+| **Resume token** | Yes (`_id` of each event) | No |
+| **Scope** | Collection / DB / cluster | Per-table trigger |
+| **Durability** | At-least-once (oplog) | None |
+| **Payload limit** | 16 MB (BSON doc limit) | 8 000 bytes |
+| **Infrastructure** | Replica set required | Any PG instance |
+
+For durable, replayable CDC from PostgreSQL use [Debezium](https://debezium.io/) with the `pgoutput` plugin (built into PG 10+) — no extra extensions needed.
+
+---
+
 ## Advisory Locks
 
 ### Q: Session vs transaction scope — what is the difference?
@@ -677,3 +763,650 @@ CREATE INDEX idx_users_email_lower ON users (lower(email));
 -- Now this is an index scan, not a seq scan:
 -- SELECT * FROM users WHERE lower(email) = lower($1)
 ```
+
+---
+
+## PARTITION BY: Window Function Frame Clauses
+
+`PARTITION BY` inside a window function divides rows into independent groups; the function
+resets and recalculates for each partition. It is fundamentally different from `GROUP BY`:
+`GROUP BY` collapses rows into one summary row per group; `PARTITION BY` preserves every
+input row while making group-level metrics available alongside row-level data.
+
+### `$` vs `$$` — field reference vs variable (PostgreSQL analogy)
+
+In window function syntax:
+- `PARTITION BY col` — partition boundary, resets the window per distinct value of `col`
+- `ORDER BY col` — sort order within each partition (required for ranking/running functions)
+- Frame clause — controls which rows within the partition are visible to the function
+
+### Frame clause units
+
+| Unit | Counts | Tie handling |
+|---|---|---|
+| `ROWS` | Physical row positions | Each row is distinct regardless of ORDER BY value |
+| `RANGE` | Rows sharing the same ORDER BY value | Peer rows are all included in each other's frame |
+| `GROUPS` | Distinct peer groups (PG 11+) | Like RANGE but counts groups, not rows |
+
+```sql
+-- ROWS: each row is a distinct position — running total ticks up per row
+SUM(total) OVER (
+    PARTITION BY user_id ORDER BY created_at
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+)
+
+-- RANGE: on a day with 3 orders, all three show the same running total
+-- (the entire day's amount) because they are ORDER BY peers
+SUM(total) OVER (
+    PARTITION BY user_id ORDER BY created_at::date
+    RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+)
+
+-- GROUPS: "1 PRECEDING" means the previous peer group, not the previous row
+SUM(total) OVER (
+    PARTITION BY user_id ORDER BY created_at::date
+    GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW   -- current day + previous day
+)
+```
+
+### Frame boundary keywords
+
+```
+UNBOUNDED PRECEDING  — start of the partition
+<n> PRECEDING        — n rows/range-units/groups before current row
+CURRENT ROW          — the current row (or its peer group for RANGE/GROUPS)
+<n> FOLLOWING        — n rows/range-units/groups after current row
+UNBOUNDED FOLLOWING  — end of the partition
+```
+
+### Common patterns
+
+**Centred moving average (1 preceding + current + 1 following):**
+```sql
+AVG(total) OVER (
+    PARTITION BY user_id ORDER BY created_at
+    ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING
+) AS centred_3row_avg
+```
+
+**Multi-column partition (rank within user × status):**
+```sql
+RANK() OVER (
+    PARTITION BY user_id, status   -- independent window per (user, status) pair
+    ORDER BY total DESC
+) AS rank_within_user_status
+```
+
+**Share of group total (no ORDER BY needed — full partition frame):**
+```sql
+total / SUM(total) OVER (PARTITION BY user_id) AS share_of_user_spend
+```
+No `ORDER BY` means the frame is the entire partition by default — correct for
+proportions and averages, wrong for running totals (which need `ORDER BY` to be meaningful).
+
+**Named window — define once, reference many times:**
+```sql
+SELECT
+    ROW_NUMBER() OVER w          AS row_num,
+    RANK()       OVER w          AS rank,
+    SUM(total)   OVER (w ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running
+FROM orders
+WINDOW w AS (PARTITION BY user_id ORDER BY created_at)
+```
+A named window can be refined in the `OVER()` clause with an additional frame clause,
+but cannot change the `PARTITION BY` or `ORDER BY`.
+
+### `LAST_VALUE` gotcha
+
+`LAST_VALUE` without an explicit frame only sees up to the current row (default frame is
+`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`). To get the true last value in the
+partition you must extend the frame:
+
+```sql
+-- WRONG — returns current row's total, not the last one
+LAST_VALUE(total) OVER (PARTITION BY user_id ORDER BY created_at)
+
+-- CORRECT — extend frame to end of partition
+LAST_VALUE(total) OVER (
+    PARTITION BY user_id ORDER BY created_at
+    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+)
+```
+
+---
+
+## Table Partitioning
+
+PostgreSQL declarative table partitioning (PG 10+) splits a logical parent table into
+physical child tables called partitions. The planner uses **partition pruning** to skip
+partitions whose ranges cannot satisfy the query filter — a major performance tool for
+large tables.
+
+### Three strategies
+
+| Strategy | Syntax | Best for |
+|---|---|---|
+| `RANGE` | `FOR VALUES FROM (start) TO (end)` | Dates, timestamps, sequential IDs |
+| `LIST` | `FOR VALUES IN (val1, val2, ...)` | Enumerations: region, status, tenant |
+| `HASH` | `FOR VALUES WITH (MODULUS n, REMAINDER r)` | Even distribution, no natural range |
+
+### RANGE partitioning by date
+
+```sql
+-- Parent: holds schema and partition key, no rows
+CREATE TABLE order_log (
+    id         BIGSERIAL,
+    user_id    INT          NOT NULL,
+    total      NUMERIC      NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL,
+    PRIMARY KEY (id, created_at)   -- partition key must be part of every unique key
+) PARTITION BY RANGE (created_at);
+
+-- Children: FOR VALUES FROM (inclusive) TO (exclusive)
+CREATE TABLE order_log_2023 PARTITION OF order_log
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
+
+CREATE TABLE order_log_2024 PARTITION OF order_log
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+-- DEFAULT catches anything outside all explicit ranges
+-- Without this, inserting out-of-range raises an error
+CREATE TABLE order_log_default PARTITION OF order_log DEFAULT;
+
+-- Index on parent propagates to all partitions automatically (PG 11+)
+CREATE INDEX ON order_log (user_id, created_at);
+```
+
+**Partition pruning** — queries with a filter on the partition key skip irrelevant partitions:
+```sql
+-- Scans ONLY order_log_2024; other partitions skipped
+SELECT * FROM order_log
+WHERE created_at >= '2024-01-01' AND created_at < '2025-01-01';
+
+-- Verify with EXPLAIN — look for Append node listing only the relevant child
+EXPLAIN SELECT * FROM order_log WHERE created_at >= '2024-01-01';
+```
+
+**Which partition holds each row:**
+```sql
+SELECT tableoid::regclass AS partition, id, created_at
+FROM order_log ORDER BY created_at;
+```
+
+### LIST partitioning by region
+
+```sql
+CREATE TABLE regional_orders (
+    id     BIGSERIAL,
+    region TEXT    NOT NULL,
+    amount NUMERIC NOT NULL,
+    PRIMARY KEY (id, region)
+) PARTITION BY LIST (region);
+
+CREATE TABLE regional_orders_eu PARTITION OF regional_orders
+    FOR VALUES IN ('DE', 'FR', 'NL', 'ES', 'IT');
+
+CREATE TABLE regional_orders_us PARTITION OF regional_orders
+    FOR VALUES IN ('US', 'CA', 'MX');
+```
+
+### HASH partitioning for even distribution
+
+```sql
+CREATE TABLE events (
+    id      BIGSERIAL,
+    user_id INT  NOT NULL,
+    event   TEXT NOT NULL,
+    PRIMARY KEY (id, user_id)
+) PARTITION BY HASH (user_id);
+
+-- 3 partitions — MODULUS = total, REMAINDER = this partition's slot
+CREATE TABLE events_0 PARTITION OF events FOR VALUES WITH (MODULUS 3, REMAINDER 0);
+CREATE TABLE events_1 PARTITION OF events FOR VALUES WITH (MODULUS 3, REMAINDER 1);
+CREATE TABLE events_2 PARTITION OF events FOR VALUES WITH (MODULUS 3, REMAINDER 2);
+```
+
+### Attach / detach for zero-downtime archiving
+
+```sql
+-- Detach makes the partition a standalone table instantly — no data copy, no lock on other partitions
+ALTER TABLE order_log DETACH PARTITION order_log_2023;
+-- PG 14+: non-blocking
+ALTER TABLE order_log DETACH PARTITION order_log_2023 CONCURRENTLY;
+
+-- Re-attach (child must satisfy the range constraint)
+ALTER TABLE order_log ATTACH PARTITION order_log_2023
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
+```
+
+Detach + dump + drop is the standard pattern for archiving old time partitions without
+a slow `DELETE` that bloats WAL and stalls vacuum.
+
+### Constraints and gotchas
+
+| Constraint | Detail |
+|---|---|
+| Partition key in every unique key | `PRIMARY KEY (id, created_at)` — not just `(id)` |
+| No FK pointing TO a partitioned table | Supported from PG 16 with restrictions; avoid in earlier versions |
+| Indexes created per partition | `CREATE INDEX ON parent` fans out automatically (PG 11+) |
+| `DEFAULT` partition blocks adding new partitions | New explicit partition must not overlap with existing `DEFAULT` rows — check first |
+| `VACUUM` / `ANALYZE` per partition | Run on children for fine-grained control; running on parent covers all |
+| Sub-partitioning | A partition can itself be partitioned — e.g. RANGE by year → LIST by region |
+
+---
+
+## TOAST: Automatic Column-Level Storage
+
+TOAST (The Oversized Attribute Storage Technique) is PostgreSQL's transparent mechanism
+for storing values larger than ~2 KB out-of-line, in a separate TOAST table. You never
+interact with it directly — it is completely automatic.
+
+### How it works
+
+PostgreSQL's page size is 8 KB. A row must fit on a single page. When a column value
+would push the row over the page limit, PostgreSQL applies one or more TOAST strategies:
+
+```
+Column value > ~2 KB (TOAST_TUPLE_THRESHOLD)
+    ↓
+1. Compress in-line (pglz or lz4)           ← try this first
+   If compressed value still > page limit:
+2. Move value to TOAST table (out-of-line)  ← transparent pointer left in main row
+   Main row stores a 4-byte pointer only.
+```
+
+The TOAST table (`pg_toast.<oid>`) is a separate heap with its own storage, vacuum,
+and indexes. Reads transparently fetch and decompress the value.
+
+### TOAST storage strategies (per column)
+
+Set with `ALTER TABLE ... ALTER COLUMN ... SET STORAGE ...`:
+
+| Strategy | Compresses? | Moves out-of-line? | Best for |
+|---|---|---|---|
+| `PLAIN` | No | No | Small values that must never be TOASTed (e.g. INT, BOOL) |
+| `MAIN` | Yes | Only as last resort | Columns you want to keep in the main row if possible |
+| `EXTENDED` | Yes | Yes (default for TEXT, JSONB, BYTEA) | Large variable-length columns |
+| `EXTERNAL` | No | Yes | Large values where you want fast substring access (no decompress) |
+
+```sql
+-- Check current strategy for each column
+SELECT attname, attstorage
+FROM pg_attribute
+WHERE attrelid = 'my_table'::regclass AND attnum > 0;
+-- p = PLAIN, m = MAIN, x = EXTENDED, e = EXTERNAL
+
+-- Change to EXTERNAL for a BYTEA column where you need fast slicing
+ALTER TABLE documents ALTER COLUMN raw_bytes SET STORAGE EXTERNAL;
+
+-- Use EXTENDED (default) for JSONB and TEXT — compression usually helps
+ALTER TABLE events ALTER COLUMN payload SET STORAGE EXTENDED;
+```
+
+### What TOAST means for query performance
+
+```sql
+-- TOAST columns are fetched only when selected — excluded columns cost nothing
+SELECT id, created_at FROM documents;          -- TOAST body column not read at all
+SELECT id, created_at, body FROM documents;    -- body fetched + decompressed per row
+
+-- EXTERNAL storage lets PostgreSQL read a substring without decompressing the whole value
+-- (useful for very large TEXT/BYTEA when you only need a prefix)
+SELECT substring(raw_bytes FROM 1 FOR 100) FROM documents;
+-- With EXTENDED: decompresses full value first → slower for large values
+-- With EXTERNAL: reads only the needed bytes from TOAST → faster for large values
+```
+
+### Contrast with MongoDB's 16 MB document limit
+
+| | PostgreSQL TOAST | MongoDB |
+|---|---|---|
+| Per-value size limit | ~1 GB (practical) | 16 MB total document |
+| Overflow handling | Automatic, transparent | Manual: GridFS, bucketing, or error |
+| Compression | pglz or lz4, automatic | None (BSON is uncompressed) |
+| Partial reads | Yes (`EXTERNAL` strategy) | No |
+| User awareness required | Zero | Must architect around the limit |
+
+### TOAST and JSONB
+
+`JSONB` uses `EXTENDED` storage by default. Large JSONB documents are compressed and
+moved out of line automatically. This means:
+
+```sql
+-- This never hits a hard size limit the way MongoDB does
+-- (practical limit ~255 MB before other constraints apply)
+UPDATE events SET payload = $1 WHERE id = $2;   -- 50 MB JSONB: fine
+
+-- But fetching many rows with large JSONB is expensive — select only what you need
+SELECT id, payload->>'status' FROM events;      -- reads only the key, but still decompresses full payload
+-- Better: store hot scalar fields as real columns, keep JSONB for the variable remainder
+```
+
+### asyncpg and TOAST
+
+asyncpg reads TOAST values transparently — there is nothing special to do. The only
+performance consideration is avoiding `SELECT *` on tables with large TOAST columns when
+you do not need them, since fetching and decompressing is done per row per column selected.
+
+---
+
+## JSONB: Advanced Patterns
+
+### SQL/JSON path queries (PG 12+)
+
+`jsonb_path_query` and `jsonb_path_exists` support a richer path syntax than `->` / `#>`:
+
+```sql
+-- Extract city from nested address
+SELECT jsonb_path_query(metadata, '$.address.city') FROM users;
+
+-- Filter rows where tags array contains "vip"
+SELECT id FROM users
+WHERE jsonb_path_exists(metadata, '$.tags[*] ? (@ == "vip")');
+```
+
+### Merge, delete, and strip
+
+```sql
+-- || shallow merge (right-side wins on duplicate keys)
+UPDATE users SET metadata = metadata || '{"tier": "gold", "verified": true}'::jsonb
+WHERE id = 1;
+
+-- - delete a key
+UPDATE users SET metadata = metadata - 'temp_flag' WHERE id = 1;
+
+-- jsonb_strip_nulls — remove keys whose value is null
+SELECT jsonb_strip_nulls('{"a": 1, "b": null, "c": {"d": null, "e": 2}}'::jsonb);
+-- → {"a": 1, "c": {"e": 2}}
+```
+
+### Expand to rows
+
+```sql
+-- jsonb_each_text: top-level keys → (key text, value text) rows
+SELECT u.id, kv.key, kv.value
+FROM users u, jsonb_each_text(u.metadata) AS kv
+WHERE u.id = 1;
+
+-- jsonb_array_elements: JSON array → one row per element
+SELECT id, elem->>'name' AS tag_name
+FROM users, jsonb_array_elements(metadata->'tags') AS elem
+WHERE metadata ? 'tags';
+```
+
+### Generated columns for hot scalar fields
+
+Extracting a scalar field on every query decompresses the full JSONB value per row.
+Generated columns extract the value once at write time and store it as a real column:
+
+```sql
+ALTER TABLE users
+    ADD COLUMN tier TEXT GENERATED ALWAYS AS (metadata->>'tier') STORED;
+
+CREATE INDEX ON users (tier);   -- normal B-tree index, no JSONB decompression at query time
+-- SELECT * FROM users WHERE tier = 'gold'  → index scan
+```
+
+Use this pattern for any JSONB field that appears in `WHERE`, `ORDER BY`, or `JOIN` clauses.
+
+### GIN index strategies
+
+```sql
+-- Default (jsonb_ops): supports @>, ?, ?|, ?&, @?
+CREATE INDEX ON users USING GIN (metadata);
+
+-- jsonb_path_ops: smaller index, faster for @> and @? only
+CREATE INDEX ON users USING GIN (metadata jsonb_path_ops);
+```
+
+Use `jsonb_path_ops` when your queries exclusively use containment (`@>`) — the index
+is ~30–40% smaller and faster for that operator. Use the default when you also need
+key-existence (`?`, `?|`, `?&`).
+
+---
+
+## BYTEA: Binary Data Storage
+
+`BYTEA` stores arbitrary binary data. asyncpg maps it to Python `bytes`. No MongoDB-style
+size wall — TOAST handles large values transparently up to ~1 GB per column.
+
+### Basic insert and retrieve
+
+```python
+import hashlib
+
+sample_pdf = b"%PDF-1.4 ..."
+sha = hashlib.sha256(sample_pdf).digest()   # 32 raw bytes
+
+doc_id = await conn.fetchval(
+    "INSERT INTO documents (name, content, sha256) VALUES ($1, $2, $3) RETURNING id",
+    "sample.pdf", sample_pdf, sha            # asyncpg accepts bytes directly
+)
+
+row = await conn.fetchrow("SELECT content, sha256 FROM documents WHERE id = $1", doc_id)
+content: bytes = bytes(row["content"])       # asyncpg returns memoryview — coerce to bytes
+```
+
+### Hex encode / decode in SQL
+
+```sql
+-- bytes → hex string for display or API response
+SELECT encode(sha256, 'hex') AS sha256_hex FROM documents WHERE id = $1;
+
+-- hex string → bytes
+SELECT decode('deadbeef', 'hex');
+```
+
+### Partial reads and STORAGE EXTERNAL
+
+```sql
+-- Read just the first 8 bytes (file magic) without fetching the full value
+SELECT substring(content FROM 1 FOR 8) FROM documents WHERE id = $1;
+```
+
+With default `EXTENDED` storage, the full column is decompressed before slicing.
+With `EXTERNAL`, PostgreSQL reads only the requested bytes from TOAST — much faster
+for large blobs when you only need a prefix:
+
+```sql
+ALTER TABLE documents ALTER COLUMN content SET STORAGE EXTERNAL;
+```
+
+### Length, hashing, deduplication
+
+```sql
+-- Size without fetching data
+SELECT octet_length(content) FROM documents WHERE id = $1;
+
+-- Server-side hash comparison (PG 11+)
+SELECT sha256(content) = sha256 FROM documents WHERE id = $1;
+
+-- Hash index for O(1) deduplication
+CREATE INDEX ON documents USING HASH (sha256);
+SELECT id FROM documents WHERE sha256 = $1;   -- exists check before insert
+```
+
+### BYTEA vs TEXT vs Large Object vs object store
+
+| Approach | Max size | Streaming | SQL ops | Best for |
+|---|---|---|---|---|
+| `BYTEA` | ~1 GB | No | Yes | Files < ~50 MB, transactional, simple |
+| `TEXT` | ~1 GB | No | Yes | Text content |
+| Large Object (`lo_*`) | 4 TB | Yes | Limited | Multi-GB files; awkward API |
+| External (S3/GCS) + URL column | Unlimited | Yes | No | Everything > 50 MB |
+
+**Rule:** use `BYTEA` for files under ~50 MB where you want transactional guarantees and
+simple SQL access. Store only the object store URL for larger files. Large Objects
+(`pg_largeobject`) are rarely the right choice — separate vacuuming, not replicated via
+logical replication, awkward client API.
+
+---
+
+## MVCC and Pessimistic Locking
+
+### How MVCC works
+
+PostgreSQL uses **Multi-Version Concurrency Control (MVCC)**. Instead of locking rows
+for reads, every write creates a new row version with transaction timestamps (`xmin`,
+`xmax`). Readers see a snapshot of the database at their transaction start time — they
+never block on writers, and writers never block on readers.
+
+```
+Row versions in heap:
+  (xmin=100, xmax=0,   data="Alice")   ← visible to txn 101+ while xmax=0
+  (xmin=102, xmax=0,   data="Alice2")  ← created by txn 102, visible to 102+
+  (xmin=100, xmax=102, data="Alice")   ← old version, dead to txns >= 102
+```
+
+`VACUUM` reclaims dead row versions. High write rates with slow VACUUM cause table bloat.
+
+**Key MVCC behaviours:**
+- `SELECT` never blocks on `INSERT` / `UPDATE` / `DELETE` from other transactions
+- `UPDATE` creates a new row version; it does not modify in place
+- Two concurrent `UPDATE`s to the same row: the second blocks until the first commits,
+  then re-evaluates its predicate against the new version (lost-update protection)
+- `REPEATABLE READ` and `SERIALIZABLE` snapshots can cause serialization failures
+  (`ERROR: could not serialize access`) — the application must retry
+
+### `SELECT ... FOR UPDATE` — pessimistic row locking
+
+`FOR UPDATE` acquires an exclusive row lock at `SELECT` time, preventing other transactions
+from updating or locking the same rows until the current transaction commits or rolls back.
+Use it when you need to read-then-modify without a lost-update race.
+
+```python
+async with conn.transaction():
+    # Lock the row — blocks any concurrent FOR UPDATE or UPDATE on this row
+    row = await conn.fetchrow(
+        "SELECT id, stock FROM products WHERE id = $1 FOR UPDATE",
+        product_id
+    )
+    if row["stock"] < quantity:
+        raise ValueError("insufficient stock")
+    await conn.execute(
+        "UPDATE products SET stock = stock - $1 WHERE id = $2",
+        quantity, product_id
+    )
+    # Lock released on commit
+```
+
+### Lock strength variants
+
+```sql
+FOR UPDATE           -- exclusive: blocks all other FOR UPDATE, FOR SHARE, UPDATE, DELETE
+FOR NO KEY UPDATE    -- like FOR UPDATE but allows concurrent FOR KEY SHARE
+FOR SHARE            -- shared: blocks FOR UPDATE / FOR NO KEY UPDATE, allows other FOR SHARE
+FOR KEY SHARE        -- weakest: only blocks FOR UPDATE
+```
+
+Use `FOR NO KEY UPDATE` when your update does not touch the primary/foreign key columns —
+it allows referencing foreign-key checks to proceed concurrently.
+
+### `SKIP LOCKED` vs `NOWAIT`
+
+```sql
+-- NOWAIT: fail immediately if any row is locked (raises LockNotAvailable)
+SELECT id FROM jobs WHERE status = 'pending' FOR UPDATE NOWAIT LIMIT 1;
+
+-- SKIP LOCKED: skip locked rows, return only immediately available ones
+-- The canonical job queue pattern — no two workers claim the same job
+SELECT id FROM jobs WHERE status = 'pending'
+ORDER BY created_at
+FOR UPDATE SKIP LOCKED LIMIT 1;
+```
+
+### Deadlock risk with pessimistic locking
+
+When two transactions each lock a row and then try to lock the row the other holds,
+PostgreSQL detects the deadlock and aborts one with:
+`ERROR: deadlock detected`
+
+Prevent deadlocks by always acquiring locks in a **consistent order**:
+
+```python
+# Always lock product rows in ascending ID order
+product_ids = sorted([product_id_a, product_id_b])
+rows = await conn.fetch(
+    "SELECT id, stock FROM products WHERE id = ANY($1) ORDER BY id FOR UPDATE",
+    product_ids
+)
+```
+
+### MVCC vs pessimistic locking — when to use each
+
+| Pattern | Mechanism | Best for |
+|---|---|---|
+| Plain `UPDATE` | MVCC lost-update protection | Non-critical updates where last-writer-wins is acceptable |
+| Optimistic (version counter) | Application-level CAS | Low contention; retry on conflict is cheap |
+| `SELECT FOR UPDATE` | Pessimistic row lock | Read-then-modify where you cannot afford a retry (stock, balance) |
+| `SELECT FOR UPDATE SKIP LOCKED` | Pessimistic + skip | Job queues, task dispatching |
+| `SERIALIZABLE` isolation | MVCC serialization | Complex multi-row invariants; accept serialization errors + retry |
+
+**Pessimistic locking is a code smell when:**
+- The lock is held across an external API call or user interaction (lock duration is unbounded)
+- You lock many rows at once without a consistent order (deadlock risk)
+- Contention is low — optimistic locking has lower overhead and no deadlock risk
+
+---
+
+## Read-After-Write Consistency
+
+### PostgreSQL guarantees it automatically
+
+Unlike MongoDB, PostgreSQL provides read-after-write consistency out of the box on the primary:
+
+- Every write is synchronously applied before the statement returns.
+- `READ COMMITTED` (the default isolation level) means every new statement gets a fresh snapshot that includes all data committed by any session up to that moment.
+- The same connection, a different pool connection, or a completely separate process will all see a committed write immediately.
+
+No sessions, no write concerns, no special settings required.
+
+### Within a transaction
+
+Writes you make inside an open transaction are visible **to your own connection** but not to other sessions until `COMMIT`. This is correct READ COMMITTED behaviour — not a consistency gap.
+
+```python
+async with conn.transaction():
+    new_id = await conn.fetchval("INSERT INTO orders ... RETURNING id", ...)
+
+    # Your connection sees the uncommitted row
+    row = await conn.fetchrow("SELECT id FROM orders WHERE id = $1", new_id)
+    assert row is not None   # visible to self
+
+    # Another pool connection cannot see it yet
+    async with pool.acquire() as other:
+        invisible = await other.fetchrow("SELECT id FROM orders WHERE id = $1", new_id)
+    assert invisible is None  # invisible to peers — not yet committed
+# COMMIT happens here; now visible to everyone
+```
+
+### The only exception: read replicas
+
+Streaming replication is **asynchronous by default**. A standby may lag behind the primary by milliseconds to seconds. A read routed to a replica immediately after a primary write may miss that write.
+
+### Mitigations for replica lag
+
+| Option | How | Latency cost |
+|---|---|---|
+| **Read from primary** | Point asyncpg at the primary DSN for write-then-read flows | None |
+| `synchronous_commit = 'remote_apply'` | Primary waits for one replica to replay WAL before ACKing | One replica round-trip |
+| `pg_wal_replay_wait(lsn)` (PG 16+) | Capture `pg_current_wal_lsn()` on primary; block replica query until it catches up | Proportional to lag |
+| **Sticky routing** | After any write, route that user's reads to the primary for N seconds | Reduces replica offload |
+
+```sql
+-- Capture LSN on the primary after writing
+SELECT pg_current_wal_lsn();   -- e.g. 0/1A3F000
+
+-- On the replica (PG 16+): block until replayed
+SELECT pg_wal_replay_wait('0/1A3F000');
+-- Returns once the replica has applied that WAL position
+```
+
+### Compared to MongoDB
+
+| | PostgreSQL | MongoDB |
+|---|---|---|
+| **Primary reads** | Automatic (READ COMMITTED) | Automatic (w=1 default) |
+| **Replica reads** | Lag possible; mitigate with `synchronous_commit` or pg_wal_replay_wait | Lag possible; mitigate with causal consistency session + `w=majority` + `rc=majority` |
+| **Cross-session guarantee** | Automatic at READ COMMITTED | Requires explicit causal session |
+| **Configuration overhead** | None for primary reads | Must set three knobs for replica safety |
