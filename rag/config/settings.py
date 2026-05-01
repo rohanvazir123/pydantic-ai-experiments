@@ -228,8 +228,8 @@ class Settings(BaseSettings):
     # "postgres" — entity/relationship tables in the existing Neon DB (default, works now)
     # "age"      — Apache AGE Cypher graph (requires AGE container, see docker-compose.yml)
     kg_backend: str = Field(
-        default="postgres",
-        description="Knowledge graph backend: 'postgres' (SQL tables) or 'age' (Apache AGE Cypher)",
+        default="age",
+        description="Knowledge graph backend: 'age' (Apache AGE Cypher, default) or 'postgres' (SQL tables, legacy)",
     )
 
     # Apache AGE connection (used when kg_backend = "age")

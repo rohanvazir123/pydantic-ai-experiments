@@ -2234,6 +2234,659 @@ async def demo_psycopg3_comparison() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 21. Isolation Levels — live anomaly demonstrations
+# ---------------------------------------------------------------------------
+
+async def demo_isolation_levels(conn: asyncpg.Connection, pool: asyncpg.Pool) -> None:
+    """
+    Shows the three anomalies that isolation levels guard against, using two
+    concurrent connections so the effects are real, not theoretical.
+
+    Anomaly recap:
+      Non-repeatable read — same row, same txn, different values on second read.
+      Phantom read        — same query, same txn, different row count on second run.
+      Write skew          — two txns each read a value, each write based on it;
+                            combined result violates an invariant neither checked.
+    """
+
+    # Shared table so all pool connections see the same data
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_bank (
+            id      INT PRIMARY KEY,
+            owner   TEXT NOT NULL,
+            balance NUMERIC(10,2) NOT NULL
+        )
+    """)
+    await conn.execute("TRUNCATE _demo_bank")
+    await conn.executemany(
+        "INSERT INTO _demo_bank VALUES ($1,$2,$3)",
+        [(1, "Alice", Decimal("1000")), (2, "Bob", Decimal("0"))],
+    )
+
+    # ── 1. READ COMMITTED — non-repeatable read ───────────────────────────────
+    # Reader sees Alice's balance twice; Writer commits a change between reads.
+    # At READ COMMITTED each statement gets a fresh snapshot → second read differs.
+    writer_committed = asyncio.Event()
+    reader_first_done = asyncio.Event()
+
+    async def _rc_reader():
+        async with pool.acquire() as c:
+            async with c.transaction(isolation="read_committed"):
+                v1 = await c.fetchval(
+                    "SELECT balance FROM _demo_bank WHERE id = 1"
+                )
+                reader_first_done.set()      # tell writer to go
+                await writer_committed.wait()
+                v2 = await c.fetchval(
+                    "SELECT balance FROM _demo_bank WHERE id = 1"
+                )
+                print(f"  READ COMMITTED   first={v1}  second={v2}  "
+                      f"same={v1 == v2}")    # False — non-repeatable read
+
+    async def _rc_writer():
+        await reader_first_done.wait()
+        async with pool.acquire() as c:
+            await c.execute(
+                "UPDATE _demo_bank SET balance = 500 WHERE id = 1"
+            )
+        writer_committed.set()
+
+    await asyncio.gather(_rc_reader(), _rc_writer())
+    await conn.execute("UPDATE _demo_bank SET balance = 1000 WHERE id = 1")
+
+    # ── 2. REPEATABLE READ — snapshot protects against same anomaly ───────────
+    # Same race; reader now uses REPEATABLE READ.  Both reads return the
+    # snapshot value at transaction start — writer's commit is invisible.
+    writer_committed2 = asyncio.Event()
+    reader_first_done2 = asyncio.Event()
+
+    async def _rr_reader():
+        async with pool.acquire() as c:
+            async with c.transaction(isolation="repeatable_read"):
+                v1 = await c.fetchval(
+                    "SELECT balance FROM _demo_bank WHERE id = 1"
+                )
+                reader_first_done2.set()
+                await writer_committed2.wait()
+                v2 = await c.fetchval(
+                    "SELECT balance FROM _demo_bank WHERE id = 1"
+                )
+                print(f"  REPEATABLE READ  first={v1}  second={v2}  "
+                      f"same={v1 == v2}")    # True — snapshot held
+
+    async def _rr_writer():
+        await reader_first_done2.wait()
+        async with pool.acquire() as c:
+            await c.execute(
+                "UPDATE _demo_bank SET balance = 500 WHERE id = 1"
+            )
+        writer_committed2.set()
+
+    await asyncio.gather(_rr_reader(), _rr_writer())
+    await conn.execute("UPDATE _demo_bank SET balance = 1000 WHERE id = 1")
+
+    # ── 3. SERIALIZABLE — SSI catches write skew ──────────────────────────────
+    # Two concert-goers concurrently try to book the last remaining seat.
+    # Both read seats=1, both decide to decrement; without SSI, seats → -1.
+    # With SERIALIZABLE, SSI detects the rw-anti-dependency cycle and aborts
+    # one of the transactions with SerializationFailureError.
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_seats (
+            id              INT PRIMARY KEY,
+            available_seats INT NOT NULL
+        )
+    """)
+    await conn.execute("TRUNCATE _demo_seats")
+    await conn.execute("INSERT INTO _demo_seats VALUES (1, 1)")  # only 1 seat
+
+    results: list[str] = []
+
+    async def _book(name: str) -> None:
+        for attempt in range(5):
+            try:
+                async with pool.acquire() as c:
+                    async with c.transaction(isolation="serializable"):
+                        seats = await c.fetchval(
+                            "SELECT available_seats FROM _demo_seats WHERE id = 1"
+                        )
+                        await asyncio.sleep(0.02)   # overlap window
+                        if seats and seats > 0:
+                            await c.execute(
+                                "UPDATE _demo_seats "
+                                "SET available_seats = available_seats - 1 WHERE id = 1"
+                            )
+                            results.append(f"{name}: booked (attempt {attempt + 1})")
+                        else:
+                            results.append(f"{name}: sold out")
+                return
+            except asyncpg.SerializationFailureError:
+                if attempt == 4:
+                    results.append(f"{name}: gave up after 5 retries")
+
+    await asyncio.gather(_book("Alice"), _book("Bob"))
+    final_seats = await conn.fetchval(
+        "SELECT available_seats FROM _demo_seats WHERE id = 1"
+    )
+    for r in results:
+        print(f"  SERIALIZABLE {r}")
+    print(f"  SERIALIZABLE seats remaining={final_seats} (should be 0, never -1)")
+
+    # ── Isolation level matrix ────────────────────────────────────────────────
+    print("""
+  Isolation level matrix:
+
+  Level            | Dirty read | Non-repeatable | Phantom | Write skew
+  -----------------|------------|----------------|---------|------------
+  READ UNCOMMITTED | No (PG*)   | Yes            | Yes     | Yes
+  READ COMMITTED   | No         | Yes            | Yes     | Yes
+  REPEATABLE READ  | No         | No             | No (PG*)| Yes
+  SERIALIZABLE     | No         | No             | No      | No (SSI)
+
+  * PG READ UNCOMMITTED behaves like READ COMMITTED — dirty reads never served.
+  * PG REPEATABLE READ also blocks phantom reads (stronger than SQL standard).
+  * SERIALIZABLE uses SSI: tracks rw-anti-dependency cycles and aborts one
+    participant with asyncpg.SerializationFailureError. Always retry.
+    """)
+
+    await conn.execute("DROP TABLE IF EXISTS _demo_bank, _demo_seats")
+
+
+# ---------------------------------------------------------------------------
+# 22. Constraints — UNIQUE, FOREIGN KEY, CHECK, TEXT, deferred, partitions
+# ---------------------------------------------------------------------------
+
+async def demo_constraints(conn: asyncpg.Connection) -> None:
+    """
+    Demonstrates constraint types, the asyncpg exceptions they raise, and
+    two advanced cases: deferred constraints and UNIQUE on partitioned tables.
+    """
+
+    # ── 1. UNIQUE constraint ─────────────────────────────────────────────────
+    # users.email is UNIQUE — inserting a duplicate raises UniqueViolationError.
+    try:
+        await conn.execute(
+            "INSERT INTO users (email, name) VALUES ($1, $2)",
+            "alice@example.com", "Duplicate Alice",
+        )
+    except asyncpg.UniqueViolationError as e:
+        print(f"  UNIQUE violation: {e.constraint_name}")   # users_email_key
+
+    # ON CONFLICT DO NOTHING — silently ignores duplicates
+    await conn.execute(
+        "INSERT INTO users (email, name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "alice@example.com", "No-op",
+    )
+
+    # ON CONFLICT DO UPDATE (upsert) — atomic insert-or-update
+    await conn.execute(
+        """
+        INSERT INTO users (email, name) VALUES ($1, $2)
+        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+        """,
+        "alice@example.com", "Alice (updated)",
+    )
+
+    # ── 2. FOREIGN KEY constraint ─────────────────────────────────────────────
+    # orders.user_id references users(id) — referencing a non-existent id raises
+    # ForeignKeyViolationError.
+    try:
+        await conn.execute(
+            "INSERT INTO orders (user_id, status) VALUES ($1, $2)",
+            99999, "pending",
+        )
+    except asyncpg.ForeignKeyViolationError as e:
+        print(f"  FK violation:    {e.constraint_name}")   # orders_user_id_fkey
+
+    # ON DELETE CASCADE — deleting a user deletes their orders automatically.
+    # (orders.user_id is defined with ON DELETE CASCADE in SCHEMA_SQL)
+    temp_uid = await conn.fetchval(
+        "INSERT INTO users (email, name) VALUES ($1,$2) RETURNING id",
+        "cascade@example.com", "CascadeUser",
+    )
+    await conn.execute(
+        "INSERT INTO orders (user_id, status) VALUES ($1, $2)", temp_uid, "pending"
+    )
+    await conn.execute("DELETE FROM users WHERE id = $1", temp_uid)
+    orphans = await conn.fetchval(
+        "SELECT count(*) FROM orders WHERE user_id = $1", temp_uid
+    )
+    print(f"  FK CASCADE:      orders after user delete = {orphans}")  # 0
+
+    # ON DELETE SET NULL — FK column becomes NULL instead of cascading.
+    # ON DELETE RESTRICT — prevents delete if child rows exist (raises FK error).
+    print("""
+  ON DELETE options:
+    CASCADE    — child rows deleted automatically (orders → order_items)
+    SET NULL   — FK column set to NULL (useful for soft references)
+    SET DEFAULT— FK column reset to its DEFAULT value
+    RESTRICT   — prevents the parent delete (same as NO ACTION, checked immediately)
+    NO ACTION  — default; checked at end of statement (or end of txn if DEFERRED)
+    """)
+
+    # ── 3. CHECK constraint ───────────────────────────────────────────────────
+    # reviews.rating CHECK (rating BETWEEN 1 AND 5)
+    prod_id = await conn.fetchval("SELECT id FROM products LIMIT 1")
+    user_id = await conn.fetchval("SELECT id FROM users LIMIT 1")
+    try:
+        await conn.execute(
+            "INSERT INTO reviews (product_id, user_id, rating) VALUES ($1,$2,$3)",
+            prod_id, user_id, 10,   # 10 violates CHECK (rating BETWEEN 1 AND 5)
+        )
+    except asyncpg.CheckViolationError as e:
+        print(f"  CHECK violation: {e.constraint_name}")   # reviews_rating_check
+
+    # ── 4. NOT NULL ───────────────────────────────────────────────────────────
+    try:
+        await conn.execute(
+            "INSERT INTO users (email, name) VALUES ($1, $2)",
+            None, "No Email",    # email is NOT NULL
+        )
+    except asyncpg.NotNullViolationError as e:
+        print(f"  NOT NULL:        column '{e.column_name}' cannot be null")
+
+    # ── 5. TEXT column — unlimited length, no CHAR(n) padding ────────────────
+    # PostgreSQL TEXT, VARCHAR, and VARCHAR(n) are stored identically — TEXT is
+    # preferred because it imposes no arbitrary length limit.  CHAR(n) pads with
+    # spaces and is almost never the right choice.
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_text (
+            id      SERIAL PRIMARY KEY,
+            content TEXT NOT NULL   -- same on-disk format as VARCHAR(n)
+        )
+    """)
+    long_val = "x" * 100_000   # 100 KB string — TEXT handles it without complaint
+    tid = await conn.fetchval(
+        "INSERT INTO _demo_text (content) VALUES ($1) RETURNING id", long_val
+    )
+    length = await conn.fetchval(
+        "SELECT char_length(content) FROM _demo_text WHERE id = $1", tid
+    )
+    print(f"  TEXT column:     stored {length:,} chars without a length limit")
+
+    # pg_trgm GIN index enables fast LIKE '%substring%' on TEXT columns
+    print("""
+  GIN trigram index for substring search on TEXT:
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE INDEX ON _demo_text USING GIN (content gin_trgm_ops);
+    -- Now fast: SELECT * FROM _demo_text WHERE content LIKE '%keyword%'
+    """)
+    await conn.execute("DROP TABLE IF EXISTS _demo_text")
+
+    # ── 6. Deferred constraints ───────────────────────────────────────────────
+    # DEFERRABLE INITIALLY DEFERRED — constraint is checked at COMMIT, not at the
+    # statement level.  Useful for circular FK references or batch reordering.
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_nodes (
+            id      SERIAL PRIMARY KEY,
+            next_id INT REFERENCES _demo_nodes(id) DEFERRABLE INITIALLY DEFERRED
+        )
+    """)
+    async with conn.transaction():
+        # Without DEFERRED, this would fail: next_id=2 doesn't exist yet.
+        # With DEFERRED, the FK check runs at COMMIT when both rows exist.
+        await conn.execute(
+            "INSERT INTO _demo_nodes (id, next_id) VALUES ($1, $2)", 10, 11
+        )
+        await conn.execute(
+            "INSERT INTO _demo_nodes (id, next_id) VALUES ($1, $2)", 11, 10
+        )
+    print("  DEFERRED FK:     circular insert succeeded (checked at COMMIT)")
+    await conn.execute("DROP TABLE IF EXISTS _demo_nodes")
+
+    # ── 7. UNIQUE constraint on a partitioned table ───────────────────────────
+    # PostgreSQL requires the partition key to be PART of any unique/PK constraint
+    # on a partitioned table.  Uniqueness is enforced per-partition, not globally.
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_events (
+            id         BIGSERIAL,
+            region     TEXT   NOT NULL,
+            event_name TEXT   NOT NULL,
+            PRIMARY KEY (id, region),              -- partition key must be included
+            UNIQUE      (event_name, region)        -- same rule for UNIQUE
+        ) PARTITION BY LIST (region)
+    """)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_events_us
+            PARTITION OF _demo_events FOR VALUES IN ('US')
+    """)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_events_eu
+            PARTITION OF _demo_events FOR VALUES IN ('EU')
+    """)
+
+    await conn.execute(
+        "INSERT INTO _demo_events (region, event_name) VALUES ($1,$2)", "US", "signup"
+    )
+    try:
+        # Duplicate (event_name, region) within same partition — violates UNIQUE
+        await conn.execute(
+            "INSERT INTO _demo_events (region, event_name) VALUES ($1,$2)", "US", "signup"
+        )
+    except asyncpg.UniqueViolationError:
+        print("  UNIQUE/partition: duplicate within partition rejected")
+
+    # Cross-partition: same event_name, different region — allowed (different partition)
+    await conn.execute(
+        "INSERT INTO _demo_events (region, event_name) VALUES ($1,$2)", "EU", "signup"
+    )
+    print("  UNIQUE/partition: same event_name in different region is allowed")
+
+    print("""
+  Partitioned table constraint rule:
+    Every UNIQUE and PRIMARY KEY constraint must include ALL partition key columns.
+    Reason: PostgreSQL enforces uniqueness per child partition, so without the
+    partition key the constraint cannot span partitions.
+    Global uniqueness across partitions requires a separate deduplication mechanism
+    (e.g., application logic, or a non-partitioned lookup table).
+    """)
+
+    await conn.execute(
+        "DROP TABLE IF EXISTS _demo_events, _demo_events_us, _demo_events_eu"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 23. EXPLAIN ANALYZE — reading query plans
+# ---------------------------------------------------------------------------
+
+async def demo_explain_analyze(conn: asyncpg.Connection) -> None:
+    """
+    EXPLAIN          — shows estimated plan (no execution)
+    EXPLAIN ANALYZE  — executes the query, shows actual vs estimated stats
+    EXPLAIN (ANALYZE, BUFFERS) — adds shared/local buffer hit/miss counts
+    EXPLAIN (FORMAT JSON)      — machine-readable plan for tooling
+
+    Key plan nodes:
+      Seq Scan        — full table scan; fast for small tables or >20 % of rows
+      Index Scan      — random I/O via index; best for selective filters
+      Index Only Scan — reads from index alone (no heap fetch); needs VACUUM
+      Bitmap Heap Scan— builds a bitmap of matching pages, then bulk-reads them
+      Hash Join       — build hash table on smaller side, probe with larger side
+      Nested Loop     — for each outer row, scan inner; good when inner is indexed
+      Merge Join      — both sides sorted; efficient for large pre-sorted inputs
+      Sort            — explicit sort node; look for spill-to-disk (Sort Method: external)
+      Hash Aggregate  — aggregate using a hash table (GROUP BY)
+      Limit           — cuts rows after N; propagates row-limit hints upward
+    """
+
+    def _print_plan(rows) -> None:
+        for row in rows:
+            print(" ", row[0])
+
+    # ── 1. EXPLAIN — estimated plan only, no execution ────────────────────────
+    print("  --- EXPLAIN (estimated) ---")
+    plan = await conn.fetch(
+        "EXPLAIN SELECT id, email FROM users WHERE email = $1",
+        "alice@example.com",
+    )
+    _print_plan(plan)
+
+    # ── 2. EXPLAIN ANALYZE — run the query, compare actual vs estimated ───────
+    # Look at:
+    #   cost=X..Y   — startup cost .. total cost (arbitrary planner units)
+    #   rows=N      — estimated rows
+    #   actual time=X..Y ms  actual rows=N  loops=L
+    # Large actual vs estimated rows discrepancy → stale statistics → run ANALYZE.
+    print("\n  --- EXPLAIN ANALYZE ---")
+    plan = await conn.fetch(
+        "EXPLAIN ANALYZE SELECT id, name, price FROM products WHERE category = $1",
+        "widgets",
+    )
+    _print_plan(plan)
+
+    # ── 3. EXPLAIN (ANALYZE, BUFFERS) — buffer cache hits and misses ──────────
+    # shared hit=N   — pages served from PostgreSQL shared_buffers (fast)
+    # shared read=N  — pages read from OS/disk (slow)
+    # High read count on a hot query → buffer cache miss → consider pg_prewarm
+    # or increase shared_buffers.
+    print("\n  --- EXPLAIN (ANALYZE, BUFFERS) ---")
+    plan = await conn.fetch(
+        """
+        EXPLAIN (ANALYZE, BUFFERS)
+        SELECT u.email, count(o.id) AS order_count
+        FROM   users  u
+        LEFT JOIN orders o ON o.user_id = u.id
+        GROUP  BY u.email
+        ORDER  BY order_count DESC
+        """
+    )
+    _print_plan(plan)
+
+    # ── 4. EXPLAIN (FORMAT JSON) — structured for tooling ────────────────────
+    # Paste JSON output into https://explain.dalibo.com or pgMustard for visual
+    # plan diagrams.
+    import json as _json
+    plan_json = await conn.fetchval(
+        """
+        EXPLAIN (FORMAT JSON, ANALYZE)
+        SELECT id, sku, price FROM products ORDER BY price DESC LIMIT 5
+        """
+    )
+    top = _json.loads(plan_json)[0]["Plan"]
+    print(f"\n  --- EXPLAIN FORMAT JSON (top node) ---")
+    print(f"  Node: {top['Node Type']}  "
+          f"cost={top['Total Cost']:.1f}  "
+          f"rows={top.get('Actual Rows', top['Plan Rows'])}")
+
+    # ── 5. Common plan problems and fixes ────────────────────────────────────
+    print("""
+  Plan problem → fix:
+    Seq Scan on large table      → add an index on the filter column
+    Estimated rows << actual     → run ANALYZE (or VACUUM ANALYZE)
+    Sort: Sort Method: external  → increase work_mem for this session:
+                                   SET work_mem = '64MB'
+    Nested Loop with many loops  → missing index on inner side
+    Hash Join: Batches > 1       → hash table spilled to disk; increase work_mem
+    Index Scan on <5 % of table  → usually fine; watch for buffer misses
+    """)
+
+
+# ---------------------------------------------------------------------------
+# 24. OCC vs PCC — optimistic and pessimistic concurrency control
+# ---------------------------------------------------------------------------
+
+async def demo_occ_vs_pcc(conn: asyncpg.Connection, pool: asyncpg.Pool) -> None:
+    """
+    Domain: concert seat booking.  One hot row (available_seats) must never go
+    negative, even under concurrent requests.
+
+    OCC (Optimistic Concurrency Control):
+      Assumes conflicts are rare.  Reads without locking; checks at write time.
+      Best when contention is LOW — many rows, few writers hitting the same one.
+
+    PCC (Pessimistic Concurrency Control):
+      Assumes conflicts are likely.  Locks the row on first read, forcing others
+      to wait.  Best when contention is HIGH — many concurrent writers per row.
+    """
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS _demo_concerts (
+            concert_id      TEXT PRIMARY KEY,
+            available_seats INT  NOT NULL,
+            version         INT  NOT NULL DEFAULT 0
+        )
+    """)
+    await conn.execute("TRUNCATE _demo_concerts")
+    await conn.execute(
+        "INSERT INTO _demo_concerts VALUES ($1, $2, $3)",
+        "weeknd_tour", 5, 0,
+    )
+
+    # ── 1. OCC — WHERE clause guard ───────────────────────────────────────────
+    # Update only if the invariant still holds.  rowcount=0 → conflict, retry.
+    async def occ_where_guard(user_id: str) -> str:
+        for attempt in range(1, 6):
+            async with pool.acquire() as c:
+                async with c.transaction():
+                    status = await c.fetchval(
+                        """
+                        UPDATE _demo_concerts
+                        SET    available_seats = available_seats - 1
+                        WHERE  concert_id = 'weeknd_tour'
+                          AND  available_seats > 0     -- invariant guard
+                        RETURNING available_seats
+                        """
+                    )
+                if status is not None:
+                    return f"{user_id}: booked (seats left: {status})"
+                else:
+                    # Conflict or sold out — distinguish by reading current state
+                    left = await c.fetchval(
+                        "SELECT available_seats FROM _demo_concerts WHERE concert_id = 'weeknd_tour'"
+                    )
+                    if left == 0:
+                        return f"{user_id}: sold out"
+                    # Temporary conflict — back off and retry
+                    await asyncio.sleep(0.01 * attempt)
+        return f"{user_id}: gave up after 5 attempts"
+
+    r = await occ_where_guard("user_occ_1")
+    print(f"  OCC WHERE guard: {r}")
+
+    # ── 2. OCC — version column CAS ──────────────────────────────────────────
+    # Read version alongside data.  Update only if version unchanged.
+    # rowcount=0 → another writer incremented version first → retry.
+    async def occ_version_cas(user_id: str) -> str:
+        for attempt in range(1, 6):
+            async with pool.acquire() as c:
+                row = await c.fetchrow(
+                    "SELECT available_seats, version FROM _demo_concerts "
+                    "WHERE concert_id = 'weeknd_tour'"
+                )
+                if row["available_seats"] <= 0:
+                    return f"{user_id}: sold out"
+                updated = await c.execute(
+                    """
+                    UPDATE _demo_concerts
+                    SET    available_seats = available_seats - 1,
+                           version         = version + 1
+                    WHERE  concert_id = 'weeknd_tour'
+                      AND  version    = $1          -- CAS: only if version matches
+                    """,
+                    row["version"],
+                )
+                if updated == "UPDATE 1":
+                    return f"{user_id}: booked via CAS (attempt {attempt})"
+                await asyncio.sleep(0.01 * attempt)    # exponential back-off
+        return f"{user_id}: gave up"
+
+    r = await occ_version_cas("user_occ_2")
+    print(f"  OCC version CAS: {r}")
+
+    # ── 3. OCC — asyncio retry with exponential back-off ─────────────────────
+    # Production pattern: wrap OCC in a retry decorator / loop.
+    # (tenacity equivalent — no extra dependency needed)
+    class ConflictError(Exception):
+        pass
+
+    async def purchase_ticket_occ(user_id: str, max_attempts: int = 5) -> str:
+        delay = 0.05
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with pool.acquire() as c:
+                    async with c.transaction():
+                        updated = await c.execute(
+                            """
+                            UPDATE _demo_concerts
+                            SET    available_seats = available_seats - 1
+                            WHERE  concert_id = 'weeknd_tour'
+                              AND  available_seats > 0
+                            """
+                        )
+                        if updated == "UPDATE 0":
+                            left = await c.fetchval(
+                                "SELECT available_seats FROM _demo_concerts "
+                                "WHERE concert_id = 'weeknd_tour'"
+                            )
+                            if left == 0:
+                                return f"{user_id}: sold out"
+                            raise ConflictError("temporary conflict")
+                        return f"{user_id}: purchased (attempt {attempt})"
+            except ConflictError:
+                if attempt == max_attempts:
+                    return f"{user_id}: gave up after {max_attempts} retries"
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 1.0)   # cap at 1 s
+        return f"{user_id}: unreachable"
+
+    r = await purchase_ticket_occ("user_occ_3")
+    print(f"  OCC retry loop:  {r}")
+
+    # Reset seats for PCC demos
+    await conn.execute(
+        "UPDATE _demo_concerts SET available_seats = 5, version = 0 "
+        "WHERE concert_id = 'weeknd_tour'"
+    )
+
+    # ── 4. PCC — FOR UPDATE (wait) ────────────────────────────────────────────
+    # Row is locked the moment it is read.  Concurrent writers block here until
+    # the first transaction commits or rolls back.  No retry logic needed.
+    async def pcc_for_update(user_id: str) -> str:
+        async with pool.acquire() as c:
+            async with c.transaction():
+                row = await c.fetchrow(
+                    "SELECT available_seats FROM _demo_concerts "
+                    "WHERE concert_id = 'weeknd_tour' FOR UPDATE"
+                )
+                if row["available_seats"] > 0:
+                    await c.execute(
+                        "UPDATE _demo_concerts "
+                        "SET available_seats = available_seats - 1 "
+                        "WHERE concert_id = 'weeknd_tour'"
+                    )
+                    return f"{user_id}: booked (PCC)"
+                return f"{user_id}: sold out (PCC)"
+
+    tasks = [pcc_for_update(f"pcc_user_{i}") for i in range(1, 4)]
+    pcc_results = await asyncio.gather(*tasks)
+    for r in pcc_results:
+        print(f"  PCC FOR UPDATE:  {r}")
+
+    # ── 5. PCC — FOR UPDATE NOWAIT (fail immediately if locked) ──────────────
+    # Instead of blocking, raises LockNotAvailableError if row already locked.
+    # Useful in low-latency paths where waiting is unacceptable.
+    async def pcc_nowait(user_id: str) -> str:
+        try:
+            async with pool.acquire() as c:
+                async with c.transaction():
+                    row = await c.fetchrow(
+                        "SELECT available_seats FROM _demo_concerts "
+                        "WHERE concert_id = 'weeknd_tour' FOR UPDATE NOWAIT"
+                    )
+                    if row["available_seats"] > 0:
+                        await c.execute(
+                            "UPDATE _demo_concerts "
+                            "SET available_seats = available_seats - 1 "
+                            "WHERE concert_id = 'weeknd_tour'"
+                        )
+                        return f"{user_id}: booked"
+                    return f"{user_id}: sold out"
+        except asyncpg.LockNotAvailableError:
+            return f"{user_id}: row locked — try again later (NOWAIT)"
+
+    r = await pcc_nowait("pcc_nowait_user")
+    print(f"  PCC NOWAIT:      {r}")
+
+    # ── 6. Comparison ─────────────────────────────────────────────────────────
+    print("""
+  OCC vs PCC comparison:
+
+  Aspect              | OCC (WHERE guard / CAS)        | PCC (FOR UPDATE)
+  --------------------|--------------------------------|---------------------------
+  Lock held           | None during read               | From SELECT to COMMIT
+  Contention model    | Low — conflicts are rare       | High — many writers/row
+  Failed write cost   | Wasted write + retry           | No wasted work (blocked)
+  Throughput (low contention)  | Higher (parallel reads) | Lower (serialised)
+  Deadlock risk       | None (no locks)                | Yes (multi-row, wrong order)
+  Retry logic needed  | Yes                            | No
+  Suitable for        | Product catalogue, user prefs  | Concert seats, inventory
+  NOWAIT variant      | N/A                            | Fail fast if locked
+    """)
+
+    await conn.execute("DROP TABLE IF EXISTS _demo_concerts")
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint — wire everything together for a quick smoke test
 # ---------------------------------------------------------------------------
 

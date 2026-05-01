@@ -15,20 +15,21 @@
 """
 Knowledge Graph module for RAG.
 
-PostgreSQL-backed knowledge graph (entities + relationships) built from
-CUAD legal contract annotations.  No Neo4j or Graphiti required.
+Apache AGE-backed knowledge graph built from CUAD legal contract annotations.
+No Neo4j or Graphiti required.
 
 Primary components:
-    PgGraphStore    — entities/relationships in PostgreSQL (kg_entities, kg_relationships)
+    AgeGraphStore   — Apache AGE Cypher graph (active backend)
     CuadKgBuilder   — populates the graph from cuad_eval.json annotations
 
-Legacy Graphiti/Neo4j components (kept for reference, not wired into main pipeline):
+Legacy / reference components (source kept, not wired into main pipeline):
+    PgGraphStore    — entities/relationships in PostgreSQL SQL tables (legacy)
     GraphitiStore, graphiti_config, graphiti_agent, kg_agent
 
 Usage:
-    from rag.knowledge_graph import PgGraphStore, CuadKgBuilder
+    from rag.knowledge_graph import create_kg_store, CuadKgBuilder
 
-    store = PgGraphStore()
+    store = create_kg_store()   # returns AgeGraphStore by default
     await store.initialize()
     context = await store.search_as_context("governing law Delaware")
     await store.close()
@@ -42,23 +43,22 @@ from rag.knowledge_graph.cuad_kg_builder import CuadKgBuilder
 from rag.config.settings import load_settings
 
 
-def create_kg_store() -> PgGraphStore | AgeGraphStore:
+def create_kg_store() -> AgeGraphStore | PgGraphStore:
     """
     Return the configured knowledge graph store.
 
     Reads ``KG_BACKEND`` from settings:
-    - ``"postgres"`` (default) → PgGraphStore  — entity/relationship tables in Neon
-    - ``"age"``               → AgeGraphStore  — Apache AGE Cypher graph (docker-compose)
+    - ``"age"``      (default) → AgeGraphStore  — Apache AGE Cypher graph (docker-compose)
+    - ``"postgres"`` (legacy)  → PgGraphStore   — entity/relationship SQL tables in Neon
 
     Switching backends requires only one line in .env::
 
-        KG_BACKEND=age
-        AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
+        KG_BACKEND=postgres   # opt back into legacy SQL backend
     """
     settings = load_settings()
-    if settings.kg_backend == "age":
-        return AgeGraphStore()
-    return PgGraphStore()
+    if settings.kg_backend == "postgres":
+        return PgGraphStore()
+    return AgeGraphStore()
 
 
 __all__ = [

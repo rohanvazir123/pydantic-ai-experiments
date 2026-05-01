@@ -57,8 +57,8 @@ load_dotenv(override=True)
 # =============================================================================
 
 st.set_page_config(
-    page_title="MongoDB RAG Agent",
-    page_icon="🔍",
+    page_title="Legal Contract Assistant",
+    page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -255,7 +255,7 @@ async def stream_agent_response(
 def render_sidebar() -> None:
     """Render the sidebar with configuration info and controls."""
     with st.sidebar:
-        st.title("🔍 MongoDB RAG Agent")
+        st.title("⚖️ Legal Contract Assistant")
         st.markdown("---")
 
         # Configuration info
@@ -281,15 +281,24 @@ def render_sidebar() -> None:
         with st.expander("ℹ️ Help"):
             st.markdown(
                 """
-            **How to use:**
-            1. Type your question in the chat input
-            2. The agent will search the knowledge base
-            3. You'll see tool calls and streaming responses
+**How to use:**
+1. Type your question in the chat input
+2. The agent picks the right tool(s) and streams the response
+3. Tool calls are shown as they happen
 
-            **Example queries:**
-            - What does the company do?
-            - What is the PTO policy?
-            - What technologies are used?
+**Three tools available:**
+- `search_knowledge_base` — hybrid vector + text search over contract chunks
+- `search_knowledge_graph` — entity & single-hop relationship lookup (parties, jurisdictions, clause types)
+- `run_graph_query` — custom Cypher for multi-hop traversal & analytics
+
+**Example queries:**
+- Which contracts have Amazon as a party and what termination clauses apply?
+- Find all contracts governed by Delaware law with an uncapped indemnification clause
+- Count how many contracts each party appears in — top 20
+- Which clause types co-occur most often in the same contract?
+- What does the license grant say in contracts where Google is the licensee?
+
+**Requires:** CUAD data ingested + Apache AGE container running (`docker-compose up age`)
             """
             )
 
@@ -301,7 +310,7 @@ def render_sidebar() -> None:
 
 def render_chat() -> None:
     """Render the main chat interface."""
-    st.title("💬 Chat with RAG Agent")
+    st.title("💬 Ask about your contracts")
 
     # Display chat history
     for message in st.session_state.messages:

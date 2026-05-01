@@ -13,6 +13,9 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q5. What is the "lost in the middle" problem and how does chunk ordering help?](#q5)
 - [Q6. Why store the full document alongside chunks?](#q6)
 
+### Hybrid Search + Knowledge Graph Evaluation Questions
+- [100 questions that require both hybrid search and Apache AGE graph traversal](HYBRID_KG_QUESTIONS.md) — covers party/jurisdiction/IP/termination/restriction/liability queries and multi-hop Cypher patterns over the CUAD legal corpus.
+
 ### Hybrid Search & RRF
 - [Q7. Explain hybrid search. What problem does each leg solve?](#q7)
 - [Q8. Walk through RRF. What is the formula and what does k=60 do?](#q8)

@@ -71,6 +71,47 @@ import asyncpg
 from rag.config.settings import load_settings
 from rag.knowledge_graph.pg_graph_store import _normalize
 
+def _parse_return_aliases(cypher: str) -> list[str]:
+    """Extract display names from the RETURN clause for building the AGE AS list."""
+    cypher = cypher.strip().rstrip(";")
+    m = re.search(
+        r"\bRETURN\b\s+(.*?)(?:\s+(?:ORDER\s+BY|LIMIT|SKIP|UNION)\b|$)",
+        cypher,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not m:
+        return ["c0"]
+    body = m.group(1).strip()
+    # Split on commas that are not inside parentheses
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in body:
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append("".join(current).strip())
+    aliases: list[str] = []
+    for i, part in enumerate(parts):
+        part = part.strip()
+        alias_m = re.search(r"\bAS\s+(\w+)\s*$", part, re.IGNORECASE)
+        if alias_m:
+            aliases.append(alias_m.group(1))
+        else:
+            toks = re.findall(r"\w+", part)
+            aliases.append(toks[-1] if toks else f"c{i}")
+    return aliases or ["c0"]
+
+
 logger = logging.getLogger(__name__)
 
 _AGE_SETUP = [
@@ -480,3 +521,41 @@ class AgeGraphStore:
             "entities_by_type": entities_by_type,
             "relationships_by_type": rels_by_type,
         }
+
+    async def run_cypher_query(self, cypher: str) -> str:
+        """Execute a read-only Cypher MATCH query and return results as a table string.
+
+        Only MATCH/RETURN queries are permitted; CREATE/MERGE/SET/DELETE/DROP/DETACH
+        are blocked.  Column count is inferred from the RETURN clause so callers do
+        not need to supply an explicit AS list.
+        """
+        assert self.pool, "Call initialize() first"
+
+        if re.search(
+            r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|DETACH)\b", cypher, re.IGNORECASE
+        ):
+            return "Error: only read-only MATCH queries are permitted."
+
+        aliases = _parse_return_aliases(cypher)
+        as_clause = ", ".join(f"c{i} agtype" for i in range(len(aliases)))
+
+        async with self._conn() as conn:
+            try:
+                rows = await conn.fetch(
+                    self._cypher(cypher) + f" AS ({as_clause})"
+                )
+            except Exception as exc:
+                return f"Cypher error: {exc}"
+
+        if not rows:
+            return "No results."
+
+        header = " | ".join(aliases)
+        sep = "-" * max(len(header), 10)
+        lines = [header, sep]
+        for row in rows:
+            vals = [_unquote_agtype(row[f"c{i}"]) for i in range(len(aliases))]
+            lines.append(" | ".join(vals))
+        n = len(rows)
+        lines.append(f"\n({n} row{'s' if n != 1 else ''})")
+        return "\n".join(lines)

@@ -469,3 +469,14 @@ class PgGraphStore:
             "entities_by_type": {r["entity_type"]: r["cnt"] for r in entity_counts},
             "relationships_by_type": {r["relationship_type"]: r["cnt"] for r in rel_counts},
         }
+
+    async def run_cypher_query(self, cypher: str) -> str:
+        """Cypher is not supported on the PgGraphStore SQL backend.
+
+        Set KG_BACKEND=age and start the Apache AGE container to use Cypher queries.
+        """
+        return (
+            "Cypher queries require the Apache AGE backend (KG_BACKEND=age). "
+            "The current backend is PgGraphStore (SQL tables). "
+            "Start the AGE container and set KG_BACKEND=age in .env to enable this tool."
+        )

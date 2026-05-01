@@ -123,7 +123,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
-from rag.knowledge_graph.pg_graph_store import PgGraphStore
+from rag.knowledge_graph import create_kg_store
+from rag.knowledge_graph.age_graph_store import AgeGraphStore
+from rag.knowledge_graph.pg_graph_store import PgGraphStore  # kept for type reference
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
@@ -194,7 +196,7 @@ class RAGState(BaseModel):
     _store: PostgresHybridStore | None = PrivateAttr(default=None)
     _retriever: Retriever | None = PrivateAttr(default=None)
     _mem0: Mem0Store | None = PrivateAttr(default=None)
-    _kg_store: PgGraphStore | None = PrivateAttr(default=None)
+    _kg_store: AgeGraphStore | PgGraphStore | None = PrivateAttr(default=None)
     _initialized: bool = PrivateAttr(default=False)
     _init_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
@@ -212,12 +214,12 @@ class RAGState(BaseModel):
                 )
         return self._retriever
 
-    async def get_kg_store(self) -> PgGraphStore:
-        """Get or create the PostgreSQL knowledge graph store (lazy init)."""
+    async def get_kg_store(self) -> AgeGraphStore | PgGraphStore:
+        """Get or create the knowledge graph store (lazy init, backend from settings)."""
         if self._kg_store is None:
-            self._kg_store = PgGraphStore()
+            self._kg_store = create_kg_store()
             await self._kg_store.initialize()
-            logger.info("[PROFILE] Lazy-initialized PgGraphStore")
+            logger.info("[PROFILE] Lazy-initialized %s", type(self._kg_store).__name__)
         return self._kg_store
 
     def get_mem0(self) -> Mem0Store:
@@ -372,12 +374,12 @@ async def search_knowledge_graph(
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
 
-    local_kg: PgGraphStore | None = None
+    local_kg: AgeGraphStore | PgGraphStore | None = None
     try:
         if state is not None and isinstance(state, RAGState):
             kg = await state.get_kg_store()
         else:
-            local_kg = PgGraphStore()
+            local_kg = create_kg_store()
             await local_kg.initialize()
             kg = local_kg
 
@@ -399,6 +401,63 @@ async def search_knowledge_graph(
     except Exception as e:
         logger.exception(f"Error searching knowledge graph: {e}")
         return f"Error searching knowledge graph: {str(e)}"
+    finally:
+        if local_kg is not None:
+            await local_kg.close()
+
+
+@agent.tool
+async def run_graph_query(
+    ctx: PydanticRunContext,
+    cypher: str,
+) -> str:
+    """
+    Execute a read-only openCypher MATCH query against the Apache AGE knowledge graph.
+
+    Use this tool for:
+    - Multi-hop traversal (e.g. Party → Contract → Jurisdiction, two or more hops)
+    - Aggregation and analytics: counts, distributions, co-occurrence across all contracts
+    - Complex pattern matching that search_knowledge_graph cannot express
+
+    Only MATCH/RETURN queries are permitted. CREATE/MERGE/SET/DELETE are blocked.
+    Always include a LIMIT clause to cap result size.
+
+    KG schema:
+      Nodes  : (e:Entity) — properties: name, entity_type, document_id, normalized_name
+      Types  : Party, Jurisdiction, Date, LicenseClause, TerminationClause,
+               RestrictionClause, IPClause, LiabilityClause, Clause, Contract
+      Edges  : PARTY_TO, GOVERNED_BY_LAW, HAS_DATE, HAS_LICENSE, HAS_TERMINATION,
+               HAS_RESTRICTION, HAS_IP_CLAUSE, HAS_LIABILITY, HAS_CLAUSE
+
+    Example:
+      MATCH (p:Entity {entity_type: 'Party'})-[:PARTY_TO]->(c:Entity {entity_type: 'Contract'})
+      RETURN p.name AS party, count(c) AS contracts
+      ORDER BY contracts DESC LIMIT 20
+
+    Args:
+        ctx: Agent runtime context
+        cypher: A read-only openCypher MATCH query
+
+    Returns:
+        Pipe-separated table of results, or an error message.
+    """
+    deps = ctx.deps
+    state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
+
+    local_kg: AgeGraphStore | PgGraphStore | None = None
+    try:
+        if state is not None and isinstance(state, RAGState):
+            kg = await state.get_kg_store()
+        else:
+            local_kg = create_kg_store()
+            await local_kg.initialize()
+            kg = local_kg
+
+        return await kg.run_cypher_query(cypher)
+
+    except Exception as e:
+        logger.exception(f"Error running graph query: {e}")
+        return f"Error running graph query: {str(e)}"
     finally:
         if local_kg is not None:
             await local_kg.close()
