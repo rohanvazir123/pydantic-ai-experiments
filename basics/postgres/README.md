@@ -231,13 +231,22 @@ orders = await conn.fetch("SELECT * FROM orders")           # could be huge
 async with conn.transaction():
     async for row in conn.cursor("SELECT * FROM orders", prefetch=500):
         process(row)
+
+# This is functionally a "client-side cursor"
+# 1. Server sends ALL 1 million rows at once
+# 2. Your RAM usage spikes to hold all those rows
+rows = await conn.fetch("SELECT * FROM orders")
+
+# 3. You iterate over the local list in memory
+for row in rows:
+    process(row)
 ```
 
 ### Q: What is the prefetch parameter?
 
 `prefetch` controls how many rows asyncpg requests from PostgreSQL in each network round-trip. Larger values reduce round-trips (faster total throughput) but use more memory. The default is 50. For large result sets, 200–1000 is typical.
 
-### Q: Does the cursor require a transaction?
+### Q: Does the (server side) cursor require a transaction?
 
 Yes. PostgreSQL requires a cursor to be inside a transaction block. asyncpg enforces this.
 

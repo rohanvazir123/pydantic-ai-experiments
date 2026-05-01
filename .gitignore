@@ -1,6 +1,7 @@
 # Legal datasets (large, downloaded separately)
 /rag/documents/legal/
 /rag/legal/cuad_eval.json
+/rag/legal/extraction.log
 C:/hf/
 
 # HuggingFace dataset cache
@@ -43,3 +44,4 @@ htmlcov/
 relevant_notebooks/
 notebooks_backup/
 anaconda_projects/
+/test_openapi.py

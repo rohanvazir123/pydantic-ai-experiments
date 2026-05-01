@@ -96,7 +96,14 @@
       "Bash(mongod --version)",
       "Bash(mongo --version)",
       "Bash(mongosh --version)",
-      "Bash(docker rm *)"
+      "Bash(docker rm *)",
+      "Bash(grep -n \"^### \\\\|^---$\\\\|Q145\\\\|Q146\\\\|Q147\\\\|Q148\\\\|Q149\\\\|Q150\\\\|Q151\\\\|Q152\\\\|Q153\\\\|Q154\" \"C:/Users/rohan/Documents/ai_agents/pydantic-ai-experiments/docs/FAQ_RAG_NLP.md\")",
+      "Bash(KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --verbose)",
+      "Bash(pkill -f \"legal_extractor\")",
+      "Bash(LLM_MODEL=gpt-4o LLM_BASE_URL=https://api.openai.com/v1 KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --limit 3 --verbose)",
+      "Bash(KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force)",
+      "Bash(KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force --limit 2 --verbose)",
+      "Bash(NO_COLOR=1 KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force --limit 5 --verbose)"
     ]
   },
   "enableAllProjectMcpServers": true,

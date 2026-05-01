@@ -1,0 +1,105 @@
+[
+  {
+    "document_id": "d908c928-3848-4c10-92b6-3e5eeee0cc36",
+    "document_title": "Recording1",
+    "entities": [],
+    "relationships": []
+  },
+  {
+    "document_id": "aedf8120-2a46-406f-8656-ba0acd7dea14",
+    "document_title": "Recording2",
+    "entities": [],
+    "relationships": []
+  },
+  {
+    "document_id": "b9774b34-8a77-4158-bacf-a484cd902e2f",
+    "document_title": "Recording3",
+    "entities": [],
+    "relationships": []
+  },
+  {
+    "document_id": "5e24b791-55bf-47ed-a5e1-105fe2c5bb78",
+    "document_title": "Recording4",
+    "entities": [],
+    "relationships": []
+  },
+  {
+    "document_id": "921a191a-8f61-4155-b30b-4f70e73d2791",
+    "document_title": "client-review-globalfinance",
+    "entities": [
+      {
+        "name": "GlobalFinance Corp",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Rachel Adams",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "NeuralFlow",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Client Success Review - GlobalFinance Corp",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "January 12, 2025",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "July 15, 2024",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "August 28, 2024",
+        "entity_type": "Date",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "GlobalFinance Corp",
+        "target_name": "Client Success Review - GlobalFinance Corp",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Rachel Adams",
+        "target_name": "Client Success Review - GlobalFinance Corp",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "NeuralFlow",
+        "target_name": "Client Success Review - GlobalFinance Corp",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Client Success Review - GlobalFinance Corp",
+        "target_name": "January 12, 2025",
+        "relationship_type": "HAS_DATE",
+        "properties": {}
+      },
+      {
+        "source_name": "Client Success Review - GlobalFinance Corp",
+        "target_name": "July 15, 2024",
+        "relationship_type": "HAS_DATE",
+        "properties": {}
+      },
+      {
+        "source_name": "Client Success Review - GlobalFinance Corp",
+        "target_name": "August 28, 2024",
+        "relationship_type": "HAS_DATE",
+        "properties": {}
+      }
+    ]
+  }
+]

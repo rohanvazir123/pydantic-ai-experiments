@@ -164,24 +164,22 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
 - [Q113b. How does tsvector full-text search scale with millions of documents?](#q113b)
 
-### Knowledge Graph (Graphiti + Neo4j)
-- [Q138. Is there a knowledge graph / graph DB in this project?](#q138)
-- [Q139. What is Graphiti and how does it differ from querying Neo4j directly?](#q139)
-- [Q140. Why isn't the knowledge graph wired into the main RAG pipeline yet?](#q140)
-- [Q141. How would graph retrieval be wired into the main RAG pipeline?](#q141)
-
-### Legal Documents & GraphRAG
+### Legal Documents & Knowledge Graph (Apache AGE)
 - [Q142. Why does legal document RAG need a knowledge graph?](#q142)
 - [Q143. Where can I download public domain legal documents?](#q143)
-- [Q144. What is the implementation plan for wiring in GraphRAG for legal documents?](#q144)
-- [Q145. What entities and relationships should be extracted from legal documents?](#q145)
+- [Q144. How is the knowledge graph wired into the agent?](#q144)
+- [Q145. What is the CUAD entity type map and how are entities generated?](#q145)
+- [Q145b. What is the Tri-Retriever Pipeline (Vector + BM25 + Cypher)?](#q145b)
+- [Q145c. How does LLM-based entity/relationship extraction work for any document?](#q145c)
 - [Q146. How does CUAD help bootstrap and validate the legal graph?](#q146)
 - [Q147b. What is the CUAD knowledge graph — what's in it and how is it built?](#q147b)
 - [Q148. How do I ingest CUAD contracts into the RAG system?](#q148)
 - [Q149. Why are legal datasets excluded from git?](#q149)
 - [Q151. How are retrieval quality tests structured for the legal corpus?](#q151)
-- [Q153. How is the PostgreSQL knowledge graph designed and how does it replace Graphiti/Neo4j?](#q153)
+- [Q153. How is the Apache AGE knowledge graph designed?](#q153)
 - [Q154. Why add Apache AGE if the PostgreSQL tables work? How do we switch later?](#q154)
+- [Q156. How do you prevent Cypher injection when using Apache AGE with asyncpg?](#q156)
+- [Q156b. What is `$$...$$` in AGE queries — does it mark Cypher boundaries?](#q156b)
 
 ### Production Readiness
 - [Q78. Is multi-tenancy supported? What would it take to make this production-ready?](#q78)
@@ -2839,89 +2837,6 @@ result2 = await agent.run(
 
 ---
 
-## Knowledge Graph (Graphiti + Neo4j)
-
-<a id="q138"></a>
-**Q138. Is there a knowledge graph / graph DB in this project?**
-
-Yes — there is a full graph database layer, but it is a **separate experimental module** that is not yet wired into the main RAG pipeline.
-
-**What exists:**
-
-| File | What it does |
-|---|---|
-| `rag/knowledge_graph/graphiti_config.py` | Configures Graphiti client: Neo4j connection + Ollama LLM/embeddings |
-| `rag/knowledge_graph/graphiti_store.py` | `GraphitiStore` wrapper — `add_episode()`, `search()`, `search_nodes()`, `search_as_context()` |
-| `rag/knowledge_graph/graphiti_agent.py` | Separate Pydantic AI agent with `search_knowledge_graph` + `search_entities` tools; persists conversation turns back to graph |
-| `rag/agent/kg_agent.py` | Lower-level approach — LLM generates raw Cypher queries directly against Neo4j |
-
-**Backend**: Neo4j (`bolt://localhost:7687` for local, or Neo4j Aura cloud). Credentials via `NEO4J_URI` / `NEO4J_USERNAME` / `NEO4J_PASSWORD` in `.env`.
-
-**Framework**: `graphiti-core` — ingests unstructured text as "episodes", runs the LLM to extract entities and relationships automatically, stores them as a temporal knowledge graph in Neo4j.
-
-**What is NOT connected**: `rag_agent.py`, `retriever.py`, and the ingestion pipeline have no knowledge of the graph. The main RAG pipeline is entirely pgvector-based. To use the graph today you must explicitly call `run_graphiti_agent()` or `kg_agent`.
-
----
-
-<a id="q139"></a>
-**Q139. What is Graphiti and how does it differ from querying Neo4j directly?**
-
-Neo4j is the storage layer. Graphiti (`graphiti-core`) is a framework that sits on top of it and handles everything between raw text and a queryable graph:
-
-| | Raw Neo4j (`kg_agent.py`) | Graphiti (`graphiti_store.py`) |
-|---|---|---|
-| **Entity extraction** | LLM writes Cypher manually | Graphiti runs LLM automatically, extracts entities + relationships |
-| **Relationship schema** | You define node/edge types | Graphiti infers schema from text |
-| **Temporal tracking** | Manual | Built-in — `valid_at` / `invalid_at` per edge |
-| **Search** | Raw Cypher queries | Hybrid search (vector + BM25) over nodes and edges |
-| **Ingestion API** | `session.run(cypher)` | `client.add_episode(content, name)` |
-| **Best for** | Known, structured domain | Unstructured documents, evolving facts |
-
-For legal documents, Graphiti is the right choice — contracts are unstructured, entity schemas vary by document type, and temporal validity (effective dates, amendments) is a first-class concern.
-
----
-
-<a id="q140"></a>
-**Q140. Why isn't the knowledge graph wired into the main RAG pipeline yet?**
-
-Two reasons:
-
-1. **Different retrieval strengths** — chunk retrieval (pgvector) handles "what does section 4 say?" well. Graph retrieval handles "what are all of Party A's obligations?" The integration point (when to call which) requires careful design so the agent uses the right tool.
-
-2. **Infrastructure dependency** — the main RAG pipeline requires only PostgreSQL + Ollama. Adding Neo4j adds a third service. The module was built experimentally first; the wiring is a planned next step, specifically motivated by the legal documents use case.
-
----
-
-<a id="q141"></a>
-**Q141. How would graph retrieval be wired into the main RAG pipeline?**
-
-**Option A — second agent tool (recommended)**
-
-Add `search_knowledge_graph` as a second tool in `rag_agent.py` alongside the existing `search_knowledge_base`. The LLM decides which to call per query.
-
-```python
-# In rag/agent/rag_agent.py
-@agent.tool
-async def search_knowledge_graph(ctx, query: str, num_results: int = 10) -> str:
-    """Search the knowledge graph for entity relationships and facts."""
-    kg = await state.get_kg_store()          # lazy-init GraphitiStore on RAGState
-    return await kg.search_as_context(query, num_results)
-```
-
-Changes required:
-- `RAGState`: add `_kg_store: GraphitiStore | None` `PrivateAttr`, lazy-init behind `KG_ENABLED` flag
-- `Settings`: add `kg_enabled: bool`, `neo4j_uri`, `neo4j_user`, `neo4j_password`
-- `DocumentIngestionPipeline`: add KG ingestion step — call `graphiti_store.add_episode()` per document after chunk+embed
-- New tool registered on the existing `agent` — no other changes to agent or retriever
-
-**Option B — always-on at retriever level**
-
-Modify `Retriever.retrieve_as_context()` to also call `GraphitiStore.search_as_context()` and append graph facts to the context string. Simpler but always adds KG latency, even for queries that don't need it.
-
-Option A is preferred: the LLM reliably distinguishes chunk questions from relational questions, and graph search only fires when needed.
-
----
-
 ## Legal Documents & GraphRAG
 
 <a id="q142"></a>
@@ -2929,21 +2844,20 @@ Option A is preferred: the LLM reliably distinguishes chunk questions from relat
 
 Pure chunk retrieval (pgvector) answers "what does clause 4 say?" but fails at the kinds of questions legal work actually requires:
 
-| Question type | Chunk RAG | Graph RAG |
+| Question type | Chunk RAG (Vector + BM25) | KG RAG (Cypher) |
 |---|---|---|
-| "What does Section 4.2 say?" | ✓ Good | — |
-| "Who are the parties to this contract?" | Partial | ✓ |
-| "What are all of Party A's obligations?" | ✗ Misses cross-chunk obligations | ✓ Graph traversal |
-| "What terms are defined and where are they used?" | ✗ Misses references | ✓ Nodes + edges |
-| "Does this amendment supersede clause 3?" | ✗ No temporal awareness | ✓ Graphiti `valid_at` / `invalid_at` |
-| "Does this NDA conflict with the MSA?" | ✗ No cross-document reasoning | ✓ Graph spans documents |
+| "What does Section 4.2 say?" | ✓ | — |
+| "Who are the parties to this contract?" | Partial | ✓ `PARTY_TO` edge lookup |
+| "Which contracts have both a non-compete and Delaware law?" | ✗ Misses cross-clause patterns | ✓ Multi-hop Cypher |
+| "How many contracts name Google as a party?" | ✗ No counting | ✓ `count(*)` aggregation |
+| "What governing law applies to contracts with uncapped liability?" | ✗ Two-hop reasoning | ✓ Two-hop graph traversal |
+| "Find all contracts referencing the same patent family" | ✗ Needs entity linking | ✓ Shared entity node |
 
-**What a legal knowledge graph captures that chunks cannot:**
-- **Defined terms** — "Confidential Information" defined in §1, referenced 40× downstream — graph edge per reference
-- **Cross-clause references** — "As defined in Section 2.1" — explicit edge, not similarity
-- **Party obligations** — all `[PARTY_A]-[OBLIGATED_TO]->[ACTION]` edges queryable in one hop
-- **Temporal validity** — amendment dates, termination clauses, sunset provisions as edge metadata
-- **Cross-document relationships** — master agreement → statement of work → amendment — all linked
+**What a legal knowledge graph adds that chunks cannot:**
+- **Structured entity lookup** — party names, jurisdictions, clause types stored as first-class nodes, not buried in text
+- **Relationship traversal** — "contracts governed by Delaware that also have a LicenseClause" is a two-hop Cypher query, not a keyword search
+- **Aggregation** — count parties, rank jurisdictions by frequency, find co-occurring clause types across 509 contracts in milliseconds
+- **Cross-contract reasoning** — entities are shared across documents; the same `Party` node links to every contract it appears in
 
 ---
 
@@ -2963,7 +2877,7 @@ Pure chunk retrieval (pgvector) answers "what does clause 4 say?" but fails at t
 
 **Best starting point: CUAD**
 
-500 real commercial contracts with expert annotations marking exactly which clauses contain: parties, payment terms, termination rights, liability caps, IP ownership, governing law. The annotations let you verify whether Graphiti extracts the right entities — invaluable for calibrating extraction before running on unannotated documents.
+500 real commercial contracts with expert annotations marking exactly which clauses contain: parties, payment terms, termination rights, liability caps, IP ownership, governing law. The annotations map directly to the `ENTITY_TYPE_MAP` in `CuadKgBuilder` — deterministic graph construction, no LLM extraction needed.
 
 ```python
 from datasets import load_dataset
@@ -2976,83 +2890,156 @@ ds = load_dataset("cuad")
 ---
 
 <a id="q144"></a>
-**Q144. What is the implementation plan for wiring in GraphRAG for legal documents?**
+**Q144. How is the knowledge graph wired into the agent?**
 
-Four steps, in order:
+The KG is fully wired. The agent (`rag/agent/rag_agent.py`) registers three tools; the LLM decides which to call per turn:
 
-**Step 1 — Settings**
+| Tool | When the LLM calls it | Backed by |
+|---|---|---|
+| `search_knowledge_base` | Needs clause text, specific wording, definitions | `PostgresHybridStore` — vector + BM25 |
+| `search_knowledge_graph` | Needs entity lookup or single-hop relationship (parties, jurisdictions, clause types) | `AgeGraphStore.search_entities` / `search_as_context` |
+| `run_graph_query` | Needs multi-hop traversal, aggregation, co-occurrence counts | `AgeGraphStore.run_cypher_query` — arbitrary Cypher |
 
-Add to `rag/config/settings.py`:
+**RAGState lazy-init (first KG tool call):**
 ```python
-kg_enabled: bool = Field(default=False)
-neo4j_uri: str = Field(default="bolt://localhost:7687")
-neo4j_user: str = Field(default="neo4j")
-neo4j_password: str = Field(default="")
+# rag/agent/rag_agent.py:L217
+async def get_kg_store(self) -> AgeGraphStore | PgGraphStore:
+    if self._kg_store is None:
+        self._kg_store = create_kg_store()   # reads KG_BACKEND from settings
+        await self._kg_store.initialize()
+    return self._kg_store
 ```
-Controlled by `KG_ENABLED=true` in `.env` — the main pipeline is unaffected when disabled.
 
-**Step 2 — Ingestion**
+**System prompt guidance** (`rag/agent/prompts.py`) tells the LLM:
+- Start with `search_knowledge_base` for clause language
+- Use `search_knowledge_graph` for entity/relationship lookups
+- Use `run_graph_query` for Cypher when multi-hop or analytics are needed
+- Combine tools: graph to identify contracts → text search to read clause content
 
-In `DocumentIngestionPipeline._ingest_single_document()`, after the existing chunk+embed step, add:
-```python
-if settings.kg_enabled:
-    await self._kg_store.add_episode(
-        content=document_text,
-        name=title,
-        source_description=file_path,
-    )
-```
-Graphiti runs the LLM to extract entities and relationships automatically — no manual schema definition.
+**What is NOT wired in** (legacy reference files, not imported by the main pipeline):
+- `rag/knowledge_graph/graphiti_store.py` — Graphiti/Neo4j wrapper (requires `graphiti-core`, `neo4j`)
+- `rag/knowledge_graph/graphiti_agent.py` — separate Graphiti agent
+- `rag/knowledge_graph/graphiti_config.py` — Neo4j connection config
+- `rag/agent/kg_agent.py` — raw Cypher against Neo4j
 
-**Step 3 — RAGState + agent tool**
-
-Add `_kg_store: GraphitiStore | None` as a `PrivateAttr` to `RAGState` with lazy-init behind the `kg_enabled` flag. Register a second tool on the existing agent:
-```python
-@agent.tool
-async def search_knowledge_graph(ctx, query: str, num_results: int = 10) -> str:
-    """Search for entity relationships and legal facts in the knowledge graph.
-    Use for: party obligations, defined terms, cross-clause references, conflicts."""
-    kg = await state.get_kg_store()
-    return await kg.search_as_context(query, num_results)
-```
-The tool docstring is critical — it is what the LLM reads to decide when to call it vs `search_knowledge_base`.
-
-**Step 4 — Tests**
-
-- Unit: mock `GraphitiStore.search_as_context`, verify tool returns formatted string
-- Integration: ingest one CUAD contract, query "who are the parties?", assert entity nodes exist in Neo4j
+These files are kept as reference. They are not imported anywhere in the active pipeline.
 
 ---
 
 <a id="q145"></a>
-**Q145. What entities and relationships should be extracted from legal documents?**
+**Q145. What is the CUAD entity type map and how are entities generated?**
 
-Graphiti extracts these automatically from text — but knowing the target schema helps craft the ingestion prompt and verify output.
+Entity extraction is **deterministic** — no LLM, no probabilistic extraction. The CUAD dataset provides expert-annotated answers for 41 question types per contract. `CuadKgBuilder` maps those 41 types to 9 entity types using a hard-coded lookup table (`ENTITY_TYPE_MAP` in `rag/knowledge_graph/cuad_kg_builder.py:L95`).
 
-**Nodes (entities)**
+**The mapping — 41 CUAD question types → 9 entity types:**
 
-| Type | Examples |
-|---|---|
-| `Party` | "Acme Corp", "John Smith", "the Licensor" |
-| `DefinedTerm` | "Confidential Information", "Effective Date", "Territory" |
-| `Clause` | "Section 4.2", "Article III", "Schedule A" |
-| `Obligation` | "shall deliver", "must notify within 30 days" |
-| `Right` | "may terminate", "has the right to audit" |
-| `Date` | "2024-01-01", "30 days after notice" |
-| `Jurisdiction` | "England and Wales", "State of Delaware" |
-| `Document` | "Master Services Agreement", "Amendment No. 2" |
+| CUAD question type(s) | Entity type | Relationship to Contract |
+|---|---|---|
+| `Parties` | `Party` | `PARTY_TO` |
+| `Governing Law` | `Jurisdiction` | `GOVERNED_BY_LAW` |
+| `Agreement Date`, `Effective Date`, `Expiration Date`, `Renewal Term` | `Date` | `HAS_DATE` |
+| `License Grant`, `Non-Transferable License`, `Affiliate License-Licensor`, `Affiliate License-Licensee`, `Unlimited License`, `Irrevocable or Perpetual License` | `LicenseClause` | `HAS_LICENSE` |
+| `Termination For Convenience`, `Change Of Control-Termination` | `TerminationClause` | `HAS_TERMINATION` |
+| `Non-Compete`, `Exclusivity`, `No-Solicit Of Customers`, `Non-Disparagement` | `RestrictionClause` | `HAS_RESTRICTION` |
+| `Ip Ownership Assignment`, `Joint Ip Ownership`, `Source Code Escrow`, `Post-Termination Services` | `IPClause` | `HAS_IP_CLAUSE` |
+| `Cap On Liability`, `Liquidated Damages`, `Warranty Duration`, `Price Restrictions` | `LiabilityClause` | `HAS_LIABILITY` |
+| Everything else (13+ types) | `Clause` | `HAS_CLAUSE` |
 
-**Relationships (edges)**
+**Why deterministic extraction matters:**
+- **Speed** — 6,702 Q&A pairs → 13,262 entities + 13,603 relationships in ~4.5 minutes, no LLM calls
+- **Reproducibility** — same input always produces the same graph; no hallucinated entities
+- **Ground truth** — CUAD annotations are expert-verified, so the graph is directly evaluable
+- **No dependency** on an LLM being available at graph-build time
 
-| Edge | Example |
-|---|---|
-| `PARTY_TO` | `[Acme Corp]-[PARTY_TO]->[NDA]` |
-| `OBLIGATED_TO` | `[Party A]-[OBLIGATED_TO {by: "Section 4"}]->[deliver reports]` |
-| `DEFINED_IN` | `[Confidential Information]-[DEFINED_IN]->[Section 1.1]` |
-| `REFERENCED_IN` | `[Confidential Information]-[REFERENCED_IN]->[Section 5.2]` |
-| `SUPERSEDES` | `[Amendment 2]-[SUPERSEDES {valid_at: date}]->[Clause 3]` |
-| `GOVERNED_BY` | `[Agreement]-[GOVERNED_BY]->[English law]` |
-| `AMENDS` | `[Amendment 1]-[AMENDS]->[Master Agreement]` |
+**How `CuadKgBuilder.build()` works step by step:**
+
+```
+cuad_eval.json (6,702 Q&A pairs)
+  │
+  ├── for each pair:
+  │     question_type  ──► entity_type_for(question_type)    # ENTITY_TYPE_MAP lookup
+  │     answer_text    ──► upsert Entity(name=answer, type=entity_type, doc_id=…)
+  │     contract_title ──► _get_document_id(title)           # cached SQL lookup
+  │                    ──► upsert Entity(name=title, type="Contract", doc_id=…)
+  │                    ──► add_relationship(entity_id, contract_id, rel_type)
+  │
+  └── result: ~13,262 entities + ~13,603 relationships across 509 contracts
+```
+
+**Running the build:**
+```bash
+# Default AGE backend (requires docker-compose up -d)
+python -m rag.knowledge_graph.cuad_kg_builder
+
+# Quick smoke test
+python -m rag.knowledge_graph.cuad_kg_builder --limit 100
+```
+
+---
+
+<a id="q145b"></a>
+**Q145b. What is the Tri-Retriever Pipeline (Vector + BM25 + Cypher)?**
+
+A single user question over legal contracts needs three fundamentally different search strategies running in parallel, because each captures what the others miss:
+
+| Leg | Method | What it finds | Example hit |
+|---|---|---|---|
+| **Vector** | pgvector cosine similarity | Semantically related text, paraphrases, conceptual matches | "indemnification" query finds "hold harmless" clause |
+| **BM25 / Full-text** | PostgreSQL `tsvector` + `tsquery` | Exact legal terms, defined-term names, section IDs, statute citations | "Section 4.2(b)" or "Force Majeure" exact match |
+| **KG / Cypher** | Apache AGE openCypher `MATCH` | Structured entity relationships — who, what type, which contract, how connected | `Party --PARTY_TO--> Contract --GOVERNED_BY_LAW--> Jurisdiction` |
+
+**The pipeline:**
+
+```
+User query
+    │
+    ├─── asyncio.gather ─────────────────────────────────────────┐
+    │                                                             │
+    ▼                          ▼                                  ▼
+Vector search            BM25 full-text               Cypher graph query
+(pgvector cosine)        (tsvector tsquery)            (AgeGraphStore)
+→ ranked chunk list      → ranked chunk list           → entity/contract list
+                                                        → fetch chunks for
+                                                          matched document_ids
+    │                          │                                  │
+    └──────────── RRF merge ───────────────────────────────────────┘
+                      │
+                      ▼
+              Merged ranked chunks
+              score = Σ  1 / (k=60 + rank_i)
+                      │
+                      ▼
+              [optional] LLM reranker
+                      │
+                      ▼
+              Top-N chunks → LLM context
+```
+
+**What is already implemented vs what the agent does:**
+
+The existing `PostgresHybridStore` already runs Vector + BM25 in parallel and merges with RRF (`_reciprocal_rank_fusion`, k=60). This handles Legs 1 and 2.
+
+Leg 3 (Cypher) is currently exposed as a separate agent tool (`search_knowledge_graph`, `run_graph_query`). The LLM decides when to call it. For a fully unified pipeline where all three legs feed a single RRF merge, the retriever would need to:
+1. Run `AgeGraphStore.search_entities(query)` → collect `document_id` set
+2. Fetch chunks matching those document_ids, assign them positional ranks
+3. Include that ranked list as a third input to `_reciprocal_rank_fusion`
+
+**RRF formula (same k=60 as the existing two-leg implementation):**
+
+```
+score(chunk) = Σ  1 / (60 + rank_i)
+               i ∈ {vector, bm25, kg}
+
+where rank_i = position of chunk in leg i's result list (1-based),
+      chunks not in a leg's results are omitted from that term
+```
+
+**Why each leg matters for the 100 evaluation questions:**
+
+- Questions 1–15 (party/contract): BM25 exact-matches party names; KG gives structured `PARTY_TO` edges; vector finds related clause language
+- Questions 16–28 (jurisdiction): KG gives `GOVERNED_BY_LAW` edges with counts; BM25 finds "Delaware" exactly; vector finds paraphrases like "laws of the State of…"
+- Questions 76–88 (multi-hop): Only Cypher can answer (two-hop graph traversal); BM25/vector provide clause text once contracts are identified
+- Questions 89–100 (analytics): Only Cypher aggregation (`count(*)`, `ORDER BY`) can answer these directly
 
 ---
 
@@ -3061,15 +3048,16 @@ Graphiti extracts these automatically from text — but knowing the target schem
 
 CUAD provides 41 annotated clause categories per contract — experts have marked exactly where in each document the answer to questions like "who is the governing law?" and "what are the termination rights?" appears.
 
-This gives you a ground-truth evaluation set before running in production:
+This gives you a ground-truth evaluation set:
 
-1. Ingest a CUAD contract into both pgvector (chunks) and Neo4j (via Graphiti)
-2. For each of the 41 clause types, run the corresponding query against both retrieval paths
+1. Ingest a CUAD contract into pgvector (chunks) and build the AGE graph with `CuadKgBuilder`
+2. For each of the 41 clause types, run the corresponding query against the Tri-Retriever Pipeline
 3. Compare retrieved content against the CUAD gold annotation
-4. For relational questions (parties, obligations, defined terms) — graph should win
-5. For verbatim clause questions (specific wording) — chunks should win
+4. For relational questions (parties, governing law, clause type co-occurrence) — KG Cypher wins
+5. For verbatim clause questions (specific wording, exact section text) — Vector + BM25 wins
+6. For queries that need both (e.g. "what does the termination clause say for Amazon contracts") — all three legs contribute
 
-This tells you exactly which question types benefit from graph retrieval and informs the tool docstring that guides the LLM's tool choice.
+This calibrates the system prompt and tells you which question types map to which retrieval leg.
 
 ```python
 # Example validation loop
@@ -3083,6 +3071,110 @@ for example in ds:
         gold_answer = qa["answers"]["text"] # expert annotation
         # Run against both RAG paths, measure hit rate
 ```
+
+---
+
+<a id="q145c"></a>
+**Q145c. How does LLM-based entity/relationship extraction work for any document?**
+
+`CuadKgBuilder` is deterministic but only works for documents already annotated in `cuad_eval.json`. `LegalEntityExtractor` (`rag/knowledge_graph/legal_extractor.py`) fills the gap: it uses a Pydantic AI agent to extract entities and relationships from the raw Markdown text of **any ingested document** and writes them into the same KG backend.
+
+---
+
+**Entities extracted**
+
+| Entity type | What it captures | Example |
+|---|---|---|
+| `Party` | Contracting parties, signatories | "Acme Corp", "John Smith" |
+| `Jurisdiction` | Governing law, dispute forum | "State of Delaware", "English law" |
+| `Date` | Effective, expiry, notice, renewal | "January 1, 2024", "30 days' notice" |
+| `LicenseClause` | Grants, sublicensing, perpetual/irrevocable | "non-exclusive, worldwide license" |
+| `TerminationClause` | For-cause / for-convenience rights | "either party may terminate on 60 days notice" |
+| `RestrictionClause` | Non-compete, non-solicitation, exclusivity | "shall not solicit employees for 2 years" |
+| `IPClause` | IP assignment, joint ownership, escrow | "all IP created shall vest in Company" |
+| `LiabilityClause` | Caps, liquidated damages, uncapped | "liability shall not exceed $5,000,000" |
+| `PaymentTerm` | Fees, royalties, revenue share | "15% royalty on net sales" |
+| `Obligation` | Duties a party must perform | "shall deliver monthly reports" |
+| `Clause` | Any other significant provision | fallback for unrecognised clause types |
+| `Contract` | The agreement itself | only if the contract's own name appears in text |
+
+**Relationships extracted (SCREAMING_SNAKE_CASE)**
+
+| Relationship | Direction | Meaning |
+|---|---|---|
+| `PARTY_TO` | Party → Contract | who signed |
+| `GOVERNED_BY` | Contract → Jurisdiction | which law applies |
+| `GRANTS_LICENSE_TO` | Party → Party | licensor → licensee |
+| `OWES_OBLIGATION_TO` | Party → Party | duty direction |
+| `ASSIGNS_IP_TO` | Party → Party | IP transfer |
+| `CAN_TERMINATE` | Party → Contract / TerminationClause | who can exit |
+| `HAS_LICENSE` / `HAS_TERMINATION` / `HAS_RESTRICTION` / `HAS_IP_CLAUSE` / `HAS_LIABILITY` / `HAS_PAYMENT` / `HAS_OBLIGATION` | Contract → clause node | clause membership |
+| `HAS_CLAUSE` | Contract → Clause | fallback for other clauses |
+| `EFFECTIVE_ON` / `EXPIRES_ON` / `HAS_DATE` | Contract → Date | date semantics |
+
+---
+
+**How it differs from `CuadKgBuilder`**
+
+| | `CuadKgBuilder` | `LegalEntityExtractor` |
+|---|---|---|
+| Input | `cuad_eval.json` pre-annotations | Raw document Markdown text |
+| LLM needed | No — fully deterministic | Yes — one LLM call per text window |
+| Works on | CUAD-annotated contracts only | Any ingested document |
+| Speed | ~4.5 min for 509 contracts (no LLM) | ~N × LLM latency per document |
+| Relationships | Star topology: entity → Contract only | Cross-party relationships (GRANTS_LICENSE_TO, OWES_OBLIGATION_TO, etc.) |
+| Accuracy | Ground truth (expert annotations) | LLM-dependent; best with GPT-4 / Claude |
+
+Both write to the same KG tables/graph, so their output is additive — run both for maximum coverage.
+
+---
+
+**Text windowing**
+
+Legal contracts can be long. The extractor processes the document in non-overlapping windows of 3 000 characters, capped at 5 windows (~15 000 chars total). This covers parties, governing law, and major clause types in most commercial contracts without unbounded LLM cost. Tune `_MAX_WINDOW_CHARS` / `_MAX_WINDOWS` in `legal_extractor.py` for your model's context window and budget.
+
+```
+Document text (Markdown)
+    │
+    ├── window 0 (chars 0–3000)    ──► LLM agent ──► LegalGraphDocument
+    ├── window 1 (chars 3000–6000) ──► LLM agent ──► LegalGraphDocument
+    ├── ...
+    └── window 4 (chars 12000–15000)
+                │
+                ▼
+    upsert_entity() + add_relationship() per extracted item
+    (deduplication via normalized_name + entity_type unique index)
+```
+
+---
+
+**Enabling during ingestion**
+
+```bash
+# .env
+KG_EXTRACTION_ENABLED=true
+```
+
+The pipeline calls `LegalEntityExtractor.extract_and_store()` automatically after chunks are saved for each document. Failures are caught and logged — they do not abort ingestion.
+
+**Standalone usage:**
+
+```python
+from rag.knowledge_graph import create_kg_store, LegalEntityExtractor
+
+store = create_kg_store()
+await store.initialize()
+
+extractor = LegalEntityExtractor(store)
+stats = await extractor.extract_and_store(
+    document_id=doc_id,
+    document_title="Acme Supply Agreement",
+    content=markdown_text,
+)
+# {"entities": 12, "relationships": 9, "windows": 3}
+```
+
+**Model recommendations:** local models (`llama3.1:8b`) will extract entities but may miss relationship directions or produce malformed types. For production use, set `LLM_MODEL=gpt-4o` or a Claude model — structured output compliance is much higher.
 
 ---
 
@@ -3280,7 +3372,7 @@ python -m rag.ingestion.cuad_ingestion
 ---
 
 <a id="q153"></a>
-**Q153. How is the PostgreSQL knowledge graph designed and how does it replace Graphiti/Neo4j?**
+**Q153. How is the Apache AGE knowledge graph designed?**
 
 Instead of running a separate Neo4j instance with the Graphiti library, the knowledge graph is stored directly in the existing PostgreSQL database using two new tables.
 
@@ -4755,6 +4847,192 @@ python -m pytest rag/tests/test_age_graph_store.py -q
 AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
     python -m pytest rag/tests/test_age_graph_store.py -q
 ```
+
+---
+
+<a id="q156"></a>
+**Q156. How do you prevent Cypher injection when using Apache AGE with asyncpg?**
+
+String-interpolating user input (or LLM-extracted entity names) directly into Cypher is a **Cypher injection** vulnerability — equivalent to SQL injection. A name like `') RETURN 1 UNION MATCH (n) DETACH DELETE n //` would be syntactically valid Cypher and could destroy the graph.
+
+---
+
+**The wrong way — string interpolation**
+
+```python
+# CODE SMELL: Cypher injection vector
+name = user_supplied_name          # or LLM-extracted entity
+cypher = f"""
+    MATCH (e:Entity {{name: "{name}"}})
+    RETURN e.name, e.entity_type
+"""
+sql = f"SELECT * FROM ag_catalog.cypher('legal_graph', $$ {cypher} $$) AS (name agtype, t agtype)"
+await conn.fetch(sql)              # dangerous if name contains Cypher metacharacters
+```
+
+Even double-quoting the string only pushes the problem to names that contain `"` characters.
+
+---
+
+**The right way — AGE parameterized queries**
+
+Apache AGE's `cypher()` function accepts a third argument: an `agtype` JSON map of named parameters. Inside the Cypher body, reference them with `$param_name`. asyncpg passes the map as a regular PostgreSQL parameter (`$1`), so the value **never touches Cypher string parsing**.
+
+```python
+import json
+
+async def search_entity_safe(conn, name: str) -> list[dict]:
+    params = json.dumps({"name": name})          # ordinary Python dict → JSON string
+    rows = await conn.fetch(
+        """
+        SELECT * FROM ag_catalog.cypher(
+            'legal_graph',
+            $$ MATCH (e:Entity {name: $name}) RETURN e.name, e.entity_type $$,
+            $1::agtype                           -- asyncpg parameter, cast to agtype
+        ) AS (name agtype, entity_type agtype)
+        """,
+        params,                                  # passed as asyncpg $1
+    )
+    return [{"name": _unquote(r["name"]), "type": _unquote(r["entity_type"])} for r in rows]
+```
+
+`$1::agtype` is the PostgreSQL placeholder — asyncpg binds `params` (the JSON string) to it. AGE then deserialises the agtype map and makes `$name` available inside the Cypher body as a typed scalar. The Cypher parser never sees the raw string.
+
+---
+
+**Feeding an LLM-extracted entity list into a MATCH clause**
+
+`LegalEntityExtractor` produces a list of entity names. To query all of them in one round-trip, pass a JSON array and use `IN` inside Cypher:
+
+```python
+import json
+
+async def match_extracted_entities(
+    conn,
+    entity_names: list[str],         # from LegalEntityExtractor output
+    graph_name: str = "legal_graph",
+) -> list[dict]:
+    params = json.dumps({"names": entity_names})
+    rows = await conn.fetch(
+        """
+        SELECT * FROM ag_catalog.cypher(
+            $1,
+            $$ MATCH (e:Entity)
+               WHERE e.name IN $names
+               RETURN e.name, e.entity_type, e.document_id $$,
+            $2::agtype
+        ) AS (name agtype, entity_type agtype, doc_id agtype)
+        """,
+        graph_name,   # $1 — graph name (validated separately, never user-supplied raw)
+        params,       # $2 — agtype parameter map
+    )
+    return [
+        {
+            "name": _unquote(r["name"]),
+            "entity_type": _unquote(r["entity_type"]),
+            "doc_id": _unquote(r["doc_id"]),
+        }
+        for r in rows
+    ]
+```
+
+The graph name (`$1`) is a PostgreSQL parameter too — never interpolate it as a string either if it comes from user input (validate it against a known whitelist first).
+
+---
+
+**Why `$$...$$` alone is not enough**
+
+The dollar-quote wrapper (`$$`) prevents SQL injection at the outer SQL layer — it stops a value from breaking out of the string literal into raw SQL. But it does **nothing** for Cypher injection: once AGE receives the Cypher string, the Cypher parser sees whatever was inside `$$`. The only safe defence against Cypher injection is to keep untrusted data out of the Cypher string entirely, which is exactly what the `agtype` parameter map achieves.
+
+---
+
+**Summary of the safe pattern**
+
+```
+untrusted value (user input / LLM output)
+    │
+    ▼
+json.dumps({"key": value})       # Python — never touches Cypher
+    │
+    ▼
+asyncpg $N parameter             # PostgreSQL bind parameter
+    │
+    ▼
+$N::agtype                       # cast to AGE's native type
+    │
+    ▼
+$key inside Cypher body          # AGE substitutes typed scalar — Cypher parser never sees raw string
+```
+
+---
+
+<a id="q156b"></a>
+**Q156b. What is `$$...$$` in AGE queries — does it mark Cypher boundaries?**
+
+No — `$$...$$` is **PostgreSQL dollar-quoting** and has nothing to do with Cypher. It is just a way to write a string literal in SQL without using single quotes. AGE's `cypher()` function takes the Cypher query as an ordinary `text` argument; `$$...$$` is simply the most convenient syntax for supplying that string.
+
+---
+
+**PostgreSQL string literal options**
+
+```sql
+-- Single-quoted (standard SQL)
+SELECT cypher('g', 'MATCH (n) RETURN n') ...
+
+-- Dollar-quoted (PostgreSQL extension) — same result
+SELECT cypher('g', $$ MATCH (n) RETURN n $$) ...
+
+-- Named dollar-quote tag — useful when you need nested dollar-quoting
+SELECT cypher('g', $cypher$ MATCH (n) RETURN n $cypher$) ...
+```
+
+All three produce identical strings. PostgreSQL resolves them to the same `text` value before the function is ever called. AGE sees only `MATCH (n) RETURN n` — it never sees the delimiters.
+
+---
+
+**Why `$$...$$` is the idiomatic choice for Cypher**
+
+Cypher string literals use single quotes: `WHERE n.name = 'Acme Corp'`. Inside a SQL single-quoted string those apostrophes would have to be doubled (`''`), making complex queries unreadable. Dollar-quoting avoids all escaping:
+
+```sql
+-- With single-quoted SQL string — escaping required
+SELECT * FROM ag_catalog.cypher('legal_graph',
+    'MATCH (n:Entity {name: ''Acme Corp''}) RETURN n'
+) AS (n agtype)
+
+-- With dollar-quoting — no escaping
+SELECT * FROM ag_catalog.cypher('legal_graph',
+    $$ MATCH (n:Entity {name: 'Acme Corp'}) RETURN n $$
+) AS (n agtype)
+```
+
+The `$$` markers are stripped by PostgreSQL's parser; AGE receives the clean Cypher string.
+
+---
+
+**What `$$...$$` does NOT do**
+
+| Myth | Reality |
+|---|---|
+| "It marks where Cypher starts and ends" | No — it is a PostgreSQL string delimiter only, removed before the function is called |
+| "It prevents Cypher injection" | No — see Q156; parameterized `agtype` maps are the only safe defence |
+| "It is special AGE syntax" | No — it works the same way in any PostgreSQL function call |
+| "It escapes the Cypher content" | No — the content is passed as-is; `$$` only avoids SQL-level single-quote escaping |
+
+---
+
+**Named dollar-quote tags**
+
+If your Cypher itself somehow contained `$$` (extremely rare), use a unique tag:
+
+```sql
+SELECT * FROM ag_catalog.cypher('legal_graph', $q$
+    MATCH (n:Entity) WHERE n.note CONTAINS '$$'
+    RETURN n
+$q$) AS (n agtype)
+```
+
+The opening and closing tag (`$q$`) must match exactly. In practice, Cypher bodies never contain `$$`, so the plain untagged `$$...$$` form is always used.
 
 ---
 

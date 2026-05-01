@@ -67,7 +67,28 @@ Usage
 CLI
 ---
     python -m rag.knowledge_graph.cuad_kg_builder
-    python -m rag.knowledge_graph.cuad_kg_builder --eval-path rag/legal/cuad_eval.json --limit 100
+    python -m rag.knowledge_graph.cuad_kg_builder --eval-path rag/legal/c# The code seems to be a
+    # comment in a Python file,
+    # indicating that the file is
+    # related to "uad_eval.json".
+    # Comments in Python are
+    # denoted by the "#" symbol,
+    # and they are used to
+    # provide explanations or
+    # notes within the code
+    # without affecting the
+    # program's functionality.
+    # The code seems to be a
+    # comment in a Python script.
+    # It mentions a file named
+    # "uad_eval.json" and uses
+    # the comment delimiter "#"
+    # to indicate that the
+    # following text is not
+    # executable code but rather
+    # a note or explanation for
+    # human readers.
+    uad_eval.json --limit 100
 """
 
 import argparse

@@ -38,6 +38,7 @@ Usage:
 from rag.knowledge_graph.pg_graph_store import PgGraphStore
 from rag.knowledge_graph.age_graph_store import AgeGraphStore
 from rag.knowledge_graph.cuad_kg_builder import CuadKgBuilder
+from rag.knowledge_graph.legal_extractor import LegalEntityExtractor
 
 
 from rag.config.settings import load_settings
@@ -65,5 +66,6 @@ __all__ = [
     "PgGraphStore",
     "AgeGraphStore",
     "CuadKgBuilder",
+    "LegalEntityExtractor",
     "create_kg_store",
 ]

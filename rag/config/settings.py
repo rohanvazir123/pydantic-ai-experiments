@@ -215,15 +215,6 @@ class Settings(BaseSettings):
         default="mem0_memories", description="Collection name for Mem0 memories"
     )
 
-    # Neo4j Configuration (legacy — Graphiti/Neo4j not wired into main pipeline)
-    neo4j_uri: str = Field(
-        default="bolt://localhost:7687", description="Neo4j connection URI"
-    )
-
-    neo4j_username: str = Field(default="neo4j", description="Neo4j username")
-
-    neo4j_password: str = Field(default="", description="Neo4j password")
-
     # Knowledge Graph backend
     # "postgres" — entity/relationship tables in the existing Neon DB (default, works now)
     # "age"      — Apache AGE Cypher graph (requires AGE container, see docker-compose.yml)
@@ -275,6 +266,32 @@ class Settings(BaseSettings):
     multimodal_processing_enabled: bool = Field(
         default=True,
         description="Enable multimodal content processing (images, tables, etc.)",
+    )
+
+    # KG extraction LLM — dedicated model for one-time entity extraction.
+    # Defaults to the main LLM settings when not set, but set these to a
+    # capable model (e.g. gpt-4o) for accurate legal entity extraction.
+    kg_llm_model: str = Field(
+        default="",
+        description="Model for KG extraction (defaults to llm_model when empty)",
+    )
+    kg_llm_api_key: str = Field(
+        default="",
+        description="API key for KG extraction LLM (defaults to llm_api_key when empty)",
+    )
+    kg_llm_base_url: str | None = Field(
+        default=None,
+        description="Base URL for KG extraction LLM (defaults to llm_base_url when None)",
+    )
+
+    # Knowledge Graph extraction during ingestion
+    kg_extraction_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable LLM-based entity/relationship extraction into the knowledge graph "
+            "for every document ingested. Requires a running KG backend. "
+            "Set to true in .env: KG_EXTRACTION_ENABLED=true"
+        ),
     )
 
     image_description_detail: str = Field(
