@@ -181,16 +181,18 @@ LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
 
 -- Delete a relationship
+-- DELETE has no RETURN, so the AS clause is a dummy placeholder AGE requires syntactically.
+-- It always returns 0 rows.
 SELECT * FROM ag_catalog.cypher('demo', $$
     MATCH (:Person {name: "Alice"})-[r:KNOWS]->(:Person {name: "Bob"})
     DELETE r
-$$) AS (r agtype);
+$$) AS (v agtype);
 
 -- Delete a node (must have no edges — use DETACH DELETE to remove edges too)
 SELECT * FROM ag_catalog.cypher('demo', $$
     MATCH (p:Person {name: "Bob"})
     DETACH DELETE p
-$$) AS (r agtype);
+$$) AS (v agtype);
 ```
 
 ---

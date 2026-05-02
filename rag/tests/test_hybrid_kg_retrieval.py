@@ -332,7 +332,7 @@ class TestHybridKGRetriever:
 # Integration tests — require live services
 # ---------------------------------------------------------------------------
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def live_hybrid_retriever():
     """Create a real HybridKGRetriever against live PostgreSQL + AGE + Ollama."""
     pytest.importorskip("asyncpg")
