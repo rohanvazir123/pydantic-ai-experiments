@@ -109,7 +109,8 @@
       "Bash(Get-ChildItem *)",
       "Bash(findstr /n \"pytest\\\\|asyncio\" pytest.ini setup.cfg)",
       "Bash(cat pytest.ini)",
-      "Bash(ls *.ini *.cfg)"
+      "Bash(ls *.ini *.cfg)",
+      "Bash(Remove-Item *)"
     ]
   },
   "enableAllProjectMcpServers": true,

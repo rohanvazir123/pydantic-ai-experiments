@@ -90,9 +90,9 @@ An **agentic RAG (Retrieval-Augmented Generation)** system that:
                                     ▲                ▲
                                     │  (ingest)      │  (KG build)
          ┌──────────────────────────┴───┐   ┌────────┴─────────────┐
-         │  Ingestion Pipeline          │   │  CuadKgBuilder        │
+         │  Ingestion Pipeline          │   │  build_cuad_kg()      │
          │  (rag/ingestion/pipeline.py) │   │  knowledge_graph/     │
-         │  Docling → chunk → embed     │   │  cuad_kg_builder.py  │
+         │  Docling → chunk → embed     │   │  cuad_kg_ingest.py   │
          │  Note: MinerU/RAGAnything is │   │  509 contracts →     │
          │  PDF Question Generator only │   │  13,262 entities     │
          └──────────────────────────────┘   └──────────────────────┘
@@ -353,9 +353,9 @@ Two interchangeable backends, selected by `KG_BACKEND` env var:
 
 **File**: `rag/knowledge_graph/__init__.py` — `create_kg_store()` reads `KG_BACKEND` env var and returns the appropriate store instance.
 
-### CuadKgBuilder
+### build_cuad_kg
 
-**File**: `rag/knowledge_graph/cuad_kg_builder.py`
+**File**: `rag/knowledge_graph/cuad_kg_ingest.py` — Ontology constants in `rag/knowledge_graph/constants.py`
 
 - Reads CUAD contract JSON annotations (41 question types → 9 entity types + 9 relationship types)
 - Entity types: `Party`, `Jurisdiction`, `Date`, `LicenseClause`, `TerminationClause`, `RestrictionClause`, `IPClause`, `LiabilityClause`, `Clause`
@@ -603,7 +603,7 @@ LANGFUSE_SECRET_KEY=
 | Mem0 memory layer | `rag/memory/mem0_store.py` |
 | KG store — PostgreSQL backend | `rag/knowledge_graph/pg_graph_store.py` |
 | KG store — Apache AGE backend | `rag/knowledge_graph/age_graph_store.py` |
-| KG builder (CUAD annotations) | `rag/knowledge_graph/cuad_kg_builder.py` |
+| KG builder (CUAD annotations) | `rag/knowledge_graph/cuad_kg_ingest.py` |
 | KG store factory | `rag/knowledge_graph/__init__.py` |
 | CUAD dataset ingestion | `rag/ingestion/cuad_ingestion.py` |
 | Legal document utilities | `rag/legal/__init__.py` |
@@ -649,7 +649,7 @@ python -m rag.ingestion.cuad_ingestion --limit 10   # test with 10 contracts
 python -m rag.ingestion.cuad_ingestion               # all 510 contracts
 
 # 11. Build knowledge graph (CUAD legal contracts, requires ingested docs)
-python -m rag.knowledge_graph.cuad_kg_builder
+python -m rag.knowledge_graph.cuad_kg_ingest
 
 # 12. Start Apache AGE (alternative KG backend)
 docker-compose up -d

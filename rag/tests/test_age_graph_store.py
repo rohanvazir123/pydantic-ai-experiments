@@ -182,10 +182,11 @@ class TestAgeGraphStoreAddRelationship:
 class TestAgeGraphStoreSearchEntities:
     @pytest.mark.asyncio
     async def test_returns_parsed_entity_dicts(self):
+        # Column names must match the AGE AS clause: uuid, name, label, document_id
         mock_pool = _mock_pool_with_rows([{
             "uuid": '"entity-uuid-1"',
             "name": '"Acme Corp"',
-            "entity_type": '"Party"',
+            "label": '"Party"',
             "document_id": '"doc-uuid-1"',
         }])
         store = _make_age_store_with_pool(mock_pool)
@@ -217,12 +218,13 @@ class TestAgeGraphStoreSearchEntities:
 class TestAgeGraphStoreSearchAsContext:
     @pytest.mark.asyncio
     async def test_returns_formatted_facts(self):
+        # Column names must match the AGE AS clause: src_name, src_label, rel, tgt_name, tgt_label
         mock_pool = _mock_pool_with_rows([{
             "src_name": '"Acme Corp"',
-            "src_type": '"Party"',
+            "src_label": '"Party"',
             "rel": '"PARTY_TO"',
             "tgt_name": '"Acme Distributor Agreement"',
-            "tgt_type": '"Contract"',
+            "tgt_label": '"Contract"',
         }])
         store = _make_age_store_with_pool(mock_pool)
         result = await store.search_as_context("Acme Corp")
@@ -247,9 +249,10 @@ class TestAgeGraphStoreSearchAsContext:
 class TestAgeGraphStoreGetStats:
     @pytest.mark.asyncio
     async def test_returns_stats_dict_shape(self):
+        # Column names must match AGE AS clause: label agtype, cnt agtype / rel_type agtype, cnt agtype
         vertex_rows = [
-            {"entity_type": '"Party"', "cnt": "5"},
-            {"entity_type": '"Jurisdiction"', "cnt": "3"},
+            {"label": '"Party"', "cnt": "5"},
+            {"label": '"Jurisdiction"', "cnt": "3"},
         ]
         edge_rows = [
             {"rel_type": '"PARTY_TO"', "cnt": "4"},

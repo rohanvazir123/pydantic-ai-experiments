@@ -264,6 +264,7 @@ class TestMetricFunctions:
 # Integration tests — run retriever against the gold dataset
 # ---------------------------------------------------------------------------
 
+@pytest.mark.integration
 class TestRetrievalMetrics:
     """Evaluate retrieval quality against the gold dataset.
 

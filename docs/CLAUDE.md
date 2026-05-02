@@ -83,7 +83,8 @@ rag/
 │   ├── __init__.py               # create_kg_store() factory (reads KG_BACKEND env var)
 │   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (Neon)
 │   ├── age_graph_store.py        # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
-│   └── cuad_kg_builder.py        # CuadKgBuilder: CUAD annotations → graph (509 contracts)
+│   ├── cuad_kg_ingest.py         # build_cuad_kg(): CUAD annotations → AgeGraphStore (AGE-only)
+│   └── constants.py              # Single source of truth: VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP
 ├── memory/
 │   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
 ├── legal/

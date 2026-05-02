@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from rag.ingestion.models import SearchResult
 from rag.retrieval.hybrid_kg_retriever import HybridKGRetriever, HybridResult, _fuse
@@ -331,7 +332,7 @@ class TestHybridKGRetriever:
 # Integration tests — require live services
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def live_hybrid_retriever():
     """Create a real HybridKGRetriever against live PostgreSQL + AGE + Ollama."""
     pytest.importorskip("asyncpg")

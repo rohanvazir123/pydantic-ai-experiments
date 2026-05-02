@@ -14,6 +14,8 @@ This document describes all available tests in the RAG system, how to run them, 
 6. [Prerequisites](#prerequisites)
 7. [Troubleshooting](#troubleshooting)
 
+> **Q&A Reference**: For a complete list of every integration test question and expected answer, see [TEST_QA_REFERENCE.md](TEST_QA_REFERENCE.md).
+
 ---
 
 ## Quick Start

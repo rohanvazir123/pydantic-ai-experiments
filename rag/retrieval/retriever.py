@@ -312,8 +312,11 @@ class Retriever:
             )
 
         # 6. Relevance threshold guardrail — drop low-confidence chunks
+        # Only applies to semantic search: cosine similarity is 0-1 and 0.40 is
+        # a meaningful threshold there. RRF scores (~0.016) and ts_rank scores
+        # are not calibrated to the same scale.
         threshold = self.settings.min_relevance_score
-        if threshold > 0 and results:
+        if threshold > 0 and results and search_type == "semantic":
             before = len(results)
             results = [r for r in results if r.similarity >= threshold]
             dropped = before - len(results)

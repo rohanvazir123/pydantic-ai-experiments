@@ -190,6 +190,7 @@ def _log_legal_table(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestLegalRetrievalMetrics:
     """Verify retrieval quality over the CUAD contract-type gold dataset."""
 
@@ -255,6 +256,7 @@ class TestLegalRetrievalMetrics:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestLegalSpotChecks:
     """Spot-check specific high-confidence queries against the legal corpus."""
 
@@ -330,6 +332,7 @@ class TestLegalSpotChecks:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestCorpusIsolation:
     """Verify that legal and NeuralFlow queries surface the right corpus."""
 
@@ -399,6 +402,7 @@ class TestCorpusIsolation:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestLegalSearchTypes:
     """Compare hybrid, semantic, and text search on the legal gold dataset."""
 

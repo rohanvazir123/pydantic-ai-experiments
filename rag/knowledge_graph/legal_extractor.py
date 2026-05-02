@@ -15,7 +15,7 @@ Two-phase design — run the expensive LLM pass once, reuse the result:
   Phase 2 — build  (no LLM, fast, repeatable)
     LegalEntityExtractor.build_from_file(file_path)
       Reads the saved JSON and upserts everything into the KG backend
-      (PgGraphStore or AgeGraphStore) — identical to CuadKgBuilder but
+      (PgGraphStore or AgeGraphStore) — same pattern as build_cuad_kg() but
       driven by LLM output rather than CUAD annotations.
 
 CLI
@@ -362,7 +362,7 @@ class LegalEntityExtractor:
     ) -> dict[str, int]:
         """Read pre-extracted JSON and populate the KG. No LLM calls.
 
-        Mirrors CuadKgBuilder.build() but driven by LLM output instead of
+        Mirrors build_cuad_kg() but driven by LLM output instead of
         CUAD annotations.
 
         Returns {"documents": N, "entities": N, "relationships": N}.

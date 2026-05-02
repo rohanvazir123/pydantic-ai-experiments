@@ -467,49 +467,40 @@ NL-to-SQL (nlp2sql/)   (library, used by App 3)
 Ingestion CLI  rag/main.py:L100
   └── DocumentIngestionPipeline L136  └── PostgresHybridStore L116
 
-KG Build CLI  rag/knowledge_graph/cuad_kg_builder.py:L304
-  └── CuadKgBuilder L160  └── AgeGraphStore / PgGraphStore (create_kg_store())
+KG Build CLI  rag/knowledge_graph/cuad_kg_ingest.py:L115
+  └── build_cuad_kg()  └── AgeGraphStore (AGE-only)
 ```
 
 ---
 
-## 8. Knowledge Graph — Build (CuadKgBuilder)
+## 8. Knowledge Graph — Build (build_cuad_kg)
 
 > See [HYBRID_KG_QUESTIONS.md](HYBRID_KG_QUESTIONS.md) for evaluation queries over this graph.
 
-**Entry point**: `python -m rag.knowledge_graph.cuad_kg_builder [--eval-path ...] [--limit N]`
+**Entry point**: `python -m rag.knowledge_graph.cuad_kg_ingest [--eval-path ...] [--limit N]`
 
 ```
-main()                                                              L304
+main()                                                              cuad_kg_ingest.py
   ├── load_settings()
-  ├── create_kg_store()                                             __init__.py
-  │     ├── [KG_BACKEND=age]      → AgeGraphStore()                L98
-  │     └── [KG_BACKEND=postgres] → PgGraphStore()                 L72
-  ├── [if AgeGraphStore]: PgGraphStore()   ← separate doc lookup   L72
-  ├── CuadKgBuilder(store, doc_store)                               L160
-  │     └── __init__(store, doc_store)
-  │           └── self._doc_store = doc_store or store
-  └── CuadKgBuilder.build(eval_path, limit)                         L204
+  ├── AgeGraphStore()  ← graph backend (AGE only)
+  ├── asyncpg.create_pool(settings.database_url)  ← doc lookups
+  └── build_cuad_kg(store, doc_pool, eval_path, limit)
 
-CuadKgBuilder.build(eval_path, limit)                               L204
+build_cuad_kg(store, doc_pool, eval_path, limit)
   ├── load cuad_eval.json  → list[{question_type, answers, contract_title}]
   ├── [for each QA pair]:
-  │     ├── _get_document_id(contract_title)                        L179
-  │     │     └── _doc_store.pool → conn.fetchrow(SELECT id WHERE title …)
-  │     │           (result cached in self._doc_id_cache)
-  │     ├── entity_type_for(question_type)                          L152
-  │     │     └── ENTITY_TYPE_MAP.get(question_type, "Clause")      L95
-  │     ├── relationship_type_for(entity_type)                      L156
-  │     │     └── RELATIONSHIP_MAP.get(entity_type, "HAS_CLAUSE")   L138
+  │     ├── _get_document_id(doc_pool, contract_title, cache)
+  │     │     └── doc_pool → conn.fetchrow(SELECT id WHERE title …)
+  │     │           (result cached in local dict)
+  │     ├── entity_type_for(question_type)      ← constants.py
+  │     │     └── ENTITY_TYPE_MAP.get(question_type, "Clause")
+  │     ├── relationship_type_for(entity_type)  ← constants.py
+  │     │     └── RELATIONSHIP_MAP.get(entity_type, "HAS_CLAUSE")
   │     ├── store.upsert_entity("Contract", …)   ← contract node
   │     └── [for each answer_text]:
   │           ├── store.upsert_entity(entity_type, answer_text, …)
   │           └── store.add_relationship(entity_id, contract_id, rel_type, …)
   └── return {"entities": N, "relationships": N, "skipped": N}
-
-_print_kg_stats()                                                   L367
-  └── create_kg_store().get_graph_stats()
-        └── print entity/relationship counts by type
 ```
 
 **Entity type map (35+ CUAD question types → 9 entity types)**:
@@ -530,15 +521,13 @@ _print_kg_stats()                                                   L367
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L160) | `CuadKgBuilder` | L160 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L204) | `build()` | L204 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L179) | `_get_document_id()` | L179 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L152) | `entity_type_for()` | L152 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L156) | `relationship_type_for()` | L156 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L95) | `ENTITY_TYPE_MAP` | L95 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L138) | `RELATIONSHIP_MAP` | L138 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L304) | `main()` | L304 |
-| [`rag/knowledge_graph/cuad_kg_builder.py`](../rag/knowledge_graph/cuad_kg_builder.py#L367) | `_print_kg_stats()` | L367 |
+| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `build_cuad_kg()` | L62 |
+| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `_get_document_id()` | L38 |
+| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `entity_type_for()` | L141 |
+| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `relationship_type_for()` | L146 |
+| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `ENTITY_TYPE_MAP` | L83 |
+| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `RELATIONSHIP_MAP` | L127 |
+| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `main()` | L115 |
 | [`rag/knowledge_graph/__init__.py`](../rag/knowledge_graph/__init__.py) | `create_kg_store()` | |
 
 ---

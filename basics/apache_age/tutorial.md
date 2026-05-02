@@ -8,17 +8,261 @@ this project.
 
 ## Table of Contents
 
+0. [Quick Start — Crash Course](#quick-start--crash-course)
+   - [Cheat Sheet](#cheat-sheet)
 1. [How AGE Works](#how-age-works)
 2. [Setup & Connection](#setup--connection)
-3. [Core Concepts](#core-concepts)
-4. [Cypher Basics](#cypher-basics)
-5. [AGE + asyncpg Patterns](#age--asyncpg-patterns)
-6. [Vertex Labels vs Flat Entity Type](#vertex-labels-vs-flat-entity-type)
-7. [Common Queries for Legal Contracts](#common-queries-for-legal-contracts)
-8. [Injection Safety](#injection-safety)
-9. [Debugging & Introspection](#debugging--introspection)
-10. [Performance](#performance)
-11. [Gotchas](#gotchas)
+3. [Running in DBeaver](#running-in-dbeaver)
+4. [Core Concepts](#core-concepts)
+5. [Cypher Basics](#cypher-basics)
+6. [AGE + asyncpg Patterns](#age--asyncpg-patterns)
+7. [Vertex Labels vs Flat Entity Type](#vertex-labels-vs-flat-entity-type)
+8. [Common Queries for Legal Contracts](#common-queries-for-legal-contracts)
+9. [Where Cypher Queries Live in This Project](#where-cypher-queries-live-in-this-project)
+10. [Injection Safety](#injection-safety)
+11. [Debugging & Introspection](#debugging--introspection)
+12. [Performance](#performance)
+13. [Gotchas](#gotchas)
+
+---
+
+## Quick Start — Crash Course
+
+Everything below is copy-paste ready for DBeaver connected to `localhost:5433 / legal_graph`.
+Run each block with **`Alt+X`** (Execute Script), not `Ctrl+Enter`.
+
+Every script must start with these two lines — they are connection-scoped and reset on reconnect:
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+```
+
+---
+
+### Step 1 — Create a graph
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+SELECT create_graph('demo');
+```
+
+Each database can hold multiple named graphs. Skip this step if the graph already exists — it throws an error if you run it twice (use the `legal_graph` graph for project data).
+
+---
+
+### Step 2 — Create nodes (vertices)
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- CREATE makes a new node unconditionally
+SELECT * FROM ag_catalog.cypher('demo', $$
+    CREATE (:Person {name: "Alice", age: 30})
+$$) AS (v agtype);
+
+-- MERGE is idempotent — creates only if no match exists (prefer this)
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MERGE (:Person {name: "Bob", age: 25})
+$$) AS (v agtype);
+
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MERGE (:Company {name: "Acme Corp", industry: "Tech"})
+$$) AS (v agtype);
+```
+
+Labels (`:Person`, `:Company`) are like types. Properties are key-value pairs.
+
+---
+
+### Step 3 — Create relationships (edges)
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- MATCH both ends, then MERGE the edge between them
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (a:Person {name: "Alice"}), (c:Company {name: "Acme Corp"})
+    MERGE (a)-[:WORKS_AT]->(c)
+$$) AS (r agtype);
+
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (a:Person {name: "Alice"}), (b:Person {name: "Bob"})
+    MERGE (a)-[:KNOWS]->(b)
+$$) AS (r agtype);
+```
+
+Relationship types are uppercase by convention. Direction matters: `(a)-[:REL]->(b)` ≠ `(b)-[:REL]->(a)`.
+
+---
+
+### Step 4 — Read data (MATCH + RETURN)
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- All people
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person) RETURN p.name, p.age
+$$) AS (name agtype, age agtype);
+
+-- People who work at a company (one-hop traversal)
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person)-[:WORKS_AT]->(c:Company)
+    RETURN p.name, c.name
+$$) AS (person agtype, company agtype);
+
+-- Who does Alice know?
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (:Person {name: "Alice"})-[:KNOWS]->(friend:Person)
+    RETURN friend.name
+$$) AS (friend agtype);
+```
+
+The `AS (col agtype, ...)` clause must have exactly as many columns as `RETURN`. Column names can be anything — they're just aliases.
+
+---
+
+### Step 5 — Filter with WHERE
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- Numeric comparison
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person)
+    WHERE p.age > 26
+    RETURN p.name, p.age
+$$) AS (name agtype, age agtype);
+
+-- Case-insensitive string search
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person)
+    WHERE toLower(p.name) CONTAINS 'ali'
+    RETURN p.name
+$$) AS (name agtype);
+
+-- OR across conditions
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person)
+    WHERE p.name = "Alice" OR p.age < 28
+    RETURN p.name, p.age
+$$) AS (name agtype, age agtype);
+```
+
+---
+
+### Step 6 — Update properties
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- SET adds or overwrites a property
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person {name: "Alice"})
+    SET p.age = 31, p.city = "London"
+    RETURN p.name, p.age, p.city
+$$) AS (name agtype, age agtype, city agtype);
+```
+
+---
+
+### Step 7 — Delete nodes and edges
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- Delete a relationship
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (:Person {name: "Alice"})-[r:KNOWS]->(:Person {name: "Bob"})
+    DELETE r
+$$) AS (r agtype);
+
+-- Delete a node (must have no edges — use DETACH DELETE to remove edges too)
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person {name: "Bob"})
+    DETACH DELETE p
+$$) AS (r agtype);
+```
+
+---
+
+### Step 8 — Count and aggregate
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- Count all nodes per label
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (e) RETURN e.label AS label, count(*) AS cnt
+    ORDER BY cnt DESC
+$$) AS (label agtype, cnt agtype);
+
+-- Count relationships per type (introspect ag_label system table instead)
+SELECT name AS rel_type
+FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'demo')
+AND kind = 'e'::"char"
+AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+```
+
+---
+
+### Step 9 — OPTIONAL MATCH (left join)
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- All people, with their employer if they have one (NULL if not)
+SELECT * FROM ag_catalog.cypher('demo', $$
+    MATCH (p:Person)
+    OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
+    RETURN p.name, c.name
+$$) AS (person agtype, company agtype);
+```
+
+Without `OPTIONAL`, people with no `:WORKS_AT` edge are excluded entirely.
+
+---
+
+### Step 10 — Tear down (clean up demo graph)
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- Drop the demo graph and all its data
+SELECT drop_graph('demo', true);   -- true = cascade (deletes all vertices/edges)
+```
+
+---
+
+### Cheat Sheet
+
+| Goal | Cypher keyword |
+|------|---------------|
+| Create node | `CREATE (:Label {prop: val})` |
+| Create-or-skip node | `MERGE (:Label {prop: val})` |
+| Find nodes | `MATCH (n:Label) RETURN n.prop` |
+| Traverse edge | `MATCH (a)-[:REL]->(b)` |
+| Filter | `WHERE n.prop = "val"` |
+| Update | `SET n.prop = "new"` |
+| Delete edge | `DELETE r` (after MATCHing it as `[r:REL]`) |
+| Delete node + edges | `DETACH DELETE n` |
+| Count | `count(*)` or `count(n)` |
+| Left join | `OPTIONAL MATCH` |
+| Skip duplicates | `RETURN DISTINCT n.prop` |
+| Sort + limit | `ORDER BY n.prop DESC LIMIT 10` |
 
 ---
 
@@ -98,6 +342,89 @@ pool = await asyncpg.create_pool(
 The `init` callback runs once per connection as it is created from the pool —
 so every connection is always AGE-ready without needing to call LOAD in
 every query.
+
+---
+
+## Running in DBeaver
+
+DBeaver works well for exploring the AGE graph, but requires a specific execution
+pattern because `LOAD 'age'` and `SET search_path` must run **in the same
+session** as the Cypher query.
+
+### Which connection is AGE?
+
+| DBeaver alias | Host | Port | Database | What it is |
+|---------------|------|------|----------|------------|
+| `postgres` | localhost | 5432 | rag_db (or neon) | Main pgvector DB — documents, chunks |
+| `postgres2` | localhost | 5433 | legal_graph | Apache AGE container — graph data |
+
+Connect to **postgres2** (`localhost:5433 / legal_graph`) for all Cypher work.
+
+### Execute Script, not Execute Statement
+
+DBeaver has two run modes:
+
+| Shortcut | Mode | Behaviour |
+|----------|------|-----------|
+| `Ctrl+Enter` | Execute Statement | Runs the single statement under the cursor in its own implicit session — **breaks AGE** because LOAD runs in one session and SELECT runs in another |
+| `Alt+X` | Execute Script | Runs the entire editor contents as a single script — **required for AGE** |
+
+Always use **`Alt+X`** (or Script → Execute Script from the menu).
+
+### Query template
+
+Paste this into a DBeaver SQL editor connected to postgres2, then hit `Alt+X`:
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (e) RETURN e.label AS label, count(*) AS cnt
+    ORDER BY cnt DESC
+$$) AS (label agtype, cnt agtype);
+```
+
+### Check the graph has data
+
+```sql
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+
+-- List all vertex labels and counts
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (e) RETURN e.label, count(*) AS cnt ORDER BY cnt DESC
+$$) AS (label agtype, cnt agtype);
+
+-- List all edge/relationship types
+SELECT name FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
+AND kind = 'e'::"char"
+AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+```
+
+If these return 0 rows, the CUAD ingestion pipeline has not been run yet.
+Run: `python -m rag.knowledge_graph.cuad_kg_ingest`
+
+### The AS clause
+
+Every `ag_catalog.cypher()` call requires an `AS (col1 agtype, col2 agtype, ...)`
+clause whose column count matches the Cypher `RETURN` clause exactly.
+
+```sql
+-- RETURN has 2 columns → AS needs exactly 2 agtype columns
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (p:Party)-[:PARTY_TO]->(c:Contract)
+    RETURN p.name, c.name
+$$) AS (party_name agtype, contract_name agtype);
+--      ↑ 2 columns ↑                            ↑ 2 columns ↑
+```
+
+Mismatch gives: `ERROR: column definition list has too few entries`
+
+> **Note**: DBeaver may show a red underline under `agtype` — this is a cosmetic
+> false-positive because DBeaver doesn't know AGE's custom type. The query runs
+> correctly.
 
 ---
 
@@ -444,6 +771,62 @@ ORDER BY count DESC
 
 ---
 
+## Where Cypher Queries Live in This Project
+
+There are two paths by which Cypher reaches AGE:
+
+### Path 1 — Fixed queries in `age_graph_store.py`
+
+These are hard-coded queries called by the application on every relevant
+operation. All go through the `_cypher()` helper at line 250, which also emits
+a `DEBUG` log line so you can see every query at runtime.
+
+| Method | Line | What it does |
+|--------|------|--------------|
+| `upsert_entity` | 255 | `MERGE (e:Label {uuid: "..."}) SET e.name = ..., e.label = ...` |
+| `add_relationship` | 300 | `MATCH (s {uuid: "..."}), (t {uuid: "..."}) MERGE (s)-[:REL_TYPE]->(t)` |
+| `search_entities` | 354 | `MATCH (e:Label) WHERE toLower(e.name) CONTAINS "..." RETURN ...` |
+| `search_as_context` | 480 | `MATCH (e {uuid: "..."})-[r]->(n) RETURN src, rel, tgt` — neighbourhood facts for RAG context |
+| `get_graph_stats` | 519 | `MATCH (e) RETURN e.label, count(*) AS cnt` — vertex counts per label |
+
+File: `rag/knowledge_graph/age_graph_store.py`
+
+### Path 2 — LLM-generated queries via `run_graph_query`
+
+The Pydantic AI agent has a `run_graph_query` tool at `rag/agent/rag_agent.py:477`.
+When the agent decides a custom graph traversal is needed, it generates Cypher
+and passes it to `AgeGraphStore.run_read_query()`.
+
+This path is used for:
+- Multi-hop traversals (e.g., party → contract → jurisdiction)
+- Aggregation queries (most common clauses, contract complexity)
+- Complex pattern matching that `search_knowledge_graph` (line 348) cannot express
+
+### Seeing queries at runtime
+
+The `_cypher()` method logs every query at DEBUG level:
+
+```python
+def _cypher(self, cypher_body: str) -> str:
+    logger.debug("CYPHER: %s", cypher_body)
+    return f"SELECT * FROM ag_catalog.cypher('{self._graph}', ${cypher_body}$)"
+```
+
+To see all Cypher in test output:
+
+```bash
+python -m pytest rag/tests/ -m integration -v -s --log-cli-level=DEBUG 2>&1 | grep "CYPHER:"
+```
+
+To see them during an agent run, set the log level in your `.env` or code:
+
+```python
+import logging
+logging.getLogger("rag.knowledge_graph.age_graph_store").setLevel(logging.DEBUG)
+```
+
+---
+
 ## Injection Safety
 
 AGE does not support parameterised Cypher — values are always inlined. This
@@ -489,12 +872,17 @@ cypher = f'MATCH (e {{name: "{name}"}}) RETURN e.uuid'
 SELECT * FROM ag_catalog.ag_graph;
 ```
 
+Each row here represents a graph created with `SELECT create_graph('name');`. The `oid` in this table is what `ag_label.graph` references.
+
+In this project, `legal_graph` is created automatically by `AgeGraphStore._do_initialize()` (`rag/knowledge_graph/age_graph_store.py:199`) on first startup — you never need to run `create_graph` manually for it.
+
 ### List all vertex labels in a graph
 
 ```sql
 SELECT name FROM ag_catalog.ag_label
 WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
-AND kind = 'v';  -- 'v' = vertex, 'e' = edge
+AND kind = 'v'::"char"
+AND name NOT LIKE '\_ag\_%' ESCAPE '\';
 ```
 
 ### Count vertices per label
@@ -508,7 +896,8 @@ MATCH (e) RETURN e.label, count(*) ORDER BY count(*) DESC
 ```sql
 SELECT name FROM ag_catalog.ag_label
 WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
-AND kind = 'e';
+AND kind = 'e'::"char"
+AND name NOT LIKE '\_ag\_%' ESCAPE '\';
 ```
 
 ### Check AGE version

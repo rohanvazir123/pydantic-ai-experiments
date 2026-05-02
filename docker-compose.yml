@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
 
   age:
-    image: apache/age:latest
+    image: apache/age:PG16
     container_name: rag_age
     environment:
       POSTGRES_DB: legal_graph

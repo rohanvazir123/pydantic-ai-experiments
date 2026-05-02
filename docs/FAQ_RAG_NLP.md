@@ -2929,7 +2929,7 @@ These files are kept as reference. They are not imported anywhere in the active 
 <a id="q145"></a>
 **Q145. What is the CUAD entity type map and how are entities generated?**
 
-Entity extraction is **deterministic** — no LLM, no probabilistic extraction. The CUAD dataset provides expert-annotated answers for 41 question types per contract. `CuadKgBuilder` maps those 41 types to 9 entity types using a hard-coded lookup table (`ENTITY_TYPE_MAP` in `rag/knowledge_graph/cuad_kg_builder.py:L95`).
+Entity extraction is **deterministic** — no LLM, no probabilistic extraction. The CUAD dataset provides expert-annotated answers for 41 question types per contract. `build_cuad_kg()` maps those 41 types to 9 entity types using a hard-coded lookup table (`ENTITY_TYPE_MAP` in `rag/knowledge_graph/constants.py:L83`).
 
 **The mapping — 41 CUAD question types → 9 entity types:**
 
@@ -2969,10 +2969,10 @@ cuad_eval.json (6,702 Q&A pairs)
 **Running the build:**
 ```bash
 # Default AGE backend (requires docker-compose up -d)
-python -m rag.knowledge_graph.cuad_kg_builder
+python -m rag.knowledge_graph.cuad_kg_ingest
 
 # Quick smoke test
-python -m rag.knowledge_graph.cuad_kg_builder --limit 100
+python -m rag.knowledge_graph.cuad_kg_ingest --limit 100
 ```
 
 ---
@@ -3243,16 +3243,12 @@ The 41 CUAD question types collapse into 9 entity types:
 **Building the graph:**
 
 ```bash
-# PostgreSQL tables (default)
-python -m rag.knowledge_graph.cuad_kg_builder
-
 # Apache AGE (requires docker compose up -d)
-KG_BACKEND=age \
 AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
-python -m rag.knowledge_graph.cuad_kg_builder
+python -m rag.knowledge_graph.cuad_kg_ingest
 
 # Test with 50 pairs first
-python -m rag.knowledge_graph.cuad_kg_builder --limit 50
+python -m rag.knowledge_graph.cuad_kg_ingest --limit 50
 ```
 
 Build time: ~4.5 minutes for all 6,702 pairs (AGE backend).
@@ -3441,7 +3437,8 @@ CREATE TABLE kg_relationships (
 | File | Purpose |
 |---|---|
 | `rag/knowledge_graph/pg_graph_store.py` | Core store: initialize, upsert_entity, add_relationship, search_as_context, get_graph_stats |
-| `rag/knowledge_graph/cuad_kg_builder.py` | Reads cuad_eval.json → populates kg_entities / kg_relationships |
+| `rag/knowledge_graph/cuad_kg_ingest.py` | Reads cuad_eval.json → writes to AgeGraphStore (AGE-only) |
+| `rag/knowledge_graph/constants.py` | Ontology constants: VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP |
 | `rag/tests/test_pg_graph_store.py` | 40 unit tests (mocked pool) + 3 integration tests |
 
 **Build the graph:**
@@ -3451,10 +3448,10 @@ CREATE TABLE kg_relationships (
 python -m rag.ingestion.cuad_ingestion --dry-run
 
 # Then build the KG (reads annotations, no LLM)
-python -m rag.knowledge_graph.cuad_kg_builder
+python -m rag.knowledge_graph.cuad_kg_ingest
 
 # Test run — first 100 pairs only
-python -m rag.knowledge_graph.cuad_kg_builder --limit 100
+python -m rag.knowledge_graph.cuad_kg_ingest --limit 100
 ```
 
 **Agent tool:**
@@ -4818,7 +4815,7 @@ builder = CuadKgBuilder(age_store, doc_store=pg_store)
 await builder.build()
 ```
 
-The CLI (`python -m rag.knowledge_graph.cuad_kg_builder`) handles this automatically when `KG_BACKEND=age`.
+The CLI (`python -m rag.knowledge_graph.cuad_kg_ingest`) writes directly to AgeGraphStore (AGE-only).
 
 **Document title normalization:** Docling escapes underscores as `\_` in Markdown titles (e.g. `LIMEENERGYCO\_09\_09\_1999…`), while CUAD eval JSON uses plain underscores. `_get_document_id` strips the escaping on both sides before comparing.
 

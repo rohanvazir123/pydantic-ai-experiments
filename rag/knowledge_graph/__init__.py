@@ -19,15 +19,20 @@ Apache AGE-backed knowledge graph built from CUAD legal contract annotations.
 No Neo4j or Graphiti required.
 
 Primary components:
-    AgeGraphStore   — Apache AGE Cypher graph (active backend)
-    CuadKgBuilder   — populates the graph from cuad_eval.json annotations
+    AgeGraphStore        — Apache AGE Cypher graph (active backend)
+    build_cuad_kg()      — ingest cuad_eval.json annotations into AgeGraphStore
+    LegalEntityExtractor — LLM-driven 5-pass entity/relationship extraction
+    ExtractionPipeline   — Bronze → Silver → Gold medallion ingestion pipeline
 
 Legacy / reference components (source kept, not wired into main pipeline):
     PgGraphStore    — entities/relationships in PostgreSQL SQL tables (legacy)
-    GraphitiStore, graphiti_config, graphiti_agent, kg_agent
+
+Ontology constants (single source of truth):
+    VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP, RELATIONSHIP_MAP,
+    entity_type_for(), relationship_type_for()  — from constants.py
 
 Usage:
-    from rag.knowledge_graph import create_kg_store, CuadKgBuilder
+    from rag.knowledge_graph import create_kg_store
 
     store = create_kg_store()   # returns AgeGraphStore by default
     await store.initialize()
@@ -37,10 +42,17 @@ Usage:
 
 from rag.knowledge_graph.pg_graph_store import PgGraphStore
 from rag.knowledge_graph.age_graph_store import AgeGraphStore
-from rag.knowledge_graph.cuad_kg_builder import CuadKgBuilder
+from rag.knowledge_graph.cuad_kg_ingest import build_cuad_kg
 from rag.knowledge_graph.legal_extractor import LegalEntityExtractor
 from rag.knowledge_graph.extraction_pipeline import ExtractionPipeline
-
+from rag.knowledge_graph.constants import (
+    VALID_LABELS,
+    VALID_REL_TYPES,
+    ENTITY_TYPE_MAP,
+    RELATIONSHIP_MAP,
+    entity_type_for,
+    relationship_type_for,
+)
 
 from rag.config.settings import load_settings
 
@@ -58,16 +70,22 @@ def create_kg_store() -> AgeGraphStore | PgGraphStore:
         KG_BACKEND=postgres   # opt back into legacy SQL backend
     """
     settings = load_settings()
-    if settings.kg_backend == "postgres":
-        return PgGraphStore()
-    return AgeGraphStore()
+    if settings.kg_backend == "age":
+        return AgeGraphStore()
+    return PgGraphStore()  # "postgres" or any unknown value → safe default
 
 
 __all__ = [
     "PgGraphStore",
     "AgeGraphStore",
-    "CuadKgBuilder",
+    "build_cuad_kg",
     "LegalEntityExtractor",
     "ExtractionPipeline",
     "create_kg_store",
+    "VALID_LABELS",
+    "VALID_REL_TYPES",
+    "ENTITY_TYPE_MAP",
+    "RELATIONSHIP_MAP",
+    "entity_type_for",
+    "relationship_type_for",
 ]

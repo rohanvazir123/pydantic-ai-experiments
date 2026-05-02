@@ -161,4 +161,4 @@ graph traversal over the Apache AGE `legal_graph` built from the CUAD corpus
 | `LiabilityClause` | `HAS_LIABILITY` | Caps, indemnification, warranties |
 | `Clause` | `HAS_CLAUSE` | Generic / uncategorised clause |
 
-Source: `rag/knowledge_graph/cuad_kg_builder.py` — CUAD 35+ annotation types mapped to the 9 entity types above.
+Source: `rag/knowledge_graph/constants.py` — CUAD 37 annotation types mapped to the 9 entity types above; ingested via `cuad_kg_ingest.py`.

@@ -69,30 +69,9 @@ from typing import Any
 import asyncpg
 
 from rag.config.settings import load_settings
+from rag.knowledge_graph.constants import VALID_LABELS as _VALID_LABELS
+from rag.knowledge_graph.constants import VALID_REL_TYPES as _VALID_REL_TYPES
 from rag.knowledge_graph.pg_graph_store import _normalize
-
-# Allowed vertex labels — used as Cypher labels, so must be validated against
-# this allowlist to prevent Cypher injection.
-_VALID_LABELS: frozenset[str] = frozenset({
-    "Contract", "Section", "Clause", "Party", "Jurisdiction",
-    "EffectiveDate", "ExpirationDate", "RenewalTerm", "LiabilityClause",
-    "IndemnityClause", "PaymentTerm", "ConfidentialityClause",
-    "TerminationClause", "GoverningLawClause", "Obligation",
-    "Risk", "Amendment", "ReferenceDocument",
-})
-
-_VALID_REL_TYPES: frozenset[str] = frozenset({
-    "PARTY_TO", "SIGNED_BY", "GOVERNED_BY", "INDEMNIFIES",
-    "HAS_TERMINATION", "HAS_RENEWAL", "HAS_PAYMENT_TERM",
-    "REFERENCES", "AMENDS", "SUPERCEDES", "REPLACES",
-    "OBLIGATES", "LIMITS_LIABILITY", "DISCLOSES_TO", "HAS_CLAUSE",
-    "HAS_SECTION", "HAS_CHUNK", "ATTACHES", "INCORPORATES_BY_REFERENCE",
-    "GRANTS_LICENSE_TO", "OWES_OBLIGATION_TO", "ASSIGNS_IP_TO",
-    "CAN_TERMINATE", "HAS_LICENSE", "HAS_RESTRICTION", "HAS_IP_CLAUSE",
-    "HAS_LIABILITY", "HAS_PAYMENT", "HAS_OBLIGATION",
-    "EFFECTIVE_ON", "EXPIRES_ON", "HAS_DATE",
-    "INCREASES_RISK_FOR", "CAUSES",
-})
 
 
 def _safe_label(entity_type: str) -> str:
@@ -270,6 +249,7 @@ class AgeGraphStore:
 
     def _cypher(self, cypher_body: str) -> str:
         """Wrap Cypher in the AGE SQL function call."""
+        logger.debug("CYPHER: %s", cypher_body)
         return f"SELECT * FROM ag_catalog.cypher('{self._graph}', $${cypher_body}$$)"
 
     async def upsert_entity(

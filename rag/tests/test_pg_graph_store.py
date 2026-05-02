@@ -1,4 +1,4 @@
-"""Tests for rag.knowledge_graph.pg_graph_store and rag.knowledge_graph.cuad_kg_builder.
+"""Tests for rag.knowledge_graph.pg_graph_store and rag.knowledge_graph.cuad_kg_ingest.
 
 Unit tests use an in-memory mock of the asyncpg pool.
 Integration tests require a live PostgreSQL connection (skipped otherwise).
@@ -6,15 +6,12 @@ Integration tests require a live PostgreSQL connection (skipped otherwise).
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from rag.knowledge_graph.cuad_kg_builder import (
-    CuadKgBuilder,
-    entity_type_for,
-    relationship_type_for,
-)
+from rag.knowledge_graph.constants import entity_type_for, relationship_type_for
+from rag.knowledge_graph.cuad_kg_ingest import build_cuad_kg
 from rag.knowledge_graph.pg_graph_store import PgGraphStore, _normalize
 
 
@@ -257,7 +254,7 @@ class TestPgGraphStoreSearchAsContext:
 
 
 # ---------------------------------------------------------------------------
-# CuadKgBuilder unit tests (mocked store)
+# cuad_kg_ingest unit tests (mocked AgeGraphStore + asyncpg pool)
 # ---------------------------------------------------------------------------
 
 
@@ -283,7 +280,7 @@ SAMPLE_EVAL_PAIRS = [
         "contract_type": "Distributor Agreement",
         "question_type": "Expiration Date",
         "question": "What is the expiration date?",
-        "answers": [],  # impossible — should be skipped
+        "answers": [],  # no answer — should be skipped
         "answer_starts": [],
     },
     {
@@ -297,62 +294,75 @@ SAMPLE_EVAL_PAIRS = [
 ]
 
 
-class TestCuadKgBuilder:
-    def _make_builder(self, doc_id_map: dict[str, str | None]) -> tuple[CuadKgBuilder, MagicMock]:
-        store = MagicMock(spec=PgGraphStore)
-        store.pool = MagicMock()
+def _make_doc_pool(doc_id_map: dict[str, str | None]) -> MagicMock:
+    """Return a mock asyncpg pool that resolves document IDs from doc_id_map."""
+    async def fetchrow(sql, title):
+        doc_id = doc_id_map.get(title)
+        if doc_id is None:
+            return None
+        return {"id": doc_id}
 
-        entity_counter = [0]
+    mock_conn = AsyncMock()
+    mock_conn.fetchrow = fetchrow
+    mock_pool = MagicMock()
+    mock_pool.acquire = MagicMock(return_value=AsyncMock(
+        __aenter__=AsyncMock(return_value=mock_conn),
+        __aexit__=AsyncMock(return_value=None),
+    ))
+    return mock_pool
 
-        async def upsert_entity(name, entity_type, document_id=None, metadata=None):
-            entity_counter[0] += 1
-            return f"entity-{entity_counter[0]:04d}"
 
-        rel_counter = [0]
+def _make_age_store() -> MagicMock:
+    entity_counter = [0]
 
-        async def add_relationship(source_id, target_id, relationship_type, document_id=None, properties=None):
-            rel_counter[0] += 1
-            return f"rel-{rel_counter[0]:04d}"
+    async def upsert_entity(name, entity_type, document_id=None, metadata=None):
+        entity_counter[0] += 1
+        return f"entity-{entity_counter[0]:04d}"
 
-        store.upsert_entity = upsert_entity
-        store.add_relationship = add_relationship
+    rel_counter = [0]
 
-        builder = CuadKgBuilder(store)
-        # Patch _get_document_id to return from the map
-        builder._doc_id_cache = dict(doc_id_map)
+    async def add_relationship(source_id, target_id, relationship_type, document_id=None, properties=None):
+        rel_counter[0] += 1
+        return f"rel-{rel_counter[0]:04d}"
 
-        return builder, store
+    store = MagicMock()
+    store.upsert_entity = upsert_entity
+    store.add_relationship = add_relationship
+    return store
 
+
+class TestCuadKgIngest:
     @pytest.mark.asyncio
     async def test_skips_empty_answers(self, tmp_path):
         doc_map = {"Acme Distributor Agreement": "doc-1", "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        store = _make_age_store()
+        doc_pool = _make_doc_pool(doc_map)
 
         path = tmp_path / "eval.json"
         path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
 
-        stats = await builder.build(eval_path=path)
-        # Expiration Date has empty answers → skipped
+        stats = await build_cuad_kg(store, doc_pool, eval_path=path)
         assert stats["skipped"] >= 1
 
     @pytest.mark.asyncio
     async def test_creates_entities_for_each_answer(self, tmp_path):
         doc_map = {"Acme Distributor Agreement": "doc-1", "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        doc_pool = _make_doc_pool(doc_map)
 
-        path = tmp_path / "eval.json"
-        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
-
-        entity_calls = []
+        entity_calls: list[tuple[str, str]] = []
 
         async def track_upsert(name, entity_type, document_id=None, metadata=None):
             entity_calls.append((name, entity_type))
             return f"eid-{len(entity_calls)}"
 
-        builder.store.upsert_entity = track_upsert
-        builder.store.add_relationship = AsyncMock(return_value="rel-1")
+        store = MagicMock()
+        store.upsert_entity = track_upsert
+        store.add_relationship = AsyncMock(return_value="rel-1")
 
-        await builder.build(eval_path=path)
+        path = tmp_path / "eval.json"
+        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
+
+        await build_cuad_kg(store, doc_pool, eval_path=path)
 
         entity_names = [c[0] for c in entity_calls]
         assert "Acme Corp" in entity_names
@@ -363,21 +373,22 @@ class TestCuadKgBuilder:
     @pytest.mark.asyncio
     async def test_correct_entity_types_assigned(self, tmp_path):
         doc_map = {"Acme Distributor Agreement": "doc-1", "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        doc_pool = _make_doc_pool(doc_map)
 
-        path = tmp_path / "eval.json"
-        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
-
-        entity_calls = []
+        entity_calls: list[tuple[str, str]] = []
 
         async def track_upsert(name, entity_type, document_id=None, metadata=None):
             entity_calls.append((name, entity_type))
             return f"eid-{len(entity_calls)}"
 
-        builder.store.upsert_entity = track_upsert
-        builder.store.add_relationship = AsyncMock(return_value="rel-1")
+        store = MagicMock()
+        store.upsert_entity = track_upsert
+        store.add_relationship = AsyncMock(return_value="rel-1")
 
-        await builder.build(eval_path=path)
+        path = tmp_path / "eval.json"
+        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
+
+        await build_cuad_kg(store, doc_pool, eval_path=path)
 
         type_map = {name: etype for name, etype in entity_calls}
         assert type_map.get("Acme Corp") == "Party"
@@ -386,74 +397,74 @@ class TestCuadKgBuilder:
 
     @pytest.mark.asyncio
     async def test_skips_documents_not_in_db(self, tmp_path):
-        # doc_id_cache has no entry for "Acme Distributor Agreement" → None
         doc_map = {"Acme Distributor Agreement": None, "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        store = _make_age_store()
+        doc_pool = _make_doc_pool(doc_map)
 
         path = tmp_path / "eval.json"
         path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
 
-        stats = await builder.build(eval_path=path)
-        # Pairs for Acme (3 pairs: parties, governing law, expiration) all skipped
+        stats = await build_cuad_kg(store, doc_pool, eval_path=path)
+        # Acme pairs (parties, governing law, expiration) all skipped — no doc_id
         assert stats["skipped"] >= 3
 
     @pytest.mark.asyncio
     async def test_limit_parameter(self, tmp_path):
         doc_map = {"Acme Distributor Agreement": "doc-1", "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        doc_pool = _make_doc_pool(doc_map)
 
-        path = tmp_path / "eval.json"
-        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
-
-        entity_calls = []
+        entity_calls: list[str] = []
 
         async def track_upsert(name, entity_type, document_id=None, metadata=None):
             entity_calls.append(name)
             return f"eid-{len(entity_calls)}"
 
-        builder.store.upsert_entity = track_upsert
-        builder.store.add_relationship = AsyncMock(return_value="rel-1")
+        store = MagicMock()
+        store.upsert_entity = track_upsert
+        store.add_relationship = AsyncMock(return_value="rel-1")
 
-        # Only process first 1 pair
-        await builder.build(eval_path=path, limit=1)
-        # limit=1 → only the first pair (Parties for Acme) processed
-        assert len(entity_calls) <= 5  # Contract + 2 answers + at most some extras
+        path = tmp_path / "eval.json"
+        path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
+
+        await build_cuad_kg(store, doc_pool, eval_path=path, limit=1)
+        assert len(entity_calls) <= 5  # Contract + 2 answers at most
 
     @pytest.mark.asyncio
     async def test_creates_contract_entity(self, tmp_path):
         doc_map = {"Beta License Agreement": "doc-2"}
-        pairs = [SAMPLE_EVAL_PAIRS[3]]  # Only Beta License pair
+        doc_pool = _make_doc_pool(doc_map)
+        pairs = [SAMPLE_EVAL_PAIRS[3]]
 
-        builder, store = self._make_builder(doc_map)
-        path = tmp_path / "eval.json"
-        path.write_text(json.dumps(pairs), encoding="utf-8")
-
-        entity_calls = []
+        entity_calls: list[tuple[str, str]] = []
 
         async def track_upsert(name, entity_type, document_id=None, metadata=None):
             entity_calls.append((name, entity_type))
             return f"eid-{len(entity_calls)}"
 
-        builder.store.upsert_entity = track_upsert
-        builder.store.add_relationship = AsyncMock(return_value="rel-1")
+        store = MagicMock()
+        store.upsert_entity = track_upsert
+        store.add_relationship = AsyncMock(return_value="rel-1")
 
-        await builder.build(eval_path=path)
+        path = tmp_path / "eval.json"
+        path.write_text(json.dumps(pairs), encoding="utf-8")
+
+        await build_cuad_kg(store, doc_pool, eval_path=path)
 
         types = [etype for _, etype in entity_calls]
-        assert "Contract" in types  # Contract node created for the document
+        assert "Contract" in types
 
     @pytest.mark.asyncio
     async def test_stats_counts_returned(self, tmp_path):
         doc_map = {"Acme Distributor Agreement": "doc-1", "Beta License Agreement": "doc-2"}
-        builder, store = self._make_builder(doc_map)
+        store = MagicMock()
+        store.upsert_entity = AsyncMock(return_value="eid-1")
+        store.add_relationship = AsyncMock(return_value="rel-1")
+        doc_pool = _make_doc_pool(doc_map)
 
         path = tmp_path / "eval.json"
         path.write_text(json.dumps(SAMPLE_EVAL_PAIRS), encoding="utf-8")
 
-        builder.store.upsert_entity = AsyncMock(return_value="eid-1")
-        builder.store.add_relationship = AsyncMock(return_value="rel-1")
-
-        stats = await builder.build(eval_path=path)
+        stats = await build_cuad_kg(store, doc_pool, eval_path=path)
         assert "entities" in stats
         assert "relationships" in stats
         assert "skipped" in stats
