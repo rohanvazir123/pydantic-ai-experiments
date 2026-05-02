@@ -14,7 +14,7 @@ def parse_database_url(database_url: str) -> dict:
     """
     Parse a PostgreSQL DATABASE_URL into pgvector connection parameters.
 
-    Handles standard PostgreSQL URLs and Neon-specific ``options`` query parameter.
+    Handles standard PostgreSQL URLs including the ``options`` query parameter.
 
     Args:
         database_url: PostgreSQL connection string, e.g.
@@ -39,7 +39,7 @@ def parse_database_url(database_url: str) -> dict:
         "dbname": parsed.path.lstrip("/") if parsed.path else "",
     }
 
-    # Preserve Neon endpoint options parameter if present
+    # Preserve options query parameter if present
     query_params = parse_qs(parsed.query)
     if "options" in query_params:
         config["options"] = query_params["options"][0]

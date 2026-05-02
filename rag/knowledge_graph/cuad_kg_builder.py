@@ -183,9 +183,9 @@ class CuadKgBuilder:
 
     ``store`` is the graph backend (PgGraphStore or AgeGraphStore).
     ``doc_store`` is the PostgreSQL store where the ``documents`` table lives
-    (always Neon/PgGraphStore).  When omitted it defaults to ``store``, which
+    (always the main PostgreSQL DB).  When omitted it defaults to ``store``, which
     is correct for the PgGraphStore backend.  When using AgeGraphStore, pass
-    a separate PgGraphStore so document lookups still hit Neon.
+    a separate PgGraphStore so document lookups hit the main PostgreSQL DB.
     """
 
     def __init__(
@@ -354,8 +354,8 @@ async def main() -> None:
     graph_store = create_kg_store()
     await graph_store.initialize()
 
-    # Document lookups always go to Neon (PgGraphStore).
-    # When the graph backend is AGE, we need a separate PgGraphStore for that.
+    # AGE runs on its own Docker DB and can't JOIN to the main documents table.
+    # When the graph backend is AGE, use a separate PgGraphStore for document lookups.
     if settings.kg_backend == "age":
         doc_store = PgGraphStore()
         await doc_store.initialize()

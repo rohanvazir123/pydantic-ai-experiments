@@ -497,7 +497,7 @@ async def main() -> None:
                 f"[green]Found {n} documents[/]\n"
                 f"[yellow]Estimated token usage: ~{est_tokens:,} tokens "
                 f"({n} docs × 5 windows × 1 500 tokens).[/]\n"
-                "[yellow]This uses the KG_LLM_MODEL (default: gpt-4o). "
+                f"[yellow]This uses KG_LLM_MODEL={settings.kg_llm_model or settings.llm_model}. "
                 "Press Ctrl-C now to abort, or wait 5 s to continue…[/]"
             )
             await asyncio.sleep(5)

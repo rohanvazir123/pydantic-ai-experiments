@@ -63,9 +63,9 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
     )
 
-    # PostgreSQL/Neon Configuration (pgvector)
+    # PostgreSQL Configuration (pgvector)
     database_url: str = Field(
-        default="", description="PostgreSQL connection string (Neon/Supabase/local)"
+        default="", description="PostgreSQL connection string"
     )
 
     postgres_table_documents: str = Field(
@@ -216,8 +216,8 @@ class Settings(BaseSettings):
     )
 
     # Knowledge Graph backend
-    # "postgres" — entity/relationship tables in the existing Neon DB (default, works now)
     # "age"      — Apache AGE Cypher graph (requires AGE container, see docker-compose.yml)
+    # "postgres" — entity/relationship SQL tables (legacy, no Cypher support)
     kg_backend: str = Field(
         default="age",
         description="Knowledge graph backend: 'age' (Apache AGE Cypher, default) or 'postgres' (SQL tables, legacy)",
@@ -238,23 +238,23 @@ class Settings(BaseSettings):
 
     # Vision Model Configuration (for multimodal processing)
     vision_model_provider: str = Field(
-        default="openai",
-        description="Vision model provider (openai, ollama, anthropic)",
+        default="ollama",
+        description="Vision model provider (ollama, openai, anthropic)",
     )
 
     vision_model: str = Field(
-        default="gpt-4o",
-        description="Vision model name (gpt-4o, gpt-4-vision-preview, llava, etc.)",
+        default="llava:latest",
+        description="Vision model name (llava:latest for Ollama, gpt-4o for OpenAI)",
     )
 
     vision_model_base_url: str | None = Field(
-        default="https://api.openai.com/v1",
+        default="http://localhost:11434/v1",
         description="Base URL for vision model API",
     )
 
     vision_model_api_key: str = Field(
-        default="",
-        description="API key for vision model (defaults to LLM_API_KEY if empty)",
+        default="ollama",
+        description="API key for vision model (use 'ollama' for local)",
     )
 
     vision_max_tokens: int = Field(
@@ -269,8 +269,8 @@ class Settings(BaseSettings):
     )
 
     # KG extraction LLM — dedicated model for one-time entity extraction.
-    # Defaults to the main LLM settings when not set, but set these to a
-    # capable model (e.g. gpt-4o) for accurate legal entity extraction.
+    # Defaults to the main LLM settings when not set.
+    # Set KG_LLM_MODEL=llama3.1:8b in .env for best local extraction quality.
     kg_llm_model: str = Field(
         default="",
         description="Model for KG extraction (defaults to llm_model when empty)",
@@ -297,6 +297,23 @@ class Settings(BaseSettings):
     image_description_detail: str = Field(
         default="high",
         description="Detail level for image descriptions (low, high, auto)",
+    )
+
+    # Extraction pipeline (Bronze/Silver/Gold)
+    kg_extraction_chunk_size: int = Field(
+        default=1500,
+        description="Characters per chunk for KG extraction (~1-3 clauses). "
+                    "Smaller = more focused extraction, more LLM calls.",
+    )
+    kg_confidence_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence for Silver layer promotion (0-1).",
+    )
+    kg_ontology_version: str = Field(
+        default="1.0",
+        description="Ontology version tag stored in Bronze artifacts.",
     )
 
 

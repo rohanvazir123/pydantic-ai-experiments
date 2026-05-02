@@ -97,13 +97,13 @@ class TestMem0StoreDatabaseParsing:
         """Test parsing URL with query parameters."""
         original = store.settings.database_url
         store.settings.database_url = (
-            "postgresql://user:pass@host.neon.tech:5432/neondb?sslmode=require"
+            "postgresql://user:pass@localhost:5434/rag_db?sslmode=require"
         )
 
         config = store._parse_database_url()
 
-        assert config["host"] == "host.neon.tech"
-        assert config["dbname"] == "neondb"
+        assert config["host"] == "localhost"
+        assert config["dbname"] == "rag_db"
 
         store.settings.database_url = original
 

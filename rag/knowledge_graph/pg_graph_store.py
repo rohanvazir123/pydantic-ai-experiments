@@ -5,7 +5,7 @@ Module: rag.knowledge_graph.pg_graph_store
 ==========================================
 
 Stores entities (nodes) and relationships (edges) for legal contract graphs
-directly in the existing Neon/PostgreSQL database — no Neo4j required.
+directly in PostgreSQL — no Neo4j required.
 
 Schema
 ------

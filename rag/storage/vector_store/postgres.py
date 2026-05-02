@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-PostgreSQL/Neon vector store implementation with pgvector and hybrid search.
+PostgreSQL vector store implementation with pgvector and hybrid search.
 
 Module: rag.storage.vector_store.postgres
 =========================================

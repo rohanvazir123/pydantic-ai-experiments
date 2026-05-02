@@ -39,6 +39,7 @@ from rag.knowledge_graph.pg_graph_store import PgGraphStore
 from rag.knowledge_graph.age_graph_store import AgeGraphStore
 from rag.knowledge_graph.cuad_kg_builder import CuadKgBuilder
 from rag.knowledge_graph.legal_extractor import LegalEntityExtractor
+from rag.knowledge_graph.extraction_pipeline import ExtractionPipeline
 
 
 from rag.config.settings import load_settings
@@ -50,7 +51,7 @@ def create_kg_store() -> AgeGraphStore | PgGraphStore:
 
     Reads ``KG_BACKEND`` from settings:
     - ``"age"``      (default) → AgeGraphStore  — Apache AGE Cypher graph (docker-compose)
-    - ``"postgres"`` (legacy)  → PgGraphStore   — entity/relationship SQL tables in Neon
+    - ``"postgres"`` (legacy)  → PgGraphStore   — entity/relationship SQL tables (no Cypher)
 
     Switching backends requires only one line in .env::
 
@@ -67,5 +68,6 @@ __all__ = [
     "AgeGraphStore",
     "CuadKgBuilder",
     "LegalEntityExtractor",
+    "ExtractionPipeline",
     "create_kg_store",
 ]

@@ -71,6 +71,42 @@ import asyncpg
 from rag.config.settings import load_settings
 from rag.knowledge_graph.pg_graph_store import _normalize
 
+# Allowed vertex labels — used as Cypher labels, so must be validated against
+# this allowlist to prevent Cypher injection.
+_VALID_LABELS: frozenset[str] = frozenset({
+    "Contract", "Section", "Clause", "Party", "Jurisdiction",
+    "EffectiveDate", "ExpirationDate", "RenewalTerm", "LiabilityClause",
+    "IndemnityClause", "PaymentTerm", "ConfidentialityClause",
+    "TerminationClause", "GoverningLawClause", "Obligation",
+    "Risk", "Amendment", "ReferenceDocument",
+})
+
+_VALID_REL_TYPES: frozenset[str] = frozenset({
+    "PARTY_TO", "SIGNED_BY", "GOVERNED_BY", "INDEMNIFIES",
+    "HAS_TERMINATION", "HAS_RENEWAL", "HAS_PAYMENT_TERM",
+    "REFERENCES", "AMENDS", "SUPERCEDES", "REPLACES",
+    "OBLIGATES", "LIMITS_LIABILITY", "DISCLOSES_TO", "HAS_CLAUSE",
+    "HAS_SECTION", "HAS_CHUNK", "ATTACHES", "INCORPORATES_BY_REFERENCE",
+    "GRANTS_LICENSE_TO", "OWES_OBLIGATION_TO", "ASSIGNS_IP_TO",
+    "CAN_TERMINATE", "HAS_LICENSE", "HAS_RESTRICTION", "HAS_IP_CLAUSE",
+    "HAS_LIABILITY", "HAS_PAYMENT", "HAS_OBLIGATION",
+    "EFFECTIVE_ON", "EXPIRES_ON", "HAS_DATE",
+    "INCREASES_RISK_FOR", "CAUSES",
+})
+
+
+def _safe_label(entity_type: str) -> str:
+    """Return entity_type if it is a known vertex label, else 'Clause'."""
+    cleaned = re.sub(r"[^A-Za-z]", "", entity_type)
+    return cleaned if cleaned in _VALID_LABELS else "Clause"
+
+
+def _safe_rel_type(rel_type: str) -> str | None:
+    """Return rel_type if valid, else None (caller should skip the edge)."""
+    cleaned = re.sub(r"[^A-Z0-9_]", "", rel_type.upper())
+    return cleaned if cleaned in _VALID_REL_TYPES else None
+
+
 def _parse_return_aliases(cypher: str) -> list[str]:
     """Extract display names from the RETURN clause for building the AGE AS list."""
     cypher = cypher.strip().rstrip(";")
@@ -243,28 +279,31 @@ class AgeGraphStore:
         document_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        """MERGE an Entity vertex; return its UUID property."""
+        """MERGE a typed vertex (e.g. :Party, :Contract); return its UUID property.
+
+        entity_type becomes the Cypher vertex label directly — validated against
+        _VALID_LABELS to prevent injection.  Falls back to :Clause for unknowns.
+        """
         assert self.pool, "Call initialize() first"
+        label      = _safe_label(entity_type)
         normalized = _normalize(name)
         entity_uuid = str(_uuid.uuid4())
-        doc_id_str = document_id or ""
-        # Use double-quoted Cypher string literals throughout — they are safe
-        # inside $$…$$ dollar-quoting and allow apostrophes without escaping.
-        # Only double-quotes in the value itself need escaping as \".
-        name_esc = name.replace("\\", "\\\\").replace('"', '\\"')
-        meta_esc = json.dumps(metadata or {}).replace("\\", "\\\\").replace('"', '\\"')
-        norm_esc = normalized.replace("\\", "\\\\").replace('"', '\\"')
+        doc_id_str  = document_id or ""
+        name_esc  = name.replace("\\", "\\\\").replace('"', '\\"')
+        meta_esc  = json.dumps(metadata or {}).replace("\\", "\\\\").replace('"', '\\"')
+        norm_esc  = normalized.replace("\\", "\\\\").replace('"', '\\"')
 
+        # Distinct label per entity type — label IS the type, no entity_type property.
+        # e.label stored as a property for label-agnostic traversals (MATCH (n) …).
+        # AGE 1.7: no ON CREATE SET, so use COALESCE to preserve existing uuid.
         cypher = (
-            f'MERGE (e:Entity {{'
+            f'MERGE (e:{label} {{'
             f'normalized_name: "{norm_esc}", '
-            f'entity_type: "{entity_type}", '
             f'document_id: "{doc_id_str}"'
             f'}}) '
-            # AGE 1.7 does not support ON CREATE SET — use COALESCE to
-            # preserve the existing uuid on MATCH, set a new one on CREATE.
             f'SET e.uuid = COALESCE(e.uuid, "{entity_uuid}"), '
             f'e.name = "{name_esc}", '
+            f'e.label = "{label}", '
             f'e.metadata = "{meta_esc}" '
             f'RETURN e.uuid'
         )
@@ -286,16 +325,21 @@ class AgeGraphStore:
         document_id: str | None = None,
         properties: dict[str, Any] | None = None,
     ) -> str:
-        """Create a directed edge between two Entity vertices (by UUID)."""
+        """Create a directed edge between two vertices (matched by uuid property)."""
         assert self.pool, "Call initialize() first"
+        safe_type = _safe_rel_type(relationship_type)
+        if safe_type is None:
+            logger.warning("Skipping unknown relationship type %r", relationship_type)
+            return ""
         doc_id_str = document_id or ""
-        props_esc = json.dumps(properties or {}).replace("\\", "\\\\").replace('"', '\\"')
-        rel_uuid = str(_uuid.uuid4())
+        props_esc  = json.dumps(properties or {}).replace("\\", "\\\\").replace('"', '\\"')
+        rel_uuid   = str(_uuid.uuid4())
 
+        # MATCH by uuid property — label-agnostic so it works with distinct labels.
         cypher = (
-            f'MATCH (s:Entity {{uuid: "{source_id}"}}), '
-            f'(t:Entity {{uuid: "{target_id}"}}) '
-            f'CREATE (s)-[r:{relationship_type} {{'
+            f'MATCH (s {{uuid: "{source_id}"}}), '
+            f'(t {{uuid: "{target_id}"}}) '
+            f'CREATE (s)-[r:{safe_type} {{'
             f'uuid: "{rel_uuid}", '
             f'document_id: "{doc_id_str}", '
             f'properties: "{props_esc}"'
@@ -338,35 +382,36 @@ class AgeGraphStore:
         query_esc = query.lower().replace("\\", "\\\\").replace('"', '\\"')
 
         if entity_type:
-            etype_esc = entity_type.replace("\\", "\\\\").replace('"', '\\"')
+            # Use the validated label as a Cypher label filter for performance.
+            label = _safe_label(entity_type)
             cypher = (
-                f'MATCH (e:Entity) '
-                f'WHERE e.entity_type = "{etype_esc}" '
-                f'AND toLower(e.name) CONTAINS "{query_esc}" '
-                f'RETURN e.uuid, e.name, e.entity_type, e.document_id '
+                f'MATCH (e:{label}) '
+                f'WHERE toLower(e.name) CONTAINS "{query_esc}" '
+                f'RETURN e.uuid, e.name, e.label, e.document_id '
                 f'LIMIT {limit}'
             )
         else:
+            # No label filter — scans all vertex tables.
             cypher = (
-                f'MATCH (e:Entity) '
+                f'MATCH (e) '
                 f'WHERE toLower(e.name) CONTAINS "{query_esc}" '
-                f'RETURN e.uuid, e.name, e.entity_type, e.document_id '
+                f'RETURN e.uuid, e.name, e.label, e.document_id '
                 f'LIMIT {limit}'
             )
 
         async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
-                + " AS (uuid agtype, name agtype, entity_type agtype, document_id agtype)"
+                + " AS (uuid agtype, name agtype, label agtype, document_id agtype)"
             )
 
         return [
             {
                 "id": _unquote_agtype(r["uuid"]),
                 "name": _unquote_agtype(r["name"]),
-                "entity_type": _unquote_agtype(r["entity_type"]),
+                "entity_type": _unquote_agtype(r["label"]),
                 "document_id": _unquote_agtype(r["document_id"]) or None,
-                "document_title": None,  # would need a JOIN to documents table
+                "document_title": None,
             }
             for r in rows
         ]
@@ -382,30 +427,31 @@ class AgeGraphStore:
 
         eid_esc = entity_id.replace("\\", "\\\\").replace('"', '\\"')
         if relationship_type:
+            safe_type = _safe_rel_type(relationship_type) or "HAS_CLAUSE"
             cypher = (
-                f'MATCH (s:Entity {{uuid: "{eid_esc}"}})'
-                f'-[r:{relationship_type}]-(t:Entity) '
-                f'RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type '
+                f'MATCH (s {{uuid: "{eid_esc}"}})'
+                f'-[r:{safe_type}]-(t) '
+                f'RETURN t.uuid, t.name, t.label, type(r) AS rel_type '
                 f'LIMIT {limit}'
             )
         else:
             cypher = (
-                f'MATCH (s:Entity {{uuid: "{eid_esc}"}})-[r]-(t:Entity) '
-                f'RETURN t.uuid, t.name, t.entity_type, type(r) AS rel_type '
+                f'MATCH (s {{uuid: "{eid_esc}"}})-[r]-(t) '
+                f'RETURN t.uuid, t.name, t.label, type(r) AS rel_type '
                 f'LIMIT {limit}'
             )
 
         async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
-                + " AS (uuid agtype, name agtype, entity_type agtype, rel_type agtype)"
+                + " AS (uuid agtype, name agtype, label agtype, rel_type agtype)"
             )
 
         return [
             {
                 "id": _unquote_agtype(r["uuid"]),
                 "name": _unquote_agtype(r["name"]),
-                "entity_type": _unquote_agtype(r["entity_type"]),
+                "entity_type": _unquote_agtype(r["label"]),
                 "relationship_type": _unquote_agtype(r["rel_type"]),
             }
             for r in rows
@@ -423,17 +469,17 @@ class AgeGraphStore:
         norm_esc = normalized.replace("\\", "\\\\").replace('"', '\\"')
 
         if entity_type:
-            etype_esc = entity_type.replace("\\", "\\\\").replace('"', '\\"')
+            label = _safe_label(entity_type)
             cypher = (
-                f'MATCH (e:Entity {{normalized_name: "{norm_esc}", entity_type: "{etype_esc}"}})'
-                f'-[r]->(c:Entity {{entity_type: "Contract"}}) '
+                f'MATCH (e:{label} {{normalized_name: "{norm_esc}"}})'
+                f'-[r]->(c:Contract) '
                 f'RETURN DISTINCT c.name, c.document_id '
                 f'LIMIT {limit}'
             )
         else:
             cypher = (
-                f'MATCH (e:Entity {{normalized_name: "{norm_esc}"}})'
-                f'-[r]->(c:Entity {{entity_type: "Contract"}}) '
+                f'MATCH (e {{normalized_name: "{norm_esc}"}})'
+                f'-[r]->(c:Contract) '
                 f'RETURN DISTINCT c.name, c.document_id '
                 f'LIMIT {limit}'
             )
@@ -461,18 +507,18 @@ class AgeGraphStore:
         query_esc = query.lower().replace("\\", "\\\\").replace('"', '\\"')
 
         cypher = (
-            f'MATCH (e:Entity)-[r]->(t:Entity) '
+            f'MATCH (e)-[r]->(t) '
             f'WHERE toLower(e.name) CONTAINS "{query_esc}" '
             f'   OR toLower(t.name) CONTAINS "{query_esc}" '
-            f'RETURN e.name, e.entity_type, type(r) AS rel, t.name, t.entity_type '
+            f'RETURN e.name, e.label, type(r) AS rel, t.name, t.label '
             f'LIMIT {limit}'
         )
 
         async with self._conn() as conn:
             rows = await conn.fetch(
                 self._cypher(cypher)
-                + " AS (src_name agtype, src_type agtype, rel agtype,"
-                  " tgt_name agtype, tgt_type agtype)"
+                + " AS (src_name agtype, src_label agtype, rel agtype,"
+                  " tgt_name agtype, tgt_label agtype)"
             )
 
         if not rows:
@@ -483,9 +529,9 @@ class AgeGraphStore:
             return "## Knowledge Graph — Entities\n" + "\n".join(lines)
 
         lines = [
-            f"- [{_unquote_agtype(r['src_type'])}] {_unquote_agtype(r['src_name'])} "
+            f"- [{_unquote_agtype(r['src_label'])}] {_unquote_agtype(r['src_name'])} "
             f"--{_unquote_agtype(r['rel'])}--> "
-            f"[{_unquote_agtype(r['tgt_type'])}] {_unquote_agtype(r['tgt_name'])}"
+            f"[{_unquote_agtype(r['tgt_label'])}] {_unquote_agtype(r['tgt_name'])}"
             for r in rows
         ]
         return "## Knowledge Graph — Facts\n" + "\n".join(lines)
@@ -497,8 +543,8 @@ class AgeGraphStore:
         async with self._conn() as conn:
             vertex_rows = await conn.fetch(
                 self._cypher(
-                    "MATCH (e:Entity) RETURN e.entity_type, count(*) AS cnt"
-                ) + " AS (entity_type agtype, cnt agtype)"
+                    "MATCH (e) RETURN e.label, count(*) AS cnt"
+                ) + " AS (label agtype, cnt agtype)"
             )
             edge_rows = await conn.fetch(
                 self._cypher(
@@ -507,7 +553,7 @@ class AgeGraphStore:
             )
 
         entities_by_type = {
-            _unquote_agtype(r["entity_type"]): int(_unquote_agtype(r["cnt"]))
+            _unquote_agtype(r["label"]): int(_unquote_agtype(r["cnt"]))
             for r in vertex_rows
         }
         rels_by_type = {
