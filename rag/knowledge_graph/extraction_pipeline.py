@@ -249,12 +249,23 @@ def _make_agent(system_prompt: str) -> Agent:
     return Agent(model, system_prompt=system_prompt)
 
 
+def _clean_json(s: str) -> str:
+    """Best-effort repair of common llama3.1 JSON output issues."""
+    # Strip control characters (except \t \n \r which are valid in JSON strings)
+    s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", s)
+    # Remove trailing commas before ] or } (JSON5 style — not valid JSON)
+    s = re.sub(r",\s*([}\]])", r"\1", s)
+    return s
+
+
 def _parse_json(raw: str) -> dict:
     """Strip markdown fences, find and parse the first complete JSON object.
 
-    Uses raw_decode so trailing content after the first object is ignored
-    (handles llama3.1 occasionally emitting multiple objects or extra prose).
-    Falls back to strict=False for control-character issues.
+    Handles the four llama3.1 failure modes observed in production:
+      1. Extra data  — multiple JSON objects in output (raw_decode stops at first)
+      2. Control chars — raw_decode fails; strip and retry
+      3. Trailing commas — JSON5-style `[...,]` / `{...,}` — strip and retry
+      4. General malformed — return {} so the chunk is skipped gracefully
     """
     raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.MULTILINE)
     raw = re.sub(r"\s*```$", "", raw.strip(), flags=re.MULTILINE)
@@ -262,14 +273,14 @@ def _parse_json(raw: str) -> dict:
     if start == -1:
         return {}
     decoder = json.JSONDecoder()
-    # Try raw_decode first (stops at end of first valid object)
+    # Pass 1: raw_decode on original (handles extra-data case)
     try:
         obj, _ = decoder.raw_decode(raw, start)
         return obj if isinstance(obj, dict) else {}
     except json.JSONDecodeError:
         pass
-    # Fallback: strip control characters and retry
-    cleaned = re.sub(r"[\x00-\x1f\x7f]", " ", raw[start:])
+    # Pass 2: clean (control chars + trailing commas) then raw_decode
+    cleaned = _clean_json(raw[start:])
     try:
         obj, _ = decoder.raw_decode(cleaned)
         return obj if isinstance(obj, dict) else {}
@@ -418,15 +429,21 @@ class SilverNormalizer:
             """)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS kg_canonical_entities (
-                    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    contract_id    UUID NOT NULL,
-                    label          TEXT NOT NULL,
-                    canonical_name TEXT NOT NULL,
-                    confidence     FLOAT NOT NULL,
-                    evidence_count INT NOT NULL DEFAULT 1,
-                    created_at     TIMESTAMPTZ DEFAULT NOW(),
+                    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    contract_id          UUID NOT NULL,
+                    label                TEXT NOT NULL,
+                    canonical_name       TEXT NOT NULL,
+                    confidence           FLOAT NOT NULL,
+                    evidence_count       INT NOT NULL DEFAULT 1,
+                    source_chunk_indices JSONB NOT NULL DEFAULT '[]',
+                    created_at           TIMESTAMPTZ DEFAULT NOW(),
                     UNIQUE (contract_id, label, canonical_name)
                 )
+            """)
+            # Migrate existing tables that predate source_chunk_indices
+            await conn.execute("""
+                ALTER TABLE kg_canonical_entities
+                ADD COLUMN IF NOT EXISTS source_chunk_indices JSONB NOT NULL DEFAULT '[]'
             """)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS kg_canonical_relationships (
@@ -503,20 +520,45 @@ class SilverNormalizer:
             # Also map by (label, normalized_name) for cross-chunk resolution
             name_label_to_canonical: dict[tuple[str, str], str] = {}
 
+            # Build chunk index map BEFORE the insert loop:
+            # (label, normalized_name) → sorted list of chunk indices
+            _ci_rows = await conn.fetch(
+                "SELECT label, canonical_name, chunk_index"
+                " FROM kg_staging_entities WHERE contract_id = $1::uuid",
+                contract_id,
+            )
+            chunk_idx_map: dict[tuple[str, str], list[int]] = {}
+            for r in _ci_rows:
+                k = (r["label"], _normalize(r["canonical_name"]))
+                chunk_idx_map.setdefault(k, []).append(r["chunk_index"])
+
             for row in staging_ents:
+                key = (row["label"], _normalize(row["canonical_name"]))
+                chunk_indices = json.dumps(sorted(set(chunk_idx_map.get(key, []))))
                 canonical_id_row = await conn.fetchrow(
                     """
                     INSERT INTO kg_canonical_entities
-                        (contract_id, label, canonical_name, confidence, evidence_count)
-                    VALUES ($1::uuid, $2, $3, $4, 1)
+                        (contract_id, label, canonical_name, confidence,
+                         evidence_count, source_chunk_indices)
+                    VALUES ($1::uuid, $2, $3, $4, 1, $5::jsonb)
                     ON CONFLICT (contract_id, label, canonical_name)
                     DO UPDATE SET
-                        confidence     = GREATEST(kg_canonical_entities.confidence,
-                                                  EXCLUDED.confidence),
-                        evidence_count = kg_canonical_entities.evidence_count + 1
+                        confidence           = GREATEST(kg_canonical_entities.confidence,
+                                                        EXCLUDED.confidence),
+                        evidence_count       = kg_canonical_entities.evidence_count + 1,
+                        source_chunk_indices = (
+                            SELECT jsonb_agg(DISTINCT val ORDER BY val)
+                            FROM (
+                                SELECT jsonb_array_elements_text(
+                                    kg_canonical_entities.source_chunk_indices
+                                    || EXCLUDED.source_chunk_indices
+                                )::int AS val
+                            ) t
+                        )
                     RETURNING id
                     """,
-                    contract_id, row["label"], row["canonical_name"], row["confidence"],
+                    contract_id, row["label"], row["canonical_name"],
+                    row["confidence"], chunk_indices,
                 )
                 cid = str(canonical_id_row["id"])
                 raw_to_canonical[row["entity_id_raw"]] = cid

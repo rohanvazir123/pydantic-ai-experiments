@@ -394,6 +394,102 @@ RETURN c.name
 
 ---
 
+## Hybrid Retrieval Architecture
+
+The system answers questions by routing through two parallel paths and fusing
+the results.
+
+```
+USER QUERY
+     │
+     ▼
+Intent Classification  (rag/retrieval/intent_classifier.py)
+     │
++----+----+
+│         │
+▼         ▼
+Semantic  Structured
+Retrieval Reasoning
+(tsvector (KG / AGE /
++ pgvector  SQL)
++ RRF)
+│         │
++----+----+
+     │
+     ▼
+Context Fusion Layer
+     │
+     ▼
+Final LLM Reasoning
+```
+
+### Intent Classification
+
+Three intents drive which paths activate:
+
+| Intent | When | Paths active |
+|---|---|---|
+| `HYBRID` | Default — clause text questions | Both paths in parallel |
+| `STRUCTURED` | Count/aggregate/distribution queries | KG/SQL only |
+| `SEMANTIC` | Pure text retrieval | Vector + BM25 only |
+
+Signals for `STRUCTURED`: "how many", "distribution of", "average number",
+"which year", "ratio of", "most common", "top N". If the query also contains
+text-retrieval words ("exact language", "what does the clause say") it stays
+`HYBRID` even if count patterns are present.
+
+### Semantic Retrieval Path
+
+Existing `Retriever` class — unchanged. Runs pgvector cosine similarity +
+PostgreSQL tsvector BM25, merges with RRF (k=60), optionally reranks.
+
+### Structured Reasoning Path
+
+`HybridKGRetriever._structured_retrieve()` in `rag/retrieval/hybrid_kg_retriever.py`:
+
+1. `kg_store.search_entities(query, limit=10)` — name substring match in AGE.
+2. For each matched entity (cap 5): `kg_store.get_related_entities(id, limit=5)`.
+3. Returns `list[dict]` with entity and relationship facts.
+
+### Source Chunk Index Tracking
+
+Each canonical entity in `kg_canonical_entities` carries a
+`source_chunk_indices JSONB` column — the chunk indices from which that entity
+was extracted. Foundation for KG→chunk boosting in a future RRF step:
+
+```
+KG entity hit → source_chunk_indices → chunk UUIDs
+    → add to RRF list alongside vector + BM25 hits
+```
+
+### Context Fusion
+
+`_fuse()` produces one context block with KG facts above text passages.
+The agent tool `search_hybrid_kg` returns this block directly to the LLM.
+
+### Agent Tool
+
+```python
+@agent.tool
+async def search_hybrid_kg(ctx, query, match_count=5) -> str
+```
+
+Prefer this over calling `search_knowledge_base` + `search_knowledge_graph`
+separately for questions requiring both clause text and graph facts.
+
+### Test Suite
+
+```bash
+# Unit tests (mocked, no external deps):
+pytest rag/tests/test_hybrid_kg_retrieval.py -v
+
+# Integration tests + record all 100 answers for review:
+pytest rag/tests/test_hybrid_kg_retrieval.py -m integration --record-answers -v
+# → docs/qa_results/hybrid_kg_results.json
+```
+
+---
+
 ## Implementation Notes
 
 - **Do not insert LLM output directly into AGE.** Always go Bronze → Silver → Gold.

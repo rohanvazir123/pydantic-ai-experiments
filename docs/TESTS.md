@@ -53,6 +53,7 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_api.py` | 14 | None (all mocked) | FastAPI REST API endpoint tests (chat, stream, ingest, health) |
 | `test_mcp_server.py` | 21 | None (all mocked) | MCP server tool tests (search, retrieve, ingest, health) |
 | `test_cuad_ingestion.py` | 34 | None (all mocked/unit) | CUAD dataset ingestion — parsing, file extraction, eval pairs, pipeline wiring |
+| `test_hybrid_kg_retrieval.py` | 19 unit + 40 integration | None (unit) / PostgreSQL + AGE + Ollama (integration) | Hybrid KG + text retrieval: intent classifier, fusion, 100 HYBRID_KG_QUESTIONS |
 
 ---
 
@@ -355,6 +356,48 @@ Tests cover (`TestExtractQuestionType`, `TestExtractContractType`, `TestSafeFile
 - `TestSaveEvalPairs` — saves Q&A evaluation pairs to `rag/legal/cuad_eval.json`
 - `TestRunIngestion` — full pipeline mock: load → write → ingest with `--limit`, `--dry-run`, `--no-clean`
 
+#### Hybrid KG Retrieval Tests
+```bash
+# Unit tests (mocked — no external deps):
+python -m pytest rag/tests/test_hybrid_kg_retrieval.py -v -k "not integration"
+
+# Integration tests + record all 100 answers for review:
+python -m pytest rag/tests/test_hybrid_kg_retrieval.py -m integration --record-answers -v
+```
+
+**Requirements:** Unit tests: none. Integration tests: PostgreSQL (port 5434) + Apache AGE (port 5433) + Ollama.
+
+Tests cover:
+
+**`TestIntentClassifier`** (9 tests) — verifies `IntentClassifier.classify()` routing:
+- `test_analytical_query_returns_structured` — "how many contracts" → STRUCTURED
+- `test_count_query_returns_structured` — "distribution of" → STRUCTURED
+- `test_average_query_returns_structured` — "average number" → STRUCTURED
+- `test_clause_text_with_count_returns_hybrid` — "how many clauses say X" → HYBRID (text needed)
+- `test_default_returns_hybrid` — default for clause questions → HYBRID
+- `test_needs_semantic_*` / `test_needs_structured_*` — path activation flags
+
+**`TestFuse`** (4 tests) — verifies `_fuse()` context assembly:
+- `test_fuse_with_both_paths` — KG facts section + text passages section both present
+- `test_fuse_kg_only` — structured intent produces KG section only
+- `test_fuse_text_only` — semantic intent produces passages section only
+- `test_fuse_empty_returns_no_results_message` — graceful empty state
+
+**`TestHybridKGRetriever`** (6 tests) — verifies `HybridKGRetriever.retrieve()`:
+- `test_hybrid_intent_runs_both_paths` — asyncio.gather runs semantic + structured
+- `test_structured_intent_skips_semantic_path` — retriever.retrieve NOT called
+- `test_kg_failure_degrades_gracefully` — AGE connection error → semantic path still returns
+- `test_fused_context_not_empty` — non-empty context when results exist
+- `test_explicit_intent_override` — intent kwarg bypasses classifier
+- `test_relationship_facts_included` — relationships appear in fused context
+
+**Integration tests** (40 tests, `@pytest.mark.integration`):
+- `test_party_contract_questions[1-15]` — Party & Contract Relationship queries
+- `test_analytical_questions[89-100]` — NL-to-Cypher / Analytical queries
+- `test_multi_hop_graph_questions[76-88]` — Cross-Domain / Multi-Hop Graph queries
+
+**Answer recording** — pass `--record-answers` to save all results to `docs/qa_results/hybrid_kg_results.json` for manual review.
+
 ---
 
 ## Test Categories
@@ -365,6 +408,7 @@ python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py \
     rag/tests/test_pg_graph_store.py rag/tests/test_age_graph_store.py \
     rag/tests/test_legal_retrieval.py rag/tests/test_api.py \
     rag/tests/test_mcp_server.py rag/tests/test_cuad_ingestion.py \
+    rag/tests/test_hybrid_kg_retrieval.py \
     -v -k "not Integration"
 ```
 
@@ -405,6 +449,9 @@ AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph \
 
 # Legal retrieval
 python -m pytest rag/tests/test_legal_retrieval.py -v
+
+# Hybrid KG retrieval (unit only, no external deps):
+python -m pytest rag/tests/test_hybrid_kg_retrieval.py -v -k "not integration"
 ```
 
 #### Retrieval Metrics Tests
@@ -649,6 +696,9 @@ python -m pytest rag/tests/test_mcp_server.py -v
 # CUAD ingestion (all mocked, no external deps)
 python -m pytest rag/tests/test_cuad_ingestion.py -v
 
+# Hybrid KG retrieval (unit tests, no external deps)
+python -m pytest rag/tests/test_hybrid_kg_retrieval.py -v -k "not integration"
+
 # Everything
 python -m pytest rag/tests/ -v
 ```
@@ -674,10 +724,11 @@ python -m pytest rag/tests/ -v
 | `test_api.py` | 14 | 0 | All unit/mocked, no external deps |
 | `test_mcp_server.py` | 21 | 0 | All unit/mocked, no external deps |
 | `test_cuad_ingestion.py` | 34 | 0 | All unit/mocked, no external deps |
+| `test_hybrid_kg_retrieval.py` | 19 unit passed | 40 (unless PostgreSQL + AGE + Ollama live) | `--record-answers` saves docs/qa_results/hybrid_kg_results.json |
 
-**Current totals (full suite, live services):** ~366 passed, 12 skipped, 0 failed
+**Current totals (full suite, live services):** ~385 passed, 52 skipped, 0 failed
 
-The 12 skipped tests are all integration tests that require live services not always available:
+The 52 skipped tests are all integration tests that require live services not always available:
 - Mem0 integration tests (require `MEM0_ENABLED=true`)
 - AGE graph integration test (requires `AGE_DATABASE_URL`)
 - Legal retrieval integration tests (require Neon + Ollama)

@@ -407,6 +407,73 @@ async def search_knowledge_graph(
 
 
 @agent.tool
+async def search_hybrid_kg(
+    ctx: PydanticRunContext,
+    query: str,
+    match_count: int = 5,
+) -> str:
+    """
+    Run both semantic retrieval (vector + BM25 + RRF) and KG structured reasoning
+    in parallel, then fuse the results into a single context block.
+
+    Use this tool for questions that need both:
+    - Clause text / supporting passages (semantic path)
+    - Graph facts: parties, jurisdictions, relationships (KG path)
+
+    For example:
+    - "Which parties in contracts governed by Delaware law indemnify each other,
+       and what do those indemnification clauses say?"
+    - "Find termination clauses in contracts where Google is a party"
+
+    Args:
+        ctx:         Agent runtime context.
+        query:       Natural-language question.
+        match_count: Number of text chunks from the semantic path (default: 5).
+
+    Returns:
+        Fused context block: KG facts section + text passages section.
+    """
+    from rag.retrieval.hybrid_kg_retriever import HybridKGRetriever
+
+    deps = ctx.deps
+    state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
+
+    local_kg = None
+    local_retriever = None
+    try:
+        if state is not None and isinstance(state, RAGState):
+            retriever = await state.get_retriever()
+            kg = await state.get_kg_store()
+        else:
+            from rag.knowledge_graph import create_kg_store
+            from rag.retrieval.retriever import Retriever
+            local_retriever = Retriever()
+            local_kg = create_kg_store()
+            await local_kg.initialize()
+            retriever = local_retriever
+            kg = local_kg
+
+        hybrid = HybridKGRetriever(retriever=retriever, kg_store=kg)
+        result = await hybrid.retrieve(query, match_count=match_count)
+        logger.info(
+            "[search_hybrid_kg] intent=%s chunks=%d kg_facts=%d",
+            result.intent,
+            len(result.text_chunks),
+            len(result.kg_facts),
+        )
+        return result.fused_context
+
+    except Exception as e:
+        logger.exception("Error in search_hybrid_kg: %s", e)
+        return f"Error running hybrid KG search: {e}"
+    finally:
+        if local_kg is not None:
+            await local_kg.close()
+        if local_retriever is not None:
+            await local_retriever.close()
+
+
+@agent.tool
 async def run_graph_query(
     ctx: PydanticRunContext,
     cypher: str,

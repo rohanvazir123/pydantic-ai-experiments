@@ -103,7 +103,13 @@
       "Bash(LLM_MODEL=gpt-4o LLM_BASE_URL=https://api.openai.com/v1 KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --limit 3 --verbose)",
       "Bash(KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force)",
       "Bash(KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force --limit 2 --verbose)",
-      "Bash(NO_COLOR=1 KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force --limit 5 --verbose)"
+      "Bash(NO_COLOR=1 KG_BACKEND=postgres python -m rag.knowledge_graph.legal_extractor --extract --force --limit 5 --verbose)",
+      "Bash(cd /c)",
+      "Bash(find \"C:\\\\\\\\Users\\\\\\\\rohan\\\\\\\\Documents\\\\\\\\ai_agents\\\\\\\\pydantic-ai-experiments\" -type f -name \"*.py\")",
+      "Bash(Get-ChildItem *)",
+      "Bash(findstr /n \"pytest\\\\|asyncio\" pytest.ini setup.cfg)",
+      "Bash(cat pytest.ini)",
+      "Bash(ls *.ini *.cfg)"
     ]
   },
   "enableAllProjectMcpServers": true,

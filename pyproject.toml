@@ -29,6 +29,12 @@ dependencies = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "integration: requires live PostgreSQL + AGE + Ollama (deselect with -m 'not integration')",
+]
+
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.3.0",
