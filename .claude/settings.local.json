@@ -114,7 +114,13 @@
       "Bash(Select-Object Name)",
       "Bash(Format-Table -HideTableHeaders)",
       "Bash(grep -v \"^[0-9]\\\\{1,3\\\\}:## [0-9]\\\\{1,2\\\\}\\\\.\")",
-      "Bash(docker manifest *)"
+      "Bash(docker manifest *)",
+      "Bash(docker volume *)",
+      "Bash(findstr age *)",
+      "Bash(Get-Content *)",
+      "PowerShell(Get-Process *)",
+      "Bash(sed -i 's|See `docs/KG_PIPELINE.md`|See `kg/docs/KG_PIPELINE.md`|g' kg/docs/KG_FAQ.md)",
+      "Bash(sed -i 's|\\\\*\\\\*\\\\[docs/kg/GRAPH_VIEWER.md\\\\]\\(GRAPH_VIEWER.md\\)\\\\*\\\\*|**[GRAPH_VIEWER.md]\\(GRAPH_VIEWER.md\\)**|g' kg/docs/KG_FAQ.md)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -1,11 +1,51 @@
 # Knowledge Graph Pipeline — FAQ & Findings
 
 Living document. Updated as we run experiments and make architectural changes.
-See `docs/KG_PIPELINE.md` for the full design reference.
+See `kg/docs/KG_PIPELINE.md` for the full design reference.
 
 ---
 
 ## Architecture decisions
+
+### Why Apache AGE over the original kg_entities / kg_relationships tables?
+
+**Short answer: multi-hop traversal, LLM-driven ad-hoc Cypher queries, and native graph semantics.**
+
+#### What the table approach gave us
+
+`PgGraphStore` stored the graph in two plain PostgreSQL tables: `kg_entities` and `kg_relationships`.  Writes were simple `INSERT … ON CONFLICT DO UPDATE`.  Reads used SQL JOINs and `to_tsvector` full-text search.  No extra infrastructure needed.
+
+#### What broke down
+
+**Multi-hop traversal requires recursive CTEs.**  A single-hop "give me entities connected to X" is one JOIN.  Two hops is three JOINs.  Variable-depth paths (`*1..3`) need a `WITH RECURSIVE` block that is hard to write, hard to read, and not what the LLM produces via nl2cypher.
+
+**`run_cypher_query` cannot be implemented.**  The LLM-to-graph pipeline (`nl2cypher` → `run_graph_query` tool → AGE) lets the agent write arbitrary read-only Cypher at query time.  `PgGraphStore.run_cypher_query` returns a hardcoded error — there is no equivalent without a graph engine.
+
+**Type filtering is a column value, not schema.**  In PgGraphStore, `entity_type = 'Party'` is a `WHERE` filter on a shared 
+table.  In AGE, `:Party` is an indexed vertex label — the planner prunes non-Party vertex tables before touching properties.
+
+#### Concrete wins in AgeGraphStore
+
+| Capability | PgGraphStore | AgeGraphStore |
+|---|---|---|
+| 1-hop neighbour query | 1 JOIN | `MATCH (s)-[r]-(t)` |
+| 2-hop path | 3 JOINs | `MATCH (a)-[*1..2]->(b)` |
+| Variable-depth path | Recursive CTE | `MATCH (a)-[*1..N]->(b)` |
+| LLM ad-hoc queries | Not possible (`run_cypher_query` returns error) | `run_cypher_query` executes Cypher |
+| Type-filtered scan | `WHERE entity_type = ?` on full table | `MATCH (e:Party)` — label-pruned |
+| Graph pattern matching | Multi-table JOIN chain | `MATCH (p:Party)-[:PARTY_TO]->(c:Contract)-[:GOVERNED_BY_LAW]->(j:Jurisdiction)` |
+
+#### What we gave up
+
+- **Full-text search** — `to_tsvector` / GIN index is unavailable in AGE.  We fell back to `toLower() CONTAINS` substring scan (`search_entities`, `search_as_context`).
+- **Simpler connection management** — every connection needs `LOAD 'age'` and `SET search_path = ag_catalog` (handled by the `_conn()` context manager and pool `init=_age_init`).
+- **A separate Docker container** — AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main Neon / pgvector DB.
+
+#### Why PgGraphStore still exists
+
+`PgGraphStore` is kept as the `doc_store` in `CuadKgBuilder` because it needs to JOIN against the `documents` table which lives in the main PostgreSQL DB (port 5434).  AGE runs on a separate Docker instance (port 5433) and cannot cross-database JOIN.  All graph traversal and LLM query work goes through `AgeGraphStore`.
+
+---
 
 ### How many AGE graphs are created? Can I view them with Apache AGE Viewer?
 
@@ -45,16 +85,48 @@ docker compose up -d age age-viewer
 
 Then open **http://localhost:3001** and connect with:
 
-| Field | Value |
-|---|---|
-| Host | `host.docker.internal` (Docker Desktop on Windows/Mac) |
-| Port | `5433` |
-| Database | `legal_graph` |
-| User | `age_user` |
-| Password | `age_pass` |
+| Field      | Value         |
+|------------|---------------|
+| Host       | `age`         |
+| Port       | `5432`        |
+| Database   | `legal_graph` |
+| User       | `age_user`    |
+| Password   | `age_pass`    |
+| Graph Path | `legal_graph` |
 
-For Cypher queries for all four graphs (hierarchy, semantic, lineage, risk) see
-**[docs/kg/GRAPH_VIEWER.md](GRAPH_VIEWER.md)**.
+#### Cypher queries for all four graphs
+
+Paste these directly into the AGE Viewer (Chrome) query box:
+
+**1. Legal Semantic Graph** — parties, jurisdictions, clause types, indemnification
+```cypher
+MATCH (c:Contract)-[r]->(n)
+RETURN c, r, n
+LIMIT 60
+```
+
+**2. Document Hierarchy Graph** — contract → section → clause structure
+```cypher
+MATCH (c:Contract)-[:HAS_SECTION]->(s:Section)-[:HAS_CLAUSE]->(cl:Clause)
+RETURN c, s, cl
+LIMIT 80
+```
+
+**3. Cross-Contract Lineage Graph** — amendments, supersessions, references
+```cypher
+MATCH (c1:Contract)-[r:AMENDS|SUPERCEDES|REPLACES|REFERENCES|INCORPORATES_BY_REFERENCE|ATTACHES]->(c2)
+RETURN c1, r, c2
+LIMIT 60
+```
+
+**4. Risk Dependency Graph** — compliance gaps and risk cascades
+```cypher
+MATCH (r:Risk)-[rel]->(n)
+RETURN r, rel, n
+LIMIT 60
+```
+
+For extended queries and filter examples see **[GRAPH_VIEWER.md](GRAPH_VIEWER.md)**.
 
 ---
 
@@ -242,6 +314,60 @@ The same principle applies to the read-only guardrail in `run_graph_query`: `age
 ---
 
 
+### What is the CUAD fast ingest and why is it so much faster than LLM extraction?
+
+**Short answer: no LLM involved — it reads pre-built human annotations from a JSON file and reformats them into AGE.**
+
+#### What CUAD is
+
+[CUAD](https://huggingface.co/datasets/theatticusproject/cuad) (Contract Understanding Atticus Dataset) is a public legal NLP benchmark released by the Atticus Project — a group of lawyers and ML researchers.  They manually annotated 510 commercial contracts from SEC EDGAR filings for 41 specific clause types: parties, governing law, termination provisions, renewal terms, liability caps, indemnification, etc.  The annotations ship as `cuad_eval.json`.
+
+#### What `cuad_kg_ingest.py` does
+
+`build_cuad_kg()` in `kg/cuad_kg_ingest.py` reads `cuad_eval.json` and calls `AgeGraphStore.upsert_entity()` / `add_relationship()` directly — no chunking, no LLM calls, no Bronze/Silver pipeline.  It is a pure format conversion: CUAD annotation → AGE vertex/edge.
+
+#### Why it finishes in minutes vs days
+
+| Step | LLM extraction | CUAD ingest |
+|---|---|---|
+| Read contract text | Yes (1500-char chunks) | No |
+| LLM call per chunk | 5 passes × N chunks × 522 contracts | None |
+| Parse + validate JSON | Yes (`_parse_json` repair loop) | No |
+| Bronze → Silver dedup | Yes | No |
+| Write to AGE | Yes (Gold projection) | Yes (directly) |
+| **Bottleneck** | Local Ollama inference (~20 s/call) | Disk I/O + asyncpg inserts |
+
+LLM extraction at ~15 min/contract = ~5 days for 522 contracts.  CUAD ingest = minutes.
+
+#### Trade-offs
+
+| | CUAD ingest | LLM extraction |
+|---|---|---|
+| Speed | Minutes | Days (local) / Hours (API) |
+| Coverage | 41 fixed clause types only | Any entity the LLM can name |
+| Quality | Human-annotated (high precision) | Model-dependent (variable) |
+| Cross-contract lineage | Not in CUAD annotations | Extracted by cross-ref pass |
+| Risk graph | Not in CUAD (built separately) | Built by `RiskGraphBuilder` post-Gold |
+
+#### Recommended workflow
+
+1. **Always run CUAD ingest first** — gives a high-quality, complete graph in minutes.
+2. **Run LLM extraction selectively** — use `--limit N` or `--contract-id` to enrich specific high-value contracts with lineage and relationship data not covered by CUAD annotations.
+3. **Run `RiskGraphBuilder`** — rule-based risk inference runs on top of whatever Silver data exists (CUAD or LLM), no LLM needed.
+
+```powershell
+# Step 1: Fast graph from CUAD annotations (minutes)
+python -m kg.cuad_kg_ingest
+
+# Step 2: Optional — LLM enrichment for a handful of contracts
+python -m kg.extraction_pipeline --limit 20
+
+# Step 3: Risk graph over whatever Silver data exists
+# (automatically called by ExtractionPipeline — or call standalone)
+```
+
+---
+
 ### Why Bronze / Silver / Gold instead of writing directly to AGE?
 
 Direct LLM → AGE inserts are dangerous: you get hallucinated edges, duplicate
@@ -399,8 +525,9 @@ Full CUAD at this rate is not feasible on a single machine.  See scaling options
 - [ ] **Cross-contract name resolution** — Silver layer should fuzzy-match
   `target_document_name` from cross-ref extraction to known `contract_id` values
   in the `documents` table.  Currently stored but not resolved.
-- [ ] **Risk Dependency Graph** — rule-based inference on entity graph:
-  "no IndemnityClause → ComplianceRisk node"; separate from LLM extraction
+- [x] **Risk Dependency Graph** — implemented in `kg/risk_graph_builder.py` (2026-05-03).
+  Rule-based gap detection on Silver canonical entities → Risk vertices + `INCREASES_RISK_FOR` /
+  `CAUSES` edges in AGE.  Called automatically by `ExtractionPipeline` after Gold projection.
 - [ ] **Incremental Bronze** — skip chunks already in `kg_raw_extractions` for
   the same `(contract_id, chunk_index, model_version)`.  Allows resuming
   interrupted runs without re-processing.

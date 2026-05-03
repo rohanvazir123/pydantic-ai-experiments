@@ -41,6 +41,7 @@ from rich.table import Table
 
 from rag.config.settings import load_settings
 from kg.pg_graph_store import _normalize
+from kg.risk_graph_builder import RiskGraphBuilder
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -739,6 +740,7 @@ class ExtractionPipeline:
         self.bronze   = BronzeStore(pool)
         self.silver   = SilverNormalizer(pool, confidence_threshold)
         self.gold     = GoldProjector(pool, age_store)
+        self.risk     = RiskGraphBuilder(pool, age_store)
 
     async def initialize(self) -> None:
         await self.bronze.initialize()
@@ -888,6 +890,7 @@ class ExtractionPipeline:
 
         silver_stats = await self.silver.normalize(contract_id, artifacts)
         gold_stats   = await self.gold.project(contract_id)
+        risk_stats   = await self.risk.build(contract_id)
 
         total_entities = sum(len(a.entities) for a in artifacts)
         total_rels     = sum(len(a.valid_relationships) for a in artifacts)
@@ -899,6 +902,7 @@ class ExtractionPipeline:
             "raw_relationships": total_rels,
             **silver_stats,
             **gold_stats,
+            **risk_stats,
         }
 
     async def project_contract(self, contract_id: str) -> dict[str, Any]:
@@ -908,7 +912,8 @@ class ExtractionPipeline:
             return {"error": f"No bronze artifacts found for contract {contract_id}"}
         silver_stats = await self.silver.normalize(contract_id, artifacts)
         gold_stats   = await self.gold.project(contract_id)
-        return {**silver_stats, **gold_stats}
+        risk_stats   = await self.risk.build(contract_id)
+        return {**silver_stats, **gold_stats, **risk_stats}
 
 
 # ---------------------------------------------------------------------------
@@ -989,7 +994,8 @@ async def main() -> None:
             )
             console.print(f"[cyan]Replaying Silver+Gold for {len(contracts)} contract(s)…[/]")
             total = {"canonical_entities": 0, "canonical_relationships": 0,
-                     "age_entities": 0, "age_relationships": 0}
+                     "age_entities": 0, "age_relationships": 0,
+                     "risks": 0, "risk_edges": 0}
             for c in contracts:
                 stats = await pipeline.project_contract(c["id"])
                 for k in total:
@@ -1007,7 +1013,8 @@ async def main() -> None:
 
             total = {"chunks": 0, "raw_entities": 0, "raw_relationships": 0,
                      "canonical_entities": 0, "canonical_relationships": 0,
-                     "age_entities": 0, "age_relationships": 0}
+                     "age_entities": 0, "age_relationships": 0,
+                     "risks": 0, "risk_edges": 0}
             for c in contracts:
                 stats = await pipeline.process_contract(c["id"], c["title"], c["content"] or "")
                 for k in total:

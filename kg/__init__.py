@@ -27,6 +27,7 @@ EXTRACTION  (populates the graph — uses LLM)
                            Bronze: immutable JSONB per chunk
                            Silver: deduplicated canonical tables in PostgreSQL
                            Gold:   distinct vertex labels projected into AGE
+    RiskGraphBuilder     — rule-based risk inference (no LLM); runs after Gold
 
 ---
 RETRIEVAL  (queries the graph — no LLM, deterministic)
@@ -80,6 +81,7 @@ from kg.graph_router import GraphRouter
 from kg.intent_parser import IntentParser, IntentMatch
 from kg.query_builder import QUERY_CAPABILITIES
 from kg.nl2cypher import NL2CypherConverter
+from kg.risk_graph_builder import RiskGraphBuilder
 
 from rag.config.settings import load_settings
 
@@ -116,6 +118,7 @@ __all__ = [
     "IntentMatch",
     "QUERY_CAPABILITIES",
     "NL2CypherConverter",
+    "RiskGraphBuilder",
     "VALID_LABELS",
     "VALID_REL_TYPES",
     "ENTITY_TYPE_MAP",

@@ -670,8 +670,8 @@ ruff check --fix rag/ && ruff format rag/
 
 | Doc | What's in it |
 |-----|-------------|
-| `docs/RAG.md` | Deep-dive on every technique: chunking strategies, reranking, HyDE, Mem0, Langfuse, Knowledge Graph RAG, performance tuning, caching |
-| `docs/DATASTORE_GUIDE.md` | PostgreSQL schema, indexes, SQL examples, pgvector setup |
-| `docs/CALL_GRAPH.md` | Step-by-step call graphs for ingestion, retrieval, agent, Mem0, Streamlit |
-| `docs/TESTS.md` | Test suite overview, what each test covers, how to run |
-| `docs/CLAUDE.md` | Development conventions, code quality rules, common issues |
+| `rag/docs/RAG.md` | Deep-dive on every technique: chunking strategies, reranking, HyDE, Mem0, Langfuse, Knowledge Graph RAG, performance tuning, caching |
+| `rag/docs/DATASTORE_GUIDE.md` | PostgreSQL schema, indexes, SQL examples, pgvector setup |
+| `rag/docs/CALL_GRAPH.md` | Step-by-step call graphs for ingestion, retrieval, agent, Mem0, Streamlit |
+| `TESTS.md` | Test suite overview, what each test covers, how to run |
+| `CLAUDE.md` | Development conventions, code quality rules, common issues |
