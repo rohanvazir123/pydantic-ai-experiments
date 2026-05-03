@@ -7,6 +7,68 @@ See `docs/KG_PIPELINE.md` for the full design reference.
 
 ## Architecture decisions
 
+### Is KG chunking semantic/clause-aware or fixed-size?
+
+**Short answer: fixed-size, no overlap. Completely separate from the RAG chunker.**
+
+There are two chunking pipelines in this codebase. They are independent and should not be confused:
+
+#### RAG chunker — structure-aware (used for the vector store)
+
+`rag/ingestion/chunkers/docling.py` wraps Docling's `HybridChunker`:
+
+- **Structure-aware**: respects heading hierarchy, paragraph boundaries, tables, code blocks — it follows the document's logical sections, not character counts.
+- **Token-bounded**: controlled by `max_tokens` (default 512) using a HuggingFace tokenizer (`sentence-transformers/all-MiniLM-L6-v2`). A chunk will never exceed the embedding model's context window.
+- **Contextualized**: each chunk is prefixed with its heading ancestry so a retrieved chunk is self-contained ("Section 3 > Non-Compete Restrictions > …").
+- **Fallback**: when no `DoclingDocument` is available (plain text input), it uses a sliding window with sentence-boundary snapping and configurable overlap.
+
+These chunks land in the `chunks` PostgreSQL table and are indexed for vector + BM25 search.
+
+#### KG extraction chunker — dumb fixed-size (used for entity/relationship extraction)
+
+`kg/extraction_pipeline.py`, method `_chunk()`, line ~747:
+
+```python
+def _chunk(self, text: str) -> list[str]:
+    chunks = []
+    for i in range(0, len(text), self._chunk_size):
+        chunks.append(text[i : i + self._chunk_size])
+    return chunks
+```
+
+- **Fixed 1500-character slices.** Pure Python string slicing — `text[0:1500]`, `text[1500:3000]`, etc.
+- **No overlap.** A clause that straddles a boundary is split between two chunks.
+- **No sentence/paragraph awareness.** The cut can land mid-sentence.
+- Default `chunk_size=1500` is set in `ExtractionPipeline.__init__`.
+
+Each slice is sent to a separate LLM extraction call (entity pass → relationship pass → hierarchy pass → validation pass). The LLM sees only the text within one slice; it cannot see entities from adjacent slices.
+
+#### Why two different chunkers
+
+| | RAG chunker | KG extraction chunker |
+|---|---|---|
+| Purpose | Embedding for semantic similarity search | LLM context window for entity extraction |
+| Boundary logic | Document structure (headings, paragraphs) | Hard character count |
+| Overlap | Configurable (default 100 chars) | None |
+| Output destination | `chunks` table → pgvector index | Bronze artifacts → Silver dedup → AGE graph |
+| Tokenizer | HuggingFace (token-accurate) | None (character estimate) |
+
+The KG chunker is simpler because LLM extraction is forgiving about cut boundaries — the entity extraction prompt tells the model to extract "only entities from the provided text", and missed entities at boundaries are partially recovered by Silver deduplication (which merges matching `(label, normalized_name)` pairs across all chunks of a contract). A relationship whose source and target entity fall in different slices will be missed entirely, however.
+
+#### Known consequence: split-boundary relationship loss
+
+If an indemnification clause spans characters 1490–1550 and the slice boundary falls at 1500:
+
+- Chunk N sees "…Party A shall indemnify" — no target entity yet
+- Chunk N+1 sees "Party B from all claims…" — no source entity in this chunk
+- The relationship `Party A –INDEMNIFIES→ Party B` is never extracted
+
+The `source_chunk_indices` column added to `kg_canonical_entities` (Silver) records which chunks each entity appeared in, enabling future cross-chunk relationship re-extraction. This is not yet wired up.
+
+**Practical impact on the CUAD corpus:** Most party/jurisdiction/date entities appear multiple times across a contract and are extracted in at least one chunk. Clause-level relationships (e.g. `Contract –HAS_CLAUSE→ TerminationClause`) are less affected because the clause label and its governing entity typically co-occur well within 1500 chars.
+
+---
+
 ### Hybrid retrieval strategy: RRF across modalities vs Route → Execute → Synthesize
 
 **Question asked:** "Can we use full-text + vector + RRF to combine KG results with text chunks?"
@@ -61,6 +123,70 @@ needing text chunks.
 **Implementation:** `rag/retrieval/intent_classifier.py`,
 `rag/retrieval/hybrid_kg_retriever.py`, `search_hybrid_kg` agent tool.
 Tests + answer recording: `rag/tests/test_hybrid_kg_retrieval.py`.
+
+---
+
+### How does intent classification work, and why is it rule-based instead of LLM-based?
+
+**There are two completely separate layers — don't conflate them.**
+
+#### Layer 1: Which tool to call — the LLM decides
+
+The Pydantic AI agent exposes four tools. Each tool has a docstring that tells the LLM when to use it:
+
+| Tool | When to use (from docstring) |
+|---|---|
+| `search_knowledge_base` | Semantic / text retrieval over document chunks |
+| `search_knowledge_graph` | Named entity lookup — parties, jurisdictions, clause types |
+| `search_hybrid_kg` | Questions needing both clause text and graph facts |
+| `run_graph_query` | Multi-hop Cypher, aggregations, analytics |
+
+The LLM reads those descriptions at inference time and picks which tool(s) to call — and in what order. There is no code intercepting the question. The agent may call multiple tools in a single turn.
+
+#### Layer 2: Within `search_hybrid_kg` — rule-based routing
+
+When the LLM calls `search_hybrid_kg`, it enters `HybridKGRetriever.retrieve()`, which runs `IntentClassifier.classify()` **before** any database call. This classifies into three buckets:
+
+```
+STRUCTURED  →  KG path only   (skip the vector store entirely)
+SEMANTIC    →  chunks only    (skip the KG entirely)
+HYBRID      →  both paths in parallel  (the safe default)
+```
+
+The classifier is two compiled regex patterns (`rag/retrieval/intent_classifier.py`):
+
+```python
+_ANALYTICAL = re.compile(
+    r"\b(how many|count|total number|on average|distribution of|
+        most common|top \d+|aggregate|median|...)\b"
+)
+
+_GRAPH_TRAVERSAL = re.compile(
+    r"\b(traverse|two hops?|shortest path|connected to|path between|...)\b"
+)
+```
+
+Decision logic:
+
+```
+_ANALYTICAL matches AND query doesn't also ask for clause text  →  STRUCTURED
+otherwise                                                        →  HYBRID
+```
+
+`SEMANTIC` is never returned by `classify()` — it is reserved for explicit caller overrides. HYBRID is the safe default: both paths run with `asyncio.gather` and their results are fused.
+
+#### Why rule-based here, not LLM-based
+
+**1. It controls parallelism, not meaning.**
+`STRUCTURED` skips the vector store to save latency. `HYBRID` launches both database calls with `asyncio.gather`. This is a performance routing decision. Getting it wrong just wastes a database call — it cannot produce a wrong answer, because both paths merge into the same fused context block regardless.
+
+**2. The patterns are unambiguous.**
+"How many contracts" is always an aggregation. "Shortest path between" always needs graph traversal. There is no fuzzy case where a regex gives a wrong answer that an LLM would get right.
+
+**3. Speed and cost.**
+This runs on every `search_hybrid_kg` call, inside what may already be a streaming response. A 100 ms LLM classification call would be noticeable overhead for zero additional accuracy gain.
+
+The same principle applies to the read-only guardrail in `run_graph_query`: `age_graph_store.run_cypher_query` blocks `CREATE/MERGE/SET/DELETE` with a regex because safety must be guaranteed, not estimated.
 
 ---
 
