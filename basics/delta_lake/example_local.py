@@ -32,7 +32,7 @@ try:
 except ImportError:
     from deltalake._internal import CommitFailedError, DeltaError  # type: ignore[no-redef]
 
-from dt_merge import validate_target_schema
+from basics.delta_lake.dt_merge import validate_target_schema
 
 
 # ---------------------------------------------------------------------------
