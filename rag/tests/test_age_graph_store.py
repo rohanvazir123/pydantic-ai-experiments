@@ -1,4 +1,4 @@
-"""Tests for rag.knowledge_graph.age_graph_store and the create_kg_store factory.
+"""Tests for kg.age_graph_store and the create_kg_store factory.
 
 Unit tests mock the asyncpg pool and test Cypher generation logic.
 Integration tests are skipped unless AGE_DATABASE_URL is set and reachable.
@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from rag.knowledge_graph.age_graph_store import AgeGraphStore, _unquote_agtype
-from rag.knowledge_graph import create_kg_store, PgGraphStore
+from kg.age_graph_store import AgeGraphStore, _unquote_agtype
+from kg import create_kg_store, PgGraphStore
 
 
 # ---------------------------------------------------------------------------
@@ -282,21 +282,21 @@ class TestCreateKgStore:
     # so the patch target is the package namespace (no __init__ suffix).
 
     def test_returns_pg_store_by_default(self):
-        with patch("rag.knowledge_graph.load_settings") as mock_ls:
+        with patch("kg.load_settings") as mock_ls:
             mock_ls.return_value.kg_backend = "postgres"
             store = create_kg_store()
         assert isinstance(store, PgGraphStore)
 
     def test_returns_age_store_when_configured(self):
         mock_age_instance = MagicMock(spec=AgeGraphStore)
-        with patch("rag.knowledge_graph.load_settings") as mock_ls, \
-             patch("rag.knowledge_graph.AgeGraphStore", return_value=mock_age_instance):
+        with patch("kg.load_settings") as mock_ls, \
+             patch("kg.AgeGraphStore", return_value=mock_age_instance):
             mock_ls.return_value.kg_backend = "age"
             store = create_kg_store()
         assert store is mock_age_instance
 
     def test_unknown_backend_defaults_to_postgres(self):
-        with patch("rag.knowledge_graph.load_settings") as mock_ls:
+        with patch("kg.load_settings") as mock_ls:
             mock_ls.return_value.kg_backend = "something_unknown"
             store = create_kg_store()
         assert isinstance(store, PgGraphStore)

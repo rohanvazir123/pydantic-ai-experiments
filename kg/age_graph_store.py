@@ -1,7 +1,7 @@
 """
 Apache AGE knowledge graph store.
 
-Module: rag.knowledge_graph.age_graph_store
+Module: kg.age_graph_store
 ============================================
 
 Implements the same interface as PgGraphStore using Apache AGE — a PostgreSQL
@@ -47,7 +47,7 @@ implementation automatically.
 
 Usage
 -----
-    from rag.knowledge_graph.age_graph_store import AgeGraphStore
+    from kg.age_graph_store import AgeGraphStore
 
     store = AgeGraphStore()
     await store.initialize()
@@ -69,9 +69,9 @@ from typing import Any
 import asyncpg
 
 from rag.config.settings import load_settings
-from rag.knowledge_graph.constants import VALID_LABELS as _VALID_LABELS
-from rag.knowledge_graph.constants import VALID_REL_TYPES as _VALID_REL_TYPES
-from rag.knowledge_graph.pg_graph_store import _normalize
+from kg.constants import VALID_LABELS as _VALID_LABELS
+from kg.constants import VALID_REL_TYPES as _VALID_REL_TYPES
+from kg.pg_graph_store import _normalize
 
 
 def _safe_label(entity_type: str) -> str:

@@ -33,7 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from rag.knowledge_graph.age_graph_store import AgeGraphStore
+from kg.age_graph_store import AgeGraphStore
 
 logger = logging.getLogger(__name__)
 

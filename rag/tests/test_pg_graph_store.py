@@ -1,4 +1,4 @@
-"""Tests for rag.knowledge_graph.pg_graph_store and rag.knowledge_graph.cuad_kg_ingest.
+"""Tests for kg.pg_graph_store and kg.cuad_kg_ingest.
 
 Unit tests use an in-memory mock of the asyncpg pool.
 Integration tests require a live PostgreSQL connection (skipped otherwise).
@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from rag.knowledge_graph.constants import entity_type_for, relationship_type_for
-from rag.knowledge_graph.cuad_kg_ingest import build_cuad_kg
-from rag.knowledge_graph.pg_graph_store import PgGraphStore, _normalize
+from kg.constants import entity_type_for, relationship_type_for
+from kg.cuad_kg_ingest import build_cuad_kg
+from kg.pg_graph_store import PgGraphStore, _normalize
 
 
 # ---------------------------------------------------------------------------

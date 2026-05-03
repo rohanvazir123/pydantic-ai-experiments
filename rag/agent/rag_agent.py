@@ -123,9 +123,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
-from rag.knowledge_graph import create_kg_store
-from rag.knowledge_graph.age_graph_store import AgeGraphStore
-from rag.knowledge_graph.pg_graph_store import PgGraphStore  # kept for type reference
+from kg import create_kg_store
+from kg.age_graph_store import AgeGraphStore
+from kg.pg_graph_store import PgGraphStore  # kept for type reference
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
@@ -445,7 +445,7 @@ async def search_hybrid_kg(
             retriever = await state.get_retriever()
             kg = await state.get_kg_store()
         else:
-            from rag.knowledge_graph import create_kg_store
+            from kg import create_kg_store
             from rag.retrieval.retriever import Retriever
             local_retriever = Retriever()
             local_kg = create_kg_store()

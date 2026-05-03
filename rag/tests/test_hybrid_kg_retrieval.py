@@ -336,7 +336,7 @@ class TestHybridKGRetriever:
 async def live_hybrid_retriever():
     """Create a real HybridKGRetriever against live PostgreSQL + AGE + Ollama."""
     pytest.importorskip("asyncpg")
-    from rag.knowledge_graph import create_kg_store
+    from kg import create_kg_store
     from rag.retrieval.retriever import Retriever
 
     retriever = Retriever()

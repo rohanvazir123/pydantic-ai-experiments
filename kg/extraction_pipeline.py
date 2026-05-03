@@ -1,7 +1,7 @@
 """
 Multi-pass legal knowledge graph extraction pipeline.
 
-Module: rag.knowledge_graph.extraction_pipeline
+Module: kg.extraction_pipeline
 ===============================================
 
 Bronze / Silver / Gold medallion architecture.  See docs/KG_PIPELINE.md.
@@ -9,14 +9,14 @@ Bronze / Silver / Gold medallion architecture.  See docs/KG_PIPELINE.md.
 CLI
 ---
     # Full pipeline (Bronze + Silver + Gold) for one contract
-    python -m rag.knowledge_graph.extraction_pipeline --contract-id <uuid>
+    python -m kg.extraction_pipeline --contract-id <uuid>
 
     # Full pipeline for all contracts
-    python -m rag.knowledge_graph.extraction_pipeline --all [--limit N]
+    python -m kg.extraction_pipeline --all [--limit N]
 
     # Replay Silver + Gold from existing Bronze (no LLM calls)
-    python -m rag.knowledge_graph.extraction_pipeline --project --contract-id <uuid>
-    python -m rag.knowledge_graph.extraction_pipeline --project --all
+    python -m kg.extraction_pipeline --project --contract-id <uuid>
+    python -m kg.extraction_pipeline --project --all
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from rag.config.settings import load_settings
-from rag.knowledge_graph.pg_graph_store import _normalize
+from kg.pg_graph_store import _normalize
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -970,7 +970,7 @@ async def main() -> None:
         settings.database_url, min_size=1, max_size=5, command_timeout=60
     )
 
-    from rag.knowledge_graph import create_kg_store
+    from kg import create_kg_store
     age_store = create_kg_store()
     await age_store.initialize()
 

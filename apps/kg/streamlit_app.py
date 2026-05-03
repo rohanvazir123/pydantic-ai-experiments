@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 from dotenv import load_dotenv
 
-from rag.knowledge_graph.age_graph_store import AgeGraphStore
+from kg.age_graph_store import AgeGraphStore
 
 load_dotenv(override=True)
 

@@ -32,7 +32,7 @@ Ontology constants (single source of truth):
     entity_type_for(), relationship_type_for()  — from constants.py
 
 Usage:
-    from rag.knowledge_graph import create_kg_store
+    from kg import create_kg_store
 
     store = create_kg_store()   # returns AgeGraphStore by default
     await store.initialize()
@@ -40,12 +40,12 @@ Usage:
     await store.close()
 """
 
-from rag.knowledge_graph.pg_graph_store import PgGraphStore
-from rag.knowledge_graph.age_graph_store import AgeGraphStore
-from rag.knowledge_graph.cuad_kg_ingest import build_cuad_kg
-from rag.knowledge_graph.legal_extractor import LegalEntityExtractor
-from rag.knowledge_graph.extraction_pipeline import ExtractionPipeline
-from rag.knowledge_graph.constants import (
+from kg.pg_graph_store import PgGraphStore
+from kg.age_graph_store import AgeGraphStore
+from kg.cuad_kg_ingest import build_cuad_kg
+from kg.legal_extractor import LegalEntityExtractor
+from kg.extraction_pipeline import ExtractionPipeline
+from kg.constants import (
     VALID_LABELS,
     VALID_REL_TYPES,
     ENTITY_TYPE_MAP,

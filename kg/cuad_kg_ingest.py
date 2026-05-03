@@ -1,7 +1,7 @@
 """
 Build an Apache AGE knowledge graph from CUAD evaluation annotations.
 
-Module: rag.knowledge_graph.cuad_kg_ingest
+Module: kg.cuad_kg_ingest
 ==========================================
 
 Reads ``rag/legal/cuad_eval.json`` and writes entities + relationships
@@ -13,8 +13,8 @@ come from constants.py — the single source of truth for KG ontology.
 
 CLI
 ---
-    python -m rag.knowledge_graph.cuad_kg_ingest
-    python -m rag.knowledge_graph.cuad_kg_ingest --eval-path rag/legal/cuad_eval.json --limit 100
+    python -m kg.cuad_kg_ingest
+    python -m kg.cuad_kg_ingest --eval-path rag/legal/cuad_eval.json --limit 100
 """
 
 import argparse
@@ -29,8 +29,8 @@ from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from rag.knowledge_graph.age_graph_store import AgeGraphStore
-from rag.knowledge_graph.constants import entity_type_for, relationship_type_for
+from kg.age_graph_store import AgeGraphStore
+from kg.constants import entity_type_for, relationship_type_for
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -178,7 +178,7 @@ async def main() -> None:
     )
 
     from rag.config.settings import load_settings
-    from rag.knowledge_graph.age_graph_store import _age_init
+    from kg.age_graph_store import _age_init
 
     settings = load_settings()
 

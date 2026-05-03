@@ -194,8 +194,8 @@ class DocumentIngestionPipeline:
     async def _get_extractor(self):
         """Return a lazily-initialized LegalEntityExtractor (only when kg_extraction_enabled)."""
         if self._extractor is None:
-            from rag.knowledge_graph import create_kg_store
-            from rag.knowledge_graph.legal_extractor import LegalEntityExtractor
+            from kg import create_kg_store
+            from kg.legal_extractor import LegalEntityExtractor
             store = create_kg_store()
             await store.initialize()
             self._extractor = LegalEntityExtractor(store)

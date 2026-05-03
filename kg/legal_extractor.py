@@ -1,7 +1,7 @@
 """
 LLM-based legal entity and relationship extractor.
 
-Module: rag.knowledge_graph.legal_extractor
+Module: kg.legal_extractor
 ============================================
 
 Two-phase design — run the expensive LLM pass once, reuse the result:
@@ -21,16 +21,16 @@ Two-phase design — run the expensive LLM pass once, reuse the result:
 CLI
 ---
     # Phase 1 — extract once (requires LLM; use GPT-4o for best results)
-    python -m rag.knowledge_graph.legal_extractor --extract
-    python -m rag.knowledge_graph.legal_extractor --extract --output rag/legal/llm_kg_extracted.json --limit 20
+    python -m kg.legal_extractor --extract
+    python -m kg.legal_extractor --extract --output rag/legal/llm_kg_extracted.json --limit 20
 
     # Phase 2 — build KG from saved file (no LLM)
-    python -m rag.knowledge_graph.legal_extractor --build
-    python -m rag.knowledge_graph.legal_extractor --build --input rag/legal/llm_kg_extracted.json
+    python -m kg.legal_extractor --build
+    python -m kg.legal_extractor --build --input rag/legal/llm_kg_extracted.json
 
 Inline usage
 ------------
-    from rag.knowledge_graph import create_kg_store, LegalEntityExtractor
+    from kg import create_kg_store, LegalEntityExtractor
 
     store = create_kg_store()
     await store.initialize()
@@ -470,7 +470,7 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    from rag.knowledge_graph import create_kg_store
+    from kg import create_kg_store
 
     store = create_kg_store()
     await store.initialize()

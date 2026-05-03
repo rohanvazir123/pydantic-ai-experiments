@@ -1,7 +1,7 @@
 """
 PostgreSQL-backed knowledge graph store.
 
-Module: rag.knowledge_graph.pg_graph_store
+Module: kg.pg_graph_store
 ==========================================
 
 Stores entities (nodes) and relationships (edges) for legal contract graphs
@@ -34,7 +34,7 @@ Two tables alongside ``documents`` and ``chunks``:
 
 Usage
 -----
-    from rag.knowledge_graph.pg_graph_store import PgGraphStore
+    from kg.pg_graph_store import PgGraphStore
 
     store = PgGraphStore()
     await store.initialize()
