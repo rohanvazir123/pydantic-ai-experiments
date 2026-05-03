@@ -1,10 +1,28 @@
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Union
 import asyncio
 import duckdb
 import asyncpg
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIModel
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from rag.config.settings import load_settings
+
+
+def _make_model() -> OpenAIModel:
+    settings = load_settings()
+    return OpenAIModel(
+        settings.llm_model,
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+    )
 
 
 # 1. Structured Response Model
@@ -21,9 +39,9 @@ class MultiDBDeps:
     duck_conn: duckdb.DuckDBPyConnection
 
 
-# 3. Agent Setup
+# 3. Agent Setup — uses Ollama (or whatever LLM_PROVIDER is set to in .env)
 sql_agent = Agent(
-    "openai:gpt-4o",
+    _make_model(),
     deps_type=MultiDBDeps,
     result_type=SQLResponse,
     system_prompt="You are a data expert with access to Postgres and DuckDB. Discover the schema first.",
