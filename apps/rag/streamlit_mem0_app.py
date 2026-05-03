@@ -21,7 +21,7 @@ A simple chat application that demonstrates:
 - Streamlit for the UI
 
 Usage:
-    streamlit run streamlit_mem0_app.py
+    streamlit run apps/rag/streamlit_mem0_app.py
 """
 
 import asyncio
