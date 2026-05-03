@@ -113,7 +113,8 @@
       "Bash(Remove-Item *)",
       "Bash(Select-Object Name)",
       "Bash(Format-Table -HideTableHeaders)",
-      "Bash(grep -v \"^[0-9]\\\\{1,3\\\\}:## [0-9]\\\\{1,2\\\\}\\\\.\")"
+      "Bash(grep -v \"^[0-9]\\\\{1,3\\\\}:## [0-9]\\\\{1,2\\\\}\\\\.\")",
+      "Bash(docker manifest *)"
     ]
   },
   "enableAllProjectMcpServers": true,

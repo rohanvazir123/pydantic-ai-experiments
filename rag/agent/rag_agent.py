@@ -481,28 +481,56 @@ async def run_graph_query(
     """
     Execute a read-only openCypher MATCH query against the Apache AGE knowledge graph.
 
+    Use this tool when you already know the exact Cypher.  For natural-language
+    questions, prefer ``nl_graph_query`` — it writes the Cypher for you.
+
     Use this tool for:
-    - Multi-hop traversal (e.g. Party → Contract → Jurisdiction, two or more hops)
-    - Aggregation and analytics: counts, distributions, co-occurrence across all contracts
+    - Multi-hop traversal (e.g. Party → Contract → Jurisdiction)
+    - Aggregation / analytics: counts, distributions, co-occurrence
     - Complex pattern matching that search_knowledge_graph cannot express
 
     Only MATCH/RETURN queries are permitted. CREATE/MERGE/SET/DELETE are blocked.
-    Always include a LIMIT clause to cap result size.
+    Always include a LIMIT clause.
 
-    KG schema:
-      Nodes  : (e:Entity) — properties: name, entity_type, document_id, normalized_name
-      Types  : Party, Jurisdiction, Date, LicenseClause, TerminationClause,
-               RestrictionClause, IPClause, LiabilityClause, Clause, Contract
-      Edges  : PARTY_TO, GOVERNED_BY_LAW, HAS_DATE, HAS_LICENSE, HAS_TERMINATION,
-               HAS_RESTRICTION, HAS_IP_CLAUSE, HAS_LIABILITY, HAS_CLAUSE
+    KG schema — distinct vertex labels (NOT flat :Entity nodes):
+      (:Party)  (:Contract)  (:Jurisdiction)  (:Clause)  (:Obligation)
+      (:TerminationClause)  (:LiabilityClause)  (:IndemnityClause)
+      (:PaymentTerm)  (:ConfidentialityClause)  (:GoverningLawClause)
+      (:RenewalTerm)  (:EffectiveDate)  (:ExpirationDate)
+      (:Section)  (:ReferenceDocument)  (:Risk)
 
-    Example:
-      MATCH (p:Entity {entity_type: 'Party'})-[:PARTY_TO]->(c:Entity {entity_type: 'Contract'})
-      RETURN p.name AS party, count(c) AS contracts
-      ORDER BY contracts DESC LIMIT 20
+      All vertices carry: uuid, name, label, document_id, confidence
+
+    Edge types (semantic / entity graph):
+      SIGNED_BY (Contract→Party)    GOVERNED_BY (Contract→Jurisdiction)
+      INDEMNIFIES (Party→Party)     HAS_TERMINATION (Contract→TerminationClause)
+      HAS_RENEWAL (Contract→RenewalTerm)   HAS_PAYMENT_TERM (Contract→PaymentTerm)
+      OBLIGATES (Contract→Obligation)      LIMITS_LIABILITY (Contract→LiabilityClause)
+      DISCLOSES_TO (Party→Party)    HAS_CLAUSE (Contract→Clause)
+
+    Edge types (lineage graph):
+      AMENDS  SUPERCEDES  REPLACES  REFERENCES
+      ATTACHES  INCORPORATES_BY_REFERENCE
+
+    Edge types (hierarchy graph):
+      HAS_SECTION (Contract→Section)  HAS_CLAUSE (Section→Clause)  HAS_CHUNK
+
+    Edge types (risk graph):
+      INCREASES_RISK_FOR (Risk→Party)  CAUSES (Risk→Risk)
+
+    Examples:
+      -- Parties in Delaware-governed contracts
+      MATCH (c:Contract)-[:GOVERNED_BY]->(j:Jurisdiction)
+      WHERE toLower(j.name) CONTAINS 'delaware'
+      MATCH (p:Party)-[:SIGNED_BY]-(c)
+      RETURN p.name, c.name LIMIT 20
+
+      -- All indemnifying pairs
+      MATCH (a:Party)-[:INDEMNIFIES]->(b:Party)
+      RETURN a.name AS indemnifier, b.name AS indemnified LIMIT 20
 
     Args:
-        ctx: Agent runtime context
+        ctx:    Agent runtime context
         cypher: A read-only openCypher MATCH query
 
     Returns:
@@ -525,6 +553,77 @@ async def run_graph_query(
     except Exception as e:
         logger.exception(f"Error running graph query: {e}")
         return f"Error running graph query: {str(e)}"
+    finally:
+        if local_kg is not None:
+            await local_kg.close()
+
+
+@agent.tool
+async def nl_graph_query(
+    ctx: PydanticRunContext,
+    question: str,
+) -> str:
+    """
+    Answer a natural-language question by routing to the right graph schema,
+    generating Cypher, and executing it against the Apache AGE knowledge graph.
+
+    Use this tool instead of ``run_graph_query`` when you do not already know
+    the exact Cypher — this tool writes the query for you.
+
+    Pipeline:
+      1. GraphRouter classifies *question* → relevant graph type(s)
+         (entity / hierarchy / lineage / risk) using rule-based regex patterns.
+      2. get_schema() returns the compact, token-bounded schema for those types.
+      3. NL2CypherConverter sends (question, schema) to the LLM (temperature=0)
+         and receives a valid MATCH…RETURN query.
+      4. AgeGraphStore.run_cypher_query() executes it and returns a table string.
+
+    Use for:
+    - "Which parties indemnify each other across all contracts?"
+    - "Find contracts that amend or supersede other contracts"
+    - "Which contracts are missing an indemnity clause?" (risk graph)
+    - "What sections does contract X contain?" (hierarchy graph)
+
+    Args:
+        ctx:      Agent runtime context
+        question: Natural-language question about the knowledge graph
+
+    Returns:
+        Pipe-separated table of results, or an error message.
+    """
+    from kg.graph_router import GraphRouter
+    from kg.schemas import get_schema
+    from kg.nl2cypher import NL2CypherConverter
+
+    deps = ctx.deps
+    state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
+
+    local_kg: AgeGraphStore | PgGraphStore | None = None
+    try:
+        if state is not None and isinstance(state, RAGState):
+            kg = await state.get_kg_store()
+        else:
+            local_kg = create_kg_store()
+            await local_kg.initialize()
+            kg = local_kg
+
+        router    = GraphRouter()
+        converter = NL2CypherConverter()
+
+        graph_types = router.route(question)
+        schema      = get_schema(graph_types)
+        cypher      = await converter.convert(question, schema)
+
+        logger.info(
+            "[nl_graph_query] graph_types=%s → cypher=%r",
+            [gt.value for gt in graph_types],
+            cypher,
+        )
+        return await kg.run_cypher_query(cypher)
+
+    except Exception as e:
+        logger.exception("Error in nl_graph_query: %s", e)
+        return f"Error running NL graph query: {e}"
     finally:
         if local_kg is not None:
             await local_kg.close()

@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
 
   age:
-    image: apache/age:PG16
+    image: apache/age:release_PG16_1.6.0
     container_name: rag_age
     environment:
       POSTGRES_DB: legal_graph
@@ -62,6 +62,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  age-viewer:
+    image: joefagan/incubator-age-viewer:latest
+    container_name: rag_age_viewer
+    ports:
+      - "3001:3001"
+    depends_on:
+      age:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

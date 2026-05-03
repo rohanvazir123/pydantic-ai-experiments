@@ -124,8 +124,10 @@ async def health() -> HealthResponse:
         logger.warning("Health: DB check failed: %s", exc)
 
     try:
+       # The code snippet `async with httpx.AsyncClient(timeout=5.0) as client:` is creating an
+       # asynchronous HTTP client using the `httpx` library in Python.
         async with httpx.AsyncClient(timeout=5.0) as client:
-            base = settings.embedding_base_url.rstrip("/")
+            base = (settings.embedding_base_url or "").rstrip("/")
             resp = await client.get(
                 f"{base}/models",
                 headers={"Authorization": f"Bearer {settings.embedding_api_key}"},
@@ -136,7 +138,7 @@ async def health() -> HealthResponse:
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            base = settings.llm_base_url.rstrip("/")
+            base = (settings.llm_base_url or "").rstrip("/")
             resp = await client.get(
                 f"{base}/models",
                 headers={"Authorization": f"Bearer {settings.llm_api_key}"},
@@ -162,6 +164,12 @@ async def health() -> HealthResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     """Full agent run with tool calls and LLM synthesis."""
     try:
+       # The line `result = await traced_agent_run(` is calling an asynchronous function named
+       # `traced_agent_run` and awaiting its result. This function is likely responsible for running
+       # the RAG agent with additional tracing or logging capabilities. By using `await`, the code is
+       # waiting for the `traced_agent_run` function to complete its execution before proceeding
+       # further. The result of this function call is then stored in the `result` variable for further
+       # processing or returning as part of the API response.
         result = await traced_agent_run(
             query=request.query,
             user_id=request.user_id,
@@ -218,16 +226,22 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
             search_type=request.search_type,
             match_count=request.match_count,
         )
-        results = [
-            RetrieveResult(
-                id=c.chunk_id,
-                title=c.title,
-                content=c.content,
-                score=float(c.similarity),
-                search_type=request.search_type,
+        results = []
+        for c in chunks:
+            metadata = getattr(c, "metadata", None)
+            if isinstance(metadata, dict):
+                title = metadata.get("title", "")
+            else:
+                title = ""
+            results.append(
+                RetrieveResult(
+                    id=c.chunk_id,
+                    title=title,
+                    content=c.content,
+                    score=float(c.similarity),
+                    search_type=request.search_type,
+                )
             )
-            for c in chunks
-        ]
         return RetrieveResponse(results=results, total=len(results))
     except Exception as exc:
         logger.exception("Retrieve endpoint error: %s", exc)

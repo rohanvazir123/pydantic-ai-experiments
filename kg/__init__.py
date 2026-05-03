@@ -16,27 +16,49 @@
 Knowledge Graph module for RAG.
 
 Apache AGE-backed knowledge graph built from CUAD legal contract annotations.
-No Neo4j or Graphiti required.
 
-Primary components:
+---
+EXTRACTION  (populates the graph — uses LLM)
+---
     AgeGraphStore        — Apache AGE Cypher graph (active backend)
-    build_cuad_kg()      — ingest cuad_eval.json annotations into AgeGraphStore
-    LegalEntityExtractor — LLM-driven 5-pass entity/relationship extraction
-    ExtractionPipeline   — Bronze → Silver → Gold medallion ingestion pipeline
+    build_cuad_kg()      — fast ingest from cuad_eval.json CUAD annotations
+    LegalEntityExtractor — 5-pass LLM extraction (entity/rel/hierarchy/lineage/validate)
+    ExtractionPipeline   — Bronze → Silver → Gold medallion pipeline
+                           Bronze: immutable JSONB per chunk
+                           Silver: deduplicated canonical tables in PostgreSQL
+                           Gold:   distinct vertex labels projected into AGE
 
-Legacy / reference components (source kept, not wired into main pipeline):
-    PgGraphStore    — entities/relationships in PostgreSQL SQL tables (legacy)
+---
+RETRIEVAL  (queries the graph — no LLM, deterministic)
+---
+    GraphType           — enum: ENTITY, HIERARCHY, LINEAGE, RISK
+    GraphRouter         — regex router: question → list[GraphType]
+    get_schema()        — compact schema string for selected graph types
+    IntentParser        — regex parser: question → IntentMatch(intent, params)
+    QUERY_CAPABILITIES  — registry: intent name → Cypher builder function
+    NL2CypherConverter  — orchestrator: IntentParser + QUERY_CAPABILITIES → Cypher
+                          No LLM calls; no prompt injection surface.
 
-Ontology constants (single source of truth):
+---
+Legacy (source kept, not wired into active pipeline)
+---
+    PgGraphStore    — entities/relationships in plain PostgreSQL tables (no Cypher)
+
+---
+Ontology constants (single source of truth)
+---
     VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP, RELATIONSHIP_MAP,
-    entity_type_for(), relationship_type_for()  — from constants.py
+    entity_type_for(), relationship_type_for()
 
 Usage:
-    from kg import create_kg_store
+    from kg import create_kg_store, NL2CypherConverter
 
-    store = create_kg_store()   # returns AgeGraphStore by default
+    store     = create_kg_store()
+    converter = NL2CypherConverter()
     await store.initialize()
-    context = await store.search_as_context("governing law Delaware")
+
+    cypher = await converter.convert("Which parties indemnify each other?")
+    result = await store.run_cypher_query(cypher)
     await store.close()
 """
 
@@ -53,6 +75,11 @@ from kg.constants import (
     entity_type_for,
     relationship_type_for,
 )
+from kg.schemas import GraphType, get_schema
+from kg.graph_router import GraphRouter
+from kg.intent_parser import IntentParser, IntentMatch
+from kg.query_builder import QUERY_CAPABILITIES
+from kg.nl2cypher import NL2CypherConverter
 
 from rag.config.settings import load_settings
 
@@ -82,6 +109,13 @@ __all__ = [
     "LegalEntityExtractor",
     "ExtractionPipeline",
     "create_kg_store",
+    "GraphType",
+    "GraphRouter",
+    "get_schema",
+    "IntentParser",
+    "IntentMatch",
+    "QUERY_CAPABILITIES",
+    "NL2CypherConverter",
     "VALID_LABELS",
     "VALID_REL_TYPES",
     "ENTITY_TYPE_MAP",

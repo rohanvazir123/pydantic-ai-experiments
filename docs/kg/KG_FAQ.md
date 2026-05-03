@@ -7,6 +7,57 @@ See `docs/KG_PIPELINE.md` for the full design reference.
 
 ## Architecture decisions
 
+### How many AGE graphs are created? Can I view them with Apache AGE Viewer?
+
+**One graph, named `legal_graph`. All pipelines write into it.**
+
+#### How many graphs
+
+Every code path that writes to the graph goes through `AgeGraphStore`, which reads a single setting:
+
+```python
+# rag/config/settings.py
+age_graph_name: str = Field(default="legal_graph", ...)
+```
+
+`AgeGraphStore.initialize()` calls `SELECT create_graph('legal_graph')` once (idempotent — no-ops if it already exists). There is no code that creates a second graph or switches the name per pipeline.
+
+The four pipelines that all write to the **same** `legal_graph`:
+
+| Pipeline | File | What it writes |
+|---|---|---|
+| CUAD annotation ingest | `kg/cuad_kg_ingest.py` | Entities + relationships from `cuad_eval.json` CUAD annotations |
+| LLM extraction (Bronze→Silver→Gold) | `kg/extraction_pipeline.py` (`GoldProjector`) | Entities + relationships from LLM extraction of contract text |
+| Legal entity extractor | `kg/legal_extractor.py` | Named entities from legal text via LLM |
+| RAG agent KG tools | `kg/age_graph_store.py` (called by `rag_agent.py`) | Runtime entity/relationship lookups (read-only at query time) |
+
+The PostgreSQL *database* in `docker-compose.yml` is also named `legal_graph` (`POSTGRES_DB: legal_graph`) — this is the PostgreSQL database that AGE stores its internal graph metadata in. The AGE *graph object* inside it is also called `legal_graph`. They share a name but are distinct things (the database is the container; the graph is an object inside it).
+
+To create a second graph (e.g. for a test environment), set `AGE_GRAPH_NAME=test_graph` in `.env` before running.
+
+#### Viewing with Apache AGE Viewer
+
+AGE Viewer is bundled in `docker-compose.yml` as the `age-viewer` service.
+
+```powershell
+docker compose up -d age age-viewer
+```
+
+Then open **http://localhost:3001** and connect with:
+
+| Field | Value |
+|---|---|
+| Host | `host.docker.internal` (Docker Desktop on Windows/Mac) |
+| Port | `5433` |
+| Database | `legal_graph` |
+| User | `age_user` |
+| Password | `age_pass` |
+
+For Cypher queries for all four graphs (hierarchy, semantic, lineage, risk) see
+**[docs/kg/GRAPH_VIEWER.md](GRAPH_VIEWER.md)**.
+
+---
+
 ### Is KG chunking semantic/clause-aware or fixed-size?
 
 **Short answer: fixed-size, no overlap. Completely separate from the RAG chunker.**

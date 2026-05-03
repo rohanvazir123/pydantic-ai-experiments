@@ -34,6 +34,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from kg.age_graph_store import AgeGraphStore
+from kg.graph_router import GraphRouter
+from kg.nl2cypher import NL2CypherConverter
+from kg.schemas import GraphType, get_schema
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +46,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Module-level singleton; initialized on first request
+# Module-level singletons; store initialized on first request
 _store: AgeGraphStore | None = None
+_router: GraphRouter = GraphRouter()
+_converter: NL2CypherConverter = NL2CypherConverter()
 
 
 async def _get_store() -> AgeGraphStore:
@@ -103,6 +108,17 @@ class ContractResult(BaseModel):
 
 class CypherRequest(BaseModel):
     cypher: str = Field(..., description="Read-only Cypher MATCH query")
+
+
+class NLQueryRequest(BaseModel):
+    question: str = Field(..., description="Natural-language question about the knowledge graph")
+
+
+class NLQueryResponse(BaseModel):
+    question: str
+    graph_types: list[str]
+    cypher: str
+    result: str
 
 
 class StatsResponse(BaseModel):
@@ -242,6 +258,39 @@ async def cypher(request: CypherRequest) -> dict[str, str]:
         return {"result": result}
     except Exception as exc:
         logger.exception("Cypher endpoint error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/v1/nl_query", response_model=NLQueryResponse, tags=["graph"])
+async def nl_query(request: NLQueryRequest) -> NLQueryResponse:
+    """
+    Answer a natural-language question by routing to the right graph schema,
+    generating Cypher, and executing it.
+
+    Pipeline:
+      1. GraphRouter classifies the question → relevant graph type(s).
+      2. get_schema() returns the compact token-bounded schema for those types.
+      3. NL2CypherConverter generates a Cypher MATCH query (temperature=0).
+      4. AgeGraphStore executes the query and returns results.
+
+    Returns the routed graph types, generated Cypher, and query results.
+    """
+    try:
+        store     = await _get_store()
+
+        graph_types = _router.route(request.question)
+        schema      = get_schema(graph_types)
+        generated   = await _converter.convert(request.question, schema)
+        result      = await store.run_cypher_query(generated)
+
+        return NLQueryResponse(
+            question=request.question,
+            graph_types=[gt.value for gt in graph_types],
+            cypher=generated,
+            result=result,
+        )
+    except Exception as exc:
+        logger.exception("NL query endpoint error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
