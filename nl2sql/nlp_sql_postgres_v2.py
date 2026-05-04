@@ -12,6 +12,7 @@ Improvements over v1:
 - No hardcoded filesystem paths -- load_env() accepts extra paths from callers
 - HistoryStore: asyncpg-backed persistence so history survives process restarts
 - Execution guardrails: SELECT-only enforcement, result row cap, query timeout
+- GCS Parquet via PyArrow datasets (lazy reads, predicate pushdown) instead of DuckDB httpfs
 """
 
 import asyncio
@@ -29,8 +30,9 @@ from typing import Literal, Optional
 
 import asyncpg
 import duckdb
+import gcsfs
+import pyarrow.dataset as ds
 from dotenv import load_dotenv
-from google.cloud import storage
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
@@ -502,30 +504,26 @@ class UnifiedDataSource:
     _gcs_views: dict[str, str] = field(default_factory=dict)
 
     def load_gcs_tables(self) -> None:
-        self.conn.execute("INSTALL httpfs; LOAD httpfs;")
-        self.conn.execute(f"""
-            CREATE OR REPLACE SECRET gcs_secret (
-                TYPE gcs,
-                KEY_ID  '{os.environ["GCS_HMAC_ID"]}',
-                SECRET  '{os.environ["GCS_HMAC_SECRET"]}'
-            )
-        """)
-        client = storage.Client(project=self.gcs_user_project)
-        bucket = client.bucket(self.gcs_bucket, user_project=self.gcs_user_project)
-        blobs = bucket.list_blobs(prefix=self.gcs_prefix, delimiter="/")
-        table_names: set[str] = set()
-        for page in blobs.pages:
-            for prefix in page.prefixes:
-                table_names.add(prefix.strip("/").split("/")[-1])
-        for name in table_names:
-            prefix = f"{self.gcs_prefix}{name}/"
-            path = f"gs://{self.gcs_bucket}/{prefix}*/*.parquet"
+        # gcsfs uses ADC (gcloud auth application-default login) or GOOGLE_APPLICATION_CREDENTIALS.
+        # Predicate pushdown and column projection are handled by PyArrow before any data transfer.
+        fs = gcsfs.GCSFileSystem(project=self.gcs_user_project)
+        bucket_prefix = f"{self.gcs_bucket}/{self.gcs_prefix.rstrip('/')}"
+        try:
+            entries = fs.ls(bucket_prefix, detail=False)
+        except Exception as exc:
+            logger.error("Failed to list GCS prefix gs://%s: %s", bucket_prefix, exc)
+            return
+        for entry in entries:
+            if not fs.isdir(entry):
+                continue
+            name = entry.rstrip("/").split("/")[-1]
             view = name.lower()
-            self.conn.execute(
-                f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM parquet_scan('{path}')"
-            )
+            # ds.dataset() is lazy — only reads Parquet footers for schema discovery,
+            # no row data is transferred until DuckDB executes a query against this view.
+            arrow_ds = ds.dataset(entry, filesystem=fs, format="parquet")
+            self.conn.register(view, arrow_ds)
             self._gcs_views[name] = view
-            logger.info("GCS view: %-25s <- %s", view, path)
+            logger.info("PyArrow dataset (lazy): %-25s <- gs://%s", view, entry)
         logger.info("GCS tables: %s", sorted(self._gcs_views))
 
     def attach_postgres_dbs(self) -> None:
@@ -620,7 +618,9 @@ class UnifiedDataSource:
 # Entry point
 #
 # Required env vars (add to .env):
-#   GCS_BUCKET, GCS_PREFIX, GCS_USER_PROJECT, GCS_HMAC_ID, GCS_HMAC_SECRET
+#   GCS_BUCKET, GCS_PREFIX, GCS_USER_PROJECT
+#   GCS auth: set GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+#             or run: gcloud auth application-default login
 #   RAG_DB_URL        e.g. postgresql://user:pass@host:port/db
 #   LOCAL_PG_URL      e.g. postgresql://user:pass@host:port/db
 #   OPENAI_API_KEY    (or ANTHROPIC_API_KEY if using provider="anthropic")
