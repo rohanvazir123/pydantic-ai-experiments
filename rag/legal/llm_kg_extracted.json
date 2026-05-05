@@ -26,7 +26,33 @@
   {
     "document_id": "921a191a-8f61-4155-b30b-4f70e73d2791",
     "document_title": "client-review-globalfinance",
-    "entities": [],
+    "entities": [
+      {
+        "name": "GlobalFinance Corp",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "NeuralFlow",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "January 12, 2025",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "July 15, 2024",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "August 28, 2024",
+        "entity_type": "Date",
+        "metadata": {}
+      }
+    ],
     "relationships": []
   },
   {
@@ -38,68 +64,1888 @@
   {
     "document_id": "91803e32-fc2c-44e1-870c-060304475e52",
     "document_title": "NeuralFlow AI - Client Implementation Playbook",
-    "entities": [],
+    "entities": [
+      {
+        "name": "NeuralFlow AI - Client Implementation Playbook",
+        "entity_type": "Contract",
+        "metadata": {}
+      }
+    ],
     "relationships": []
   },
   {
     "document_id": "69d516d9-98e2-4745-b32c-b4cee1a0fddc",
     "document_title": "2ThemartComInc\\_19990826\\_10-12G\\_EX-10.10\\_6700288\\_EX-10.10\\_Co-Branding Agreement\\_ Agency Agreement",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "I-ESCROW, INC.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "2THEMART.COM, INC.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "CO-BRANDING AND ADVERTISING AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "June 21, 1999",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "2TheMart",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "i-Escrow",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Services",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Co-Branded Site",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Information Transfer Mechanism",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Effective Date",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Shadow Site",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "2TheMart Content",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "i-Escrow Content",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "i-Escrow Marks",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "2TheMart Marks",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "California",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "California Escrow Law",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Domain Name",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "LIMITS ON SUBLICENSING",
+        "entity_type": "RestrictionClause",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "I-ESCROW, INC.",
+        "target_name": "CO-BRANDING AND ADVERTISING AGREEMENT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "2THEMART.COM, INC.",
+        "target_name": "CO-BRANDING AND ADVERTISING AGREEMENT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "CO-BRANDING AND ADVERTISING AGREEMENT",
+        "target_name": "June 21, 1999",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "2TheMart",
+        "target_name": "Services",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "Services",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "2TheMart",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "2TheMart",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "2TheMart",
+        "target_name": "i-Escrow",
+        "relationship_type": "GRANTS_LICENSE_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "2TheMart",
+        "relationship_type": "GRANTS_LICENSE_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "2TheMart",
+        "target_name": "LIMITS ON SUBLICENSING",
+        "relationship_type": "HAS_RESTRICTION",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "LIMITS ON SUBLICENSING",
+        "relationship_type": "HAS_RESTRICTION",
+        "properties": {}
+      },
+      {
+        "source_name": "2TheMart",
+        "target_name": "i-Escrow",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "California",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "i-Escrow",
+        "target_name": "California Escrow Law",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "74857caa-8a29-4ea5-8be9-b183ef5edc2e",
     "document_title": "ABILITYINC\\_06\\_15\\_2020-EX-4.25-SERVICES AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "TELCOSTAR PTE, LTD.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Ability Computer & Software Industries Ltd",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Provider",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "RECIPIENT",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Singapore",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "State of Israel",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "October 1, 2019",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "November 1, 2019",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Exhibit A",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "Recipient",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Section 1.2",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Effective Date",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "December 31, 2021",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "this Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "the Parties",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "December 31, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Force Majeure",
+        "entity_type": "Clause",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "TELCOSTAR PTE, LTD.",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "Ability Computer & Software Industries Ltd",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "Provider",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "RECIPIENT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "Singapore",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "State of Israel",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "November 1, 2019",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT",
+        "target_name": "Exhibit A",
+        "relationship_type": "HAS_OBLIGATION",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Recipient",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Recipient",
+        "relationship_type": "ASSIGNS_IP_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Section 1.2",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Section 1.2",
+        "relationship_type": "HAS_OBLIGATION",
+        "properties": {}
+      },
+      {
+        "source_name": "this Agreement",
+        "target_name": "Recipient",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "this Agreement",
+        "target_name": "Provider",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Recipient",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Recipient",
+        "target_name": "Provider",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "this Agreement",
+        "target_name": "December 31, 2021",
+        "relationship_type": "EXPIRES_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "the Parties",
+        "target_name": "No Right of Setoff",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "the Parties",
+        "target_name": "Termination",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Services",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Recipient",
+        "target_name": "Provider",
+        "relationship_type": "CAN_TERMINATE",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Recipient",
+        "relationship_type": "CAN_TERMINATE",
+        "properties": {}
+      },
+      {
+        "source_name": "the Parties",
+        "target_name": "Termination Clause",
+        "relationship_type": "HAS_TERMINATION",
+        "properties": {}
+      },
+      {
+        "source_name": "Termination",
+        "target_name": "December 31, 2020",
+        "relationship_type": "EXPIRES_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Recipient",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Provider",
+        "target_name": "Force Majeure",
+        "relationship_type": "CAN_TERMINATE",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "70c77386-f982-4335-b535-5c83cd03eecf",
     "document_title": "ACCELERATEDTECHNOLOGIESHOLDINGCORP\\_04\\_24\\_2003-EX-10.13-JOINT VENTURE AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "Collectible Concepts Group, Inc.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Pivotal Self Service Tech, Inc.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "JOINT VENTURE AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "MightyCell Batteries",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Pennsylvania",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Joint Venture",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "1st of March, 2003",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "February 28, 2004",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Joint Venturers",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Commonwealth of Pennsylvania",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "CCGI",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Products",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Joint Ventura",
+        "entity_type": "Clause",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "Collectible Concepts Group, Inc.",
+        "target_name": "JOINT VENTURE AGREEMENT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Pivotal Self Service Tech, Inc.",
+        "target_name": "JOINT VENTURE AGREEMENT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "JOINT VENTURE AGREEMENT",
+        "target_name": "Pennsylvania",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Joint Venture",
+        "target_name": "1st of March, 2003",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Joint Venture",
+        "target_name": "February 28, 2004",
+        "relationship_type": "EXPIRES_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Joint Venturers",
+        "target_name": "Commonwealth of Pennsylvania",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "211d4aa4-9fdf-47f5-b70a-04c58f93e565",
     "document_title": "ACCURAYINC\\_09\\_01\\_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "ACCURAY INCORPORATED",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "SIEMENS AKTIENGESELLSCHAFT",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Delaware",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Federal Republic of Germany",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "June 8, 2010",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Accuray",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Distributor",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Siemens",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Multiple LINAC or Multi-Modality Purchases",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Accuray CyberKnife Service Agreement",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Effective Date",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Section 2.3.2",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Schedule 2.3.2",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Customer",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Purchase Order",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "Products or Services",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "Accuray Components and Interfaces",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "Quote",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "this Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Oncology Care Systems price book and sales operation system",
+        "entity_type": "Contract",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "target_name": "ACCURAY INCORPORATED",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "target_name": "SIEMENS AKTIENGESELLSCHAFT",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "target_name": "Delaware",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "target_name": "Federal Republic of Germany",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT",
+        "target_name": "June 8, 2010",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Accuray",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Distributor",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Multiple LINAC or Multi-Modality Purchases",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Accuray CyberKnife Service Agreement",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Effective Date",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Accuray",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Distributor",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Accuray",
+        "target_name": "Distributor",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Distributor",
+        "target_name": "Accuray",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Section 2.3.2",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Schedule 2.3.2",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Multiple LINAC or Multi-Modality Purchases",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Distributor",
+        "target_name": "Accuray",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "db119935-49dd-4d4b-b2c6-e0139f19d741",
     "document_title": "ADAMSGOLFINC\\_03\\_21\\_2005-EX-10.17-ENDORSEMENT AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "TOM WATSON",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "ADAMS GOLF, LTD.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "January 13, 2005",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "CONSULTANT'S ENDORSEMENT",
+        "entity_type": "LicenseClause",
+        "metadata": {}
+      },
+      {
+        "name": "CONSULTANT",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "ADAMS GOLF",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "SAG",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "AFTRA",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "TRA",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "September 1, 2004",
+        "entity_type": "Date",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT",
+        "target_name": "TOM WATSON",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT",
+        "target_name": "ADAMS GOLF, LTD.",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT",
+        "target_name": "January 13, 2005",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT",
+        "target_name": "CONSULTANT'S ENDORSEMENT",
+        "relationship_type": "HAS_LICENSE",
+        "properties": {}
+      },
+      {
+        "source_name": "TOM WATSON",
+        "target_name": "ADAMS GOLF, LTD.",
+        "relationship_type": "GRANTS_LICENSE_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADAMS GOLF",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "CONSULTANT",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADAMS GOLF",
+        "target_name": "CONSULTANT",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "CONSULTANT",
+        "target_name": "ADAMS GOLF",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "TRA",
+        "target_name": "CONSULTANT",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "September 1, 2004",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "8a6bb19c-3261-49e2-a891-a6adbf87d4ae",
     "document_title": "ADAPTIMMUNETHERAPEUTICSPLC\\_04\\_06\\_2017-EX-10.11-STRATEGIC ALLIANCE AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "STRATEGIC ALLIANCE AGREEMENT",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "September, 2016",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "The University of Texas M. D. Anderson Cancer Center",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Adaptimmune LLC",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Adaptimmune Limited",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Houston, TX",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Adaptimmune",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "MDACC",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Study Orders",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Exhibit III",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Protocol or workscope",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Exhibit I",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "nineteen million six hundred and forty four thousand Dollars US ($19,644,000)",
+        "entity_type": "PaymentTerm",
+        "metadata": {}
+      },
+      {
+        "name": "JSC",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "MD Anderson",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Joint Steering Committee (\"JSC\")",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "State of Texas",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "STRATEGIC ALLIANCE AGREEMENT",
+        "target_name": "September, 2016",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "STRATEGIC ALLIANCE AGREEMENT",
+        "target_name": "The University of Texas M. D. Anderson Cancer Center",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "STRATEGIC ALLIANCE AGREEMENT",
+        "target_name": "Adaptimmune LLC",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "STRATEGIC ALLIANCE AGREEMENT",
+        "target_name": "Adaptimmune Limited",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "STRATEGIC ALLIANCE AGREEMENT",
+        "target_name": "Houston, TX",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Adaptimmune",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "MDACC",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Study Orders",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Exhibit III",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Protocol or workscope",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "Exhibit I",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "nineteen million six hundred and forty four thousand Dollars US ($19,644,000)",
+        "relationship_type": "HAS_PAYMENT",
+        "properties": {}
+      },
+      {
+        "source_name": "JSC",
+        "target_name": "Adaptimmune",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "JSC",
+        "target_name": "MDACC",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Adaptimmune",
+        "target_name": "MD Anderson",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "nineteen million six hundred and forty four thousand Dollars US ($19,644,000)",
+        "target_name": "MD Anderson",
+        "relationship_type": "HAS_PAYMENT",
+        "properties": {}
+      },
+      {
+        "source_name": "Joint Steering Committee (\"JSC\")",
+        "target_name": "MD Anderson",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Joint Steering Committee (\"JSC\")",
+        "target_name": "Adaptimmune",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "MD Anderson",
+        "target_name": "State of Texas",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "ba72e905-d152-4255-8246-e95242820b75",
     "document_title": "ADIANUTRITION,INC\\_04\\_01\\_2005-EX-10.D2-RESELLER AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "PivX Corporation",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Detto Technologies",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "California",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Washington",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Reseller Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Exhibit A (PivX/Detto Reseller Agreement Addendum)",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Qwik-Fix Pro",
+        "entity_type": "IPClause",
+        "metadata": {}
+      },
+      {
+        "name": "Detto",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "PivX",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "North America",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Exhibit A",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Third Party",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "SHIPMENT AND DELIVERY",
+        "entity_type": "Obligation",
+        "metadata": {}
+      },
+      {
+        "name": "SECURITY INTEREST",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "PRODUCT WARRANTY",
+        "entity_type": "LiabilityClause",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "PivX Corporation",
+        "target_name": "Reseller Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Detto Technologies",
+        "target_name": "Reseller Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Reseller Agreement",
+        "target_name": "California",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Reseller Agreement",
+        "target_name": "Qwik-Fix Pro",
+        "relationship_type": "HAS_IP_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Reseller Agreement",
+        "target_name": "Exhibit A (PivX/Detto Reseller Agreement Addendum)",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Detto",
+        "target_name": "Qwik-Fix Pro",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "Qwik-Fix Pro",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Qwik-Fix Pro",
+        "target_name": "North America",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Detto",
+        "target_name": "PivX",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "Detto",
+        "relationship_type": "HAS_OBLIGATION",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "Detto",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "Detto",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "Qwik-Fix Pro",
+        "relationship_type": "HAS_LICENSE",
+        "properties": {}
+      },
+      {
+        "source_name": "PivX",
+        "target_name": "PRODUCT WARRANTY",
+        "relationship_type": "HAS_LIABILITY",
+        "properties": {}
+      },
+      {
+        "source_name": "SHIPMENT AND DELIVERY",
+        "target_name": "Detto",
+        "relationship_type": "HAS_OBLIGATION",
+        "properties": {}
+      },
+      {
+        "source_name": "SECURITY INTEREST",
+        "target_name": "Qwik-Fix Pro",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "96a675dd-4cdc-44de-9a9a-784f5d1cfbe2",
     "document_title": "ADMA BioManufacturing, LLC -  Amendment #3 to Manufacturing Agreement",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "ADMA BioManufacturing, LLC",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Sanofi Pasteur S.A.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Amendment #3 to the Manufacturing Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Delaware",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "France",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "December 21, 2017",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "ADMA",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Sanofi Pasteur",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Amendment #3",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "BPC",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Quality Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Securities and Exchange Commission",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "December 31,2017",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "March 1, 2018",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "June 1, 2018",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "September 1, 2018",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "December 1, 2018",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Compensation Fee",
+        "entity_type": "PaymentTerm",
+        "metadata": {}
+      },
+      {
+        "name": "Sanofi",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Updated Supply Plan",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Plasma Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Termination, Settlement and Release Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Rule 24b-2 of the Securities Exchange Act of 1934",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Section 6.5",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Source Plasma",
+        "entity_type": "Clause",
+        "metadata": {}
+      },
+      {
+        "name": "Limitation of Liability",
+        "entity_type": "LiabilityClause",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Florida",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "Amendment Effective Date",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "22 Dec. 2017",
+        "entity_type": "Date",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "Amendment #3 to the Manufacturing Agreement",
+        "target_name": "Delaware",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3 to the Manufacturing Agreement",
+        "target_name": "December 21, 2017",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "ADMA BioManufacturing, LLC",
+        "target_name": "Amendment #3 to the Manufacturing Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur S.A.",
+        "target_name": "Amendment #3 to the Manufacturing Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADMA",
+        "target_name": "Sanofi Pasteur",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Obligation",
+        "relationship_type": "HAS_OBLIGATION",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Liquidated Damages for Minimum Volume Commitment Violation",
+        "relationship_type": "HAS_LIABILITY",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur",
+        "target_name": "Amendment #3",
+        "relationship_type": "CAN_TERMINATE",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur",
+        "target_name": "Quality Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADMA",
+        "target_name": "Quality Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Quality Agreement",
+        "target_name": "Securities and Exchange Commission",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Quality Agreement",
+        "target_name": "Compensation Fee",
+        "relationship_type": "HAS_PAYMENT",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi",
+        "target_name": "ADMA",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Updated Supply Plan",
+        "target_name": "Amendment #3",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Section 6.5",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Limitation of Liability",
+        "relationship_type": "HAS_LIABILITY",
+        "properties": {}
+      },
+      {
+        "source_name": "Plasma Agreement",
+        "target_name": "Termination, Settlement and Release Agreement",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "BPC",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur",
+        "target_name": "Amendment #3",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADMA",
+        "target_name": "Amendment #3",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Florida",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "Amendment #3",
+        "target_name": "Amendment Effective Date",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Sanofi Pasteur",
+        "target_name": "ADMA",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "ADMA",
+        "target_name": "Sanofi Pasteur",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "0287b7b9-589a-4e07-9f1c-61b7e90404c6",
     "document_title": "ADUROBIOTECH,INC\\_06\\_02\\_2020-EX-10.7-CONSULTING AGREEMENT",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "Aduro Biotech, Inc.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "IREYA B.V",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Consulting Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "July 1, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "December 31, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "Aduro",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Consultant",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Nonsolicitation",
+        "entity_type": "RestrictionClause",
+        "metadata": {}
+      },
+      {
+        "name": "Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "State of California",
+        "entity_type": "Jurisdiction",
+        "metadata": {}
+      },
+      {
+        "name": "ADURO BIOTECH, INC.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "CONSULTANT",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Stephen T. Isaacs",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Andrea van Elsas",
+        "entity_type": "Party",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "Consulting Agreement",
+        "target_name": "Aduro Biotech, Inc.",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Consulting Agreement",
+        "target_name": "IREYA B.V",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Consulting Agreement",
+        "target_name": "July 1, 2020",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Consulting Agreement",
+        "target_name": "December 31, 2020",
+        "relationship_type": "EXPIRES_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Consultant",
+        "target_name": "Aduro",
+        "relationship_type": "ASSIGNS_IP_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Nonsolicitation",
+        "target_name": "Consultant",
+        "relationship_type": "CAN_TERMINATE",
+        "properties": {}
+      },
+      {
+        "source_name": "Agreement",
+        "target_name": "State of California",
+        "relationship_type": "GOVERNED_BY",
+        "properties": {}
+      },
+      {
+        "source_name": "ADURO BIOTECH, INC.",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "CONSULTANT",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Stephen T. Isaacs",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Andrea van Elsas",
+        "target_name": "Agreement",
+        "relationship_type": "PARTY_TO",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "09337794-08d8-42ec-902f-8626b764f704",
     "document_title": "ADUROBIOTECH,INC\\_06\\_02\\_2020-EX-10.7-CONSULTING AGREEMENT(1)",
-    "entities": [],
-    "relationships": []
+    "entities": [
+      {
+        "name": "Aduro Biotech, Inc.",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "IREYA B.V",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "Consultant",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "June 1, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "July 1, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "December 31, 2020",
+        "entity_type": "Date",
+        "metadata": {}
+      },
+      {
+        "name": "€500 per hour",
+        "entity_type": "PaymentTerm",
+        "metadata": {}
+      },
+      {
+        "name": "€5,000 individually or €20,000 in the aggregate",
+        "entity_type": "RestrictionClause",
+        "metadata": {}
+      },
+      {
+        "name": "Aduro",
+        "entity_type": "Party",
+        "metadata": {}
+      },
+      {
+        "name": "this Agreement",
+        "entity_type": "Contract",
+        "metadata": {}
+      },
+      {
+        "name": "Independent Contractor",
+        "entity_type": "Clause",
+        "metadata": {}
+      }
+    ],
+    "relationships": [
+      {
+        "source_name": "Aduro Biotech, Inc.",
+        "target_name": "IREYA B.V",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "Aduro Biotech, Inc.",
+        "target_name": "July 1, 2020",
+        "relationship_type": "EFFECTIVE_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "July 1, 2020",
+        "target_name": "December 31, 2020",
+        "relationship_type": "EXPIRES_ON",
+        "properties": {}
+      },
+      {
+        "source_name": "Aduro Biotech, Inc.",
+        "target_name": "€500 per hour",
+        "relationship_type": "HAS_PAYMENT",
+        "properties": {}
+      },
+      {
+        "source_name": "Aduro Biotech, Inc.",
+        "target_name": "€5,000 individually or €20,000 in the aggregate",
+        "relationship_type": "HAS_RESTRICTION",
+        "properties": {}
+      },
+      {
+        "source_name": "Consultant",
+        "target_name": "Aduro",
+        "relationship_type": "OWES_OBLIGATION_TO",
+        "properties": {}
+      },
+      {
+        "source_name": "this Agreement",
+        "target_name": "Independent Contractor",
+        "relationship_type": "HAS_CLAUSE",
+        "properties": {}
+      }
+    ]
   },
   {
     "document_id": "0cd6295a-073a-4b23-bc33-8193d17de065",
@@ -242,23 +2088,7 @@
   {
     "document_id": "dda5a825-53fc-49c8-a657-1ec0df8d63ee",
     "document_title": "AlliedEsportsEntertainmentInc\\_20190815\\_8-K\\_EX-10.34\\_11788308\\_EX-10.34\\_Sponsorship Agreement",
-    "entities": [
-      {
-        "name": "Allied",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Newegg Incorporated",
-        "entity_type": "Jurisdiction",
-        "metadata": {}
-      },
-      {
-        "name": "five days",
-        "entity_type": "Date",
-        "metadata": {}
-      }
-    ],
+    "entities": [],
     "relationships": []
   },
   {
@@ -324,23 +2154,7 @@
   {
     "document_id": "1cab8cad-9861-4d7e-b7ca-6a27af70613d",
     "document_title": "AzulSa\\_20170303\\_F-1A\\_EX-10.3\\_9943903\\_EX-10.3\\_Maintenance Agreement1",
-    "entities": [
-      {
-        "name": "Azul S.A.",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "",
-        "entity_type": "Jurisdiction",
-        "metadata": {}
-      },
-      {
-        "name": "None",
-        "entity_type": "Clause",
-        "metadata": {}
-      }
-    ],
+    "entities": [],
     "relationships": []
   },
   {
@@ -1906,28 +3720,7 @@
   {
     "document_id": "8d54bb3c-d7b4-4fc5-a0cd-ef6ff9f08df5",
     "document_title": "NETZEEINC\\_11\\_14\\_2002-EX-10.3-MAINTENANCE AGREEMENT",
-    "entities": [
-      {
-        "name": "Georgia",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "banking corporation",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Richard S. Eiswirth",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Kevin Tweddle",
-        "entity_type": "Party",
-        "metadata": {}
-      }
-    ],
+    "entities": [],
     "relationships": []
   },
   {
@@ -2245,28 +4038,7 @@
   {
     "document_id": "d48c014f-062a-4b8e-ac1f-7bd49e2fcb55",
     "document_title": "PhasebioPharmaceuticalsInc\\_20200330\\_10-K\\_EX-10.21\\_12086810\\_EX-10.21\\_Development Agreement",
-    "entities": [
-      {
-        "name": "PhaseBio Pharmaceuticals Inc.",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Cayman Islands",
-        "entity_type": "Jurisdiction",
-        "metadata": {}
-      },
-      {
-        "name": "January 9, 2020",
-        "entity_type": "Date",
-        "metadata": {}
-      },
-      {
-        "name": "SFJ Pharmaceuticals X, Ltd.",
-        "entity_type": "Party",
-        "metadata": {}
-      }
-    ],
+    "entities": [],
     "relationships": []
   },
   {
@@ -2524,28 +4296,7 @@
   {
     "document_id": "81a58764-50e4-4136-8ec7-efa8fc0cd2e7",
     "document_title": "SPHERE3DCORP\\_06\\_24\\_2020-EX-10.12-CONSULTING AGREEMENT",
-    "entities": [
-      {
-        "name": "Company",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Consultant",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "GROUPE PARAMEUS CORP",
-        "entity_type": "Party",
-        "metadata": {}
-      },
-      {
-        "name": "Sphere 3D Corp.",
-        "entity_type": "Party",
-        "metadata": {}
-      }
-    ],
+    "entities": [],
     "relationships": []
   },
   {

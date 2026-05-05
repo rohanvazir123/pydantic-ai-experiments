@@ -10,7 +10,8 @@ Natural language query interface over multiple data sources, powered by DuckDB +
 |---|---|
 | `nlp_sql_postgres_v1.py` | Original — GCS Parquets + PostgreSQL, returns raw tuples |
 | `nlp_sql_postgres_v2.py` | **Current** — self-correcting retry, structured `QueryResult`, column names, normalized NL cache, execution guardrails |
-| `test_nlp_sql_postgres_v2.py` | Test suite for v2 (87 tests, all offline) |
+| `sql_discovery.py` | Schema-discovery agent — LLM calls `list_tables`/`describe_table` tools at inference time instead of receiving a pre-built schema string |
+| `test_nlp_sql_postgres_v2.py` | Test suite for v2 (92 tests, all offline) |
 | `test_nlp_sql_postgres.py` | Test suite for v1 |
 
 ---
@@ -154,19 +155,56 @@ This block is prepended to every new prompt as "Conversation so far:", enabling 
 
 ## Schema discovery
 
-`UnifiedDataSource.generate_schema()` introspects all sources at startup:
+Schema is discovered at inference time by the LLM via two Pydantic AI tools registered on `sql_agent` in `sql_discovery.py` — no schema string is pre-built or injected into the prompt.
 
-**GCS Parquet:** Lists blob virtual prefixes (`delimiter="/"`) — each subfolder becomes a table name. Creates a DuckDB `VIEW` over `parquet_scan('gs://...')`. `DESCRIBE view_name` gives columns and types.
+| Tool | What the LLM calls | What it returns |
+|---|---|---|
+| `list_tables(db_type)` | `"postgres"` or `"duckdb"` | List of table names from `information_schema.tables` (Postgres) or `SHOW TABLES` (DuckDB) |
+| `describe_table(db_type, table_name)` | db + a specific table | Column names and types from `information_schema.columns` (Postgres) or `DESCRIBE` (DuckDB) |
 
-**PostgreSQL:** After attaching via DuckDB's postgres extension, queries `{alias}.information_schema.tables` and `{alias}.information_schema.columns` through DuckDB's catalog.
+The system prompt instructs the LLM to call these tools before generating SQL. The LLM fetches only the tables/columns relevant to the question — narrower queries use fewer tokens than a full pre-built schema.
 
-Everything is serialized into a single schema string prepended to every LLM prompt. Schema is captured once at startup — table changes require a restart.
+**How the LLM knows the tools exist:** the `@sql_agent.tool` decorator registers each function with the agent. When `sql_agent.run()` is called, Pydantic AI serialises every registered tool — its name, parameter names/types, and **docstring** — into the tool spec sent to the LLM in the API request. The docstrings (`"List tables for 'postgres' or 'duckdb'."` and `"Get columns and types for a specific table in either database."`) are the descriptions the LLM reads to decide when and how to call each tool. The system prompt `"Discover the schema first"` then nudges it to call them before generating SQL rather than guessing table names.
+
+**Integrated via** `UnifiedDataSource.discovery_query(prompt, pg_alias=None)` in `nlp_sql_postgres_v2.py` — resolves the Postgres DSN from `postgres_dbs`, creates an `asyncpg` pool, runs the discovery agent, executes the returned SQL, and returns `(SQLResponse, columns, rows)`.
+
+**Contrast with `generate_schema()` (commented out):** the old approach serialised the full schema once at startup and prepended it to every prompt. Table changes required a restart; the full schema was sent on every call regardless of query scope.
+
+---
+
+## How Pydantic AI manages conversation context
+
+Within a single `sql_agent.run()` call, Pydantic AI manages the tool-calling loop internally as a growing message list:
+
+```
+user prompt
+  → LLM response: call list_tables("postgres")
+  → tool result appended as a message
+  → LLM response: call describe_table("postgres", "documents")
+  → tool result appended as a message
+  → LLM response: SQLResponse(sql=..., explanation=...)   ← final structured output
+```
+
+Each tool result is sent back to the LLM as part of the same conversation so it can reason over accumulated schema information before generating SQL. This is handled entirely by Pydantic AI — no manual message threading required.
+
+**Across calls** (`ConversationManager`), context is managed manually. `_history_context(n=3)` serialises the last 3 successful turns as a plain string block prepended to the next prompt:
+
+```
+Conversation so far:
+Q: Revenue per customer?
+SQL: SELECT c.name, SUM(s.revenue) ...
+Result preview: [('Alice', 3000.0), ('Bob', 1400.0)]
+
+Question: only US customers?
+```
+
+This is injected in the user-turn prompt, not via Pydantic AI's message history API — keeping it simple and giving full control over what context the model sees. Failed turns are excluded so bad SQL examples don't confuse the model.
 
 ---
 
 ## Prompting
 
-System prompt enforces DuckDB-specific table naming rules and mandates plain SQL (no markdown fences, no explanation, no comments). The schema string is injected in the user-turn prompt. The last 3 successful conversation turns are included as history context. Zero-shot — no hardcoded few-shot examples.
+System prompt enforces DuckDB-specific table naming rules and mandates plain SQL (no markdown fences, no explanation, no comments). Schema is not injected — the LLM discovers it by calling `list_tables`/`describe_table` tools. The last 3 successful conversation turns are included as history context. Zero-shot — no hardcoded few-shot examples.
 
 ---
 
@@ -176,7 +214,7 @@ System prompt enforces DuckDB-specific table naming rules and mandates plain SQL
 |---|---|
 | **PostgreSQL full scans** | `postgres_scanner` reads entire PG tables; no index pushdown. Large tables (>10M rows) are slow. |
 | **In-memory result sets** | Very large results can OOM. Row cap guardrail mitigates but doesn't eliminate this. |
-| **Static schema** | Captured at startup. Table changes require restart. |
+| **Static schema** | ~~Captured at startup.~~ Schema is now discovered dynamically via tools — no restart needed for table changes. |
 | **GCS auth** | HMAC keys only (`GCS_HMAC_ID` + `GCS_HMAC_SECRET`). Service account JSON / Workload Identity not supported. |
 | **Semantically wrong SQL** | Syntactically valid but logically wrong SQL returns wrong results silently. No semantic validation layer. |
 | **Ambiguous NL** | *"Show me recent findings"* — model guesses. No clarification step implemented. |
@@ -240,7 +278,7 @@ Required env vars:
 python nlp_sql_postgres_v2.py
 ```
 
-Prints the full unified schema then runs five sample queries spanning all three sources.
+Runs two discovery queries — the LLM calls `list_tables`/`describe_table` tools to explore schema, then generates and executes SQL.
 
 ## Running tests
 
@@ -248,7 +286,7 @@ Prints the full unified schema then runs five sample queries spanning all three 
 pytest test_nlp_sql_postgres_v2.py -v
 ```
 
-All 87 tests run offline — GCS and PostgreSQL connections are mocked.
+All 92 tests run offline — GCS and PostgreSQL connections are mocked.
 
 ---
 

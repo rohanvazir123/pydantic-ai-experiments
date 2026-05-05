@@ -495,10 +495,10 @@ class PostgresDB:
 @dataclass
 class UnifiedDataSource:
     conn: duckdb.DuckDBPyConnection
-    gcs_bucket: str
-    gcs_prefix: str           # e.g. "partitioned_data/"
-    gcs_user_project: str
     postgres_dbs: list[PostgresDB] = field(default_factory=list)
+    gcs_bucket: str = ""
+    gcs_prefix: str = "partitioned_data/"
+    gcs_user_project: str = ""
     agent: Optional[Agent] = field(default=None, repr=False)
     schema_text: Optional[str] = None
     _gcs_views: dict[str, str] = field(default_factory=dict)
@@ -534,41 +534,41 @@ class UnifiedDataSource:
             )
             logger.info("Attached PostgreSQL: %s", db.alias)
 
-    def generate_schema(self) -> str:
-        lines: list[str] = []
-        if self._gcs_views:
-            lines.append("=== GCS Parquet tables (use bare name) ===")
-            for view in sorted(self._gcs_views.values()):
-                cols = self.conn.execute(f"DESCRIBE {view}").fetchall()
-                lines.append(f"Table: {view}")
-                for col in cols:
-                    lines.append(f"  - {col[0]} ({col[1]})")
-                lines.append("")
-        for db in self.postgres_dbs:
-            lines.append(
-                f"=== {db.alias} tables (prefix: {db.alias}.main.<table>) ==="
-            )
-            tables = self.conn.execute(f"""
-                SELECT table_name
-                FROM {db.alias}.information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_type   = 'BASE TABLE'
-                ORDER BY table_name
-            """).fetchall()
-            for (table_name,) in tables:
-                cols = self.conn.execute(f"""
-                    SELECT column_name, data_type
-                    FROM {db.alias}.information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name   = '{table_name}'
-                    ORDER BY ordinal_position
-                """).fetchall()
-                lines.append(f"Table: {db.alias}.main.{table_name}")
-                for col_name, col_type in cols:
-                    lines.append(f"  - {col_name} ({col_type})")
-                lines.append("")
-        self.schema_text = "\n".join(lines).strip()
-        return self.schema_text
+    # def generate_schema(self) -> str:
+    #     lines: list[str] = []
+    #     if self._gcs_views:
+    #         lines.append("=== GCS Parquet tables (use bare name) ===")
+    #         for view in sorted(self._gcs_views.values()):
+    #             cols = self.conn.execute(f"DESCRIBE {view}").fetchall()
+    #             lines.append(f"Table: {view}")
+    #             for col in cols:
+    #                 lines.append(f"  - {col[0]} ({col[1]})")
+    #             lines.append("")
+    #     for db in self.postgres_dbs:
+    #         lines.append(
+    #             f"=== {db.alias} tables (prefix: {db.alias}.main.<table>) ==="
+    #         )
+    #         tables = self.conn.execute(f"""
+    #             SELECT table_name
+    #             FROM {db.alias}.information_schema.tables
+    #             WHERE table_schema = 'public'
+    #               AND table_type   = 'BASE TABLE'
+    #             ORDER BY table_name
+    #         """).fetchall()
+    #         for (table_name,) in tables:
+    #             cols = self.conn.execute(f"""
+    #                 SELECT column_name, data_type
+    #                 FROM {db.alias}.information_schema.columns
+    #                 WHERE table_schema = 'public'
+    #                   AND table_name   = '{table_name}'
+    #                 ORDER BY ordinal_position
+    #             """).fetchall()
+    #             lines.append(f"Table: {db.alias}.main.{table_name}")
+    #             for col_name, col_type in cols:
+    #                 lines.append(f"  - {col_name} ({col_type})")
+    #             lines.append("")
+    #     self.schema_text = "\n".join(lines).strip()
+    #     return self.schema_text
 
     def init_agent(
         self,
@@ -613,6 +613,58 @@ class UnifiedDataSource:
             _initial_history=initial_history,
         )
 
+    async def discovery_query(
+        self,
+        prompt: str,
+        pg_alias: str | None = None,
+    ) -> tuple:
+        """Run *prompt* through the schema-discovery agent (sql_discovery.py).
+
+        Unlike the schema-upfront flow, the agent calls list_tables/describe_table
+        tools at inference time to explore schema dynamically — useful when the
+        schema is unknown or you want to avoid pre-building a schema string.
+
+        Returns (SQLResponse, columns, rows).
+        Pass *pg_alias* to select which attached PostgresDB to use (default: first).
+        """
+        from nl2sql.sql_discovery import MultiDBDeps  # type: ignore[import]
+        from nl2sql.sql_discovery import SQLResponse  # type: ignore[import]
+        from nl2sql.sql_discovery import sql_agent  # type: ignore[import]
+
+        alias = pg_alias or (self.postgres_dbs[0].alias if self.postgres_dbs else None)
+        pg_dsn = next(
+            (db.connection_string for db in self.postgres_dbs if db.alias == alias),
+            None,
+        )
+        if pg_dsn is None:
+            raise ValueError(
+                "No PostgresDB configured in UnifiedDataSource. "
+                "Add one via postgres_dbs= before calling discovery_query()."
+            )
+
+        pg_pool = await asyncpg.create_pool(pg_dsn)
+        try:
+            deps = MultiDBDeps(pg_pool=pg_pool, duck_conn=self.conn)
+            result = await sql_agent.run(prompt, deps=deps)
+            response: SQLResponse = result.output
+
+            if response.database_type == "postgres":
+                async with pg_pool.acquire() as pg_conn:
+                    rows = await pg_conn.fetch(response.sql)
+                    columns = list(rows[0].keys()) if rows else []
+                    data: list = [dict(r) for r in rows]
+            else:
+                cursor = self.conn.execute(response.sql)
+                columns = [d[0] for d in (cursor.description or [])]
+                data = cursor.fetchall()
+
+            logger.info(
+                "discovery_query OK — db=%s rows=%d", response.database_type, len(data)
+            )
+            return response, columns, data
+        finally:
+            await pg_pool.close()
+
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -638,46 +690,22 @@ if __name__ == "__main__":
         conn = duckdb.connect(database=":memory:")
         source = UnifiedDataSource(
             conn=conn,
-            gcs_bucket=os.environ["GCS_BUCKET"],
-            gcs_prefix=os.environ.get("GCS_PREFIX", "partitioned_data/"),
-            gcs_user_project=os.environ["GCS_USER_PROJECT"],
             postgres_dbs=[
                 PostgresDB("rag",      os.environ["RAG_DB_URL"]),
                 PostgresDB("local_pg", os.environ["LOCAL_PG_URL"]),
             ],
         )
 
-        source.load_gcs_tables()
-        source.attach_postgres_dbs()
-
-        schema = source.generate_schema()
-        print("\n--- UNIFIED SCHEMA ---")
-        print(schema)
-        print("--- END SCHEMA ---\n")
-
-        source.init_agent(
-            model=os.environ.get("LLM_MODEL", "gpt-4o"),
-            provider=os.environ.get("LLM_PROVIDER", "openai"),
-        )
-
-        # Optional: persist history across runs.
-        # history_store = await HistoryStore.create(os.environ["LOCAL_PG_URL"])
-        # session_id = os.environ.get("SESSION_ID")  # pass to resume a prior session
-        chat = await source.conversation_manager(max_retries=3)
-
-        queries = [
-            "What was the total items sold by user?",
-            "Which products have sale numbers above 200?",
-            "How many baby names were registered in 1990?",
-            "Which countries had the highest GDP in 2020?",
+        discovery_prompts = [
             "How many documents are in the RAG knowledge base?",
+            "How many baby names were registered in 1990?",
         ]
-
-        for q in queries:
-            result = await chat.run_query(q)
-            result.pretty_print()
-
-        print("\n--- Conversation history ---")
-        chat.show_history()
+        for prompt in discovery_prompts:
+            response, columns, rows = await source.discovery_query(prompt)
+            print(f"\nQ: {prompt}")
+            print(f"DB: {response.database_type}  SQL: {response.sql}")
+            print(f"Explanation: {response.explanation}")
+            print(f"Columns: {columns}")
+            print(f"Rows: {rows[:5]}")
 
     asyncio.run(main())

@@ -83,12 +83,30 @@ async def describe_table(
         return f"DuckDB table {table_name}: {', '.join(cols)}"
 
 
-# 5. Execution Example
-async def run_query(user_prompt: str):
-    # Initialize connections
-    pg_pool = await asyncpg.create_pool("postgresql://user:pass@localhost/db")
-    duck_conn = duckdb.connect(":memory:")
+# 5. Execute the SQL returned by the agent on the appropriate database.
+#    Returns (SQLResponse, columns, rows).
+async def run_query(
+    user_prompt: str,
+    duck_conn: duckdb.DuckDBPyConnection | None = None,
+) -> tuple[SQLResponse, list[str], list]:
+    settings = load_settings()
+    pg_pool = await asyncpg.create_pool(settings.database_url)
+    conn = duck_conn or duckdb.connect(":memory:")
+    try:
+        deps = MultiDBDeps(pg_pool=pg_pool, duck_conn=conn)
+        result = await sql_agent.run(user_prompt, deps=deps)
+        response: SQLResponse = result.output
 
-    deps = MultiDBDeps(pg_pool=pg_pool, duck_conn=duck_conn)
-    result = await sql_agent.run(user_prompt, deps=deps)
-    return result.data
+        if response.database_type == "postgres":
+            async with pg_pool.acquire() as pg_conn:
+                rows = await pg_conn.fetch(response.sql)
+                columns = list(rows[0].keys()) if rows else []
+                data: list = [dict(r) for r in rows]
+        else:
+            cursor = conn.execute(response.sql)
+            columns = [d[0] for d in (cursor.description or [])]
+            data = cursor.fetchall()
+
+        return response, columns, data
+    finally:
+        await pg_pool.close()

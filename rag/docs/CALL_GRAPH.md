@@ -837,53 +837,76 @@ QueryResult                                                          L140
 
 ## 13. SQL Discovery Agent (sql_discovery)
 
-> `nlp2sql/sql_discovery.py` — lightweight Pydantic AI agent that discovers schema on-the-fly via tools rather than a pre-built schema string.
+> `nl2sql/sql_discovery.py` — lightweight Pydantic AI agent that discovers schema on-the-fly via tools rather than a pre-built schema string. Integrated into `UnifiedDataSource` via `discovery_query()` in `nl2sql/nlp_sql_postgres_v2.py`.
 
 ```
-sql_agent = Agent(                                                    L25
-  model="openai:gpt-4o",
+── Entry point ────────────────────────────────────────────────────────────────
+
+UnifiedDataSource.discovery_query(prompt, pg_alias=None)             L616
+  nlp_sql_postgres_v2.py
+  ├── resolve pg_dsn from self.postgres_dbs by alias (default: first)
+  ├── asyncpg.create_pool(pg_dsn)
+  ├── MultiDBDeps(pg_pool, duck_conn=self.conn)
+  └── sql_agent.run(prompt, deps=MultiDBDeps)  ──────────────────────┐
+                                                                      │
+── Agent ──────────────────────────────────────────────────────────── │ ──────
+
+sql_agent = Agent(                                           L43  <───┘
+  model=_make_model()     # reads LLM_MODEL/LLM_BASE_URL from .env
   deps_type=MultiDBDeps,
   result_type=SQLResponse,
-  system_prompt="You write SQL for PostgreSQL or DuckDB …"
+  system_prompt="…Discover the schema first."
 )
 
-MultiDBDeps                                                           L19
+  The agent receives the prompt and no schema string — it discovers
+  schema by calling the tools below before generating SQL.
+
+── Tools (registered via @sql_agent.tool) ─────────────────────────────────────
+
+list_tables(ctx, db_type) → list[str]                                L53
+  ├── [postgres]  SELECT table_name FROM information_schema.tables
+  │               WHERE table_schema = 'public'  (via asyncpg pg_pool)
+  └── [duckdb]    SHOW TABLES  (via duck_conn)
+
+describe_table(ctx, db_type, table_name) → str                       L67
+  ├── [postgres]  SELECT column_name, data_type FROM information_schema.columns
+  └── [duckdb]    DESCRIBE {table_name}
+
+── Agent inference loop ────────────────────────────────────────────────────────
+
+  turn 1:  LLM calls list_tables("postgres") + list_tables("duckdb")
+  turn 2:  LLM calls describe_table(db_type, tbl) for relevant tables only
+  turn N:  LLM returns SQLResponse(database_type, sql, explanation)
+
+── Execution & return ──────────────────────────────────────────────────────────
+
+  result.output → SQLResponse
+  ├── [postgres]  asyncpg pg_conn.fetch(sql)  → columns + rows as dicts
+  └── [duckdb]    self.conn.execute(sql)       → columns + rows as tuples
+  return (SQLResponse, columns, rows)
+
+── Supporting types ────────────────────────────────────────────────────────────
+
+MultiDBDeps                                                           L37
   ├── pg_pool: asyncpg.Pool
   └── duck_conn: duckdb.DuckDBPyConnection
 
-SQLResponse                                                           L11
+SQLResponse                                                           L29
   ├── database_type: str   ("postgres" | "duckdb")
   ├── sql: str
   └── explanation: str
-
-@sql_agent.tool  list_tables(ctx, db_type) → list[str]               L35
-  ├── [postgres] SELECT table_name FROM information_schema.tables
-  │             WHERE table_schema = 'public'  (via pg_pool)
-  └── [duckdb]  SHOW TABLES  (via duck_conn)
-
-@sql_agent.tool  describe_table(ctx, db_type, table_name) → str      L49
-  ├── [postgres] SELECT column_name, data_type FROM information_schema.columns
-  └── [duckdb]  DESCRIBE {table_name}
-
-run_query(user_prompt) → SQLResponse  [async]                        L69
-  ├── asyncpg.create_pool(DATABASE_URL)
-  ├── duckdb.connect()
-  ├── MultiDBDeps(pg_pool=…, duck_conn=…)
-  └── sql_agent.run(user_prompt, deps=deps) → result.data (SQLResponse)
-        LLM turn 1:  list_tables("postgres") + list_tables("duckdb")
-        LLM turn 2:  describe_table(db_type, tbl) per relevant table
-        LLM turn N:  return SQLResponse with final SQL + explanation
 ```
 
-**Contrast with v1/v2**: v1/v2 generate schema once up-front; `sql_discovery` lets the LLM call tools to explore schema dynamically — fewer tokens for narrow queries, more round-trips for broad ones.
+**Contrast with v1/v2**: v1/v2 call `generate_schema()` once up-front and stuff the full schema string into every prompt; `sql_discovery` lets the LLM call tools to explore schema dynamically — fewer prompt tokens for narrow queries, more LLM round-trips for broad ones.
 
 **Key files**:
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L25) | `sql_agent` | L25 |
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L11) | `SQLResponse` | L11 |
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L19) | `MultiDBDeps` | L19 |
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L35) | `list_tables()` tool | L35 |
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L49) | `describe_table()` tool | L49 |
-| [`nlp2sql/sql_discovery.py`](../nlp2sql/sql_discovery.py#L69) | `run_query()` | L69 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L43) | `sql_agent` | L43 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L29) | `SQLResponse` | L29 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L37) | `MultiDBDeps` | L37 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L53) | `list_tables()` tool | L53 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L67) | `describe_table()` tool | L67 |
+| [`nl2sql/sql_discovery.py`](../../nl2sql/sql_discovery.py#L88) | `run_query()` | L88 |
+| [`nl2sql/nlp_sql_postgres_v2.py`](../../nl2sql/nlp_sql_postgres_v2.py#L616) | `UnifiedDataSource.discovery_query()` | L616 |

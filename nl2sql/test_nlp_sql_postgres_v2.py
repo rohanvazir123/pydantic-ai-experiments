@@ -397,54 +397,18 @@ class TestRetryBehavior:
 # UnifiedDataSource.generate_schema (no live GCS or Postgres needed)
 # ---------------------------------------------------------------------------
 class TestUnifiedDataSourceSchema:
-    def _source_with_views(self, conn, view_names):
-        for name in view_names:
-            conn.execute(
-                f"CREATE OR REPLACE VIEW {name} AS SELECT 'a' AS col1, 1 AS col2"
-            )
-        src = UnifiedDataSource(
-            conn=conn,
-            gcs_bucket="test-bucket",
-            gcs_prefix="data/",
-            gcs_user_project="test-project",
-        )
-        src._gcs_views = {n: n for n in view_names}
-        return src
-
-    def test_schema_contains_view_names(self, conn):
-        src = self._source_with_views(conn, ["orders", "users"])
-        schema = src.generate_schema()
-        assert "orders" in schema
-        assert "users" in schema
-
-    def test_schema_contains_column_names(self, conn):
-        src = self._source_with_views(conn, ["orders"])
-        schema = src.generate_schema()
-        assert "col1" in schema
-        assert "col2" in schema
-
-    def test_schema_has_gcs_section_header(self, conn):
-        src = self._source_with_views(conn, ["orders"])
-        assert "GCS Parquet" in src.generate_schema()
-
-    def test_schema_stored_on_instance(self, conn):
-        src = self._source_with_views(conn, ["orders"])
-        schema = src.generate_schema()
-        assert src.schema_text == schema
+    # generate_schema() commented out — schema is now discovered at inference
+    # time via sql_discovery tools (list_tables / describe_table), not pre-built.
 
     @pytest.mark.asyncio
     async def test_conversation_manager_raises_without_agent_or_schema(self, conn):
-        src = UnifiedDataSource(
-            conn=conn, gcs_bucket="b", gcs_prefix="p/", gcs_user_project="proj"
-        )
+        src = UnifiedDataSource(conn=conn)
         with pytest.raises(ValueError):
             await src.conversation_manager()
 
     @pytest.mark.asyncio
     async def test_conversation_manager_raises_without_schema(self, conn):
-        src = UnifiedDataSource(
-            conn=conn, gcs_bucket="b", gcs_prefix="p/", gcs_user_project="proj"
-        )
+        src = UnifiedDataSource(conn=conn)
         src.agent = MagicMock()
         with pytest.raises(ValueError):
             await src.conversation_manager()
