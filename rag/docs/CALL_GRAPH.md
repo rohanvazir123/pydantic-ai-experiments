@@ -60,11 +60,22 @@ rag/main.py:main()                                                L100
               │             ├── chunker.chunk_document()
               │             │     ├── Docling HybridChunker
               │             │     └── _simple_fallback_chunk()
-              │             ├── embedder.embed_chunks(chunks)
-              │             │     └── generate_embeddings_batch()
-              │             │           └── _cached_embed()
+              │             ├── embedder.embed_chunks(chunks)              L207
+              │             │     ├── generate_embeddings_batch(texts)   L184
+              │             │     │     └── openai.AsyncOpenAI.embeddings.create()
+              │             │     │           └── returns list[list[float]]
+              │             │     └── chunk.embedding = embedding        L250
+              │             │           └── ChunkData.embedding          models.py:L142
               │             ├── store.save_document(...)
-              │             └── store.add(chunks, document_id)
+              │             └── store.add(chunks, document_id)           L257
+              │                   └── conn.executemany()                 L268
+              │                         INSERT INTO chunks
+              │                           (document_id, content, embedding,
+              │                            chunk_index, metadata, token_count)
+              │                           VALUES ($1, $2, $3, $4, $5, $6)
+              │                         -- $3 = chunk.embedding → vector(N)
+              │                         -- N = settings.embedding_dimension
+              │                         --     (default 768, fixed at CREATE TABLE)
               └── close()
                     └── store.close()
 ```
@@ -79,7 +90,12 @@ rag/main.py:main()                                                L100
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L413) | `_ingest_single_document()` | L413 |
 | [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py) | `DoclingHybridChunker` | |
 | [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L135) | `EmbeddingGenerator` | L135 |
+| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L207) | `embed_chunks()` — sets `chunk.embedding` | L207 |
+| [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L184) | `generate_embeddings_batch()` — API call | L184 |
+| [`rag/ingestion/models.py`](../rag/ingestion/models.py#L142) | `ChunkData.embedding: list[float] \| None` | L142 |
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
+| [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L257) | `add()` — INSERT chunks with embedding `$3` | L257 |
+| [`rag/config/settings.py`](../rag/config/settings.py#L135) | `embedding_dimension` (default 768) | L135 |
 
 ---
 

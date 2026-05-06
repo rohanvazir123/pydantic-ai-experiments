@@ -2887,6 +2887,153 @@ async def demo_occ_vs_pcc(conn: asyncpg.Connection, pool: asyncpg.Pool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 25. pgvector — CREATE TABLE, populate, semantic search
+# ---------------------------------------------------------------------------
+
+async def demo_pgvector(dsn: str = "postgresql://rag_user:rag_pass@localhost:5434/ecommerce") -> None:
+    """
+    pgvector adds a vector column type and three distance operators:
+      <->  L2 (Euclidean) distance    — ORDER BY embedding <-> $1
+      <#>  Negative inner product     — ORDER BY embedding <#> $1
+      <=>  Cosine distance            — ORDER BY embedding <=> $1  ← standard for embeddings
+
+    register_vector() must be called once per connection so asyncpg can
+    encode/decode the vector binary format. Pass it as the pool init callback.
+
+    Index types:
+      IVFFlat — splits the vector space into N centroid clusters; fast approximate
+                search. Must be created AFTER loading data (centroids need rows).
+                Rule of thumb: lists = sqrt(row_count). Probes (search-time) trades
+                speed for recall; default=1, raise to 10 for better accuracy.
+      HNSW    — graph-based; higher recall and memory than IVFFlat; available in
+                pgvector >= 0.5. Can be created on an empty table.
+    """
+    from pgvector.asyncpg import register_vector
+
+    # ── 1. Pool with register_vector ─────────────────────────────────────────
+    # register_vector is passed as the init callback — called once per new
+    # connection so every connection in the pool can handle the vector type.
+    pool = await asyncpg.create_pool(
+        dsn,
+        min_size=1,
+        max_size=5,
+        init=register_vector,
+    )
+
+    async with pool.acquire() as conn:
+
+        # ── 2. Enable the extension ───────────────────────────────────────────
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+        # ── 3. CREATE TABLE with a vector column ──────────────────────────────
+        # The dimension (3 here) must match the embedding model exactly.
+        # Real models: nomic-embed-text=768, text-embedding-3-small=1536.
+        # Mismatched dimension → error on INSERT or index creation.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS demo_items (
+                id        SERIAL PRIMARY KEY,
+                label     TEXT      NOT NULL,
+                embedding vector(3) NOT NULL
+            )
+        """)
+
+        # IVFFlat — create AFTER populating; falls back to exact scan without it:
+        #   CREATE INDEX ON demo_items
+        #       USING ivfflat (embedding vector_cosine_ops) WITH (lists = 10);
+        #   SET ivfflat.probes = 10;  -- raise from default 1 for better recall
+        #
+        # HNSW (pgvector >= 0.5) — can be created on an empty table:
+        #   CREATE INDEX ON demo_items
+        #       USING hnsw (embedding vector_cosine_ops)
+        #       WITH (m = 16, ef_construction = 64);
+
+        # ── 4. Populate with sample rows ──────────────────────────────────────
+        # asyncpg sends list[float] through the registered vector codec.
+        # The three clusters below represent ML, databases, and cooking topics.
+        await conn.execute("TRUNCATE demo_items RESTART IDENTITY")
+
+        sample_rows = [
+            ("machine learning",     [0.90, 0.10, 0.20]),
+            ("neural networks",      [0.80, 0.20, 0.10]),
+            ("deep learning",        [0.85, 0.15, 0.10]),
+            ("relational databases", [0.10, 0.90, 0.20]),
+            ("sql queries",          [0.15, 0.85, 0.10]),
+            ("database indexing",    [0.20, 0.80, 0.30]),
+            ("cooking recipes",      [0.10, 0.20, 0.90]),
+            ("baking bread",         [0.05, 0.15, 0.95]),
+        ]
+
+        await conn.executemany(
+            "INSERT INTO demo_items (label, embedding) VALUES ($1, $2)",
+            sample_rows,
+        )
+        print(f"  Inserted {len(sample_rows)} rows into demo_items")
+
+        # ── 5. Semantic search — cosine distance ──────────────────────────────
+        # <=>  returns cosine DISTANCE (0 = identical, 2 = opposite).
+        # 1 - (embedding <=> $1) converts to cosine SIMILARITY for display.
+        # ORDER BY <=> ASC returns nearest neighbours first.
+        query_vector = [0.88, 0.12, 0.15]   # sits close to the ML cluster
+
+        rows = await conn.fetch(
+            """
+            SELECT
+                label,
+                1 - (embedding <=> $1::vector) AS cosine_similarity
+            FROM demo_items
+            ORDER BY embedding <=> $1::vector
+            LIMIT 5
+            """,
+            query_vector,
+        )
+
+        print("\n  Cosine similarity search (query ~ ML cluster):")
+        for row in rows:
+            bar = "█" * int(row["cosine_similarity"] * 20)
+            print(f"    {row['label']:<25}  sim={row['cosine_similarity']:.4f}  {bar}")
+
+        # ── 6. L2 distance — for models trained with Euclidean norm ──────────
+        rows_l2 = await conn.fetch(
+            """
+            SELECT label,
+                   embedding <-> $1::vector AS l2_distance
+            FROM demo_items
+            ORDER BY embedding <-> $1::vector
+            LIMIT 3
+            """,
+            query_vector,
+        )
+        print("\n  L2 (Euclidean) distance — nearest 3:")
+        for row in rows_l2:
+            print(f"    {row['label']:<25}  l2={row['l2_distance']:.4f}")
+
+        # ── 7. Filtered vector search ─────────────────────────────────────────
+        # WHERE is applied before the ORDER BY vector sort. With an ANN index,
+        # this reduces the candidate set before approximate search — effective
+        # when the filter is selective (returns < ~20% of the table).
+        rows_filtered = await conn.fetch(
+            """
+            SELECT label,
+                   1 - (embedding <=> $1::vector) AS cosine_similarity
+            FROM demo_items
+            WHERE label ILIKE $2
+            ORDER BY embedding <=> $1::vector
+            LIMIT 3
+            """,
+            query_vector,
+            "%learn%",
+        )
+        print("\n  Filtered search (label ILIKE '%learn%'):")
+        for row in rows_filtered:
+            print(f"    {row['label']:<25}  sim={row['cosine_similarity']:.4f}")
+
+        # ── 8. Cleanup ────────────────────────────────────────────────────────
+        await conn.execute("DROP TABLE IF EXISTS demo_items")
+
+    await pool.close()
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint — wire everything together for a quick smoke test
 # ---------------------------------------------------------------------------
 
@@ -2949,6 +3096,7 @@ async def main() -> None:
 
     await demo_listen_notify(dsn)
     await demo_type_codecs(dsn)
+    await demo_pgvector(dsn)
 
     await pool.close()
 
