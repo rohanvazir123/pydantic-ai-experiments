@@ -1,6 +1,6 @@
 # Vector Store Implementation Guide
 
-This guide documents the vector store architecture, explains how PostgreSQL/pgvector support was added, and provides instructions for implementing new datastores.
+This guide documents the vector store architecture and PostgreSQL/pgvector implementation.
 
 ---
 
@@ -30,12 +30,11 @@ rag/storage/vector_store/
 
 ### Core Interface (Protocol)
 
+`base.py` defines a minimal `VectorStore` protocol for generic stores:
+
 ```python
 class VectorStore(Protocol):
-    """Protocol defining the vector store interface."""
-
     def add(self, chunks: list[DocumentChunk], embeddings: list[list[float]]) -> None:
-        """Store document chunks with their embeddings."""
         ...
 
     def query(
@@ -44,24 +43,31 @@ class VectorStore(Protocol):
         query_text: str,
         k: int,
     ) -> list[RetrievedChunk]:
-        """Query the vector store for similar documents."""
         ...
 ```
 
-### Extended Interface (HybridStore)
+> **Note:** `PostgresHybridStore` does **not** implement this protocol directly — it exposes its own richer async API (see below). The base protocol exists for simpler store implementations.
 
-The PostgreSQL store implements an extended interface with:
-- `initialize()` - Establish connection
-- `close()` - Close connection
-- `add(chunks, document_id)` - Store chunks
-- `save_document(title, source, content, metadata)` - Store document
-- `semantic_search(query_embedding, match_count)` - Vector search
-- `text_search(query, match_count)` - Full-text search
-- `hybrid_search(query, query_embedding, match_count)` - Combined RRF search
-- `clean_collections()` - Delete all data
-- `get_document_by_source(source)` - Get document by path
-- `delete_document_and_chunks(source)` - Delete document
-- `get_all_document_sources()` - List all documents
+### Extended Interface (PostgresHybridStore)
+
+| Method | Description |
+|--------|-------------|
+| `initialize()` | Establish connection pool, create tables/indexes |
+| `close()` | Close connection pool |
+| `save_document(title, source, content, metadata)` | Insert a document, return UUID |
+| `add(chunks, document_id)` | Batch-insert chunks with embeddings |
+| `semantic_search(query_embedding, match_count)` | pgvector cosine similarity search |
+| `text_search(query, match_count)` | Full-text search via `tsvector` |
+| `fuzzy_search(query, match_count)` | Trigram fuzzy search via `pg_trgm` |
+| `bm25_search(query, match_count)` | BM25 search via `pg_search` (ParadeDB, optional) |
+| `hybrid_search(query, query_embedding, match_count)` | RRF fusion of all four signals |
+| `clean_collections()` | Delete all chunks and documents |
+| `get_document_by_source(source)` | Fetch document dict by source path |
+| `get_document_hash(source)` | Fetch `content_hash` from document metadata |
+| `delete_document_and_chunks(source)` | Delete document + cascade-delete chunks |
+| `get_all_document_sources()` | List all source paths |
+| `get_chunk_count()` | Total number of chunks |
+| `get_document_count()` | Total number of documents |
 
 ---
 
@@ -74,7 +80,9 @@ The PostgreSQL store implements an extended interface with:
 **Features:**
 - pgvector extension for vector similarity search
 - PostgreSQL tsvector for full-text search
-- RRF fusion for hybrid search
+- pg_trgm for fuzzy/trigram search (typo tolerance)
+- pg_search (ParadeDB) for BM25 ranking (optional)
+- RRF fusion across all four search signals
 - Works with Neon, Supabase, or local PostgreSQL
 
 **Usage:**
@@ -91,49 +99,25 @@ await store.close()
 
 ## 3. PostgreSQL/pgvector Implementation
 
-This section documents how PostgreSQL support was added to the RAG system.
+### 3.1 Database Schema
 
-### 3.1 Changes Made
+#### Extensions
 
-#### 1. Environment Configuration (`.env`)
+The following extensions are enabled automatically on `initialize()`:
 
-Added PostgreSQL connection settings:
+| Extension | Purpose | Required |
+|-----------|---------|----------|
+| `vector` | pgvector — vector similarity search | Yes |
+| `pg_trgm` | Trigram fuzzy matching | Yes |
+| `pg_search` | ParadeDB BM25 full-text ranking | No (optional) |
 
-```bash
-# PostgreSQL/Neon Configuration (pgvector)
-DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
-POSTGRES_TABLE_DOCUMENTS=documents
-POSTGRES_TABLE_CHUNKS=chunks
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_search;  -- optional (ParadeDB)
 ```
 
-#### 2. Settings (`rag/config/settings.py`)
-
-Added PostgreSQL settings to the Settings class:
-
-```python
-# PostgreSQL/Neon Configuration (pgvector)
-database_url: str = Field(
-    default="", description="PostgreSQL connection string (Neon/Supabase/local)"
-)
-
-postgres_table_documents: str = Field(
-    default="documents", description="PostgreSQL table for source documents"
-)
-
-postgres_table_chunks: str = Field(
-    default="chunks", description="PostgreSQL table for document chunks with embeddings"
-)
-```
-
-#### 3. PostgresHybridStore (`rag/storage/vector_store/postgres.py`)
-
-Created new store with:
-
-**Dependencies:**
-- `asyncpg` - Async PostgreSQL driver
-- `pgvector` - pgvector Python client
-
-**Database Schema:**
+#### Tables
 
 ```sql
 -- Documents table
@@ -151,116 +135,199 @@ CREATE TABLE chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding vector(768),  -- Dimension matches embedding model
+    embedding vector(768),  -- dimension matches EMBEDDING_DIMENSION setting
     chunk_index INTEGER NOT NULL,
     metadata JSONB DEFAULT '{}',
     token_count INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 );
-
--- Indexes
-CREATE INDEX chunks_embedding_idx ON chunks
-    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX chunks_document_id_idx ON chunks(document_id);
-CREATE INDEX chunks_content_tsv_idx ON chunks USING GIN(content_tsv);
-CREATE INDEX documents_source_idx ON documents(source);
 ```
 
-**Search Operations:**
+#### Indexes
 
-Semantic Search (pgvector):
 ```sql
-SELECT c.*, d.title, d.source,
-       1 - (c.embedding <=> $1::vector) as similarity
+-- Vector similarity (IVFFlat, cosine distance)
+CREATE INDEX chunks_embedding_idx ON chunks
+    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- Full-text search (GIN over generated tsvector column)
+CREATE INDEX chunks_content_tsv_idx ON chunks USING GIN(content_tsv);
+
+-- Trigram fuzzy search (GIN over raw content)
+CREATE INDEX chunks_content_trgm_idx ON chunks USING GIN(content gin_trgm_ops);
+
+-- B-tree indexes for joins / lookups
+CREATE INDEX chunks_document_id_idx ON chunks(document_id);
+CREATE INDEX documents_source_idx ON documents(source);
+
+-- BM25 index (optional — requires pg_search / ParadeDB)
+CREATE INDEX chunks_bm25_idx ON chunks
+    USING bm25 (id, content) WITH (key_field='id');
+```
+
+> **IVFFlat auto-reindex:** After each `add()` call, the store checks if the total chunk count has grown beyond 3× the count at last index build time. If so, it issues `REINDEX INDEX CONCURRENTLY chunks_embedding_idx` automatically to maintain recall quality.
+
+### 3.2 Search Operations
+
+#### Semantic Search (pgvector cosine similarity)
+
+```sql
+SELECT
+    c.id as chunk_id,
+    c.document_id,
+    c.content,
+    1 - (c.embedding <=> $1::vector) as similarity,
+    c.metadata,
+    d.title as document_title,
+    d.source as document_source
 FROM chunks c
 JOIN documents d ON c.document_id = d.id
 ORDER BY c.embedding <=> $1::vector
 LIMIT $2;
 ```
 
-Text Search (tsvector):
+`ivfflat.probes` is set to `10` per connection to improve recall beyond the default of `1`.
+
+#### Full-Text Search (tsvector / ts_rank)
+
 ```sql
-SELECT c.*, d.title, d.source,
-       ts_rank(c.content_tsv, plainto_tsquery('english', $1)) as similarity
+SELECT
+    c.id as chunk_id,
+    c.document_id,
+    c.content,
+    ts_rank(c.content_tsv, plainto_tsquery('english', $1)) as similarity,
+    c.metadata,
+    d.title as document_title,
+    d.source as document_source
 FROM chunks c
 JOIN documents d ON c.document_id = d.id
 WHERE c.content_tsv @@ plainto_tsquery('english', $1)
-ORDER BY ts_rank(...) DESC
+ORDER BY ts_rank(c.content_tsv, plainto_tsquery('english', $1)) DESC
 LIMIT $2;
 ```
 
-#### 4. Package Exports (`rag/storage/vector_store/__init__.py`)
+#### Fuzzy Search (pg_trgm word similarity)
 
-Export for PostgresHybridStore:
+```sql
+SELECT
+    c.id as chunk_id,
+    c.document_id,
+    c.content,
+    word_similarity($1, c.content) as similarity,
+    c.metadata,
+    d.title as document_title,
+    d.source as document_source
+FROM chunks c
+JOIN documents d ON c.document_id = d.id
+WHERE word_similarity($1, c.content) > 0.2
+ORDER BY word_similarity($1, c.content) DESC
+LIMIT $2;
+```
+
+Catches typos and partial-word matches that `plainto_tsquery` misses.
+
+#### BM25 Search (pg_search / ParadeDB — optional)
+
+```sql
+SELECT
+    c.id as chunk_id,
+    c.document_id,
+    c.content,
+    paradedb.score(c.id) as similarity,
+    c.metadata,
+    d.title as document_title,
+    d.source as document_source
+FROM chunks c
+JOIN documents d ON c.document_id = d.id
+WHERE c.id @@@ paradedb.match('content', $1)
+ORDER BY paradedb.score(c.id) DESC
+LIMIT $2;
+```
+
+Provides better relevance ranking than `ts_rank` via term-frequency / document-length normalization. Falls back gracefully to tsvector search when `pg_search` is not installed.
+
+#### Hybrid Search (RRF over 4 signals)
+
+All four searches run concurrently via `asyncio.gather`. Results are merged with Reciprocal Rank Fusion (k=60):
+
+```
+rrf_score(chunk) = Σ 1 / (k + rank_in_list)
+                   across [semantic, fts, fuzzy, bm25]
+```
+
+Failed or unavailable search signals are silently excluded from the merge.
+
+### 3.3 Settings
+
+Added to `rag/config/settings.py`:
 
 ```python
-from rag.storage.vector_store.postgres import PostgresHybridStore
+# PostgreSQL connection
+database_url: str = Field(default="", ...)
 
-__all__ = ["VectorStore", "PostgresHybridStore"]
+# Table names (validated: only [a-zA-Z_][a-zA-Z0-9_]* allowed)
+postgres_table_documents: str = Field(default="documents", ...)
+postgres_table_chunks: str = Field(default="chunks", ...)
+
+# Connection pool
+db_pool_min_size: int = Field(default=1, ...)
+db_pool_max_size: int = Field(default=10, ...)
 ```
 
-#### 5. Dependencies (`pyproject.toml`)
+### 3.4 Setup Instructions
 
-Added required packages:
-
-```toml
-dependencies = [
-    # ... existing deps ...
-    "asyncpg>=0.30.0",
-    "pgvector>=0.3.0",
-]
-```
-
-### 3.2 Setup Instructions
-
-#### Neon (Recommended for Serverless)
-
-1. Create account at [neon.tech](https://neon.tech)
-2. Create new project
-3. Enable pgvector extension:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-4. Copy connection string to `.env`
-
-#### Local PostgreSQL
+#### Local PostgreSQL (Default)
 
 1. Install PostgreSQL 15+
-2. Install pgvector extension:
+2. Install pgvector:
    ```bash
    # Ubuntu/Debian
    sudo apt install postgresql-15-pgvector
 
    # macOS with Homebrew
    brew install pgvector
+
+   # Windows (Chocolatey)
+   choco install postgresql pgvector
    ```
-3. Enable extension:
+3. Enable extensions (run as superuser):
    ```sql
    CREATE EXTENSION IF NOT EXISTS vector;
+   CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- bundled with PostgreSQL
    ```
+4. Set `DATABASE_URL` in `.env`:
+   ```bash
+   DATABASE_URL=postgresql://postgres:password@localhost:5432/ragdb
+   ```
+
+#### Neon (Serverless)
+
+1. Create account at [neon.tech](https://neon.tech) and create a new project
+2. Copy the connection string from the dashboard and add to `.env`:
+   ```bash
+   DATABASE_URL=postgresql://user:pass@host.neon.tech/dbname?sslmode=require
+   ```
+3. `pg_trgm` is pre-installed; `pg_search` (ParadeDB) is not available — the store skips BM25 automatically
 
 #### Supabase
 
 1. Create project at [supabase.com](https://supabase.com)
-2. pgvector is pre-enabled
-3. Copy connection string from Settings > Database
+2. pgvector and pg_trgm are pre-enabled
+3. Copy connection string from **Settings > Database** and add to `.env`:
+   ```bash
+   DATABASE_URL=postgresql://postgres:password@db.project.supabase.co:5432/postgres
+   ```
 
 ---
 
 ## 4. Adding a New Datastore
-
-Follow these steps to add support for a new vector database.
 
 ### Step 1: Create Store File
 
 Create `rag/storage/vector_store/<name>.py`:
 
 ```python
-"""
-<Name> vector store implementation.
-"""
-
 import asyncio
 import logging
 from typing import Any
@@ -272,49 +339,58 @@ logger = logging.getLogger(__name__)
 
 
 class <Name>HybridStore:
-    """<Name> implementation with hybrid vector + text search."""
-
     def __init__(self):
-        """Initialize connection."""
         self.settings = load_settings()
         self._initialized = False
 
     async def initialize(self) -> None:
-        """Initialize connection and create tables/indexes."""
         if self._initialized:
             return
-        # TODO: Connect to database
-        # TODO: Create tables/indexes if needed
+        # TODO: Connect, create tables/indexes
         self._initialized = True
 
     async def close(self) -> None:
-        """Close connection."""
         # TODO: Close connection
         self._initialized = False
 
     async def add(self, chunks: list[ChunkData], document_id: str) -> None:
-        """Store document chunks with embeddings."""
         await self.initialize()
-        # TODO: Insert chunks with embeddings
+        # TODO: Batch-insert chunks with embeddings
 
     async def semantic_search(
         self, query_embedding: list[float], match_count: int | None = None
     ) -> list[SearchResult]:
-        """Vector similarity search."""
         await self.initialize()
         if match_count is None:
             match_count = self.settings.default_match_count
-        # TODO: Query by vector similarity
+        # TODO: Vector similarity query
         return []
 
     async def text_search(
         self, query: str, match_count: int | None = None
     ) -> list[SearchResult]:
-        """Full-text search."""
         await self.initialize()
         if match_count is None:
             match_count = self.settings.default_match_count
-        # TODO: Query by text
+        # TODO: Full-text query
+        return []
+
+    async def fuzzy_search(
+        self, query: str, match_count: int | None = None
+    ) -> list[SearchResult]:
+        await self.initialize()
+        if match_count is None:
+            match_count = self.settings.default_match_count
+        # TODO: Fuzzy/trigram query
+        return []
+
+    async def bm25_search(
+        self, query: str, match_count: int | None = None
+    ) -> list[SearchResult]:
+        await self.initialize()
+        if match_count is None:
+            match_count = self.settings.default_match_count
+        # TODO: BM25 query (optional — return [] if unsupported)
         return []
 
     async def hybrid_search(
@@ -323,48 +399,38 @@ class <Name>HybridStore:
         query_embedding: list[float],
         match_count: int | None = None,
     ) -> list[SearchResult]:
-        """Combined search using RRF."""
         await self.initialize()
         if match_count is None:
             match_count = self.settings.default_match_count
 
-        # Run both searches concurrently
-        semantic_results, text_results = await asyncio.gather(
-            self.semantic_search(query_embedding, match_count * 2),
-            self.text_search(query, match_count * 2),
+        fetch_count = match_count * 2
+        semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
+            self.semantic_search(query_embedding, fetch_count),
+            self.text_search(query, fetch_count),
+            self.fuzzy_search(query, fetch_count),
+            self.bm25_search(query, fetch_count),
             return_exceptions=True,
         )
 
-        # Handle errors
-        if isinstance(semantic_results, Exception):
-            semantic_results = []
-        if isinstance(text_results, Exception):
-            text_results = []
+        for attr in ("semantic_results", "text_results", "fuzzy_results", "bm25_results"):
+            if isinstance(locals()[attr], Exception):
+                locals()[attr] = []
 
-        # Merge with RRF
         return self._reciprocal_rank_fusion(
-            [semantic_results, text_results]
+            [semantic_results, text_results, fuzzy_results, bm25_results]
         )[:match_count]
 
     def _reciprocal_rank_fusion(
         self, search_results_list: list[list[SearchResult]], k: int = 60
     ) -> list[SearchResult]:
-        """Merge ranked lists using RRF algorithm."""
         rrf_scores: dict[str, float] = {}
         chunk_map: dict[str, SearchResult] = {}
 
         for results in search_results_list:
             for rank, result in enumerate(results):
                 chunk_id = result.chunk_id
-                rrf_score = 1.0 / (k + rank)
-
-                if chunk_id in rrf_scores:
-                    rrf_scores[chunk_id] += rrf_score
-                else:
-                    rrf_scores[chunk_id] = rrf_score
-                    chunk_map[chunk_id] = result
-
-        sorted_chunks = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+                rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
+                chunk_map.setdefault(chunk_id, result)
 
         return [
             SearchResult(
@@ -376,57 +442,44 @@ class <Name>HybridStore:
                 document_title=chunk_map[cid].document_title,
                 document_source=chunk_map[cid].document_source,
             )
-            for cid, score in sorted_chunks
+            for cid, score in sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
         ]
 
     async def save_document(
         self, title: str, source: str, content: str, metadata: dict[str, Any]
     ) -> str:
-        """Save a document and return its ID."""
         await self.initialize()
-        # TODO: Insert document and return ID
+        # TODO: Insert document, return UUID string
         return ""
 
     async def clean_collections(self) -> None:
-        """Delete all data."""
         await self.initialize()
         # TODO: Truncate tables
 
     async def get_document_by_source(self, source: str) -> dict[str, Any] | None:
-        """Get document by source path."""
         await self.initialize()
-        # TODO: Query by source
         return None
 
     async def get_document_hash(self, source: str) -> str | None:
-        """Get content hash for document."""
         doc = await self.get_document_by_source(source)
         if doc and "metadata" in doc:
             return doc["metadata"].get("content_hash")
         return None
 
     async def delete_document_and_chunks(self, source: str) -> bool:
-        """Delete document and its chunks."""
         await self.initialize()
-        # TODO: Delete by source
         return False
 
     async def get_all_document_sources(self) -> list[str]:
-        """Get all document source paths."""
         await self.initialize()
-        # TODO: Query all sources
         return []
 
     async def get_chunk_count(self) -> int:
-        """Get total number of chunks."""
         await self.initialize()
-        # TODO: Count chunks
         return 0
 
     async def get_document_count(self) -> int:
-        """Get total number of documents."""
         await self.initialize()
-        # TODO: Count documents
         return 0
 ```
 
@@ -435,17 +488,12 @@ class <Name>HybridStore:
 Update `rag/config/settings.py`:
 
 ```python
-# <Name> Configuration
-<name>_connection_string: str = Field(
-    default="", description="<Name> connection string"
-)
-# Add other settings as needed
+<name>_connection_string: str = Field(default="", description="<Name> connection string")
 ```
 
 Update `.env`:
 
 ```bash
-# <Name> Configuration
 <NAME>_CONNECTION_STRING=...
 ```
 
@@ -465,7 +513,6 @@ Update `pyproject.toml`:
 
 ```toml
 dependencies = [
-    # ... existing deps ...
     "<name>-python-client>=x.x.x",
 ]
 ```
@@ -487,17 +534,15 @@ async def store():
 
 @pytest.mark.asyncio
 async def test_connection(store):
-    """Test database connection."""
     assert store._initialized
 
 @pytest.mark.asyncio
 async def test_save_and_retrieve_document(store):
-    """Test document save and retrieval."""
     doc_id = await store.save_document(
         title="Test Doc",
         source="test.txt",
         content="Test content",
-        metadata={"test": True}
+        metadata={"test": True},
     )
     assert doc_id
 
@@ -505,27 +550,22 @@ async def test_save_and_retrieve_document(store):
     assert doc is not None
     assert doc["title"] == "Test Doc"
 
-    # Cleanup
     await store.delete_document_and_chunks("test.txt")
 
 @pytest.mark.asyncio
 async def test_semantic_search(store):
-    """Test vector similarity search."""
-    # Requires embeddings to be generated
-    pass
+    pass  # requires embeddings
 
 @pytest.mark.asyncio
 async def test_hybrid_search(store):
-    """Test combined search."""
-    # Requires embeddings to be generated
-    pass
+    pass  # requires embeddings
 ```
 
 ---
 
 ## 5. Testing
 
-### Run All Store Tests
+### Run Store Tests
 
 ```bash
 # PostgreSQL store tests
@@ -541,7 +581,7 @@ python -m pytest rag/tests/ -v
 python -m rag.storage.vector_store.postgres
 ```
 
-Expected output:
+Expected output (empty DB):
 ```
 RAG PostgreSQL Store Module Test
 ============================================================
@@ -568,40 +608,34 @@ from rag.ingestion.models import ChunkData
 async def test_full_workflow():
     store = PostgresHybridStore()
     embedder = EmbeddingGenerator()
-
     await store.initialize()
 
-    # Save document
     doc_id = await store.save_document(
         title="Test Document",
         source="test.pdf",
         content="This is a test document about machine learning.",
-        metadata={"type": "test"}
+        metadata={"type": "test"},
     )
     print(f"Saved document: {doc_id}")
 
-    # Create and store chunk
     chunk = ChunkData(
         content="Machine learning is a subset of artificial intelligence.",
         index=0,
         start_char=0,
         end_char=58,
-        metadata={}
+        metadata={},
     )
     chunk.embedding = await embedder.embed_query(chunk.content)
     await store.add([chunk], doc_id)
     print("Stored chunk with embedding")
 
-    # Search
     query = "What is machine learning?"
     query_embedding = await embedder.embed_query(query)
-
     results = await store.hybrid_search(query, query_embedding, 5)
     print(f"Found {len(results)} results")
     for r in results:
         print(f"  - {r.content[:50]}... (score: {r.similarity:.3f})")
 
-    # Cleanup
     await store.delete_document_and_chunks("test.pdf")
     await store.close()
 
@@ -614,54 +648,36 @@ asyncio.run(test_full_workflow())
 
 ### Environment Variables
 
-| Variable | Description | Required For |
-|----------|-------------|--------------|
-| `DATABASE_URL` | PostgreSQL connection string | PostgreSQL |
-| `POSTGRES_TABLE_DOCUMENTS` | Documents table name | PostgreSQL |
-| `POSTGRES_TABLE_CHUNKS` | Chunks table name | PostgreSQL |
-| `EMBEDDING_DIMENSION` | Vector dimension (768 for nomic-embed-text) | All |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `POSTGRES_TABLE_DOCUMENTS` | Documents table name (default: `documents`) | No |
+| `POSTGRES_TABLE_CHUNKS` | Chunks table name (default: `chunks`) | No |
+| `DB_POOL_MIN_SIZE` | Min connections in pool (default: `1`) | No |
+| `DB_POOL_MAX_SIZE` | Max connections in pool (default: `10`) | No |
+| `EMBEDDING_DIMENSION` | Vector dimension — must match embedding model (default: `768`) | No |
 
-### Store Usage
+Table names are validated at startup: only `[a-zA-Z_][a-zA-Z0-9_]*` is accepted to prevent SQL injection via settings.
 
-```python
-from rag.storage.vector_store import PostgresHybridStore
-
-store = PostgresHybridStore()
-```
-
-For the retriever and agent:
-
-```python
-# In rag/retrieval/retriever.py or your code
-from rag.storage.vector_store import PostgresHybridStore
-
-store = PostgresHybridStore()
-retriever = Retriever(store=store)
-```
-
----
-
-## Quick Reference
-
-### PostgreSQL Store
+### Quick Reference
 
 ```python
 from rag.storage.vector_store import PostgresHybridStore
 
-# Initialize
 store = PostgresHybridStore()
 await store.initialize()
 
-# Save document
 doc_id = await store.save_document(title, source, content, metadata)
-
-# Add chunks
 await store.add(chunks, doc_id)
 
-# Search
+# Individual search signals
+semantic_results = await store.semantic_search(query_embedding, 10)
+text_results     = await store.text_search(query, 10)
+fuzzy_results    = await store.fuzzy_search(query, 10)
+bm25_results     = await store.bm25_search(query, 10)  # requires pg_search
+
+# Combined RRF over all four signals
 results = await store.hybrid_search(query, query_embedding, 10)
 
-# Cleanup
 await store.close()
 ```
-
