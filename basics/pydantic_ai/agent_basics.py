@@ -30,6 +30,14 @@ from pydantic_ai.messages import (
     TextPartDelta,
 )
 
+async def _aiter(stream):
+    if hasattr(stream, "__aiter__"):
+        async for event in stream:
+            yield event
+    else:
+        for event in stream:
+            yield event
+
 # ---------------------------------------------------------------------------
 # Agent + tool shared by all examples
 # ---------------------------------------------------------------------------
@@ -117,28 +125,27 @@ async def demo_iter_streaming() -> None:
         async for node in run:
             if not hasattr(node, 'stream'):
                 continue
-            async with node.stream(run.ctx) as stream:
-                async for event in stream:
+            async for event in node.stream(run.ctx):
 
-                    # --- Text streaming -----------------------------------
-                    if isinstance(event, PartStartEvent):
-                        if event.part.part_kind == "text":
-                            print(event.part.content, end="", flush=True)
+                # --- Text streaming -----------------------------------
+                if isinstance(event, PartStartEvent):
+                    if event.part.part_kind == "text":
+                        print(event.part.content, end="", flush=True)
 
-                    elif isinstance(event, PartDeltaEvent):
-                        if isinstance(event.delta, TextPartDelta):
-                            print(event.delta.content_delta, end="", flush=True)
+                elif isinstance(event, PartDeltaEvent):
+                    if isinstance(event.delta, TextPartDelta):
+                        print(event.delta.content_delta, end="", flush=True)
 
-                    # --- Tool call ----------------------------------------
-                    elif isinstance(event, FunctionToolCallEvent):
-                        print(
-                            f"\n[tool call] {event.part.tool_name}"
-                            f"({event.part.args})"
-                        )
+                # --- Tool call ----------------------------------------
+                elif isinstance(event, FunctionToolCallEvent):
+                    print(
+                        f"\n[tool call] {event.part.tool_name}"
+                        f"({event.part.args})"
+                    )
 
-                    # --- Tool result --------------------------------------
-                    elif isinstance(event, FunctionToolResultEvent):
-                        print(f"[tool result] {event.result.content}")
+                # --- Tool result --------------------------------------
+                elif isinstance(event, FunctionToolResultEvent):
+                    print(f"[tool result] {event.result.content}")
 
     print()  # newline after streamed output
 
@@ -164,8 +171,9 @@ async def _agent_event_generator(prompt: str) -> AsyncGenerator[str]:
     """
     async with agent.iter(prompt) as run:
         async for node in run:
-            async with node.stream(run.ctx) as stream:
-                async for event in stream:
+            if not hasattr(node, 'stream'):
+                continue
+            async for event in node.stream(run.ctx):
 
                     # Text tokens
                     if isinstance(event, PartStartEvent):
