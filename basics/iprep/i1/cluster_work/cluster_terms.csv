@@ -1,0 +1,97 @@
+cluster_id,rank,term
+0,1,launch
+0,2,product launch
+0,3,reporting
+0,4,product
+0,5,compliance
+0,6,roadmap
+0,7,launch product
+0,8,launch product launch
+0,9,product launch product
+0,10,compliance reporting
+0,11,comply
+0,12,hipaa
+1,1,renewal
+1,2,competitive
+1,3,outage
+1,4,pricing
+1,5,sla
+1,6,maria
+1,7,compliance
+1,8,renewal renewal
+1,9,threat
+1,10,review
+1,11,maria santos
+1,12,santos
+2,1,sprint
+2,2,planning
+2,3,sprint planning
+2,4,planning sprint
+2,5,qa
+2,6,sprint planning sprint
+2,7,planning sprint planning
+2,8,retrospective
+2,9,tyler
+2,10,nina
+2,11,sprint retrospective
+2,12,pipeline
+3,1,multi framework
+3,2,multi
+3,3,framework
+3,4,compliance
+3,5,hipaa
+3,6,pci dss
+3,7,dss
+3,8,pci
+3,9,evidence
+3,10,soc
+3,11,audit
+3,12,reporting
+4,1,billing
+4,2,overage
+4,3,dispute
+4,4,wayne
+4,5,billing dispute
+4,6,charges
+4,7,invoice
+4,8,overage charges
+4,9,renewal
+4,10,usage
+4,11,billing dispute billing
+4,12,dispute billing dispute
+5,1,mfa
+5,2,identity
+5,3,management
+5,4,access management
+5,5,access
+5,6,sso
+5,7,derek
+5,8,policy
+5,9,okta
+5,10,sync
+5,11,identity access
+5,12,session
+6,1,incident
+6,2,outage
+6,3,customer
+6,4,communication
+6,5,incident response
+6,6,diana
+6,7,failure
+6,8,response
+6,9,risk
+6,10,post
+6,11,monitoring
+6,12,customers
+7,1,backup
+7,2,data
+7,3,incident
+7,4,elena
+7,5,outage
+7,6,platform
+7,7,communication
+7,8,concern
+7,9,david
+7,10,compliance
+7,11,aegis
+7,12,churn_signal
