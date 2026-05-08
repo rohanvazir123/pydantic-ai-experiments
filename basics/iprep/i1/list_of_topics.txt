@@ -1,49 +1,5 @@
-
-
-I'm not clear what the requirements are based on the info provided
-
->Build a pipeline that processes the transcripts and categorizes them by topic or theme. 
-Show us the categories you identified, explain why you chose your approach (LLM-based, clustering, rule-based, hybrid — your call), 
-
-and give examples of transcripts that fall into each category. We want to see your reasoning, not just the output.
-
-> Generate a sentiment analysis across call types and identify trends.
-
- Don't just produce charts — tell us what the trends mean. If something stands out, say what it could indicate and why someone should care.
-
-What categories/buckets can be defined for these meeting transcripts? for sentiments, what features can describe them
-
-
-I think the following tables are worth looking at first
-
-
-a. Summaries — source file_type = 'summary'
-
-Column	Type
-meeting_id	text
-summary	text
-sentiment_score	numeric
-topics	jsonb
-action_items	jsonb
-key_moments	json 
-
-key_moments s has a field called churn signal as well as concern
-
-b. summary_topics — source file_type = 'summary'
-
-Column	Type
-meeting_id	text
-topic	text
-
-c. action_items — source file_type = 'summary'
-
-Column	Type
-meeting_id	text
-action_index	integer
-action_item	text
-
-
-This is a list of topics from the summary_topics tables
+This is a list of topics across ALL summary jsons 
+[TODO: verify this is correct]
 topic                                |
 -------------------------------------+
 403 error                            |
@@ -397,6 +353,4 @@ vendor management                    |
 vendor review                        |
 win-loss analysis                    |
 workaround                           |
-
-
 

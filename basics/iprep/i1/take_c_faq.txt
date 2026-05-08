@@ -1,0 +1,93 @@
+Take C — FAQ
+============
+
+Q: Does the pipeline produce themes?
+--------------------------------------
+Yes. Two artifacts contain the themes:
+
+1. semantic_clusters.json — one entry per discovered cluster, e.g.:
+   {
+     "cluster_id": 3,
+     "theme_title": "Identity & Access Management",
+     "audience": "Engineering",
+     "rationale": "SSO failures, MFA policy gaps, and provisioning delays directly
+                   impact platform reliability and security posture.",
+     "representative_phrases": ["mfa enforcement", "scim provisioning", ...],
+     "phrase_count": 28
+   }
+
+2. meeting_themes.csv — per-meeting row showing primary theme, all themes,
+   inferred call type, and sentiment score.
+
+How theme discovery works:
+  Step 5 (HDBSCAN) groups the ~343 deduplicated topic phrases into clusters
+  based on embedding similarity — no fixed K required.
+  Step 6 sends ~20 representative phrases per cluster to llama3.1:8b (Ollama)
+  which generates: theme_title, audience (Engineering/Product/Sales/All),
+  and a one-sentence rationale.
+  Step 8 maps each meeting's topics back to cluster IDs, so every meeting gets
+  a primary_theme and a full list of all themes it touches.
+
+Expected themes (based on topic vocabulary in list_of_topics.txt):
+  - Incidents & Reliability
+  - Compliance & Audit
+  - Identity & Access Management
+  - Backup & Recovery
+  - Product Roadmap & Feature Gaps
+  - Customer Retention & Renewal
+  - Billing & Commercial
+  - Internal Engineering / Planning
+  - Competitive Landscape
+  (Exact count and names come from the data, not from hand-written rules.)
+
+
+Q: Does Take C use pgvector and tsvector?
+--------------------------------------
+Yes — added in take_c_pg_store.py (step 9 of the pipeline).
+
+Tables written to iprep_i1_functional schema:
+  semantic_clusters        cluster_id, theme_title, audience, rationale, phrase_count
+  semantic_phrases         canonical text + vector(768) embedding (IVFFlat index)
+                           + tsvector GENERATED column (GIN index)
+  semantic_meeting_themes  meeting -> cluster mapping + call_type + sentiment_score
+
+Hybrid search available (pgvector + tsvector + RRF, same pattern as rag/storage/vector_store/postgres.py):
+  store.semantic_search_phrases(query_embedding)   cosine similarity via IVFFlat
+  store.text_search_phrases(query)                 plainto_tsquery on canonical text
+  store.hybrid_search_phrases(query, embedding)    RRF merge of both (k=60)
+
+4 canned insight queries run automatically after persist:
+  insight_theme_sentiment()        avg sentiment score per theme
+  insight_churn_by_theme()         churn_signal count per theme (joins key_moments)
+  insight_call_type_theme_matrix() call_type x theme meeting counts
+  insight_feature_gap_themes()     feature_gap signal count per theme
+
+NOTE: churn and feature_gap insights join Take A's key_moments table.
+They will be blank until Take A has been run:
+  python basics/iprep/i1/generate_rule_based_taxonomy.py --reset
+
+Run commands:
+  python basics/iprep/i1/take_c_semantic_clustering.py              # full pipeline
+  python basics/iprep/i1/take_c_semantic_clustering.py --reset-pg   # drop+recreate semantic tables first
+  python basics/iprep/i1/take_c_semantic_clustering.py --skip-pg    # skip Postgres, CSV/JSON only
+  python basics/iprep/i1/take_c_semantic_clustering.py --dry-run    # no Ollama, no Postgres
+
+NEXT WORK ITEM (paused):
+  Build the trend analysis pipeline on top of the persisted tables.
+  Foundation is in place (4 insight queries in take_c_pg_store.py).
+  Next steps:
+    - Write test cases for the insight queries (mock or live Postgres)
+    - Add temporal trend query (theme frequency / sentiment drift over time,
+      if meeting timestamps are available in iprep_i1_functional.meetings)
+    - Add a thin reporting layer (print or export to CSV) for the slide deck
+
+
+Q: What is schema_dump.sql?
+--------------------------------------
+An aside — a set of DBeaver-style introspection queries for the iprep_i1_functional
+schema created by Take A. Not part of any pipeline. Useful for browsing the live
+Postgres schema:
+  - List all tables in iprep_i1_functional
+  - Describe columns (type, nullability, defaults)
+  - Show constraints (PKs, FKs)
+  - Pull the distinct topic list from summary_topics

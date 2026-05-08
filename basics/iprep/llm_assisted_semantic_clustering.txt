@@ -1,0 +1,53 @@
+LLM-assisted semantic clustering
+
+Introduction
+--------------------------------
+
+Since the data consists of text-heavy fields (meeting transcripts, topics, and key notes) containing hidden product names and semantic themes, traditional numerical clustering (like K-Means) will not work out of the box.
+
+Because you do not know the target number of categories, an LLM-assisted semantic clustering approach is the best fit. This combines the reasoning power of an LLM with the mathematical efficiency of data science, entirely avoiding expensive agentic loops.
+
+The Optimal Workflow: Embeddings + Clustering
+Instead of feeding 100 raw JSONs into an LLM context, use an LLM one time to convert your topics and notes into vector embeddings, then cluster them mathematically.
+[Raw JSON Topics/Notes] ➡️ [LLM Embedding API] ➡️ [HDBSCAN Clustering] ➡️ [LLM Names the Themes]
+
+Steps
+-----------------------------
+1. Extract and Flatten
+Isolate the topics, key_notes, and customer_churn_risk fields from all 100 JSONs.
+Deduplicate the list to create a clean master dataset of unique text phrases.
+
+2. Generate Semantic Embeddings
+Send the deduplicated text phrases to a cost-effective embedding API (like OpenAI's text-embedding-3-small or an open-source alternative via Hugging Face).
+    Top Recommended Open-Source Models
+    1. Nomic Embed Text v1.5 (or v2) — Best Overall for Local Pipelines
+    Vector Dimensions: 768 (Matryoshka supported, can scale down to 256 or 512).
+
+    2. BGE-M3 (by BAAI) — Best for Feature-Rich/Hybrid Use Cases [6]
+    Vector Dimensions: 1024.
+
+    3. gte-Qwen2-1.5B-instruct — Best for Maximum Quality (Requires GPU)
+    Vector Dimensions: 1536 (Identical to OpenAI's schema).
+
+3. Apply HDBSCAN Clustering (No Pre-defined 'K' Needed)
+Run the vectors through the HDBSCAN algorithm.
+Why HDBSCAN: Unlike K-Means, you do not need to tell it how many categories to create. It automatically finds the natural density of themes and groups them, while discarding random noise.
+
+4. Label the Clusters with an LLM
+Gather a sample of 10–20 text phrases from "Cluster 1."
+Pass only these phrases to a cheap LLM prompt: "Based on these phrases, generate a concise, executive theme title for Engineering, Product, or Sales leadership."
+Repeat for each discovered cluster.
+Use ollama to list what we have and use local models, no OpenAI
+
+
+Final Thoughts
+-----------------------------------------------------
+To make these categories highly actionable for your leadership team, filter or weight extraction before clustering:
+For Engineering: Target clusters containing words close to system stability, bugs, infrastructure, or tech debt.
+For Product: Target clusters focusing on feature requests, UX friction, and integrations.
+For Sales: Map the discovered clusters directly against your sentiment_score and customer_churn_risk fields to surface which themes drive the highest financial risk.
+
+Why Standard Approaches Fail Here
+----------------------------------
+Pure LLM Prompting: Shoving hundreds of rows of transcript text into a prompt to "invent categories" will hit context limits, hallucinate, and miss subtle product names buried deep in the text.
+Pure Keyword Matching: Will fail because leadership-level themes are semantic. A keyword search for "error" won't catch a note that says "the system timed out during checkout."
