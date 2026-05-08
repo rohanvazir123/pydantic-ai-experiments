@@ -1975,7 +1975,7 @@ python -m pytest rag/tests/test_config.py -v
 # Ingestion model tests (fast, no external deps)
 python -m pytest rag/tests/test_ingestion.py -v
 
-# PostgreSQL connection & index tests (requires PostgreSQL/Neon)
+# PostgreSQL connection & index tests (requires PostgreSQL)
 python -m pytest rag/tests/test_postgres_store.py -v
 
 # RAG agent integration tests (requires PostgreSQL + Ollama)
@@ -2109,7 +2109,7 @@ set_verbose_debug(False)  # Disable when done
 |-----------|--------------|--------------|
 | `test_config.py` | Settings loading, credential masking | None |
 | `test_ingestion.py` | Data models, chunking config validation | None |
-| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL/Neon |
+| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL |
 | `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
 | `test_agent_flow.py` | Agent flow execution, debug prints | PostgreSQL + Ollama |
 
@@ -2754,7 +2754,7 @@ Mem0 automatically uses these existing settings:
 ### Database Architecture
 
 ```
-PostgreSQL (neondb)
+PostgreSQL
 ├── documents        ← RAG source documents
 ├── chunks           ← RAG chunks with embeddings
 └── mem0_memories    ← Mem0 user memories with embeddings

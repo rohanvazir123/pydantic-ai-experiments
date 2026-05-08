@@ -11,7 +11,7 @@ A separate PDF question generator pipeline produces MCQs from ingested documents
 | Layer | Technology |
 |---|---|
 | LLM / Embeddings | Ollama (local) or any OpenAI-compatible API |
-| Vector store | PostgreSQL + pgvector (Neon or local Docker) |
+| Vector store | PostgreSQL + pgvector (local Docker) |
 | Knowledge graph | Apache AGE (PostgreSQL extension, port 5433) |
 | Agent framework | Pydantic AI |
 | Ingestion | Docling (PDF → structured chunks) |

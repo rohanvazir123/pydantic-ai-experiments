@@ -39,7 +39,7 @@ table.  In AGE, `:Party` is an indexed vertex label — the planner prunes non-P
 
 - **Full-text search** — `to_tsvector` / GIN index is unavailable in AGE.  We fell back to `toLower() CONTAINS` substring scan (`search_entities`, `search_as_context`).
 - **Simpler connection management** — every connection needs `LOAD 'age'` and `SET search_path = ag_catalog` (handled by the `_conn()` context manager and pool `init=_age_init`).
-- **A separate Docker container** — AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main Neon / pgvector DB.
+- **A separate Docker container** — AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main pgvector DB.
 
 #### Why PgGraphStore still exists
 

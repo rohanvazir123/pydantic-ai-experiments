@@ -9,7 +9,7 @@ A parallel knowledge graph pipeline extracts entities, relationships, and risk s
 ## Stack
 
 - **Python 3.13**, Pydantic AI, asyncpg
-- **pgvector** (Neon / local PostgreSQL) — vector + full-text search
+- **pgvector** (local PostgreSQL) — vector + full-text search
 - **Apache AGE** (PostgreSQL 16) — openCypher knowledge graph
 - **Ollama** (local LLM/embeddings) — llama3.1:8b, nomic-embed-text
 - **Streamlit** UI, **Langfuse** observability, **Mem0** user memory

@@ -73,7 +73,7 @@ class VectorStore(Protocol):
 
 ## 2. Available Stores
 
-### PostgresHybridStore (PostgreSQL/Neon with pgvector)
+### PostgresHybridStore (PostgreSQL with pgvector)
 
 **File:** `rag/storage/vector_store/postgres.py`
 
@@ -83,7 +83,7 @@ class VectorStore(Protocol):
 - pg_trgm for fuzzy/trigram search (typo tolerance)
 - pg_search (ParadeDB) for BM25 ranking (optional)
 - RRF fusion across all four search signals
-- Works with Neon, Supabase, or local PostgreSQL
+- Works with Supabase, or local PostgreSQL
 
 **Usage:**
 ```python
@@ -300,15 +300,6 @@ db_pool_max_size: int = Field(default=10, ...)
    ```bash
    DATABASE_URL=postgresql://postgres:password@localhost:5432/ragdb
    ```
-
-#### Neon (Serverless)
-
-1. Create account at [neon.tech](https://neon.tech) and create a new project
-2. Copy the connection string from the dashboard and add to `.env`:
-   ```bash
-   DATABASE_URL=postgresql://user:pass@host.neon.tech/dbname?sslmode=require
-   ```
-3. `pg_trgm` is pre-installed; `pg_search` (ParadeDB) is not available — the store skips BM25 automatically
 
 #### Supabase
 

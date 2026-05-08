@@ -42,7 +42,7 @@ python -m pytest rag/tests/ -v -k "postgres"
 |-----------|-------|--------------|-------------|
 | `test_config.py` | 13 | None | Configuration and settings validation |
 | `test_ingestion.py` | 14 | None | Data models and chunking validation |
-| `test_postgres_store.py` | 18 | PostgreSQL/Neon | PostgreSQL/pgvector store operations |
+| `test_postgres_store.py` | 18 | PostgreSQL | PostgreSQL/pgvector store operations |
 | `test_rag_agent.py` | 25+ | PostgreSQL + Ollama | RAG retriever and agent queries |
 | `test_retrieval_metrics.py` | 28 | PostgreSQL + Ollama | Gold dataset evaluation: Hit Rate, MRR, NDCG, Precision, Recall |
 | `test_agent_flow.py` | 3 | PostgreSQL + Ollama | Agent execution flow with Pydantic AI |
@@ -51,7 +51,7 @@ python -m pytest rag/tests/ -v -k "postgres"
 | `test_raganything.py` | 10+ | Ollama + raganything | Multimodal processors (tables, equations, images) |
 | `test_pg_graph_store.py` | 40 | None (all unit) | PgGraphStore SQL tables, entity/relationship CRUD, search |
 | `test_age_graph_store.py` | 24 | None (unit) / AGE (integration) | AgeGraphStore Cypher ops; 1 integration test skipped unless `AGE_DATABASE_URL` set |
-| `test_legal_retrieval.py` | 16 | Neon + Ollama (4 integration) | Legal contract retrieval quality; 4 integration tests require live services |
+| `test_legal_retrieval.py` | 16 | PostgreSQL + Ollama (4 integration) | Legal contract retrieval quality; 4 integration tests require live services |
 | `test_api.py` | 14 | None (all mocked) | FastAPI REST API endpoint tests (chat, stream, ingest, health) |
 | `test_mcp_server.py` | 21 | None (all mocked) | MCP server tool tests (search, retrieve, ingest, health) |
 | `test_cuad_ingestion.py` | 34 | None (all mocked/unit) | CUAD dataset ingestion — parsing, file extraction, eval pairs, pipeline wiring |
@@ -108,7 +108,7 @@ Tests:
 python -m pytest rag/tests/test_postgres_store.py -v
 ```
 
-**Requirements:** PostgreSQL/Neon with pgvector extension
+**Requirements:** PostgreSQL with pgvector extension
 
 Tests:
 - `TestPostgresConnection` - Basic store initialization
@@ -178,7 +178,7 @@ Tests:
 python -m pytest rag/tests/test_pdf_question_generator.py -v
 ```
 
-**Requirements:** PostgreSQL/Neon with pgvector + Ollama running
+**Requirements:** PostgreSQL with pgvector + Ollama running
 
 Tests:
 - `TestPDFQuestionStoreBasic` - Store initialization
@@ -225,7 +225,7 @@ This shows:
 python -m pytest rag/tests/test_mem0_store.py -v
 ```
 
-**Requirements:** PostgreSQL/Neon with pgvector + Ollama running + MEM0_ENABLED=true
+**Requirements:** PostgreSQL with pgvector + Ollama running + MEM0_ENABLED=true
 
 Tests:
 - `TestMem0StoreBasic` - Store initialization
@@ -304,7 +304,7 @@ Tests cover:
 python -m pytest rag/tests/test_legal_retrieval.py -v
 ```
 
-**Requirements:** 12 unit tests run without external deps. 4 integration tests require Neon (with ingested CUAD data) + Ollama running.
+**Requirements:** 12 unit tests run without external deps. 4 integration tests require PostgreSQL (with ingested CUAD data) + Ollama running.
 
 Tests cover:
 - `TestLegalRetrievalUnit` (12 tests) — entity type mapping from CUAD questions, normalization logic, relationship type resolution, builder config validation
@@ -424,7 +424,7 @@ python -m pytest rag/tests/test_postgres_store.py -v
 # AGE graph store integration (requires AGE_DATABASE_URL)
 python -m pytest rag/tests/test_age_graph_store.py -v -k "Integration"
 
-# Legal retrieval integration (requires Neon + Ollama)
+# Legal retrieval integration (requires PostgreSQL + Ollama)
 python -m pytest rag/tests/test_legal_retrieval.py -v -k "Integration"
 ```
 
@@ -434,7 +434,7 @@ python -m pytest rag/tests/test_rag_agent.py rag/tests/test_agent_flow.py -v
 ```
 
 These require:
-1. PostgreSQL/Neon with pgvector and ingested data
+1. PostgreSQL with pgvector and ingested data
 2. Ollama running with llama3.2:3b and nomic-embed-text models
 
 ### Knowledge Graph Tests (All Backends)
@@ -579,7 +579,7 @@ pip install pytest pytest-asyncio
 ```
 
 ### For PostgreSQL Tests
-1. PostgreSQL/Neon database with pgvector extension
+1. PostgreSQL database with pgvector extension
 2. `DATABASE_URL` in `.env`
 3. Run ingestion to populate data:
    ```bash
@@ -598,7 +598,7 @@ pip install pytest pytest-asyncio
    ```
 
 ### For Mem0 Tests
-1. PostgreSQL/Neon with pgvector extension
+1. PostgreSQL with pgvector extension
 2. `DATABASE_URL` in `.env`
 3. `MEM0_ENABLED=true` in `.env` (for integration tests)
 4. Install mem0:
@@ -713,7 +713,7 @@ python -m pytest rag/tests/ -v
 |-----------|-----------------|---------|-------|
 | `test_config.py` | 13 | 0 | |
 | `test_ingestion.py` | 14 | 0 | |
-| `test_postgres_store.py` | 18 | 0 | Requires PostgreSQL/Neon |
+| `test_postgres_store.py` | 18 | 0 | Requires PostgreSQL |
 | `test_rag_agent.py` | 25+ | 0 | Requires PostgreSQL + Ollama |
 | `test_retrieval_metrics.py` | 28 | 0 | 19 unit + 9 integration |
 | `test_agent_flow.py` | 3 | 0 | Requires PostgreSQL + Ollama |
@@ -722,7 +722,7 @@ python -m pytest rag/tests/ -v
 | `test_raganything.py` | 10+ | 0 | Requires raganything + lightrag installed |
 | `test_pg_graph_store.py` | 40 | 0 | All unit, no external deps |
 | `test_age_graph_store.py` | 23 unit + 1 integration | 1 (unless `AGE_DATABASE_URL` set) | |
-| `test_legal_retrieval.py` | 16 | 4 (unless Neon + Ollama live) | 12 unit always pass |
+| `test_legal_retrieval.py` | 16 | 4 (unless PostgreSQL + Ollama live) | 12 unit always pass |
 | `test_api.py` | 14 | 0 | All unit/mocked, no external deps |
 | `test_mcp_server.py` | 21 | 0 | All unit/mocked, no external deps |
 | `test_cuad_ingestion.py` | 34 | 0 | All unit/mocked, no external deps |
@@ -733,4 +733,4 @@ python -m pytest rag/tests/ -v
 The 52 skipped tests are all integration tests that require live services not always available:
 - Mem0 integration tests (require `MEM0_ENABLED=true`)
 - AGE graph integration test (requires `AGE_DATABASE_URL`)
-- Legal retrieval integration tests (require Neon + Ollama)
+- Legal retrieval integration tests (require PostgreSQL + Ollama)

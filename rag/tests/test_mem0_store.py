@@ -21,7 +21,7 @@ These tests verify:
 4. Search and context retrieval
 
 Requirements:
-    - PostgreSQL/Neon with pgvector extension
+    - PostgreSQL with pgvector extension
     - DATABASE_URL in .env
     - Ollama running for LLM and embeddings
     - MEM0_ENABLED=true in .env
@@ -181,7 +181,7 @@ class TestMem0StoreIntegration:
 
     These tests require:
     - MEM0_ENABLED=true in .env
-    - PostgreSQL/Neon with pgvector
+    - PostgreSQL with pgvector
     - Ollama running
     """
 

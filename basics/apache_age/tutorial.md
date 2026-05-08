@@ -357,7 +357,7 @@ session** as the Cypher query.
 
 | DBeaver alias | Host | Port | Database | What it is |
 |---------------|------|------|----------|------------|
-| `postgres` | localhost | 5432 | rag_db (or neon) | Main pgvector DB — documents, chunks |
+| `postgres` | localhost | 5432 | rag_db | Main pgvector DB — documents, chunks |
 | `postgres2` | localhost | 5433 | legal_graph | Apache AGE container — graph data |
 
 Connect to **postgres2** (`localhost:5433 / legal_graph`) for all Cypher work.

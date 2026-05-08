@@ -55,7 +55,7 @@ class TestPostgresConnection:
 
 @pytest.mark.asyncio
 class TestPostgresConnectionLive:
-    """Test PostgreSQL connection - requires live PostgreSQL/Neon connection."""
+    """Test PostgreSQL connection - requires live PostgreSQL connection."""
 
     @pytest.fixture
     def settings(self):

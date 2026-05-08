@@ -485,7 +485,7 @@ ingestion/chunkers/docling.py
 
 | Service | Purpose | Configuration |
 |---------|---------|---------------|
-| PostgreSQL/Neon | Vector + text storage (pgvector) | `database_url` in settings |
+| PostgreSQL | Vector + text storage (pgvector) | `database_url` in settings |
 | Local LLM Server | Embedding generation | `llm_base_url` in settings |
 
 ---

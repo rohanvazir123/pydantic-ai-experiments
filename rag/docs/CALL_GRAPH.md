@@ -448,7 +448,7 @@ Retriever  L181      create_kg_store()      create_kg_store()         │
 PostgresHybridStore L116 ←─────────────────────────────────────────────┘
     │
     ▼
-PostgreSQL / pgvector (Neon or local)
+PostgreSQL / pgvector (local)
   ├── documents  ├── chunks  └── mem0_memories
 
 Apache AGE (docker-compose port 5433)

@@ -3,7 +3,7 @@
 Documents every integration test question, the expected answer behavior, and how to record actual answers.
 
 All tests in this file are marked `@pytest.mark.integration` and require live services:
-- **PostgreSQL** (Neon or local) with ingested NeuralFlow AI + CUAD documents
+- **PostgreSQL** (local) with ingested NeuralFlow AI + CUAD documents
 - **Ollama** running locally with `nomic-embed-text` (or configured embedding model)
 
 ```bash

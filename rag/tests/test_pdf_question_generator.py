@@ -21,7 +21,7 @@ These tests verify:
 4. PDF document management
 
 Requirements:
-    - PostgreSQL/Neon with pgvector extension
+    - PostgreSQL with pgvector extension
     - DATABASE_URL in .env
     - Ollama running for embeddings
 """

@@ -81,7 +81,7 @@ rag/
 │   └── server.py                 # MCP server (FastMCP, stdio transport)
 ├── knowledge_graph/
 │   ├── __init__.py               # create_kg_store() factory (reads KG_BACKEND env var)
-│   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (Neon)
+│   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (PostgreSQL)
 │   ├── age_graph_store.py        # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
 │   ├── cuad_kg_ingest.py         # build_cuad_kg(): CUAD annotations → AgeGraphStore (AGE-only)
 │   └── constants.py              # Single source of truth: VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP
@@ -114,7 +114,7 @@ docker-compose.yml                # Apache AGE container (apache/age:latest, por
 ### Environment Variables (.env)
 
 ```bash
-# PostgreSQL/Neon (pgvector)
+# PostgreSQL (pgvector)
 DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
 
 # LLM (Ollama local)
@@ -131,7 +131,7 @@ EMBEDDING_API_KEY=ollama
 EMBEDDING_DIMENSION=768
 ```
 
-### PostgreSQL/Neon Setup
+### PostgreSQL Setup
 
 The database tables and indexes are created automatically by `PostgresHybridStore.initialize()`. To set up manually:
 
@@ -197,7 +197,7 @@ python -m pytest rag/tests/test_config.py -v
 # Ingestion model tests (fast, no external deps)
 python -m pytest rag/tests/test_ingestion.py -v
 
-# PostgreSQL connection & index tests (requires PostgreSQL/Neon)
+# PostgreSQL connection & index tests (requires PostgreSQL)
 python -m pytest rag/tests/test_postgres_store.py -v
 
 # RAG agent integration tests (requires PostgreSQL + Ollama)
@@ -211,14 +211,14 @@ python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short 
 |-----------|--------------|--------------|
 | `test_config.py` | Settings loading, credential masking | None |
 | `test_ingestion.py` | Data models, chunking config validation | None |
-| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL/Neon |
+| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL |
 | `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
 | `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
 | `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
 | `test_cuad_ingestion.py` | CUAD parsing, file extraction, eval pairs, pipeline | None (mocked) |
 | `test_pg_graph_store.py` | PgGraphStore entity/relationship CRUD, search | None (all unit) |
 | `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
-| `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus | Neon + Ollama (4 integration) |
+| `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus | PostgreSQL + Ollama (4 integration) |
 
 ### Sample Test Queries (from test_rag_agent.py)
 

@@ -80,7 +80,7 @@ An **agentic RAG (Retrieval-Augmented Generation)** system that:
                                    │
                                    ▼
          ┌──────────────────────────────────────────────────────────┐
-         │  PostgreSQL / Neon  (pgvector extension)                 │
+         │  PostgreSQL (pgvector extension)                         │
          │  ├── documents        ← metadata + file hash             │
          │  ├── chunks           ← vector(768) + tsvector           │
          │  ├── mem0_memories    ← user memory facts                │
@@ -333,7 +333,7 @@ Two interchangeable backends, selected by `KG_BACKEND` env var:
 
 **File**: `rag/knowledge_graph/pg_graph_store.py`
 
-- Stores the graph as two SQL tables (`kg_entities`, `kg_relationships`) in the same Neon database
+- Stores the graph as two SQL tables (`kg_entities`, `kg_relationships`) in the same PostgreSQL database
 - Uses asyncpg pool (same pool pattern as `PostgresHybridStore`)
 - Entity deduplication via `UNIQUE INDEX` on `(normalized_name, entity_type, document_id)`
 - Key methods: `add_entity()`, `add_relationship()`, `search_entities()`, `get_relationships()`, `get_entity_subgraph()`

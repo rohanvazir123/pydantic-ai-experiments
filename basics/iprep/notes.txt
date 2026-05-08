@@ -1,0 +1,402 @@
+
+
+I'm not clear what the requirements are based on the info provided
+
+>Build a pipeline that processes the transcripts and categorizes them by topic or theme. 
+Show us the categories you identified, explain why you chose your approach (LLM-based, clustering, rule-based, hybrid — your call), 
+
+and give examples of transcripts that fall into each category. We want to see your reasoning, not just the output.
+
+> Generate a sentiment analysis across call types and identify trends.
+
+ Don't just produce charts — tell us what the trends mean. If something stands out, say what it could indicate and why someone should care.
+
+What categories/buckets can be defined for these meeting transcripts? for sentiments, what features can describe them
+
+
+I think the following tables are worth looking at first
+
+
+a. Summaries — source file_type = 'summary'
+
+Column	Type
+meeting_id	text
+summary	text
+sentiment_score	numeric
+topics	jsonb
+action_items	jsonb
+key_moments	json 
+
+key_moments s has a field called churn signal as well as concern
+
+b. summary_topics — source file_type = 'summary'
+
+Column	Type
+meeting_id	text
+topic	text
+
+c. action_items — source file_type = 'summary'
+
+Column	Type
+meeting_id	text
+action_index	integer
+action_item	text
+
+
+This is a list of topics from the summary_topics tables
+topic                                |
+-------------------------------------+
+403 error                            |
+access control                       |
+account management                   |
+active directory                     |
+adaptive mfa                         |
+adoption metrics                     |
+agent update                         |
+agent version update                 |
+alert deduplication                  |
+alert fatigue                        |
+alert latency                        |
+alert misconfiguration               |
+alert routing                        |
+alert tuning                         |
+api integration                      |
+api outage                           |
+api rate limiting                    |
+api rate limits                      |
+architectural remediation            |
+architecture                         |
+architecture gap                     |
+architecture scalability             |
+audit automation                     |
+audit deadline                       |
+audit evidence packaging             |
+audit preparation                    |
+audit readiness                      |
+audit workflow                       |
+authentication failure               |
+aws ebs                              |
+aws integration                      |
+aws s3 connector                     |
+backup and recovery                  |
+backup failure                       |
+backup infrastructure                |
+backup performance                   |
+backup policy                        |
+baseline configuration               |
+behavioral detection                 |
+billing adjustment                   |
+billing discrepancy                  |
+billing dispute                      |
+bug fix                              |
+canary deployment                    |
+capacity planning                    |
+change management                    |
+chaos engineering                    |
+churn risk                           |
+ci/cd improvement                    |
+circuit breaker                      |
+circuit breaker implementation       |
+cloud expansion                      |
+cloud infrastructure                 |
+cmmc                                 |
+collateral gaps                      |
+competitive analysis                 |
+competitive displacement             |
+competitive evaluation               |
+competitive intelligence             |
+competitive landscape                |
+competitive positioning              |
+competitive threat                   |
+competitor evaluation                |
+compliance                           |
+compliance audit                     |
+compliance automation                |
+compliance bug                       |
+compliance features                  |
+compliance frameworks                |
+compliance integration               |
+compliance reporting                 |
+compliance requirements              |
+compliance risk                      |
+compliance roadmap                   |
+compliance tooling                   |
+comply integration                   |
+comply v2 launch                     |
+configuration review                 |
+connector configuration              |
+contract negotiation                 |
+contract renewal                     |
+contractor access controls           |
+credit request                       |
+cross-sell                           |
+custom compliance templates          |
+custom reporting                     |
+customer churn                       |
+customer communication               |
+customer escalation                  |
+customer feedback                    |
+customer reliability concerns        |
+customer renewals                    |
+customer retention                   |
+customer retention risk              |
+data backfill                        |
+data backup                          |
+data integrity                       |
+data loss                            |
+data protection                      |
+data retention                       |
+data retention policies              |
+deployment                           |
+deployment planning                  |
+deprovisioning                       |
+design review                        |
+detect outage follow-up              |
+detect pipeline failure              |
+detection tuning                     |
+disaster recovery                    |
+disaster recovery testing            |
+documentation                        |
+documentation gap                    |
+early access                         |
+early access program                 |
+entra id integration                 |
+escalation                           |
+estimation                           |
+event ingestion pipeline             |
+evidence collection                  |
+evidence management                  |
+expansion                            |
+false positives                      |
+feature gap                          |
+feature gaps                         |
+feature request                      |
+feature requests                     |
+financial services                   |
+fraud monitoring                     |
+gdpr roadmap                         |
+granular restore                     |
+health checks                        |
+healthcare                           |
+healthcare data                      |
+healthcare data management           |
+healthcare security                  |
+hipaa                                |
+hipaa audit prep                     |
+hipaa compliance                     |
+hipaa reporting                      |
+hipaa validation                     |
+hybrid backup strategy               |
+hybrid environment                   |
+hybrid infrastructure                |
+iam permissions                      |
+identity & access management         |
+identity access management           |
+identity deployment                  |
+identity federation                  |
+identity management                  |
+identity module regression           |
+identity policy propagation          |
+identity roadmap                     |
+incident communication               |
+incident communication failure       |
+incident communications              |
+incident escalation                  |
+incident follow-up                   |
+incident impact                      |
+incident post-mortem                 |
+incident remediation                 |
+incident response                    |
+incident review                      |
+incident risk                        |
+incident root cause                  |
+incident tracking                    |
+incremental backup performance       |
+infrastructure architecture          |
+infrastructure bottleneck            |
+infrastructure deployment            |
+infrastructure rebalancing           |
+infrastructure reliability           |
+ingestion pipeline                   |
+integrations                         |
+internal communications              |
+internal monitoring failure          |
+invoice overage                      |
+iso 27001                            |
+kafka configuration                  |
+knowledge sharing                    |
+launch readiness                     |
+ldap sync failure                    |
+license upgrade                      |
+load testing                         |
+logvault integration                 |
+mfa enforcement                      |
+mfa failure                          |
+mfa migration                        |
+mfa policy                           |
+mfa policy engine                    |
+mfa policy exceptions                |
+migration cleanup                    |
+monitoring gaps                      |
+multi-framework compliance           |
+multi-framework coverage             |
+multi-framework reporting            |
+multi-framework support              |
+multi-region replication             |
+new release issue                    |
+notification gap                     |
+observability and alerting           |
+okta integration                     |
+okta migration                       |
+okta sso integration                 |
+onboarding                           |
+ot security                          |
+ot/scada monitoring                  |
+outage                               |
+outage follow-up                     |
+outage impact                        |
+outage post-mortem                   |
+outage recovery                      |
+outage remediation                   |
+overage charges                      |
+p1 escalation                        |
+patch deployment                     |
+patch management                     |
+pci compliance                       |
+pci dss                              |
+pci dss compliance                   |
+pdf export                           |
+pdf rendering                        |
+performance degradation              |
+performance testing                  |
+pipeline architecture                |
+pipeline failure                     |
+pipeline reliability                 |
+platform incident                    |
+platform integration                 |
+platform outage                      |
+platform reliability                 |
+post-incident report                 |
+post-incident review                 |
+post-mortem                          |
+post-mortem follow-up                |
+postmortem planning                  |
+pricing                              |
+pricing pressure                     |
+privileged access management         |
+proactive communication failure      |
+product add-on                       |
+product bug                          |
+product demo                         |
+product dogfooding                   |
+product early access                 |
+product expansion                    |
+product features                     |
+product feedback                     |
+product gap                          |
+product gaps                         |
+product integration                  |
+product launch                       |
+product migration                    |
+product outage                       |
+product release                      |
+product roadmap                      |
+product update                       |
+product upsell                       |
+product visibility                   |
+proof of concept                     |
+proration error                      |
+provisioning                         |
+provisioning sync delay              |
+q1 review                            |
+qa                                   |
+qa and testing                       |
+qa coverage                          |
+qa process                           |
+qa sign-off                          |
+quarterly business review            |
+quarterly planning                   |
+rbac enhancements                    |
+regulatory compliance                |
+reliability / outage impact          |
+reliability concern                  |
+reliability engineering              |
+reliability incident                 |
+renewal                              |
+renewal risk                         |
+reporting                            |
+resource allocation                  |
+restore ux improvement               |
+retail seasonality                   |
+roadmap                              |
+roadmap planning                     |
+roadmap prioritization               |
+role management                      |
+rollback planning                    |
+rto compliance                       |
+runbook                              |
+safari bug                           |
+sales alignment                      |
+sales process                        |
+sales strategy                       |
+saml certificate rotation            |
+saml configuration                   |
+scim / provisioning                  |
+scim provisioning                    |
+seat overage                         |
+security monitoring                  |
+security training                    |
+service control policies             |
+service credit                       |
+service credits                      |
+service outage                       |
+session timeout policy               |
+shared cluster performance           |
+shared workstation session management|
+siem integration                     |
+single point of failure              |
+sla                                  |
+sla breach                           |
+sla compliance                       |
+sla credits                          |
+sla negotiation                      |
+sla review                           |
+soc 2                                |
+soc 2 audit                          |
+soc 2 compliance                     |
+soc 2 type ii audit                  |
+sprint planning                      |
+sprint retrospective                 |
+sql server                           |
+ssl certificate                      |
+sso configuration                    |
+sso connectors                       |
+sso integration                      |
+sso outage                           |
+support escalation                   |
+support issue                        |
+support response time                |
+tech debt                            |
+technical debt                       |
+technical incident                   |
+technical issue                      |
+threat detection                     |
+threat monitoring                    |
+threat monitoring failure            |
+throughput degradation               |
+timeline risk                        |
+totp                                 |
+trust recovery                       |
+upgrade migration                    |
+upgrade rollout                      |
+upsell                               |
+upsell opportunity                   |
+usage monitoring                     |
+user lockout                         |
+vendor management                    |
+vendor review                        |
+win-loss analysis                    |
+workaround                           |
+
+
+
