@@ -1,9 +1,6 @@
 """
 PostgreSQL persistence for Take C semantic clustering.
 
-Adapted from rag/storage/vector_store/postgres.py — same asyncpg pool,
-register_vector init, IVFFlat + GIN index pattern, and RRF algorithm.
-No RAG imports. Standalone for the take-home deliverable.
 
 Tables added to iprep_i1_functional schema:
   semantic_clusters        cluster_id, theme_title, audience, rationale, phrase_count
@@ -574,6 +571,121 @@ class IprepPhraseStore:
             return [dict(r) for r in rows]
         except Exception as exc:
             logger.warning("insight_feature_gap_themes: %s (Take A tables may not exist)", exc)
+            return []
+
+    async def insight_sentiment_distribution_by_theme(self) -> list[dict[str, Any]]:
+        """
+        Count of each overall_sentiment category per theme (primary assignments).
+        Answers: for a given theme, how many meetings are positive vs negative?
+        e.g. Customer Retention: 8 mixed-negative, 4 negative, 2 neutral, 2 mixed-positive
+        """
+        await self.initialize()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(f"""
+                SELECT
+                    sc.theme_title,
+                    sc.audience,
+                    smt.overall_sentiment,
+                    COUNT(*)                                        AS meeting_count,
+                    ROUND(AVG(smt.sentiment_score)::numeric, 2)    AS avg_score
+                FROM {SCHEMA}.semantic_meeting_themes smt
+                JOIN {SCHEMA}.semantic_clusters sc USING (cluster_id)
+                WHERE smt.is_primary = true
+                  AND smt.overall_sentiment IS NOT NULL
+                GROUP BY sc.theme_title, sc.audience, smt.overall_sentiment
+                ORDER BY sc.theme_title, meeting_count DESC
+            """)
+        return [dict(r) for r in rows]
+
+    async def insight_signal_counts_by_theme(self) -> list[dict[str, Any]]:
+        """
+        All key-moment signal type counts pivoted per theme (primary assignments).
+        Answers: for each theme, how many churn signals / concerns / feature gaps /
+                 praise moments / pricing offers / technical issues?
+        Requires Take A key_moments table. Returns empty list if not available.
+        """
+        await self.initialize()
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(f"""
+                    SELECT
+                        sc.theme_title,
+                        sc.audience,
+                        COUNT(DISTINCT smt.meeting_id)                              AS meeting_count,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'churn_signal')    AS churn_signal,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'concern')         AS concern,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'feature_gap')     AS feature_gap,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'technical_issue') AS technical_issue,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'praise')          AS praise,
+                        COUNT(km.moment_index) FILTER (WHERE km.moment_type = 'pricing_offer')   AS pricing_offer
+                    FROM {SCHEMA}.semantic_clusters sc
+                    JOIN {SCHEMA}.semantic_meeting_themes smt
+                        ON sc.cluster_id = smt.cluster_id AND smt.is_primary = true
+                    LEFT JOIN {SCHEMA}.key_moments km USING (meeting_id)
+                    GROUP BY sc.theme_title, sc.audience
+                    ORDER BY churn_signal DESC, concern DESC
+                """)
+            return [dict(r) for r in rows]
+        except Exception as exc:
+            logger.warning("insight_signal_counts_by_theme: %s (Take A tables may not exist)", exc)
+            return []
+
+    async def insight_theme_cooccurrence(self, top_n: int = 15) -> list[dict[str, Any]]:
+        """
+        Which theme pairs appear together most often in the same meeting?
+        Answers: e.g. "Customer Retention" + "Incidents & Reliability" co-occurring
+                 frequently means outages are driving churn — an actionable finding.
+        """
+        await self.initialize()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(f"""
+                SELECT
+                    sc1.theme_title  AS theme_a,
+                    sc2.theme_title  AS theme_b,
+                    COUNT(*)         AS co_occurrence_count
+                FROM {SCHEMA}.semantic_meeting_themes smt1
+                JOIN {SCHEMA}.semantic_meeting_themes smt2
+                    ON  smt1.meeting_id  = smt2.meeting_id
+                    AND smt1.cluster_id  < smt2.cluster_id
+                JOIN {SCHEMA}.semantic_clusters sc1 ON smt1.cluster_id = sc1.cluster_id
+                JOIN {SCHEMA}.semantic_clusters sc2 ON smt2.cluster_id = sc2.cluster_id
+                GROUP BY sc1.theme_title, sc2.theme_title
+                ORDER BY co_occurrence_count DESC
+                LIMIT $1
+            """, top_n)
+        return [dict(r) for r in rows]
+
+    async def insight_high_risk_meetings(self, sentiment_threshold: float = 3.0) -> list[dict[str, Any]]:
+        """
+        Meetings with churn signals AND low sentiment — the highest financial risk.
+        Answers: which specific meetings should leadership follow up on immediately?
+        Requires Take A key_moments table. Returns empty list if not available.
+        """
+        await self.initialize()
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(f"""
+                    SELECT
+                        smt.meeting_id,
+                        sc.theme_title,
+                        smt.call_type,
+                        smt.sentiment_score,
+                        smt.overall_sentiment,
+                        COUNT(km.moment_index)  AS churn_signals
+                    FROM {SCHEMA}.semantic_meeting_themes smt
+                    JOIN {SCHEMA}.semantic_clusters sc
+                        ON smt.cluster_id = sc.cluster_id AND smt.is_primary = true
+                    JOIN {SCHEMA}.key_moments km
+                        ON smt.meeting_id = km.meeting_id
+                        AND km.moment_type = 'churn_signal'
+                    WHERE smt.sentiment_score < $1
+                    GROUP BY smt.meeting_id, sc.theme_title, smt.call_type,
+                             smt.sentiment_score, smt.overall_sentiment
+                    ORDER BY churn_signals DESC, smt.sentiment_score ASC
+                """, sentiment_threshold)
+            return [dict(r) for r in rows]
+        except Exception as exc:
+            logger.warning("insight_high_risk_meetings: %s (Take A tables may not exist)", exc)
             return []
 
     async def row_counts(self) -> dict[str, int]:

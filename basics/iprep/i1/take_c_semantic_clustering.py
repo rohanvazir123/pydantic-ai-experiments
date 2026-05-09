@@ -357,6 +357,41 @@ def cluster_phrases(
 
 
 # ---------------------------------------------------------------------------
+# Step 5b — Cluster coherence check
+# ---------------------------------------------------------------------------
+
+
+def compute_cluster_coherence(phrases: list[TopicPhrase]) -> dict[int, float]:
+    """
+    Average pairwise cosine similarity of embeddings within each cluster.
+
+    Interpretation:
+      >= 0.6  tight   — phrases are genuinely similar
+      0.4-0.6 review  — inspect cluster members
+      < 0.4   LOOSE   — likely impure; tune HDBSCAN or split manually
+    """
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    by_cluster: dict[int, list[list[float]]] = {}
+    for phrase in phrases:
+        if phrase.embedding:
+            by_cluster.setdefault(phrase.cluster_id, []).append(phrase.embedding)
+
+    coherence: dict[int, float] = {}
+    for cluster_id, embeddings in by_cluster.items():
+        if len(embeddings) < 2:
+            coherence[cluster_id] = 1.0
+            continue
+        sim = cosine_similarity(embeddings)  # (n, n) ndarray
+        n = len(embeddings)
+        # Average upper triangle — exclude diagonal (self-similarity = 1.0)
+        upper = [sim[i][j] for i in range(n) for j in range(i + 1, n)]
+        coherence[cluster_id] = round(sum(upper) / len(upper), 3)
+
+    return coherence
+
+
+# ---------------------------------------------------------------------------
 # Step 6 — LLM cluster labeling
 # ---------------------------------------------------------------------------
 
@@ -663,7 +698,11 @@ def write_outputs(
         print(f"  {f.name}")
 
 
-def print_summary(labels: list[ClusterLabel], assignments: list[MeetingThemeAssignment]) -> None:
+def print_summary(
+    labels: list[ClusterLabel],
+    assignments: list[MeetingThemeAssignment],
+    coherence: dict[int, float],
+) -> None:
     label_by_id: dict[int, ClusterLabel] = {lb.cluster_id: lb for lb in labels}
     theme_counts: Counter[int] = Counter(a.primary_theme_id for a in assignments)
     call_type_counts: Counter[str] = Counter(a.inferred_call_type for a in assignments)
@@ -677,9 +716,11 @@ def print_summary(labels: list[ClusterLabel], assignments: list[MeetingThemeAssi
         count = theme_counts.get(lb.cluster_id, 0)
         scores = sentiment_by_theme.get(lb.cluster_id, [])
         avg_sentiment = f"{sum(scores)/len(scores):.2f}" if scores else "n/a"
+        coh = coherence.get(lb.cluster_id, 0.0)
+        coh_flag = "tight" if coh >= 0.6 else ("review" if coh >= 0.4 else "LOOSE")
         print(f"\n  [{lb.cluster_id}] {lb.theme_title}  ({lb.audience})")
         print(f"       {lb.rationale}")
-        print(f"       {count} meetings  |  avg sentiment: {avg_sentiment}")
+        print(f"       {count} meetings  |  avg sentiment: {avg_sentiment}  |  coherence: {coh} [{coh_flag}]")
         print(f"       sample phrases: {', '.join(lb.representative_phrases[:4])}")
 
     print("\n─── Call Type Distribution ──────────────────────────────────")
@@ -756,37 +797,49 @@ async def persist_to_postgres(
 
 
 async def print_pg_insights(store: IprepPhraseStore) -> None:
-    """Print the four canned insight queries against the persisted data."""
-    print("\n─── Insight: Theme Sentiment ────────────────────────────────")
+    """Print all insight queries against the persisted data."""
+    print("\n─── Insight: Theme Sentiment (avg) ──────────────────────────")
     rows = await store.insight_theme_sentiment()
     for r in rows:
         bar = "+" if (r["avg_sentiment"] or 0) >= 3.5 else "-"
         print(f"  [{bar}] {r['theme_title']:<40s}  "
               f"avg={r['avg_sentiment']}  meetings={r['meeting_count']}")
 
-    print("\n─── Insight: Churn Risk by Theme ────────────────────────────")
-    rows = await store.insight_churn_by_theme()
+    print("\n─── Insight: Sentiment Distribution by Theme ────────────────")
+    rows = await store.insight_sentiment_distribution_by_theme()
+    current_theme = None
+    for r in rows:
+        if r["theme_title"] != current_theme:
+            current_theme = r["theme_title"]
+            print(f"\n  {current_theme}")
+        print(f"    {r['overall_sentiment']:<20s}  {r['meeting_count']:3d} meetings  "
+              f"avg_score={r['avg_score']}")
+
+    print("\n─── Insight: Signal Counts by Theme ─────────────────────────")
+    rows = await store.insight_signal_counts_by_theme()
     if rows:
+        print(f"  {'Theme':<40s}  churn  concern  feat_gap  tech  praise  pricing")
         for r in rows:
-            print(f"  {r['theme_title']:<40s}  churn_signals={r['churn_signal_count']}  "
-                  f"per_meeting={r['churn_per_meeting']}")
+            print(f"  {r['theme_title']:<40s}  "
+                  f"{r['churn_signal']:5d}  {r['concern']:7d}  "
+                  f"{r['feature_gap']:8d}  {r['technical_issue']:4d}  "
+                  f"{r['praise']:6d}  {r['pricing_offer']:7d}")
     else:
         print("  (key_moments table not found — run Take A first)")
 
-    print("\n─── Insight: Call Type x Theme Matrix ───────────────────────")
-    rows = await store.insight_call_type_theme_matrix()
-    current_ct = None
+    print("\n─── Insight: Theme Co-occurrence ────────────────────────────")
+    rows = await store.insight_theme_cooccurrence(top_n=10)
     for r in rows:
-        if r["call_type"] != current_ct:
-            current_ct = r["call_type"]
-            print(f"\n  [{current_ct}]")
-        print(f"    {r['theme_title']:<40s}  {r['meeting_count']} meetings")
+        print(f"  {r['theme_a']:<35s} + {r['theme_b']:<35s}  "
+              f"{r['co_occurrence_count']} meetings")
 
-    print("\n─── Insight: Feature Gap Themes ─────────────────────────────")
-    rows = await store.insight_feature_gap_themes()
+    print("\n─── Insight: High-Risk Meetings (churn + low sentiment) ─────")
+    rows = await store.insight_high_risk_meetings()
     if rows:
-        for r in rows[:8]:
-            print(f"  {r['theme_title']:<40s}  feature_gaps={r['feature_gap_count']}")
+        for r in rows[:10]:
+            print(f"  {r['meeting_id']}  theme={r['theme_title']}  "
+                  f"call={r['call_type']}  score={r['sentiment_score']}  "
+                  f"churn_signals={r['churn_signals']}")
     else:
         print("  (key_moments table not found — run Take A first)")
 
@@ -878,6 +931,12 @@ async def main() -> None:
         min_samples=args.min_samples,
     )
 
+    # Step 5b — coherence check (pure numpy, no extra deps)
+    coherence = compute_cluster_coherence(phrases)
+    for cid, score in sorted(coherence.items()):
+        flag = "tight" if score >= 0.6 else ("review" if score >= 0.4 else "LOOSE")
+        print(f"  cluster {cid:2d}  coherence={score}  [{flag}]")
+
     # Step 6
     print("\n[6/9] Labeling clusters with LLM...")
     labels = await label_clusters(phrases)
@@ -899,10 +958,11 @@ async def main() -> None:
     metrics["llm_model"] = LLM_MODEL
     metrics["embedding_model"] = EMBEDDING_MODEL
     metrics["meeting_count"] = len(records)
+    metrics["cluster_coherence"] = {str(k): v for k, v in coherence.items()}
 
     output_dir = args.output_dir.resolve()
     write_outputs(output_dir, phrases, labels, assignments, metrics, viz_coords)
-    print_summary(labels, assignments)
+    print_summary(labels, assignments, coherence)
 
     # Step 9 — persist to Postgres (pgvector + tsvector)
     if not args.skip_pg:

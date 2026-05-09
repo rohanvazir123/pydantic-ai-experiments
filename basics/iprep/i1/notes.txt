@@ -107,7 +107,7 @@ Take B. Clustering using TF-IDF
 See basics\iprep\i1\cluster_taxonomy.py
 
 - load_meeting_documents 
-[ comment: it is surprising how we do not re-use the pre-loaded postgres tables in A.  Rule-based generation and again fallback to raw json parsing]
+[ comment: it is surprising that we do not re-use the pre-loaded postgres tables in A.  Rule-based generation and again fallback to raw json parsing]
 
 - build_document_text 
  Combine useful fields into the text representation used for clustering.

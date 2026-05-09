@@ -82,6 +82,111 @@ NEXT WORK ITEM (paused):
     - Add a thin reporting layer (print or export to CSV) for the slide deck
 
 
+Q: What insights/findings can be generated per theme?
+--------------------------------------
+For any theme (e.g. "Customer Retention / Renewal / Commercial Risk"), the following
+are available via insight query methods in take_c_pg_store.py:
+
+1. Sentiment distribution  [insight_sentiment_distribution_by_theme]
+   Count of each overall_sentiment category + avg score per theme. Example:
+     Customer Retention / Renewal / Commercial Risk
+       mixed-negative   8 meetings   avg_score=2.4
+       negative         4 meetings   avg_score=1.8
+       neutral          3 meetings   avg_score=3.0
+       mixed-positive   5 meetings   avg_score=3.8
+       very-positive    2 meetings   avg_score=4.9
+
+2. Business signal counts  [insight_signal_counts_by_theme]
+   Pivoted count of every key-moment type per theme (joins Take A key_moments):
+     churn_signal, concern, feature_gap, technical_issue, praise, pricing_offer
+   Example:
+     Customer Retention   churn=14  concern=11  pricing=6  feature_gap=4  praise=2
+
+3. Call type breakdown  [insight_call_type_theme_matrix]
+   How many support / external / internal meetings per theme.
+   Example: Customer Retention is mostly external (account manager) calls.
+
+4. Theme co-occurrence  [insight_theme_cooccurrence]
+   Which theme pairs appear together most in the same meeting.
+   Example: "Customer Retention" + "Incidents & Reliability" co-occurring frequently
+   means outages are driving churn — a specific, actionable finding for leadership.
+
+5. High-risk meetings  [insight_high_risk_meetings]
+   Meetings with churn signals AND sentiment_score < 3.0, ranked by churn count.
+   These are the specific meetings leadership should follow up on immediately.
+
+Previously implemented (4 original queries):
+  insight_theme_sentiment()        avg sentiment per theme
+  insight_churn_by_theme()         churn_signal count + per_meeting rate
+  insight_call_type_theme_matrix() call_type x theme matrix
+  insight_feature_gap_themes()     feature_gap count per theme
+
+NOTE: signal-count queries (2, 5) join Take A's key_moments table.
+Run Take A first: python basics/iprep/i1/generate_rule_based_taxonomy.py --reset
+
+
+Q: How do we know Take C produces meaningful themes?
+--------------------------------------
+Short answer: we don't automatically — unsupervised clustering has no ground truth.
+Three practical validation checks, in order of effort:
+
+1. Compare against Take A (cheapest, most convincing)
+   Take A has 8 hand-crafted themes built from expert knowledge of the topic vocabulary.
+   If semantic clustering independently discovers roughly the same groupings, that is
+   strong evidence. The validation question is:
+     "For each Take C cluster, what % of its phrases would Take A's THEME_KEYWORDS
+      have assigned to the same theme?"
+   If they agree 80%+ without sharing any rules, the clusters are meaningful.
+
+2. Silhouette score on phrase embeddings
+   Run silhouette_score on the UMAP-reduced embeddings with HDBSCAN labels.
+   Range -1 to 1; above 0.3 is reasonable for short text. Take B already does this
+   for TF-IDF vectors.
+
+3. Sense-check the insight queries
+   Once insight queries run against real data, ask: do results match intuition?
+   - Does the "Compliance & Audit" cluster have low sentiment? (audits are stressful)
+   - Does the "Customer Retention" cluster have the most churn signals?
+   - Do internal meetings cluster around "Engineering / Planning" themes?
+   If the insights are counter-intuitive, the clusters are probably wrong.
+
+
+Q: How do we know Take C won't club unrelated topics into a cluster?
+--------------------------------------
+It can — this is the most important risk in the approach.
+
+Why it can go wrong:
+  Embeddings capture linguistic similarity, not business similarity.
+  - "audit readiness" and "sprint planning" both involve preparation/process
+    — the model might see them as closer than they are
+  - "alert latency" and "performance degradation" both carry a performance
+    signal — might cluster with reliability OR monitoring topics
+  - "incident response" is ambiguous — security IR vs operational outage IR
+
+Built-in guardrail: LLM labeling as quality check
+  If a cluster is impure, the LLM will generate a vague label like
+  "Technical Operations & Processes". A coherent cluster gets a sharp,
+  specific label like "Identity & Access Management". Vague = investigate.
+
+Active detection (now implemented in the pipeline):
+  1. Intra-cluster cosine similarity — IMPLEMENTED in take_c_semantic_clustering.py
+     Printed after step 5 and stored in cluster_metrics.json as cluster_coherence.
+     Thresholds:
+       >= 0.6  tight    -- phrases are genuinely similar
+       0.4-0.6 review   -- inspect cluster members
+       < 0.4   LOOSE    -- likely impure; tune HDBSCAN or split manually
+
+  2. Scan phrase_clusters.csv — read 10 random phrases per cluster, ask "do these belong
+     together?" Takes 5 minutes.
+
+  3. Compare against Take A themes — if a Take C cluster contains phrases that Take A's
+     THEME_KEYWORDS would split across 2+ themes, the cluster is probably impure.
+
+Fix if you find impure clusters:
+  --min-cluster-size higher  -> HDBSCAN gets stricter, splits loose groupings
+  --min-samples lower        -> fewer noise points, more clusters
+
+
 Q: What is schema_dump.sql?
 --------------------------------------
 An aside — a set of DBeaver-style introspection queries for the iprep_i1_functional
