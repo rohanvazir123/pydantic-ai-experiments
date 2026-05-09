@@ -1,145 +1,97 @@
 cluster_id,rank,term
-0,1,launch
-0,2,launch readiness
-0,3,hipaa
-0,4,readiness
-0,5,readiness launch
-0,6,launch readiness launch
-0,7,readiness launch readiness
-0,8,limiting
-0,9,megan
-0,10,rate
-0,11,api
-0,12,api rate
-1,1,renewal
-1,2,competitive
-1,3,pricing
-1,4,maria
-1,5,outage
-1,6,renewal renewal
-1,7,compliance
-1,8,sla
-1,9,maria santos
-1,10,santos
-1,11,comply
-1,12,renewal renewal renewal
-2,1,mortem
-2,2,post mortem
-2,3,bug
-2,4,post
-2,5,launch
-2,6,product launch
-2,7,product
-2,8,compliance
-2,9,reporting
-2,10,compliance reporting
-2,11,outage
-2,12,v2
-3,1,outage
-3,2,customer
-3,3,failure
-3,4,incident
-3,5,diana
-3,6,response
-3,7,incident response
-3,8,communication
-3,9,service
-3,10,risk
-3,11,customers
-3,12,monitoring
-4,1,multi framework
-4,2,framework
-4,3,multi
-4,4,hipaa
-4,5,compliance
-4,6,audit
-4,7,evidence
-4,8,soc
-4,9,dss
-4,10,pci dss
-4,11,demo
-4,12,pci
-5,1,feature
-5,2,scim
-5,3,feature request
-5,4,roadmap
-5,5,provisioning
-5,6,request
-5,7,sarah
-5,8,compliance
-5,9,access
-5,10,identity
-5,11,early access
-5,12,thomas
+0,1,renewal
+0,2,competitive
+0,3,pricing
+0,4,outage
+0,5,compliance
+0,6,renewal renewal
+0,7,comply
+0,8,compliance compliance
+0,9,sla
+0,10,v2
+0,11,comply v2
+0,12,product
+1,1,outage
+1,2,incident
+1,3,failure
+1,4,communication
+1,5,monitoring
+1,6,risk
+1,7,churn
+1,8,churn risk
+1,9,pipeline
+1,10,incident response
+1,11,reliability
+1,12,churn_signal
+2,1,billing
+2,2,overage
+2,3,dispute
+2,4,billing dispute
+2,5,charges
+2,6,invoice
+2,7,overage charges
+2,8,alert
+2,9,usage
+2,10,dispute billing dispute
+2,11,billing dispute billing
+2,12,dispute billing
+3,1,planning
+3,2,sprint
+3,3,launch
+3,4,pdf
+3,5,qa
+3,6,bug
+3,7,roadmap planning
+3,8,v2
+3,9,product launch
+3,10,reporting
+3,11,compliance reporting
+3,12,action_item
+4,1,hipaa
+4,2,compliance
+4,3,reporting
+4,4,framework
+4,5,multi framework
+4,6,feature
+4,7,multi
+4,8,audit
+4,9,product
+4,10,soc
+4,11,pci dss
+4,12,dss
+5,1,backup
+5,2,performance
+5,3,response time
+5,4,support response
+5,5,response
+5,6,support response time
+5,7,backup performance
+5,8,agent
+5,9,sync
+5,10,support
+5,11,time
+5,12,time support
 6,1,mfa
-6,2,policy
-6,3,mfa policy
-6,4,management
-6,5,sso
-6,6,identity
-6,7,victor
-6,8,okta
-6,9,access
+6,2,identity
+6,3,management
+6,4,sso
+6,5,okta
+6,6,scim
+6,7,integration
+6,8,access
+6,9,policy
 6,10,access management
-6,11,session
-6,12,role
-7,1,incident
-7,2,communication
-7,3,elena
-7,4,outage
-7,5,incident communication
-7,6,failure
-7,7,vasquez
-7,8,elena vasquez
-7,9,patch
-7,10,data
-7,11,platform
-7,12,churn_signal
-8,1,onboarding
-8,2,backup
-8,3,vanessa
-8,4,hybrid
-8,5,data
-8,6,data retention
-8,7,retention
-8,8,alert
-8,9,recovery
-8,10,cloudprime
-8,11,yuki
-8,12,backup recovery
-9,1,billing
-9,2,overage
-9,3,dispute
-9,4,wayne
-9,5,billing dispute
-9,6,charges
-9,7,invoice
-9,8,overage charges
-9,9,renewal
-9,10,usage
-9,11,billing dispute billing
-9,12,dispute billing dispute
-10,1,sprint
-10,2,sprint planning
-10,3,planning
-10,4,retrospective
-10,5,sprint retrospective
-10,6,planning sprint
-10,7,pipeline
-10,8,sprint planning sprint
-10,9,planning sprint planning
-10,10,tyler
-10,11,chris
-10,12,retrospective sprint
-11,1,backup
-11,2,performance
-11,3,backup performance
-11,4,david
-11,5,agent
-11,6,debt
-11,7,degradation
-11,8,scheduler
-11,9,sales
-11,10,version
-11,11,throughput
-11,12,kendra
+6,11,mfa policy
+6,12,sprint
+7,1,backup
+7,2,hybrid
+7,3,recovery
+7,4,onboarding
+7,5,data
+7,6,backup recovery
+7,7,restore
+7,8,cloudprime
+7,9,aws
+7,10,connector
+7,11,policies
+7,12,recovery backup recovery

@@ -229,14 +229,39 @@ def load_meeting_documents(dataset_dir: Path) -> list[MeetingDocument]:
     return documents
 
 
-def cluster_documents(documents:  list[MeetingDocument], num_clusters=5, max_features=10000) -> tuple[Any, Any, Any, list[int]]:
-    """
-    Cluster meeting documents and return vectorizer, matrix, model, and labels.
-    """   
+def load_participant_names(dataset_dir: Path) -> set[str]:
+    """Extract first and last names from emails and transcript speaker names across all meetings."""
+    names: set[str] = set()
+    for meeting_dir in dataset_dir.iterdir():
+        info_path = meeting_dir / "meeting-info.json"
+        if info_path.exists():
+            for email in load_json(info_path).get("allEmails", []):
+                for part in email.split("@")[0].split("."):
+                    if part:
+                        names.add(part.lower())
+        transcript_path = meeting_dir / "transcript.json"
+        if transcript_path.exists():
+            for entry in load_json(transcript_path).get("data", []):
+                for part in str(entry.get("speaker_name", "")).split():
+                    if part:
+                        names.add(part.lower())
+    return names
+
+
+def cluster_documents(
+    documents: list[MeetingDocument],
+    num_clusters: int = 5,
+    max_features: int = 10000,
+    extra_stop_words: set[str] | None = None,
+) -> tuple[Any, Any, Any, list[int]]:
+    """Cluster meeting documents and return vectorizer, matrix, model, and labels."""
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+    stop_words = list(ENGLISH_STOP_WORDS | (extra_stop_words or set()))
+
     # 1. Vectorize text data
     vectorizer = TfidfVectorizer(
         lowercase=True,
-        stop_words="english",
+        stop_words=stop_words,
         ngram_range=(1, 3),
         min_df=2,
         max_df=0.85,
@@ -280,8 +305,8 @@ def print_tfidf_weights(vectorizer, matrix, documents, doc_index=0):
 def print_vectorizer_info(vectorizer, matrix, documents):
     print(f"Vocabulary size: {len(vectorizer.get_feature_names_out())}")
     print(f"Matrix shape: {matrix.shape}")
-    print(f"Sample document text: {documents[0].document_text[:200]}...")
-    print_tfidf_weights(vectorizer, matrix, documents, doc_index=0)
+    for i in range(len(documents)):
+        print_tfidf_weights(vectorizer, matrix, documents, doc_index=i)
 
 
 def compute_silhouette_score(matrix: Any, labels: list[int]) -> float | None:
@@ -587,8 +612,10 @@ def main() -> None:
     if len(documents) < 2:
         raise SystemExit(f"Need at least two meeting summaries to cluster. Found {len(documents)}.")
 
+    participant_names = load_participant_names(dataset_dir)
     vectorizer, matrix, kmeans, cluster_labels = cluster_documents(
-        documents, num_clusters=args.clusters, max_features=args.max_features
+        documents, num_clusters=args.clusters, max_features=args.max_features,
+        extra_stop_words=participant_names,
     )
     print_vectorizer_info(vectorizer, matrix, documents)
 
@@ -603,7 +630,8 @@ def main() -> None:
         )
         # Re-cluster with the chosen k; vectorizer/matrix are k-independent
         _, _, kmeans, cluster_labels = cluster_documents(
-            documents, num_clusters=clusters, max_features=args.max_features
+            documents, num_clusters=clusters, max_features=args.max_features,
+            extra_stop_words=participant_names,
         )
 
     silhouette = compute_silhouette_score(matrix, list(cluster_labels))

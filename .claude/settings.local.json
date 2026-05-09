@@ -128,7 +128,8 @@
       "Bash(ruff check *)",
       "Skill(update-config)",
       "PowerShell(conda run *)",
-      "PowerShell(Rename-Item *)"
+      "PowerShell(Rename-Item *)",
+      "PowerShell(Get-Command *)"
     ]
   },
   "enableAllProjectMcpServers": true,

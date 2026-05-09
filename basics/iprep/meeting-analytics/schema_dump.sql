@@ -1,12 +1,12 @@
 SELECT table_name 
 FROM information_schema.tables 
-WHERE table_schema = 'iprep_i1_functional' ;
+WHERE table_schema = 'meeting_analytics' ;
 
 
 
 SELECT table_name, column_name, data_type, is_nullable, column_default
 FROM information_schema.columns
-WHERE table_schema = 'iprep_i1_functional'
+WHERE table_schema = 'meeting_analytics'
 ORDER BY table_name, ordinal_position;
 
 
@@ -19,7 +19,12 @@ FROM information_schema.table_constraints AS tc
 JOIN information_schema.key_column_usage AS kcu
   ON tc.constraint_name = kcu.constraint_name
   AND tc.table_schema = kcu.table_schema
-WHERE tc.table_schema = 'iprep_i1_functional'
+WHERE tc.table_schema = 'meeting_analytics'
 ORDER BY tc.table_name, tc.constraint_type;
 
-SELECT distinct topic FROM iprep_i1_functional.summary_topics order by topic;
+SELECT distinct topic FROM meeting_analytics.summary_topics order by topic;
+
+
+
+
+

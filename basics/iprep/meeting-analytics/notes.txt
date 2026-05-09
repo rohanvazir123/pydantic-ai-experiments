@@ -4,11 +4,11 @@ These are just notes, switching from design approaches to partial implementation
 Introduction/Initial Notes
 -----------------------
 
-Start from the beginning and regard basics\iprep\i1\req.md as the source of user requirements
+Start from the beginning and regard basics\iprep\meeting-analytics\req.md as the source of user requirements
 
 
-The summary.json in each of the folders under basics\iprep\i1\dataset
-should be the starting point and sp throw away or redo basics\iprep\i1\tasks.md
+The summary.json in each of the folders under basics\iprep\meeting-analytics\dataset
+should be the starting point and sp throw away or redo basics\iprep\meeting-analytics\tasks.md
 
 summary.json:
 These are the fields of summary.json, which is essentially
@@ -44,12 +44,12 @@ It also has sentiment score, overall sentiment, action items and key keyMoments
   sentiment.
 - transcript.json data[].sentimentType gives sentence-level sentiment evidence (do we need this or is it noise?)
 
-see basics\iprep\i1\list_of_topics.txt for complete list of topics which I extracted
+see basics\iprep\meeting-analytics\list_of_topics.txt for complete list of topics which I extracted
 
 Overall project deliverables 
 --------------------------
 
-Refer to basics\iprep\i1\req.md for complete list of deliverables
+Refer to basics\iprep\meeting-analytics\req.md for complete list of deliverables
 
 Goal 1:
 Cluster the raw topics above into broader themes/ Infer meeting call type
@@ -69,7 +69,7 @@ Design + implementation:
 
 Take A.  Rule-based generation
 
-See  basics\iprep\i1\generate_rule_based_taxonomy.py
+See  basics\iprep\meeting-analytics\generate_rule_based_taxonomy.py
 
 Pure rule-based approach to inferring call types
 
@@ -82,7 +82,7 @@ Pure rule-based approach to inferring call types
   The tables are designed around the assignment's questions rather than the
   original JSON file boundaries:
 
-  see basics\iprep\i1\use_cmds.sql
+  see basics\iprep\meeting-analytics\use_cmds.sql
 
 3.  load_functional_tables
   Insert meeting records and derived taxonomy/sentiment rows into Postgres.
@@ -100,26 +100,26 @@ Pure rule-based approach to inferring call types
   evidence. Every theme and call-type row is derived from explicit topics,
   key-moment types, summary text, and keyword rules.
 
-Ignore basics\iprep\i1\load_dataset_to_postgres.py this was just done to load and browse postgres tables in DBeaver, just to understand the landscape
+Ignore basics\iprep\meeting-analytics\load_dataset_to_postgres.py this was just done to load and browse postgres tables in DBeaver, just to understand the landscape
 
 
 Take B. Clustering using TF-IDF
-See basics\iprep\i1\cluster_taxonomy.py
+See basics\iprep\meeting-analytics\cluster_taxonomy.py
 
 - load_meeting_documents 
 [ comment: it is surprising that we do not re-use the pre-loaded postgres tables in A.  Rule-based generation and again fallback to raw json parsing]
 
 - build_document_text 
  Combine useful fields into the text representation used for clustering.
-[ comment : I found basics\iprep\i1\cluster_taxonomy.py( v1) to be a bit messy and I re-wrote basics\iprep\i1\cluster_taxonomy_v2.py, our goal is get this v2 version working and delete basics\iprep\i1\cluster_taxonomy.py
+[ comment : I found basics\iprep\meeting-analytics\cluster_taxonomy.py( v1) to be a bit messy and I re-wrote basics\iprep\meeting-analytics\cluster_taxonomy_v2.py, our goal is get this v2 version working and delete basics\iprep\meeting-analytics\cluster_taxonomy.py
 ]
 
 Take C. LLM assisted semantic clustering
 See basics\iprep\llm_assisted_semantic_clustering.txt
 
-Implementation: basics\iprep\i1\take_c_semantic_clustering.py
-Design + tradeoffs: basics\iprep\i1\take_c_design.md
-FAQ: basics\iprep\i1\take_c_faq.txt
+Implementation: basics\iprep\meeting-analytics\take_c_semantic_clustering.py
+Design + tradeoffs: basics\iprep\meeting-analytics\take_c_design.md
+FAQ: basics\iprep\meeting-analytics\take_c_faq.txt
 
 Pipeline: Extract topics -> Dedup (exact + fuzzy) -> Embed (nomic-embed-text)
           -> UMAP (10-dim) -> HDBSCAN -> LLM label clusters -> assign meetings
@@ -128,9 +128,9 @@ Pipeline: Extract topics -> Dedup (exact + fuzzy) -> Embed (nomic-embed-text)
 Dry-run verified: 100 meetings, 600 raw topics -> 351 exact-dedup -> 343 fuzzy-dedup
 
 
-Aside: basics\iprep\i1\schema_dump.sql
+Aside: basics\iprep\meeting-analytics\schema_dump.sql
 ---------------------------------------
-DBeaver-style introspection queries for the iprep_i1_functional schema (Take A).
+DBeaver-style introspection queries for the meeting_analytics schema (Take A).
 Not part of any pipeline. Used to browse the live Postgres schema:
 list tables, describe columns, show constraints, pull distinct topics.
 

@@ -1,7 +1,7 @@
 {
   "meeting_count": 100,
-  "clusters": 12,
-  "silhouette_score": 0.03224241104670758,
+  "clusters": 8,
+  "silhouette_score": 0.037550950263002696,
   "auto_k": true,
   "min_clusters": 4,
   "max_clusters": 12,
