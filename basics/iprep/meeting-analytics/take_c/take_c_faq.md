@@ -681,3 +681,33 @@ work (figuring out which phrases belong together) is done by the embeddings and 
 By the time the LLM sees a cluster, the grouping is already correct. It just needs to
 name what's already there. This is why the labels come out clean even with a small local
 model like `llama3.1:8b`.
+
+**The actual prompt sent to the LLM (per cluster):**
+
+```
+You are categorizing customer call topics for a B2B SaaS company's leadership team.
+
+The following phrases all come from one theme cluster discovered by semantic clustering.
+Based only on these phrases, provide a short, executive-level theme label.
+
+Phrases:
+- mfa enforcement
+- scim provisioning
+- sso configuration failures
+- identity provider sync
+- ...
+
+Respond with valid JSON only — no extra text, no markdown fences:
+{"theme_title": "<3-6 words, title case>", "audience": "<Engineering | Product | Sales | All>", "rationale": "<one sentence: why this theme matters to that audience>"}
+```
+
+`temperature=0.2` — kept low to minimise label variation between runs.
+
+**Fallback if the LLM call fails:**
+
+```python
+theme_title = " / ".join(sample[:3])  # e.g. "mfa enforcement / scim provisioning / sso configuration failures"
+```
+
+The failure mode degrades gracefully to the Take B approach — top phrases concatenated
+with " / ". The cluster grouping is preserved; only the label quality drops.
