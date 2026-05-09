@@ -14,6 +14,7 @@
 - [How does UMAP work?](#how-does-umap-work)
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
 - [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
+- [Why should Take C's call\_type come from Take A instead of the LLM?](#why-should-take-cs-call_type-come-from-take-a-instead-of-the-llm)
 
 ---
 
@@ -548,3 +549,53 @@ python basics/iprep/meeting-analytics/setup_all_tables.py
 Uses fast-path loaders for Takes B and C (no Ollama required), and re-runs Take A
 from raw JSON. Target: `rag_db @ localhost:5434` (rag_user:rag_pass). All credentials
 from `meeting-analytics/.env`.
+
+---
+
+## Why should Take C's call\_type come from Take A instead of the LLM?
+
+**Current state (Take C step 7):** llama3.1:8b infers call type per meeting — 100 LLM
+calls per pipeline run. Outputs 3 values: `support`, `external`, `internal`.
+Stored as `call_type` and `call_confidence` (string: high/medium/low) in
+`semantic_meeting_themes`.
+
+**Take A's call_types table:** deterministic keyword rules + theme nudges. 5 values:
+`support_escalation`, `sales_or_renewal`, `internal_incident`, `internal_planning`,
+`external_customer`. Numeric confidence (0.60–0.95). Zero LLM calls. Already covers
+all 100 meetings.
+
+**Three reasons to switch:**
+
+**1 — Inconsistent taxonomies break cross-take comparisons.**
+Any query joining Take C semantic clusters with call types currently uses 3 coarse
+categories. The same query on Take A themes uses 5 granular categories. You can't
+compare `support` (Take C) with `support_escalation` vs `external_customer` (Take A)
+— they're not the same cut. One taxonomy across both takes means every insight query
+is directly comparable.
+
+**2 — LLM call type adds no value over the rule-based version.**
+Take C's unique contribution is phrase-level semantic clustering — detecting that
+"outage remediation" and "post-mortem planning" belong together without hand-crafted
+rules. Call type inference (`is this a support call or a renewal call?`) is signal
+that lives entirely in keywords: "renewal", "sprint planning", "incident review".
+There is no semantic embedding benefit here. Take A's rules already get this right.
+
+**3 — 100 LLM calls per run does not scale.**
+Adding 100 new meetings = 100 more LLM calls just for call type. Take A's rules run
+in milliseconds with zero external dependencies. Since the call type doesn't benefit
+from embeddings, paying the LLM cost on every run is waste.
+
+**What changes if we switch:**
+- Remove step 7 from `take_c_semantic_clustering.py` (saves ~40s per run, 100 LLM calls)
+- At persist time, `semantic_meeting_themes.call_type` and `call_confidence` are
+  populated by joining `meeting_analytics.call_types` (Take A) instead of LLM output
+- Same columns, same table — only the source changes
+- `call_confidence` becomes a numeric (e.g. 0.90) instead of a string ("high")
+
+**What does NOT change:**
+- The 26 semantic cluster labels (`theme_title`, `audience`, `rationale`) — those
+  still come from the LLM and are the core value-add of Take C
+- The HDBSCAN clustering itself — unaffected
+- All insight queries — they already join `call_types` (Take A) for most analysis
+
+**Status:** not yet implemented — pending decision.

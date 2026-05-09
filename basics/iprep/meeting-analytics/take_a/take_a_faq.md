@@ -130,6 +130,21 @@ a customer from being miscategorised as internal incident reviews.
 
 If no keywords match at all, the call type is `"unknown"` with confidence 0.0.
 
+**Important: 5-type taxonomy is self-invented — req.md defines 3 types.**
+
+The brief (`req.md`) explicitly defines only **three** call types: `support`, `external`, `internal`.
+Take A's 5-type taxonomy (`support_escalation`, `sales_or_renewal`, `internal_incident`,
+`internal_planning`, `external_customer`) was added as a finer-grained elaboration but deviates
+from the assignment spec. The raw dataset JSON files do not contain any `call_type` field.
+
+The planned fix is a deterministic 3-type classifier that maps directly to req.md's taxonomy.
+Until then, use the 5-type table for all queries — or collapse to 3 in Python before charting:
+- `support_escalation` → `support`
+- `sales_or_renewal` → `external`
+- `external_customer` → `external`
+- `internal_incident` → `internal`
+- `internal_planning` → `internal`
+
 ---
 
 ## What does the confidence score in call\_types mean?
