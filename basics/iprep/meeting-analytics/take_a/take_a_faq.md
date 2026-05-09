@@ -12,6 +12,7 @@
 - [What is sentiment\_features and how is net\_sentiment computed?](#what-is-sentiment_features-and-how-is-net_sentiment-computed)
 - [How does the external taxonomy.json work?](#how-does-the-external-taxonomyjson-work)
 - [Why does concern not get a direct theme boost?](#why-does-concern-not-get-a-direct-theme-boost)
+- [All 16 tables disappeared — how do I recover?](#all-16-tables-disappeared--how-do-i-recover)
 
 ---
 
@@ -329,3 +330,25 @@ Target: `rag_db @ localhost:5434` (rag_user:rag_pass). Credentials read from
 | `meeting_themes` | derived by `infer_themes()` |
 | `call_types` | derived by `infer_call_type()` |
 | `sentiment_features` | aggregated from `transcript_lines` |
+
+---
+
+## All 16 tables disappeared — how do I recover?
+
+**Symptom:** DBeaver shows `meeting_analytics` schema as empty or missing entirely.
+
+**Most likely cause:** The Docker container for `rag_db` (port 5434) was restarted
+without a persistent volume, wiping the database. A DBeaver "Refresh" just reveals
+what's already gone — it doesn't cause the loss.
+
+**Recovery — one command from repo root:**
+
+```bash
+python basics/iprep/meeting-analytics/setup_all_tables.py
+```
+
+This drops and recreates the full `meeting_analytics` schema and reloads all 16
+tables from local source files (raw dataset JSON + Take B/C CSV outputs). No
+re-embedding or re-clustering needed — all outputs are already on disk.
+
+Expected result: 16 tables, ~2 minutes to complete.
