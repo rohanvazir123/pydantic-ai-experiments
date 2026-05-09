@@ -15,6 +15,7 @@
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
 - [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
 - [Why should Take C's call\_type come from Take A instead of the LLM?](#why-should-take-cs-call_type-come-from-take-a-instead-of-the-llm)
+- [What 3 Postgres tables does Take C create, and what is in each?](#what-3-postgres-tables-does-take-c-create-and-what-is-in-each)
 
 ---
 
@@ -599,3 +600,84 @@ from embeddings, paying the LLM cost on every run is waste.
 - All insight queries — they already join `call_types` (Take A) for most analysis
 
 **Status:** not yet implemented — pending decision.
+
+---
+
+## What 3 Postgres tables does Take C create, and what is in each?
+
+Take C creates exactly 3 tables in the `meeting_analytics` schema, all loaded by
+`take_c/load_outputs_to_pg.py` from pre-computed output files. No re-embedding or
+re-clustering is needed to reload them.
+
+---
+
+### `semantic_clusters` — one row per discovered theme (26 rows)
+
+| Column | Type | Nullable | What it holds |
+|---|---|---|---|
+| `cluster_id` | integer | NOT NULL | Cluster identifier (0–25) assigned by HDBSCAN |
+| `theme_title` | text | NOT NULL | LLM-generated theme label (e.g. "Identity & Access Management") |
+| `audience` | text | NOT NULL | LLM-generated target stakeholder (Engineering / Product / Sales / All) |
+| `rationale` | text | nullable | LLM-generated one-sentence explanation of why these phrases cluster together |
+| `phrase_count` | integer | nullable | Number of topic phrases assigned to this cluster |
+
+**Source file:** `take_c/outputs/semantic_clusters.json`
+**LLM-generated columns:** `theme_title`, `audience`, `rationale` — produced once per clustering run by `llama3.1:8b`. Deterministic columns: `cluster_id`, `phrase_count`.
+
+---
+
+### `semantic_phrases` — one row per deduplicated topic phrase (343 rows)
+
+| Column | Type | Nullable | What it holds |
+|---|---|---|---|
+| `id` | uuid | NOT NULL | Surrogate key |
+| `canonical` | text | NOT NULL | The deduplicated topic phrase (e.g. "mfa enforcement") |
+| `aliases` | text[] | nullable | Variant forms of the phrase seen across meetings |
+| `cluster_id` | integer | NOT NULL | Which semantic cluster this phrase belongs to |
+| `embedding` | vector(768) | nullable | Phrase embedding — NULL when loaded from CSV (not re-embedded at load time) |
+| `content_tsv` | tsvector | nullable | GIN-indexed full-text search vector over `canonical` |
+
+**Source file:** `take_c/outputs/phrase_clusters.csv`
+**Note:** `embedding` is NULL after a CSV load. Vector search is unavailable, but all
+analytical insight queries join on `cluster_id` only — not on embeddings. To populate
+embeddings, re-run the full Take C pipeline (requires Ollama).
+
+---
+
+### `semantic_meeting_themes` — one row per (meeting × cluster) pair (516 rows, 100 distinct meetings)
+
+| Column | Type | Nullable | What it holds |
+|---|---|---|---|
+| `meeting_id` | text | NOT NULL | FK → `meetings.meeting_id` |
+| `cluster_id` | integer | NOT NULL | FK → `semantic_clusters.cluster_id` |
+| `is_primary` | boolean | NOT NULL | True for the single dominant theme per meeting |
+| `call_type` | text | nullable | LLM-inferred call type: `support` / `external` / `internal` |
+| `call_confidence` | text | nullable | LLM confidence string: `high` / `medium` / `low` |
+| `sentiment_score` | numeric | nullable | Passed through from raw `summary.json` (not computed by Take C) |
+| `overall_sentiment` | text | nullable | Passed through from raw `summary.json` |
+
+**Source file:** `take_c/outputs/meeting_themes.csv`
+**Key constraint:** exactly one row per meeting has `is_primary = true`. Always filter
+on `is_primary = true` when aggregating per-meeting to avoid double-counting.
+**Note on `call_type`:** LLM-generated — stochastic and doesn't scale. Prefer joining
+`meeting_analytics.call_types` (Take A) for call type analysis.
+
+---
+
+**How the 3 tables relate:**
+
+```
+semantic_clusters (26)
+    ↑ cluster_id
+semantic_phrases (343)          — phrases belong to clusters
+
+semantic_clusters (26)
+    ↑ cluster_id
+semantic_meeting_themes (516)   — meetings belong to clusters
+    ↑ meeting_id
+meetings (100)
+```
+
+**To reload all 3 tables:** `python basics/iprep/meeting-analytics/setup_all_tables.py`
+(always use this, never `generate_rule_based_taxonomy.py --reset` alone — that wipes
+the schema and only reloads Take A).

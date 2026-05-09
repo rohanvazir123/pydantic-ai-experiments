@@ -15,6 +15,8 @@
 - [All 16 tables disappeared — how do I recover?](#all-16-tables-disappeared--how-do-i-recover)
 - [Why are positive\_pivot and pricing\_offer missing from sentiment\_features?](#why-are-positive_pivot-and-pricing_offer-missing-from-sentiment_features)
 - [Why is human inspection a required step after any schema or data change?](#why-is-human-inspection-a-required-step-after-any-schema-or-data-change)
+- [What is the purpose of theme classification?](#what-is-the-purpose-of-theme-classification)
+- [Do we have action items broken down by theme?](#do-we-have-action-items-broken-down-by-theme)
 
 ---
 
@@ -428,3 +430,64 @@ This project has three Postgres instances on different ports:
 
 Any tool (MCP, psycopg2 defaults, DBeaver saved connections) that doesn't explicitly
 specify port 5434 will silently land on the wrong instance.
+
+---
+
+## What is the purpose of theme classification?
+
+Theme classification is required by `req.md`, but its purpose goes beyond the task
+itself — themes are the analytical foundation that makes every other insight actionable.
+
+**Without themes:** you have 100 individual meetings.
+**With themes:** you have groups you can compare — sentiment by theme, churn risk by
+theme, feature gaps by theme, action items by theme, call type by theme.
+
+Every one of the 10 insight queries and all 16 stakeholder questions are downstream
+of theme assignment. Themes answer *"what is this meeting about?"* so that:
+
+| Stakeholder | What themes unlock |
+|---|---|
+| Support leaders | Which topics generate the most escalations |
+| Sales / CSMs | Which topics precede churn signals |
+| Product managers | Which topics generate feature requests, and whether customers are frustrated or constructive |
+| Engineering leads | Which topics generate technical issues |
+
+Without themes, sentiment analysis gives you "47% of meetings are negative."
+With themes, it gives you "Reliability meetings have 1.04 churn signals/meeting —
+more than the Customer Retention theme itself." That is the difference between a
+chart and an insight.
+
+The three takes (rule-based, clustering, semantic) exist to show that themes are
+**real signal, not artefacts of the method.** If all three approaches independently
+surface Reliability and Compliance as dominant themes, leadership can trust the finding.
+
+---
+
+## Do we have action items broken down by theme?
+
+**Short answer:** not as a stored column, but trivially derivable via JOIN.
+
+`action_items` only has `meeting_id`, `action_index`, `owner`, `action_item`. There is
+no `theme` column. Themes are a property of meetings (stored in `meeting_themes`), not
+of individual action items. An action item belongs to a meeting; the meeting has a theme.
+
+**Query — action item volume by theme (stakeholder question S4):**
+
+```sql
+SELECT mt.theme,
+       count(ai.action_item)                              AS total_action_items,
+       count(DISTINCT ai.meeting_id)                      AS meetings,
+       round(count(ai.action_item)::numeric /
+             count(DISTINCT ai.meeting_id), 2)            AS action_items_per_meeting
+FROM meeting_analytics.meeting_themes mt
+JOIN meeting_analytics.action_items ai ON mt.meeting_id = ai.meeting_id
+WHERE mt.is_primary = true
+GROUP BY mt.theme
+ORDER BY action_items_per_meeting DESC;
+```
+
+**Why `is_primary = true` is required:** a meeting can have multiple theme rows. Without
+the filter, action items are counted once per theme the meeting belongs to, inflating
+every count. `is_primary` pins each meeting to exactly one theme for aggregation.
+
+Full query set for all stakeholder questions: `sql/03_stakeholder_questions.sql`.

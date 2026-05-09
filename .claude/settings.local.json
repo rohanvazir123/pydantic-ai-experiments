@@ -133,7 +133,8 @@
       "Bash(sc query *)",
       "Bash(reg query *)",
       "Bash(Measure-Object -Line)",
-      "Bash(docker stop rag_pgvector *)"
+      "Bash(docker stop rag_pgvector *)",
+      "Bash(powershell *)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -743,6 +743,20 @@ async def create_schema(conn: asyncpg.Connection, schema: str, reset: bool) -> N
         """
     )
 
+    await conn.execute(
+        f"""
+        CREATE OR REPLACE VIEW {q_schema}.action_items_by_theme AS
+        SELECT mt.theme,
+               ai.meeting_id,
+               ai.owner,
+               ai.action_item
+        FROM {q_schema}.meeting_themes mt
+        JOIN {q_schema}.action_items ai ON mt.meeting_id = ai.meeting_id
+        WHERE mt.is_primary = true
+        ORDER BY mt.theme, ai.meeting_id, ai.action_index
+        """
+    )
+
     for table in (
         "summary_topics",
         "key_moments",

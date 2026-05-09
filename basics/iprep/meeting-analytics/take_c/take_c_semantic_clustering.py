@@ -155,6 +155,12 @@ class MeetingThemeAssignment(BaseModel):
 
 
 def load_records(dataset_dir: Path) -> list[MeetingRecord]:
+    """
+    Read all summary.json files into memory as MeetingRecord objects.
+    Uses meetingId from summary if available; otherwise falls back to directory name. 
+    This allows flexibility in dataset structure and robustness to missing/invalid meetingId fields.
+    Outputs a list of MeetingRecord(meeting_id, summary) for downstream processing.
+    """
     records: list[MeetingRecord] = []
     for meeting_dir in sorted(p for p in dataset_dir.iterdir() if p.is_dir()):
         summary_path = meeting_dir / "summary.json"
@@ -176,7 +182,12 @@ def _clean_topic(topic: str) -> str:
 
 
 def extract_topic_phrases(records: list[MeetingRecord]) -> list[TopicPhrase]:
-    """Flatten all topics across meetings, exact-dedup, then fuzzy-dedup."""
+    """
+    Flatten all topics across meetings, exact-dedup, then fuzzy-dedup.
+    Canonical is the first-seen phrase; aliases are near-duplicates (fuzz.token_sort_ratio >= FUZZY_THRESHOLD) grouped under the same canonical.
+    Example:    "API error", "error in API", and "api errors" might all cluster under canonical "api error" with the other two as aliases.
+    Outputs a list of unique TopicPhrase(canonical, aliases) with cluster_id and embedding to be filled later.
+    """
     try:
         from rapidfuzz import fuzz
     except ImportError as exc:
