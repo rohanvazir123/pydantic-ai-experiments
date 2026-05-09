@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-09 (session 7)
+Last updated: 2026-05-09 (session 8)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -25,7 +25,10 @@ Transcript Intelligence take-home assignment — see `req.md` for the full brief
 > Port 5433 = Apache AGE Docker (knowledge graph project — separate, unrelated).
 > Port 5434 = Docker pgvector — canonical DB for this project. Use this for everything.
 
-### All 16 tables — verified row counts
+**WARNING:** MCP postgresql tool connects to port 5432, not 5434. Never use it to verify
+schema changes — always use DBeaver or `psql` pointed at port 5434.
+
+### All 16 tables + 1 view — verified row counts
 
 **Take A (10 tables) — from raw dataset JSON via `generate_rule_based_taxonomy.py`**
 
@@ -36,11 +39,17 @@ Transcript Intelligence take-home assignment — see `req.md` for the full brief
 | `meeting_summaries` | 100 | summary text, overall_sentiment, sentiment_score |
 | `summary_topics` | 600 | one row per meeting × topic tag |
 | `action_items` | 397 | owner, action_item text |
-| `key_moments` | 402 | moment_type (churn_signal / concern / technical_issue / feature_gap / praise / pricing_offer / positive_pivot), text |
+| `key_moments` | 402 | moment_type (8 types: churn_signal / concern / technical_issue / feature_gap / praise / pricing_offer / positive_pivot / action_item), text |
 | `transcript_lines` | 4313 | speaker, sentiment_type, sentence |
 | `meeting_themes` | 466 | theme, evidence_count, is_primary — rule-based, 8 themes |
 | `call_types` | 100 | call_type (5 values), confidence — rule-based |
-| `sentiment_features` | 100 | net_sentiment, positive/negative ratio, signal counts |
+| `sentiment_features` | 100 | net_sentiment, positive/negative ratio, all 8 signal counts (incl. positive_pivot_count, pricing_offer_count added session 8) |
+
+**Take A view (auto-created by setup)**
+
+| View | What it holds |
+|------|---------------|
+| `action_items_by_theme` | action_items JOIN meeting_themes WHERE is_primary — theme-level action item breakdown |
 
 **Take B (3 tables) — from `take_b/outputs/` CSVs via `take_b/load_outputs_to_pg.py`**
 
@@ -76,50 +85,35 @@ Take C: 26 clusters from 343 deduplicated topic phrases. 22 noise phrases (6.4%)
 
 | Script | What it does |
 |--------|-------------|
-| `setup_all_tables.py` | One-shot: Take A --reset + Take B loader + Take C loader → 16 tables |
-| `take_a/generate_rule_based_taxonomy.py --reset` | Drop + recreate schema, load all 10 Take A tables from raw JSON |
+| `setup_all_tables.py` | One-shot: Take A --reset + Take B loader + Take C loader → 16 tables + view. **Always use this.** |
+| `take_a/generate_rule_based_taxonomy.py --reset` | Drop + recreate schema, load 10 Take A tables + view. WARNING: wipes Take B and C tables too. |
 | `take_b/load_outputs_to_pg.py` | Load 3 Take B tables from outputs/ CSVs — no re-clustering needed |
 | `take_c/load_outputs_to_pg.py` | Load 3 Take C tables from outputs/ JSON+CSVs — no re-embedding needed |
 | `export_all_to_csv.py` | Snapshot all 16 tables to `outputs/csv/` — run after any pipeline change |
 
+### Docker — persistent volume
+pgvector container (`rag_pgvector`) now runs with a named volume `pydantic-ai-experiments_pgvector_data`.
+Always start via `docker compose up -d pgvector` from the repo root — not from Docker Desktop UI.
+`docker compose down` preserves data. `docker compose down -v` wipes it.
+
 ---
 
-## Call type — RESOLVED design decision
+## Call type — NOT being fixed
+Two inconsistent taxonomies exist:
+- **Take A**: 5 types (`support_escalation`, `sales_or_renewal`, `internal_incident`, `internal_planning`, `external_customer`)
+- **Take C**: 3 types (`support`, `external`, `internal`) — LLM-generated
 
-### What req.md says
-The brief defines **exactly 3 call types**: `support`, `external`, `internal`.
-> "customer support calls (customers reaching out with issues), external calls (account managers speaking with customers about renewals, adoption, and feedback), and internal calls (engineering syncs, cross-team escalations, planning discussions)"
-
-### Current state — two inconsistent taxonomies
-- **Take A `call_types` table**: 5 types — `support_escalation`, `sales_or_renewal`, `internal_incident`, `internal_planning`, `external_customer` — self-invented, deviates from brief
-- **Take C `semantic_meeting_themes.call_type`**: 3 types — `support`, `external`, `internal` — matches req.md, but LLM-generated (stochastic, doesn't scale)
-- **Raw JSON**: no `call_type` field in any of meeting-info.json, summary.json, transcript.json
-
-### Decision
-Replace both taxonomies with a **single deterministic 3-type classifier** matching req.md:
-
-| req.md type | Keywords / signals |
-|-------------|-------------------|
-| `support` | support ticket, technical issue, outage, incident, escalation, bug |
-| `external` | renewal, account review, onboarding, adoption, contract, pricing |
-| `internal` | sprint, planning, retrospective, postmortem, roadmap, team sync |
-
-**Implementation plan:**
-1. Add `call_type_v2` column to Take A's `call_types` table (or a new `call_types_standard` table) — 3-value classifier, deterministic
-2. Drop `semantic_meeting_themes.call_type` LLM step in Take C; JOIN to `call_types_standard` at persist time
-3. Result: one canonical call type taxonomy, used by all three takes
-
-**Status: NOT YET IMPLEMENTED** — needs code change in `generate_rule_based_taxonomy.py` and `take_c_pg_store.py` / `load_outputs_to_pg.py`
-
-### What to do in the notebook
-For now, use Take A's `call_types` for all call-type queries (5 types) OR map them to 3 types in Python before charting. Take C's `call_type` field should be ignored until the fix is in.
+Decision: not fixing this. For notebook queries, use Take A's `call_types` table (5 types) or collapse to 3 in Python before charting:
+- `support_escalation` → `support`
+- `sales_or_renewal`, `external_customer` → `external`
+- `internal_incident`, `internal_planning` → `internal`
 
 ---
 
 ## Open design question (lower priority)
 
 ### LLM-generated cluster labels in Take C — scalability
-`semantic_clusters.theme_title`, `audience`, `rationale` are generated by llama3.1:8b (26 calls, once per clustering run). Labels change between runs (stochastic).
+`semantic_clusters.theme_title`, `audience`, `rationale` are generated by llama3.1:8b (26 calls, once per clustering run). Labels change between runs (stochastic). LLM samples first 20 phrases in cluster order (not centroid-proximity sorted — not implemented).
 
 **Options:**
 - Replace with deterministic top-N phrase labels (same approach as Take B centroid terms)
@@ -147,51 +141,28 @@ All 10 SQL queries in `sql/02_insight_queries.sql`. All verified against rag_db 
 
 ---
 
-## Stakeholder questions — TODO (pending SQL)
+## Stakeholder questions — DONE
 
-16 questions not yet in `02_insight_queries.sql`. Write queries → add to `sql/03_stakeholder_questions.sql`.
+16 additional questions written and verified in `sql/03_stakeholder_questions.sql`. All run clean against rag_db @ localhost:5434.
 
-### Sales
-- [ ] **S1 — Pricing signal concentration**: Where do `pricing_offer` key moments appear? Which themes/call types? Paired with churn signals?
-  - Tables: `key_moments`, `meeting_themes`, `call_types`, `sentiment_features`
-- [ ] **S2 — Repeat organizers in high-risk meetings**: Which organizer emails recur in meetings with churn_signal ≥ 1 + negative sentiment?
-  - Tables: `meetings`, `sentiment_features`, `meeting_summaries`
-- [ ] **S3 — Churn signal text samples**: Actual verbatim `churn_signal` key moment text — what are customers saying?
-  - Tables: `key_moments` WHERE `moment_type = 'churn_signal'`
-
-### Support
-- [ ] **S4 — Action item volume by theme**: Which themes generate the most action items per meeting?
-  - Tables: `action_items`, `meetings`, `meeting_themes`
-- [ ] **S5 — Meeting duration by theme / call type**: Are reliability meetings longer? Quantifies operational cost.
-  - Tables: `meetings.duration_minutes`, `meeting_themes`, `call_types`
-- [ ] **S6 — Technical issue concentration by theme**: Which themes generate the most `technical_issue` key moments?
-  - Tables: `key_moments`, `meeting_themes`
-- [ ] **S7 — Key moment type breakdown**: Distribution of all 7 moment types across the full dataset.
-  - Tables: `key_moments` GROUP BY `moment_type`
-
-### Engineering
-- [ ] **E1 — Technical issue text samples**: Actual `technical_issue` quotes grouped by theme — recurring problems.
-  - Tables: `key_moments`, `meeting_themes`
-- [ ] **E2 — Positive pivot signals**: Where do `positive_pivot` moments appear? Which themes recover mid-call?
-  - Tables: `key_moments`, `meeting_themes`, `sentiment_features`
-
-### Product
-- [ ] **P1 — Feature gap text samples**: Actual `feature_gap` quotes — what are customers asking for? (I9 has counts only)
-  - Tables: `key_moments` WHERE `moment_type = 'feature_gap'`, `meeting_themes`
-- [ ] **P2 — Top summary topic tags**: Most frequent tags in `summary_topics` — product area frequency.
-  - Tables: `summary_topics` GROUP BY `topic`
-- [ ] **P3 — Praise signal concentration**: Which themes generate `praise` moments? Where are we winning?
-  - Tables: `key_moments`, `meeting_themes`
-- [ ] **P4 — Take C cluster size + call type breakdown**: For each of 26 semantic clusters — meeting count, dominant call type, avg sentiment.
-  - Tables: `semantic_clusters`, `semantic_meeting_themes`, `sentiment_features`, `call_types`
-
-### Ops / Cross-cutting
-- [ ] **O1 — Participant count vs meeting outcome**: Do larger meetings correlate with worse sentiment or more churn signals?
-  - Tables: `meeting_participants` (COUNT), `sentiment_features`, `meeting_summaries`
-- [ ] **O2 — Action item ownership**: Which `owner` values appear most? Are teams overloaded?
-  - Tables: `action_items` GROUP BY `owner`
-- [ ] **O3 — Take B vs Take C cross-tab (notebook version)**: Pivot of B-cluster vs C-cluster for all 100 meetings.
-  - Source: `outputs/csv/` or live SQL JOIN on `kmeans_meeting_clusters` + `semantic_meeting_themes`
+| ID | Question | Stakeholder |
+|----|----------|-------------|
+| S1 | Pricing signal concentration — which themes/call types pair with pricing_offer moments? | Sales |
+| S2 | Repeat organizers in high-risk meetings — which contacts keep appearing? | Sales, CSMs |
+| S3 | Churn signal text samples — verbatim quotes | Sales, CSMs |
+| S4 | Action item volume by theme — which themes create the most follow-up? | Support (also: `action_items_by_theme` view) |
+| S5 | Meeting duration by theme / call type — are reliability meetings longer? | Support, Ops |
+| S6 | Technical issue concentration by theme | Support, Engineering |
+| S7 | Key moment type breakdown — distribution of all 8 types | All |
+| E1 | Technical issue text samples grouped by theme | Engineering |
+| E2 | Positive pivot signals — which themes recover mid-call? | Engineering |
+| P1 | Feature gap text samples — verbatim customer asks | Product |
+| P2 | Top summary topic tags — product area frequency | Product |
+| P3 | Praise signal concentration — where are we winning? | Product |
+| P4 | Take C cluster size + dominant call type + avg sentiment | Product, Engineering |
+| O1 | Participant count vs meeting outcome — larger meetings → worse sentiment? | Ops |
+| O2 | Action item ownership — which owners are overloaded? | Ops |
+| O3 | Take B vs Take C cross-tab pivot for all 100 meetings | All |
 
 ---
 
@@ -202,7 +173,7 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
 |------|---------|
 | `sql/01_verify_tables.sql` | Row count checks + spot checks for all 16 tables |
 | `sql/02_insight_queries.sql` | All 10 insight queries with comments |
-| `sql/03_stakeholder_questions.sql` | 16 new stakeholder questions (TODO) |
+| `sql/03_stakeholder_questions.sql` | 16 stakeholder questions — all verified |
 
 ---
 
@@ -220,19 +191,14 @@ Key findings:
 
 ## Next steps
 
-### Fix call type taxonomy (do before notebook):
-1. Add deterministic 3-type classifier to `take_a/generate_rule_based_taxonomy.py` — new `call_types_standard` table or `call_type_v2` column mapping to `support` / `external` / `internal`
-2. Update `take_c/load_outputs_to_pg.py` to JOIN `call_types_standard` instead of using LLM field
-3. Re-run `setup_all_tables.py` to reload
-
 ### Deliverables (from req.md — all three required):
 
 **a) Jupyter notebook** — START HERE
 - Connect to `rag_db @ localhost:5434` for all queries
 - Cover: Take A (rule-based), Take B (TF-IDF/KMeans), Take C (semantic clustering), insight queries
-- Turn the 10 insight queries into charts (heatmap, bar charts, scatter)
-- Include UMAP 2-dim scatter (`take_c/outputs/` — check if viz_coords.csv is still there)
-- Include B vs C cross-tab comparison
+- Turn the 10 insight queries + key stakeholder questions into charts (heatmap, bar charts, scatter)
+- Include UMAP 2-dim scatter (`take_c/outputs/viz_coords.csv` — confirmed present)
+- Include B vs C cross-tab comparison (O3)
 - Kernel: `pydantic_ai_agents` conda env
 
 **b) Slide deck** — 30-min presentation to product + engineering leadership
@@ -251,6 +217,8 @@ Key findings:
 - nomic-embed-text via Ollama (768 dims) — local, free, sufficient
 - Extend Take A's schema — don't create duplicate tables
 - CSV outputs exist for all three takes — always run `export_all_to_csv.py` after any pipeline change
+- LLM in Take C is translation, not intelligence — embeddings + HDBSCAN do the clustering; LLM just names the result
+- Human inspection required after every schema/data change — verify in DBeaver @ port 5434, not via MCP tool
 
 ---
 
@@ -261,7 +229,7 @@ meeting-analytics/
 ├── SESSION_CONTEXT.md
 ├── req.md / req.pdf           source of truth for deliverables
 ├── compare_b_vs_c.py          Take B vs Take C cross-validation script
-├── setup_all_tables.py        One-shot: reload all 16 tables
+├── setup_all_tables.py        One-shot: reload all 16 tables + view
 ├── export_all_to_csv.py       Snapshot all 16 Postgres tables to outputs/csv/
 ├── .env                       PG credentials (rag_db @ localhost:5434)
 ├── notes.txt                  running project notes
@@ -270,17 +238,18 @@ meeting-analytics/
 │                              speaker-meta.json, speakers.json
 ├── sql/
 │   ├── 01_verify_tables.sql   Row count + spot checks for all 16 tables
-│   └── 02_insight_queries.sql 10 insight queries with stakeholder notes
+│   ├── 02_insight_queries.sql 10 insight queries with stakeholder notes
+│   └── 03_stakeholder_questions.sql  16 stakeholder questions — all verified
 ├── take_a/
 │   ├── generate_rule_based_taxonomy.py   main Take A script (--reset to rebuild)
 │   ├── load_dataset_to_postgres.py       raw JSON → Postgres loader (used by main script)
 │   ├── take_a_design.md                  design doc v0.1
-│   └── take_a_faq.md                     FAQ — 11 entries
+│   └── take_a_faq.md                     FAQ — 15 entries
 ├── take_b/
 │   ├── cluster_taxonomy_v2.py            TF-IDF + KMeans pipeline ([1/7]–[7/7] labelled)
 │   ├── load_outputs_to_pg.py             Load Take B outputs → 3 Postgres tables
 │   ├── take_b_design.md                  design doc v0.1
-│   ├── take_b_faq.md                     FAQ — 7 entries
+│   ├── take_b_faq.md                     FAQ — 9 entries
 │   └── outputs/                          meeting_clusters.csv, cluster_summary.json,
 │                                         cluster_terms.csv, cluster_metrics.json,
 │                                         cluster_scores.csv, take_b_run.log
@@ -289,10 +258,10 @@ meeting-analytics/
 │   ├── take_c_pg_store.py                Postgres store (SemanticClusterStore)
 │   ├── load_outputs_to_pg.py             Load Take C outputs → 3 Postgres tables
 │   ├── take_c_design.md                  design doc v0.4
-│   ├── take_c_faq.md                     FAQ — 14 entries
+│   ├── take_c_faq.md                     FAQ — 16 entries
 │   └── outputs/                          meeting_themes.csv, phrase_clusters.csv,
 │                                         semantic_clusters.json, cluster_metrics.json,
-│                                         take_c_run.log
+│                                         viz_coords.csv, take_c_run.log
 └── outputs/
     └── csv/                              Flat-file backup of all 16 Postgres tables
 ```
