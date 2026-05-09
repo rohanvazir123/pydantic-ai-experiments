@@ -438,6 +438,23 @@ def _extract_json(content: str) -> dict[str, str] | None:
         return None
 
 
+def _sort_phrases_by_centroid_proximity(
+    phrases: list[TopicPhrase], reduced: np.ndarray
+) -> list[TopicPhrase]:
+    """Return phrases sorted within each cluster by distance to cluster centroid (ascending).
+
+    Ensures the LLM receives the most representative phrases first when sampling
+    cluster_phrases[:LABEL_SAMPLE_SIZE], rather than an arbitrary positional slice.
+    """
+    centroids = _compute_centroids(reduced, np.array([p.cluster_id for p in phrases]))
+    phrase_vectors = {i: reduced[i] for i in range(len(phrases))}
+    distances = [
+        np.linalg.norm(phrase_vectors[i] - centroids[phrases[i].cluster_id])
+        for i in range(len(phrases))
+    ]
+    return [p for _, p in sorted(zip(distances, phrases), key=lambda x: (x[1].cluster_id, x[0]))]
+
+
 async def label_clusters(phrases: list[TopicPhrase]) -> list[ClusterLabel]:
     """Call the LLM once per cluster (with semaphore) to generate leadership labels."""
     try:
@@ -1260,6 +1277,7 @@ async def main() -> None:
     print(
         f"  Model: {LLM_MODEL}  |  concurrency={LLM_CONCURRENCY}  |  sample={LABEL_SAMPLE_SIZE} phrases/cluster"
     )
+    phrases = _sort_phrases_by_centroid_proximity(phrases, reduced)
     labels = await label_clusters(phrases)
     for lb in sorted(labels, key=lambda x: x.cluster_id):
         coh = coherence.get(lb.cluster_id, 0.0)

@@ -207,7 +207,7 @@ All 26 clusters are in review+ range; no loose clusters requiring manual inspect
 
 ### 3.6 LLM Cluster Labeling
 
-For each discovered cluster, sample up to 20 phrases (first N in natural cluster order — centroid-proximity sort was not implemented) and ask a local LLM to assign a leadership-ready theme label.
+For each discovered cluster, sample up to 20 phrases sorted by distance to the cluster centroid (ascending) and ask a local LLM to assign a leadership-ready theme label. Implemented in `_sort_phrases_by_centroid_proximity(phrases, reduced)`, called at step 6 before `label_clusters()`.
 
 **Actual prompt used:**
 ```
@@ -337,7 +337,7 @@ class ClusterLabel(BaseModel):
     theme_title: str         # e.g. "Identity & Access Management"
     audience: str            # Engineering | Product | Sales | All
     rationale: str
-    representative_phrases: list[str]  # top-20 by centroid proximity
+    representative_phrases: list[str]  # top-20 sorted by centroid proximity (ascending distance)
 
 class MeetingThemeAssignment(BaseModel):
     meeting_id: str

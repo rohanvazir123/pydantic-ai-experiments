@@ -659,16 +659,16 @@ off. The centroid is just a point in a space with no human-interpretable axes.
 
 **What Take C does instead:**
 
-1. For each cluster, take the first 20 phrases in natural cluster order (centroid-proximity
-   sorting was considered but not implemented — `sample = cluster_phrases[:20]`)
-2. Send them to `llama3.1:8b`: *"here are topic phrases from a business meeting cluster,
+1. Sort each cluster's phrases by distance to the cluster centroid (ascending) —
+   closest phrases are most representative of the cluster's core meaning
+2. Take the top 20 (`cluster_phrases[:LABEL_SAMPLE_SIZE]`)
+3. Send them to `llama3.1:8b`: *"here are topic phrases from a business meeting cluster,
    give me a theme title, target audience, and one-sentence rationale"*
-3. Store the response as `semantic_clusters.theme_title`, `audience`, `rationale`
+4. Store the response as `semantic_clusters.theme_title`, `audience`, `rationale`
 
-**Note:** Because the sample is not sorted by centroid proximity, the LLM sees a
-representative but unranked slice of the cluster. In practice this works fine — clusters
-are coherent enough that any 20 phrases convey the theme. A centroid-proximity sort
-would be a minor quality improvement if labels ever look off.
+Implemented in `_sort_phrases_by_centroid_proximity(phrases, reduced)`, called at step 6
+before `label_clusters()`. Uses Euclidean distance in UMAP-reduced space (same space
+HDBSCAN used), consistent with `_compute_centroids()`.
 
 **The tradeoff:**
 
