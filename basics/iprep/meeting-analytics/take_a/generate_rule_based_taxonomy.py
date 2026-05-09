@@ -736,7 +736,9 @@ async def create_schema(conn: asyncpg.Connection, schema: str, reset: bool) -> N
             technical_issue_count int NOT NULL,
             feature_gap_count int NOT NULL,
             praise_count int NOT NULL,
-            action_item_count int NOT NULL
+            action_item_count int NOT NULL,
+            positive_pivot_count int NOT NULL,
+            pricing_offer_count int NOT NULL
         )
         """
     )
@@ -959,7 +961,7 @@ async def load_functional_tables(
         await conn.execute(
             f"""
             INSERT INTO {q_schema}.sentiment_features
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             """,
             meeting_id,
             total_lines,
@@ -975,6 +977,8 @@ async def load_functional_tables(
             key_moment_counts["feature_gap"],
             key_moment_counts["praise"],
             len(summary.get("actionItems", [])),
+            key_moment_counts["positive_pivot"],
+            key_moment_counts["pricing_offer"],
         )
 
 

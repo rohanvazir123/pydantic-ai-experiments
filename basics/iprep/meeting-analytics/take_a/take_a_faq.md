@@ -13,6 +13,8 @@
 - [How does the external taxonomy.json work?](#how-does-the-external-taxonomyjson-work)
 - [Why does concern not get a direct theme boost?](#why-does-concern-not-get-a-direct-theme-boost)
 - [All 16 tables disappeared — how do I recover?](#all-16-tables-disappeared--how-do-i-recover)
+- [Why are positive\_pivot and pricing\_offer missing from sentiment\_features?](#why-are-positive_pivot-and-pricing_offer-missing-from-sentiment_features)
+- [Why is human inspection a required step after any schema or data change?](#why-is-human-inspection-a-required-step-after-any-schema-or-data-change)
 
 ---
 
@@ -352,3 +354,77 @@ tables from local source files (raw dataset JSON + Take B/C CSV outputs). No
 re-embedding or re-clustering needed — all outputs are already on disk.
 
 Expected result: 16 tables, ~2 minutes to complete.
+
+---
+
+## Why are positive\_pivot and pricing\_offer missing from sentiment\_features?
+
+**The gap:** All 8 `moment_type` values are correctly stored in `key_moments`. But only
+6 are promoted to `sentiment_features` as count columns:
+
+| moment_type | key_moments | sentiment_features |
+|---|---|---|
+| concern | ✓ | ✓ concern_count |
+| churn_signal | ✓ | ✓ churn_signal_count |
+| technical_issue | ✓ | ✓ technical_issue_count |
+| feature_gap | ✓ | ✓ feature_gap_count |
+| praise | ✓ | ✓ praise_count |
+| action_item | ✓ | ✓ action_item_count* |
+| **positive_pivot** | ✓ | **✗ missing** |
+| **pricing_offer** | ✓ | **✗ missing** |
+
+`*action_item_count` is populated from `summary.json actionItems[]`, not from the
+`action_item` moment type — they are different things with different counts (397 vs 43).
+
+**Why it happened:** `sentiment_features` and `infer_themes()` were built around signals
+that map directly to business themes — `churn_signal` boosts Retention, `feature_gap`
+boosts Product, `technical_issue` boosts Reliability. `positive_pivot` and `pricing_offer`
+don't cleanly boost any theme, so they were never wired into the aggregation layer.
+They were captured in `key_moments` but never promoted upward.
+
+**Impact:**
+- `positive_pivot` (76 occurrences — 2nd most common signal) is invisible to any
+  JOIN against `sentiment_features`. Queries for E2 (positive pivot signals) must go
+  directly to `key_moments`.
+- `pricing_offer` (10 occurrences) same issue — queries for S1 (pricing signal
+  concentration) must JOIN `key_moments` directly.
+
+**Fix:** Add `positive_pivot_count` and `pricing_offer_count` columns to
+`sentiment_features` and re-run `setup_all_tables.py`. Until then, use `key_moments`
+directly for these two signal types.
+
+---
+
+## Why is human inspection a required step after any schema or data change?
+
+**The incident:** After adding `positive_pivot_count` and `pricing_offer_count` to
+`sentiment_features`, automated verification queries appeared to confirm the columns
+were missing — because the query tool was silently connected to `localhost:5432`
+(local Windows Postgres) instead of `localhost:5434` (Docker pgvector). The fix had
+actually landed correctly, but the wrong database was being checked.
+
+**Rule:** After any schema change or data reload, always verify in DBeaver connected
+explicitly to `localhost:5434 / rag_db`. Do not rely solely on programmatic queries
+from tools whose connection target is not visible.
+
+**Checklist after `setup_all_tables.py` or any `--reset` run:**
+
+1. Open DBeaver → `localhost:5434` connection → refresh schema
+2. Run `sql/01_verify_tables.sql` — confirm all 16 tables and expected row counts
+3. Spot-check any modified table with `\d meeting_analytics.<table>` or the column
+   list view in DBeaver
+4. For new columns, run a quick `SELECT sum(new_col) FROM meeting_analytics.<table>`
+   to confirm non-zero population
+
+**Why tools can silently hit the wrong database:**
+
+This project has three Postgres instances on different ports:
+
+| Port | What it is |
+|------|-----------|
+| 5432 | Local Windows Postgres — 10 Take A tables only, no pgvector |
+| 5433 | Apache AGE Docker — knowledge graph project, unrelated |
+| 5434 | Docker pgvector — canonical DB, all 16 tables |
+
+Any tool (MCP, psycopg2 defaults, DBeaver saved connections) that doesn't explicitly
+specify port 5434 will silently land on the wrong instance.
