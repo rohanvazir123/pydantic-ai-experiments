@@ -16,6 +16,7 @@
 - [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
 - [Why should Take C's call\_type come from Take A instead of the LLM?](#why-should-take-cs-call_type-come-from-take-a-instead-of-the-llm)
 - [What 3 Postgres tables does Take C create, and what is in each?](#what-3-postgres-tables-does-take-c-create-and-what-is-in-each)
+- [Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?](#take-b-labels-clusters-by-concatenating-top-centroid-terms--why-cant-take-c-do-the-same)
 
 ---
 
@@ -681,3 +682,47 @@ meetings (100)
 **To reload all 3 tables:** `python basics/iprep/meeting-analytics/setup_all_tables.py`
 (always use this, never `generate_rule_based_taxonomy.py --reset` alone — that wipes
 the schema and only reloads Take A).
+
+---
+
+## Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?
+
+Because Take C's centroids live in a different kind of space.
+
+**Why it works in Take B:**
+
+KMeans centroids live in TF-IDF vector space. Every dimension in that space corresponds
+to a specific term. The centroid's highest-weighted dimensions *are* the most
+representative terms — you can read them off directly and concat.
+
+```
+centroid dimensions → sort by weight → top 4 terms → "renewal / competitive / pricing / outage"
+```
+
+Fully deterministic. No LLM needed.
+
+**Why it doesn't work in Take C:**
+
+HDBSCAN centroids (actually cluster medoids / mean vectors) live in 768-dimensional
+embedding space. Those 768 dimensions are abstract latent features learned by
+`nomic-embed-text` — they do not correspond to words. There is no "top term" to read
+off. The centroid is just a point in a space with no human-interpretable axes.
+
+**What Take C does instead:**
+
+1. For each cluster, find the phrases whose embeddings are closest to the cluster
+   centroid — these are the most "typical" members
+2. Take the top ~20 representative phrases (e.g. `"mfa enforcement"`, `"scim provisioning"`,
+   `"sso configuration failures"`)
+3. Send them to `llama3.1:8b`: *"here are topic phrases from a business meeting cluster,
+   give me a theme title, target audience, and one-sentence rationale"*
+4. Store the response as `semantic_clusters.theme_title`, `audience`, `rationale`
+
+**The tradeoff:**
+
+| | Take B | Take C |
+|---|---|---|
+| Label source | Top centroid dimensions | LLM reading nearest phrases |
+| Deterministic | Yes | No — stochastic between runs |
+| Human-readable | Mechanical ("renewal / competitive / pricing / outage") | Natural ("Customer Retention & Competitive Displacement") |
+| Cost | Free, instant | 1 LLM call per cluster (~26 calls, ~40s total) |

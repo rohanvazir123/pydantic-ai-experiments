@@ -8,6 +8,8 @@
 - [How many top terms make a good cluster label?](#how-many-top-terms-make-a-good-cluster-label)
 - [What does build\_document\_text() do, and why does repeat\_terms exist?](#what-does-build_document_text-do-and-why-does-repeat_terms-exist)
 - [How do I load Take B outputs into Postgres?](#how-do-i-load-take-b-outputs-into-postgres)
+- [Why didn't Take B use topic phrase embeddings + KMeans instead of TF-IDF?](#why-didnt-take-b-use-topic-phrase-embeddings--kmeans-instead-of-tf-idf)
+- [How does Take B generate cluster labels from centroids?](#how-does-take-b-generate-cluster-labels-from-centroids)
 
 ---
 
@@ -259,3 +261,58 @@ python basics/iprep/meeting-analytics/setup_all_tables.py
 Target: `rag_db @ localhost:5434` (rag_user:rag_pass). Credentials from
 `meeting-analytics/.env`. Take B adds 3 tables to the 10 from Take A and 3 from Take C
 — 16 tables total in `meeting_analytics` schema.
+
+---
+
+## Why didn't Take B use topic phrase embeddings + KMeans instead of TF-IDF?
+
+It would work — and produce better clusters than TF-IDF+KMeans. But it would undermine
+the point of having three takes.
+
+**The three takes are a methodological spectrum:**
+
+| Take | Representation | Clustering | Key property |
+|---|---|---|---|
+| A | Rules / keywords | None | Fully deterministic, auditable |
+| B | TF-IDF (bag of words) | KMeans (fixed k) | Statistical, no semantics |
+| C | Semantic embeddings | HDBSCAN (data-driven k) | Meaning-aware, no fixed k |
+
+If Take B used embeddings, the only difference between B and C would be the clustering
+algorithm — KMeans vs HDBSCAN. That is a narrow comparison. The current design compares
+two things simultaneously: representation method (keyword frequency vs semantic meaning)
+AND clustering strategy (fixed k vs density-adaptive). That is a richer story.
+
+**The B vs C comparison only has value because the representations differ.**
+
+The headline finding — "TF-IDF lumped outage prevention and incident response into one
+cluster; embeddings correctly split them into two" — is a direct argument for semantic
+representations over bag-of-words. If B also used embeddings, that argument disappears
+and the comparison becomes "KMeans vs HDBSCAN," which is a much weaker insight for a
+product/engineering audience.
+
+**What embeddings + KMeans would give you:**
+
+Better clusters than TF-IDF+KMeans, but you'd still need to pick k upfront, and HDBSCAN
+would still outperform it by finding cluster count from data density. It sits between B
+and C methodologically — useful as an ablation study, but it blurs the narrative rather
+than sharpening it.
+
+---
+
+## How does Take B generate cluster labels from centroids?
+
+In KMeans, each cluster centroid is a point in TF-IDF vector space. Every dimension in
+that space corresponds to a specific term. So the centroid's highest-weighted dimensions
+*are* the most representative terms for that cluster — you can read them off directly.
+
+**Take B label generation — fully deterministic:**
+
+1. After KMeans converges, each centroid is a vector of TF-IDF term weights
+2. Sort dimensions by weight descending → top terms emerge naturally
+3. Take top 4 terms, concat with " / " → cluster label
+
+Example: centroid with highest weights on `renewal`, `competitive`, `pricing`, `outage`
+→ label = `"renewal / competitive / pricing / outage"`
+
+No LLM, no ambiguity, same input always produces the same label. See Take C FAQ for
+why this approach is not possible with embedding-based clustering.
