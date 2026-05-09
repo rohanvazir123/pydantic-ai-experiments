@@ -14,7 +14,6 @@
 - [How does UMAP work?](#how-does-umap-work)
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
 - [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
-- [Why should Take C's call\_type come from Take A instead of the LLM?](#why-should-take-cs-call_type-come-from-take-a-instead-of-the-llm)
 - [What 3 Postgres tables does Take C create, and what is in each?](#what-3-postgres-tables-does-take-c-create-and-what-is-in-each)
 - [Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?](#take-b-labels-clusters-by-concatenating-top-centroid-terms--why-cant-take-c-do-the-same)
 
@@ -554,56 +553,6 @@ from `meeting-analytics/.env`.
 
 ---
 
-## Why should Take C's call\_type come from Take A instead of the LLM?
-
-**Current state (Take C step 7):** llama3.1:8b infers call type per meeting — 100 LLM
-calls per pipeline run. Outputs 3 values: `support`, `external`, `internal`.
-Stored as `call_type` and `call_confidence` (string: high/medium/low) in
-`semantic_meeting_themes`.
-
-**Take A's call_types table:** deterministic keyword rules + theme nudges. 5 values:
-`support_escalation`, `sales_or_renewal`, `internal_incident`, `internal_planning`,
-`external_customer`. Numeric confidence (0.60–0.95). Zero LLM calls. Already covers
-all 100 meetings.
-
-**Three reasons to switch:**
-
-**1 — Inconsistent taxonomies break cross-take comparisons.**
-Any query joining Take C semantic clusters with call types currently uses 3 coarse
-categories. The same query on Take A themes uses 5 granular categories. You can't
-compare `support` (Take C) with `support_escalation` vs `external_customer` (Take A)
-— they're not the same cut. One taxonomy across both takes means every insight query
-is directly comparable.
-
-**2 — LLM call type adds no value over the rule-based version.**
-Take C's unique contribution is phrase-level semantic clustering — detecting that
-"outage remediation" and "post-mortem planning" belong together without hand-crafted
-rules. Call type inference (`is this a support call or a renewal call?`) is signal
-that lives entirely in keywords: "renewal", "sprint planning", "incident review".
-There is no semantic embedding benefit here. Take A's rules already get this right.
-
-**3 — 100 LLM calls per run does not scale.**
-Adding 100 new meetings = 100 more LLM calls just for call type. Take A's rules run
-in milliseconds with zero external dependencies. Since the call type doesn't benefit
-from embeddings, paying the LLM cost on every run is waste.
-
-**What changes if we switch:**
-- Remove step 7 from `take_c_semantic_clustering.py` (saves ~40s per run, 100 LLM calls)
-- At persist time, `semantic_meeting_themes.call_type` and `call_confidence` are
-  populated by joining `meeting_analytics.call_types` (Take A) instead of LLM output
-- Same columns, same table — only the source changes
-- `call_confidence` becomes a numeric (e.g. 0.90) instead of a string ("high")
-
-**What does NOT change:**
-- The 26 semantic cluster labels (`theme_title`, `audience`, `rationale`) — those
-  still come from the LLM and are the core value-add of Take C
-- The HDBSCAN clustering itself — unaffected
-- All insight queries — they already join `call_types` (Take A) for most analysis
-
-**Status:** not yet implemented — pending decision.
-
----
-
 ## What 3 Postgres tables does Take C create, and what is in each?
 
 Take C creates exactly 3 tables in the `meeting_analytics` schema, all loaded by
@@ -726,3 +675,9 @@ off. The centroid is just a point in a space with no human-interpretable axes.
 | Deterministic | Yes | No — stochastic between runs |
 | Human-readable | Mechanical ("renewal / competitive / pricing / outage") | Natural ("Customer Retention & Competitive Displacement") |
 | Cost | Free, instant | 1 LLM call per cluster (~26 calls, ~40s total) |
+
+**Key insight:** the LLM is not doing the hard work — it's doing translation. The hard
+work (figuring out which phrases belong together) is done by the embeddings and HDBSCAN.
+By the time the LLM sees a cluster, the grouping is already correct. It just needs to
+name what's already there. This is why the labels come out clean even with a small local
+model like `llama3.1:8b`.
