@@ -1,53 +1,29 @@
 [
   {
     "cluster_id": 0,
-    "generated_label": "launch / product launch / reporting / product",
-    "meeting_count": 14,
+    "generated_label": "launch / launch readiness / hipaa / readiness",
+    "meeting_count": 2,
     "top_terms": [
       "launch",
-      "product launch",
-      "reporting",
-      "product",
-      "compliance",
-      "roadmap",
-      "launch product",
-      "launch product launch",
-      "product launch product",
-      "compliance reporting",
-      "comply",
-      "hipaa"
+      "launch readiness",
+      "hipaa",
+      "readiness",
+      "readiness launch",
+      "launch readiness launch",
+      "readiness launch readiness",
+      "limiting",
+      "megan",
+      "rate",
+      "api",
+      "api rate"
     ],
     "top_topics": [
-      [
-        "compliance reporting",
-        7
-      ],
-      [
-        "product launch",
-        7
-      ],
-      [
-        "compliance",
-        3
-      ],
       [
         "launch readiness",
         2
       ],
       [
-        "product bug",
-        2
-      ],
-      [
-        "audit workflow",
-        2
-      ],
-      [
-        "roadmap planning",
-        2
-      ],
-      [
-        "product roadmap",
+        "compliance reporting",
         2
       ],
       [
@@ -57,57 +33,65 @@
       [
         "documentation",
         1
+      ],
+      [
+        "incident impact",
+        1
+      ],
+      [
+        "hipaa",
+        1
+      ],
+      [
+        "qa sign-off",
+        1
+      ],
+      [
+        "safari bug",
+        1
+      ],
+      [
+        "hipaa validation",
+        1
+      ],
+      [
+        "incident communications",
+        1
       ]
     ],
     "key_moment_types": [
       [
-        "positive_pivot",
-        15
+        "concern",
+        2
       ],
       [
-        "concern",
-        8
+        "positive_pivot",
+        2
       ],
       [
         "feature_gap",
-        8
-      ],
-      [
-        "action_item",
-        8
-      ],
-      [
-        "technical_issue",
-        8
-      ],
-      [
-        "churn_signal",
-        5
-      ],
-      [
-        "praise",
-        3
+        1
       ],
       [
         "pricing_offer",
+        1
+      ],
+      [
+        "action_item",
+        1
+      ],
+      [
+        "praise",
         1
       ]
     ],
     "overall_sentiments": [
       [
         "mixed-positive",
-        9
-      ],
-      [
-        "very-positive",
-        3
-      ],
-      [
-        "mixed-negative",
         1
       ],
       [
-        "positive",
+        "very-positive",
         1
       ]
     ],
@@ -126,81 +110,42 @@
         "summary": "Megan and Chris conducted a launch readiness review for Comply v2, targeting an April 7th release. A recent Detect outage pulled two engineers off the project for four days, causing a 5-6 day slip on the HIPAA and ISO 27001 reporting engine, which has formatting issues in staging. The API is in good shape with beta customers, but customer-facing documentation for HIPAA and ISO 27001 is still in first draft and poses the biggest launch risk. They aligned on key deadlines, escalation paths, and a follow-up check-in for the following Tuesday."
       },
       {
-        "meeting_id": "01KQ298F2846EFE59B0D70E2",
-        "title": "Competitive Threat Assessment - Post Outage",
+        "meeting_id": "01KQCF9872BF130D33B1B5EC",
+        "title": "Comply v2 - Launch Day Checklist",
         "topics": [
-          "platform outage",
-          "competitive displacement",
-          "customer retention",
-          "post-mortem",
-          "product launch",
-          "compliance"
-        ],
-        "summary": "The team convened to address fallout from a six-hour platform outage that caused a complete loss of threat monitoring visibility. Competitors SentinelShield and CyberNova are actively targeting at-risk accounts, including Hartfield Financial and prospect Clearvale Systems. The group aligned on a two-part response strategy: leading with a transparent post-mortem and remediation narrative now, followed by a Comply v2 launch touchpoint in early April to show forward momentum. Key concerns include a potential liability issue involving a customer who claims an actual security incident occurred during the outage window."
-      },
-      {
-        "meeting_id": "01KQ38FE02AEE5AA5157F042",
-        "title": "Support Case #3296 - Pinnacle Insurance Comply v2 Report Formatting Issue",
-        "topics": [
-          "product bug",
+          "launch readiness",
+          "qa sign-off",
           "compliance reporting",
-          "pdf rendering",
-          "new release issue",
-          "audit deadline",
-          "workaround"
+          "safari bug",
+          "hipaa validation",
+          "incident communications"
         ],
-        "summary": "Oliver Grant contacted Aegis Cloud Security support to report multiple formatting bugs in the newly launched Aegis Comply v2 PDF report export. The issues include section header text truncation on long control category names, a table pagination problem splitting the header row from its data, and incorrect page count in the footer. Marcus confirmed the bugs by reproducing them in a test environment and identified them as a rendering defect in the PDF generation service introduced with the v2 release. Marcus committed to escalating to engineering with high priority and providing an ETA via email the same day, given Oliver's internal audit review scheduled for the following week."
-      },
-      {
-        "meeting_id": "01KQ3C837D7EF689408DCF95",
-        "title": "Support Case #2638 - Pineridge Systems CloudPrime S3 Backup Connector",
-        "topics": [
-          "aws s3 connector",
-          "backup failure",
-          "403 error",
-          "iam permissions",
-          "service control policies",
-          "connector configuration"
-        ],
-        "summary": "Priya from Aegis Cloud Security support and senior engineer Sarah Chen joined a call with Yuki Tanaka, Security Lead at Pineridge, to troubleshoot a failing CloudPrime S3 backup connector issue (Case 2638). Yuki reported that backup jobs were failing with a 403 error since the previous Thursday, despite no known IAM permission changes. Sarah identified two likely causes: a misconfigured connector endpoint (using the generic s3.amazonaws.com instead of the region-specific us-west-2 endpoint) and potentially restrictive CloudPrime Service Control Policies updated during a routine policy review around the same time. Yuki updated the endpoint setting live on the call and agreed to test the backup job, check SCP policies with their CloudPrime admin, and share CloudTrail logs with the Aegis team."
-      },
-      {
-        "meeting_id": "01KQ51DC4345D9DAE005678C",
-        "title": "Aegis / Redwood Clinical - Product Feedback Session",
-        "topics": [
-          "hipaa reporting",
-          "compliance tooling",
-          "feature gaps",
-          "product feedback",
-          "audit workflow",
-          "roadmap"
-        ],
-        "summary": "Daniel Okafor and Lisa Park held a structured feedback session with Thomas Hargrove from the healthcare vertical to discuss pain points with Aegis Comply after eight months of use. Thomas outlined four prioritized feature gaps: granular control-family filtering in HIPAA reports, scheduled automated report delivery to stakeholders, an executive summary layer, and period-over-period delta tracking for compliance posture. Thomas noted that while Protect and Identity modules are performing well, Comply feels behind and could eventually prompt evaluation of competing tools like VaultEdge if gaps persist. The call concluded with agreed next steps including a written summary, follow-up on scheduled delivery roadmap status, and an introduction to the healthcare vertical product liaison."
+        "summary": "Alex Reyes led a pre-launch sync with Nina Kowalski and Jordan Whitfield three days before the Comply v2 launch on April 7th. The team reviewed the final QA checklist, confirming two of three open bugs are resolved, with the remaining Safari/PCI DSS cosmetic issue to be patched via a one-line CSS fix before launch. They discussed proactive messaging around infrastructure independence from the recent Detect outage, confirmed the HIPAA reporting module is fully validated across 40 configurations, and verified that in-app guidance and onboarding flows are complete and in production. Overall sentiment was highly positive, with the team expressing confidence in shipping on schedule."
       }
     ]
   },
   {
     "cluster_id": 1,
-    "generated_label": "renewal / competitive / outage / pricing",
-    "meeting_count": 16,
+    "generated_label": "renewal / competitive / pricing / maria",
+    "meeting_count": 15,
     "top_terms": [
       "renewal",
       "competitive",
-      "outage",
       "pricing",
-      "sla",
       "maria",
-      "compliance",
+      "outage",
       "renewal renewal",
-      "threat",
-      "review",
+      "compliance",
+      "sla",
       "maria santos",
-      "santos"
+      "santos",
+      "comply",
+      "renewal renewal renewal"
     ],
     "top_topics": [
       [
         "renewal",
-        11
+        12
       ],
       [
         "compliance",
@@ -215,10 +160,6 @@
         5
       ],
       [
-        "churn risk",
-        4
-      ],
-      [
         "competitive threat",
         3
       ],
@@ -227,15 +168,19 @@
         3
       ],
       [
-        "compliance reporting",
+        "churn risk",
         3
       ],
       [
-        "sla breach",
+        "outage follow-up",
         2
       ],
       [
-        "service outage",
+        "product update",
+        2
+      ],
+      [
+        "compliance reporting",
         2
       ]
     ],
@@ -250,26 +195,26 @@
       ],
       [
         "concern",
-        11
+        9
       ],
       [
         "action_item",
-        7
+        8
       ],
       [
         "feature_gap",
-        7
+        5
       ],
       [
         "pricing_offer",
         5
       ],
       [
-        "technical_issue",
-        4
+        "praise",
+        3
       ],
       [
-        "praise",
+        "technical_issue",
         3
       ]
     ],
@@ -283,15 +228,11 @@
         4
       ],
       [
-        "very-positive",
+        "positive",
         2
       ],
       [
-        "very-negative",
-        1
-      ],
-      [
-        "positive",
+        "very-positive",
         1
       ]
     ],
@@ -323,19 +264,6 @@
         "summary": "Maria Santos met with Brianna Foster and Leo Marquez to address a serious six-hour outage on March 10-11 that caused a loss of visibility in Aegis Detect, breaching their 99.5% uptime SLA. The customer expressed eroded confidence in platform reliability and revealed they are actively evaluating a competitor, SentinelShield, which is offering aggressive pricing and a 99.9% SLA. Additional concerns included platform stagnation, upcoming compliance needs (SOC 2, HIPAA), and budget constraints going into renewal. Maria outlined next steps including a renewal proposal with an SLA credit, pricing adjustments, access to the upcoming Comply v2 product, and an engineering call to address Leo's infrastructure concerns."
       },
       {
-        "meeting_id": "01KQ2D93184912F0147315E7",
-        "title": "URGENT: Blackridge Investments - Complete Loss of Threat Visibility",
-        "topics": [
-          "service outage",
-          "threat monitoring failure",
-          "sla breach",
-          "churn risk",
-          "incident escalation",
-          "proactive communication failure"
-        ],
-        "summary": "Julia Tran from Blackridge Investments called Aegis Cloud Security support in a critical situation where her firm has had zero threat visibility for over three hours due to a known event processing pipeline failure. Marcus Williams confirmed the outage is a cascading failure affecting multiple customers on the same processing cluster, with engineering estimating restoration within two more hours. Julia expressed serious frustration over the lack of proactive communication, a single point of failure in the architecture, and the operational impact of having analysts manually reviewing logs. She disclosed they have been evaluating a competitor (SentinelShield) and has a board meeting next week where she must explain the security blind spot. Marcus committed to a formal incident report, SLA review, AE loop-in, and a direct phone call upon service restoration."
-      },
-      {
         "meeting_id": "01KQ351E141926AB7CAB668D",
         "title": "Aegis / Northstar Pharma - Urgent: Detect Outage Impact",
         "topics": [
@@ -360,93 +288,106 @@
           "pci dss"
         ],
         "summary": "Rachel Torres and Chris Lee held a renewal call with Isaac Brennan of Trailhead, covering fourteen months of experience with Protect and Detect. Isaac acknowledged a mid-March six-hour outage as a concern but praised the thorough post-mortem and the subsequent technical fixes. The team discussed adding Aegis Comply v2 at a promotional rate of $18,500 annually (locked for two years), which Isaac found compelling given upcoming PCI audit cycles. Isaac indicated strong internal support for the renewal and agreed on next steps including a procurement one-pager, contract execution by end of April, and a technical onboarding call post-signing."
+      },
+      {
+        "meeting_id": "01KQ4529010F423FD9DB40BD",
+        "title": "Win/Loss Analysis - Q1",
+        "topics": [
+          "win-loss analysis",
+          "competitive intelligence",
+          "reliability / outage impact",
+          "sales process",
+          "collateral gaps",
+          "q1 review"
+        ],
+        "summary": "The team held a Q1 win-loss review revealing 34 closed-lost opportunities totaling $2.1M ACV, with SentinelShield (9 losses), VaultEdge (6), and CyberNova (4) as the primary competitors. A significant concern is the March Detect outage continuing to haunt late-stage deals, with at least five deals attributed to reliability concerns stemming from the incident. Additional issues include a lack of competitive collateral against VaultEdge on RTO claims, inconsistent loss note quality limiting pattern recognition, and execution gaps on the Customer Success and Support sides during evaluations. The team agreed on several action items and proposed monthly win-loss reviews going forward."
       }
     ]
   },
   {
     "cluster_id": 2,
-    "generated_label": "sprint / planning / sprint planning / planning sprint",
-    "meeting_count": 8,
+    "generated_label": "mortem / post mortem / bug / post",
+    "meeting_count": 16,
     "top_terms": [
-      "sprint",
-      "planning",
-      "sprint planning",
-      "planning sprint",
-      "qa",
-      "sprint planning sprint",
-      "planning sprint planning",
-      "retrospective",
-      "tyler",
-      "nina",
-      "sprint retrospective",
-      "pipeline"
+      "mortem",
+      "post mortem",
+      "bug",
+      "post",
+      "launch",
+      "product launch",
+      "product",
+      "compliance",
+      "reporting",
+      "compliance reporting",
+      "outage",
+      "v2"
     ],
     "top_topics": [
       [
-        "sprint planning",
-        5
+        "compliance reporting",
+        7
       ],
       [
-        "sprint retrospective",
+        "product launch",
+        6
+      ],
+      [
+        "compliance",
+        4
+      ],
+      [
+        "product bug",
+        4
+      ],
+      [
+        "outage post-mortem",
         3
       ],
       [
-        "pipeline reliability",
-        1
+        "roadmap planning",
+        3
       ],
       [
-        "kafka configuration",
-        1
+        "post-mortem",
+        2
       ],
       [
-        "comply v2 launch",
-        1
+        "churn risk",
+        2
       ],
       [
-        "resource allocation",
-        1
+        "competitor evaluation",
+        2
       ],
       [
-        "timeline risk",
-        1
-      ],
-      [
-        "identity management",
-        1
-      ],
-      [
-        "estimation",
-        1
-      ],
-      [
-        "scim provisioning",
-        1
+        "alert fatigue",
+        2
       ]
     ],
     "key_moment_types": [
       [
-        "concern",
-        7
-      ],
-      [
         "positive_pivot",
-        7
+        14
       ],
       [
         "technical_issue",
-        6
+        12
+      ],
+      [
+        "concern",
+        11
       ],
       [
         "action_item",
-        5
-      ],
-      [
-        "feature_gap",
-        5
+        11
       ],
       [
         "churn_signal",
-        1
+        8
+      ],
+      [
+        "feature_gap",
+        7
       ],
       [
         "praise",
@@ -455,15 +396,191 @@
     ],
     "overall_sentiments": [
       [
+        "mixed-negative",
+        6
+      ],
+      [
         "mixed-positive",
-        4
+        6
+      ],
+      [
+        "very-positive",
+        3
       ],
       [
         "positive",
+        1
+      ]
+    ],
+    "examples": [
+      {
+        "meeting_id": "01KQ298F2846EFE59B0D70E2",
+        "title": "Competitive Threat Assessment - Post Outage",
+        "topics": [
+          "platform outage",
+          "competitive displacement",
+          "customer retention",
+          "post-mortem",
+          "product launch",
+          "compliance"
+        ],
+        "summary": "The team convened to address fallout from a six-hour platform outage that caused a complete loss of threat monitoring visibility. Competitors SentinelShield and CyberNova are actively targeting at-risk accounts, including Hartfield Financial and prospect Clearvale Systems. The group aligned on a two-part response strategy: leading with a transparent post-mortem and remediation narrative now, followed by a Comply v2 launch touchpoint in early April to show forward momentum. Key concerns include a potential liability issue involving a customer who claims an actual security incident occurred during the outage window."
+      },
+      {
+        "meeting_id": "01KQ38FE02AEE5AA5157F042",
+        "title": "Support Case #3296 - Pinnacle Insurance Comply v2 Report Formatting Issue",
+        "topics": [
+          "product bug",
+          "compliance reporting",
+          "pdf rendering",
+          "new release issue",
+          "audit deadline",
+          "workaround"
+        ],
+        "summary": "Oliver Grant contacted Aegis Cloud Security support to report multiple formatting bugs in the newly launched Aegis Comply v2 PDF report export. The issues include section header text truncation on long control category names, a table pagination problem splitting the header row from its data, and incorrect page count in the footer. Marcus confirmed the bugs by reproducing them in a test environment and identified them as a rendering defect in the PDF generation service introduced with the v2 release. Marcus committed to escalating to engineering with high priority and providing an ETA via email the same day, given Oliver's internal audit review scheduled for the following week."
+      },
+      {
+        "meeting_id": "01KQ445B1B5B890316C9E300",
+        "title": "Weekly Engineering Standup",
+        "topics": [
+          "post-mortem follow-up",
+          "compliance bug",
+          "circuit breaker",
+          "load testing",
+          "incident response",
+          "runbook"
+        ],
+        "summary": "Raj facilitated a team standup with Ravi and Sofia covering post-mortem follow-ups from the Detect outage and the Comply v2 rollout status. Sofia identified a critical bug in Comply v2 causing SOC 2 report generation timeouts for enterprise customers with large tenant datasets, with a fix targeting early next week. The team reviewed outstanding Detect post-mortem action items, including a circuit breaker PR that needs a health check added before merging and a load testing suite formally scheduled to begin April 28th. The runbook update was also flagged as incomplete and assigned to Sofia to finish this week."
+      },
+      {
+        "meeting_id": "01KQ45F6F7349D0A620571F1",
+        "title": "Aegis / Brightpath Commerce - Competitive Evaluation",
+        "topics": [
+          "churn risk",
+          "outage post-mortem",
+          "competitor evaluation",
+          "alert fatigue",
+          "contract renewal",
+          "compliance"
+        ],
+        "summary": "Aisha Johnson (Aegis) spoke with Kendra Wallace (Brightpath) about the state of their security vendor relationship, which has been under strain following a six-hour Aegis Detect outage in March. Kendra disclosed that Brightpath has been actively evaluating SentinelShield as an alternative, driven by the outage and pre-existing alert fatigue concerns with Aegis Detect. Despite concerns about Detect, Kendra expressed satisfaction with Aegis Protect and the newly launched Comply v2 module. The call concluded with an agreement to hold a technical session in early May, bringing in Aegis engineers to address Detect reliability and alert tuning before a mid-May decision deadline ahead of the July contract renewal."
+      },
+      {
+        "meeting_id": "01KQ5EC1665DCFD7A6B62A59",
+        "title": "Support Case #8749 - Coastal Living Co SAML Certificate Rotation Bug",
+        "topics": [
+          "saml certificate rotation",
+          "product bug",
+          "authentication failure",
+          "service outage",
+          "customer reliability concerns",
+          "identity federation"
+        ],
+        "summary": "Vanessa Cruz from a retail company contacted Aegis Cloud Security support regarding a critical SAML certificate rotation issue affecting 60-70% of her workforce on a Sunday. Support engineer Elena Vasquez identified the root cause as a known bug in Aegis Identity version 3.4.1, where the certificate rotation wizard fails to propagate new certificate metadata to all service provider connections. The team worked on a manual workaround requiring Vanessa's engineer Priya to re-import the new certificate metadata across all 14 SP connections. Vanessa expressed broader frustration with platform reliability, citing this bug alongside a recent Detect outage, and Marcus committed to escalating her concerns to customer success."
+      }
+    ]
+  },
+  {
+    "cluster_id": 3,
+    "generated_label": "outage / customer / failure / incident",
+    "meeting_count": 10,
+    "top_terms": [
+      "outage",
+      "customer",
+      "failure",
+      "incident",
+      "diana",
+      "response",
+      "incident response",
+      "communication",
+      "service",
+      "risk",
+      "customers",
+      "monitoring"
+    ],
+    "top_topics": [
+      [
+        "incident response",
+        5
+      ],
+      [
+        "churn risk",
+        5
+      ],
+      [
+        "customer communication",
+        3
+      ],
+      [
+        "service outage",
+        3
+      ],
+      [
+        "infrastructure reliability",
         2
       ],
       [
+        "sla compliance",
+        2
+      ],
+      [
+        "customer escalation",
+        2
+      ],
+      [
+        "outage",
+        2
+      ],
+      [
+        "outage remediation",
+        1
+      ],
+      [
+        "security monitoring",
+        1
+      ]
+    ],
+    "key_moment_types": [
+      [
+        "churn_signal",
+        10
+      ],
+      [
+        "technical_issue",
+        9
+      ],
+      [
+        "concern",
+        9
+      ],
+      [
+        "positive_pivot",
+        5
+      ],
+      [
+        "feature_gap",
+        5
+      ],
+      [
+        "action_item",
+        2
+      ],
+      [
+        "praise",
+        1
+      ]
+    ],
+    "overall_sentiments": [
+      [
         "mixed-negative",
+        4
+      ],
+      [
+        "negative",
+        4
+      ],
+      [
+        "very-negative",
         1
       ],
       [
@@ -473,102 +590,98 @@
     ],
     "examples": [
       {
-        "meeting_id": "01KQ0CAE7F064EC93F0540CA",
-        "title": "Weekly Engineering Standup",
+        "meeting_id": "01KQ03B0303900521BB089CA",
+        "title": "Detect Outage - Remediation Plan Review",
         "topics": [
-          "pipeline reliability",
-          "kafka configuration",
-          "sprint planning",
-          "comply v2 launch",
-          "resource allocation",
-          "timeline risk"
+          "outage remediation",
+          "incident response",
+          "customer communication",
+          "security monitoring",
+          "postmortem planning",
+          "infrastructure reliability"
         ],
-        "summary": "The engineering team held a sprint status check-in covering the Detect pipeline reliability work and the upcoming Comply v2 launch. Mike Romano reported being 60% through the event ingestion refactor, with the end-of-March deadline assessed at roughly 60-40 odds due to uncertainty around Kafka configuration and redundant node setup. Tyler Washington completed alert deduplication work and will assist by spiking on the Kafka investigation to help reduce risk. Tom Bradley will communicate to product that the March target stands but carries acknowledged technical uncertainty, while Chris Lee continues weekly syncs with Priya's team on the Comply v2 April launch."
+        "summary": "Megan, Raj, and Brian convened on day three of an ongoing outage affecting the Detect product's event processing pipeline. Raj explained that a single point of failure in the event ingestion layer caused a cascading failure, leaving customers with zero threat monitoring visibility for approximately six hours. The remediation plan includes deploying redundant active-active processing nodes (live by end of day) and implementing a circuit breaker pattern (by Wednesday evening), with full tenant visibility restored in a phased rollout by tomorrow morning. The team aligned on communication protocols, retroactive security analysis, and a postmortem timeline."
       },
       {
-        "meeting_id": "01KQ3F90FF9EBC3DB3632514",
-        "title": "Identity Team - Sprint Retro",
+        "meeting_id": "01KQ2331EFD78BF3B1CAB747",
+        "title": "Detect Outage - Customer Impact Assessment",
         "topics": [
-          "sprint retrospective",
-          "identity management",
-          "sprint planning",
-          "estimation",
-          "scim provisioning",
-          "comply integration"
+          "product outage",
+          "churn risk",
+          "sla compliance",
+          "incident communication",
+          "internal monitoring failure",
+          "customer escalation"
         ],
-        "summary": "The team held a sprint 22 retrospective covering the period of March 14-27 for the Identity team. The Detect outage on the 10th impacted sprint capacity, causing two tickets (MFA enforcement policy UI and SSO session timeout configuration) to slip into sprint 23. Completed work included SCIM provisioning bug fixes, SSO metadata refresh refactor, and partial IAM role hierarchy implementation. The team identified estimation issues with the SSO refactor, a test environment credential delay, and an upcoming Comply v2 integration as key concerns heading into sprint 23."
+        "summary": "The team convened an urgent internal call to address a significant outage of their Detect product that left customers without security monitoring for approximately six hours overnight. A single point of failure in the event ingestion pipeline caused a cascading failure, and critically, the company's own internal alerting also failed because the health checks were tied to the same broken pipeline \u2014 meaning a customer, not the team, flagged the outage. At least 47 support tickets have been logged, key enterprise accounts including Fortex and Meridian Financial are expressing dissatisfaction and referencing competitors, and SLA compliance issues are expected to result in credits. The team aligned on immediate action items including drafting a formal executive incident communication, pulling the full SLA exposure list, looping in legal and finance, and preparing customer-facing talking points to clarify that the Comply product was unaffected."
       },
       {
-        "meeting_id": "01KQ4D504CE09A8F6ECA1F5A",
-        "title": "Product Sync - Identity Roadmap",
+        "meeting_id": "01KQ2D93184912F0147315E7",
+        "title": "URGENT: Blackridge Investments - Complete Loss of Threat Visibility",
         "topics": [
-          "identity roadmap",
-          "mfa policy engine",
-          "sso connectors",
-          "qa process",
-          "sprint planning",
-          "infrastructure bottleneck"
+          "service outage",
+          "threat monitoring failure",
+          "sla breach",
+          "churn risk",
+          "incident escalation",
+          "proactive communication failure"
         ],
-        "summary": "Ananya Sharma, Hannah Liu, and Nina Kowalski held a planning sync focused on the Aegis Identity Q2 roadmap. The team aligned on two primary workstreams: an MFA policy rules engine and an expanded SSO connector library, with the risk-signal/adaptive MFA layer pushed to Q3 due to scope and technical dependencies. They established a rough timeline targeting a May GA for the MFA rules engine and prioritized Okta, Azure AD, and Google Workspace as the first SSO connectors. Key process improvements were agreed upon, including locking specs two weeks before QA hand-off and including acceptance criteria upfront to enable parallel test case development."
+        "summary": "Julia Tran from Blackridge Investments called Aegis Cloud Security support in a critical situation where her firm has had zero threat visibility for over three hours due to a known event processing pipeline failure. Marcus Williams confirmed the outage is a cascading failure affecting multiple customers on the same processing cluster, with engineering estimating restoration within two more hours. Julia expressed serious frustration over the lack of proactive communication, a single point of failure in the architecture, and the operational impact of having analysts manually reviewing logs. She disclosed they have been evaluating a competitor (SentinelShield) and has a board meeting next week where she must explain the security blind spot. Marcus committed to a formal incident report, SLA review, AE loop-in, and a direct phone call upon service restoration."
       },
       {
-        "meeting_id": "01KQ4EE836687F95080D92AB",
-        "title": "Detect Team - Sprint Planning",
+        "meeting_id": "01KQ38C4101D6774F2F02331",
+        "title": "INCIDENT: Detect Pipeline Failure - War Room",
         "topics": [
-          "sprint planning",
-          "pipeline architecture",
-          "single point of failure",
-          "ci/cd improvement",
-          "capacity planning",
-          "sprint retrospective"
+          "outage",
+          "pipeline failure",
+          "customer escalation",
+          "incident response",
+          "data loss",
+          "technical debt"
         ],
-        "summary": "The team held a sprint twelve planning meeting that began with a quick retrospective on sprint eleven, where seven of nine tickets were completed. Key carry-overs include alert deduplication and a pipeline latency investigation that revealed a significant single point of failure in the event ingestion layer. The team agreed on primary sprint twelve commitments: deduplication carry-over, pipeline architecture remediation, and a CI gate improvement, with detection rule versioning pushed to a stretch goal or sprint thirteen. Capacity constraints and QA bandwidth were key factors in scoping decisions."
+        "summary": "A critical outage call was convened to address a complete failure of the Detect event processing pipeline that began around 9:14 AM Pacific. The ingestion pipeline's single primary node hit a memory ceiling and crashed due to lack of redundancy, a known tech debt issue that had been flagged but not prioritized. The outage went unannounced on the status page for approximately 90 minutes, causing enterprise customers including Harmon Financial and TerraLogix to escalate, with some customers mistakenly fearing a security breach. The team aligned on immediate actions: a stopgap fix involving a secondary node and temporary load balancer, a public customer statement clarifying there was no breach, and a post-mortem timeline, while acknowledging that 30-40% of event data during the outage window may be unrecoverable."
       },
       {
-        "meeting_id": "01KQ5BB8521F99E55470206E",
-        "title": "Detect Team - Sprint Planning",
+        "meeting_id": "01KQ3CE40428CCC5FF433FFC",
+        "title": "Detect Outage - Post-Incident Review",
         "topics": [
-          "sprint planning",
-          "bug fix",
-          "architecture",
-          "ingestion pipeline",
-          "alert deduplication",
-          "qa"
+          "outage post-mortem",
+          "infrastructure reliability",
+          "customer communication",
+          "product visibility",
+          "roadmap prioritization",
+          "renewal risk"
         ],
-        "summary": "The team held a sprint planning meeting to review carryover items and commit to work for the upcoming sprint. Nina flagged two edge cases in DETECT-219 related to wildcard regex matching that Tyler needs to fix before the ticket can be closed. Ananya raised an architectural concern about a single-node ingestion pipeline and proposed a design spike to address redundancy and failover, which Ravi agreed to scope collaboratively. The team settled on 13 story points for the sprint, including carryover, QA work, the design spike, and the alert deduplication ticket DETECT-231, intentionally leaving buffer after overcommitting last sprint."
+        "summary": "Tom Bradley led a post-incident review of the Detect outage from March 10th, which caused approximately six hours of no threat monitoring for customers due to a cascading failure in the event ingestion pipeline caused by a single point of failure. Tom explained the deployed fixes including redundant processing nodes and a circuit breaker pattern, while Megan noted upcoming product improvements including a status indicator and a potential heartbeat alert feature. Diana highlighted customer concerns about lack of visibility, particularly among enterprise and mid-renewal accounts, and the team aligned on next steps for customer communications. Key action items include Tom delivering a formal post-incident report, Megan evaluating roadmap prioritization, and Diana coordinating customer calls."
       }
     ]
   },
   {
-    "cluster_id": 3,
-    "generated_label": "multi framework / multi / framework / compliance",
-    "meeting_count": 13,
+    "cluster_id": 4,
+    "generated_label": "multi framework / framework / multi / hipaa",
+    "meeting_count": 10,
     "top_terms": [
       "multi framework",
-      "multi",
       "framework",
-      "compliance",
+      "multi",
       "hipaa",
-      "pci dss",
-      "dss",
-      "pci",
+      "compliance",
+      "audit",
       "evidence",
       "soc",
-      "audit",
-      "reporting"
+      "dss",
+      "pci dss",
+      "demo",
+      "pci"
     ],
     "top_topics": [
       [
         "compliance reporting",
-        5
+        4
       ],
       [
         "onboarding",
-        5
-      ],
-      [
-        "multi-framework support",
-        5
+        4
       ],
       [
         "audit preparation",
@@ -576,6 +689,10 @@
       ],
       [
         "product demo",
+        4
+      ],
+      [
+        "multi-framework support",
         4
       ],
       [
@@ -587,38 +704,38 @@
         3
       ],
       [
-        "feature request",
-        3
-      ],
-      [
         "iso 27001",
         2
       ],
       [
         "healthcare",
         2
+      ],
+      [
+        "compliance",
+        2
       ]
     ],
     "key_moment_types": [
       [
         "positive_pivot",
-        15
-      ],
-      [
-        "concern",
         11
       ],
       [
+        "concern",
+        9
+      ],
+      [
         "feature_gap",
-        8
+        6
       ],
       [
         "action_item",
-        8
+        6
       ],
       [
         "praise",
-        7
+        5
       ],
       [
         "churn_signal",
@@ -632,15 +749,11 @@
     "overall_sentiments": [
       [
         "very-positive",
-        10
+        8
       ],
       [
         "mixed-positive",
         2
-      ],
-      [
-        "positive",
-        1
       ]
     ],
     "examples": [
@@ -712,7 +825,695 @@
     ]
   },
   {
-    "cluster_id": 4,
+    "cluster_id": 5,
+    "generated_label": "feature / scim / feature request / roadmap",
+    "meeting_count": 7,
+    "top_terms": [
+      "feature",
+      "scim",
+      "feature request",
+      "roadmap",
+      "provisioning",
+      "request",
+      "sarah",
+      "compliance",
+      "access",
+      "identity",
+      "early access",
+      "thomas"
+    ],
+    "top_topics": [
+      [
+        "feature request",
+        3
+      ],
+      [
+        "workaround",
+        2
+      ],
+      [
+        "audit workflow",
+        2
+      ],
+      [
+        "early access program",
+        2
+      ],
+      [
+        "granular restore",
+        1
+      ],
+      [
+        "backup and recovery",
+        1
+      ],
+      [
+        "rto compliance",
+        1
+      ],
+      [
+        "aws ebs",
+        1
+      ],
+      [
+        "roadmap planning",
+        1
+      ],
+      [
+        "identity & access management",
+        1
+      ]
+    ],
+    "key_moment_types": [
+      [
+        "feature_gap",
+        7
+      ],
+      [
+        "concern",
+        6
+      ],
+      [
+        "churn_signal",
+        6
+      ],
+      [
+        "positive_pivot",
+        6
+      ],
+      [
+        "praise",
+        2
+      ],
+      [
+        "technical_issue",
+        1
+      ],
+      [
+        "action_item",
+        1
+      ]
+    ],
+    "overall_sentiments": [
+      [
+        "mixed-positive",
+        4
+      ],
+      [
+        "positive",
+        1
+      ],
+      [
+        "very-positive",
+        1
+      ],
+      [
+        "mixed-negative",
+        1
+      ]
+    ],
+    "examples": [
+      {
+        "meeting_id": "01KQ25D8AED944B5D2A9FF60",
+        "title": "Support Case #1514 - Meridian Capital Granular Restore Request",
+        "topics": [
+          "feature request",
+          "granular restore",
+          "backup and recovery",
+          "rto compliance",
+          "aws ebs",
+          "workaround"
+        ],
+        "summary": "Jason Hoffman from Meridian contacted Aegis support (Sarah Chen) regarding the lack of granular file-level restore capabilities in Aegis Protect. An analyst had accidentally overwritten config files on an EBS-backed EC2 trading platform, requiring a two-hour manual workaround involving spinning up a temporary instance to retrieve the files. Sarah confirmed that file-level restore is not currently supported and documented a formal feature request covering granular file-level restore from EBS snapshots, restore-to-alternate-path functionality, and a file metadata preview capability. The case will be logged, Jason's colleague Marcus Webb will be added, and the CSM will be looped in for follow-up."
+      },
+      {
+        "meeting_id": "01KQ31ED026F745FE2A55CCD",
+        "title": "Identity Team - Q2 Roadmap",
+        "topics": [
+          "roadmap planning",
+          "identity & access management",
+          "scim / provisioning",
+          "adaptive mfa",
+          "compliance integration",
+          "competitive landscape"
+        ],
+        "summary": "The team held a Q2 roadmap planning session for the Identity product, covering three major themes: JIT provisioning and SCIM improvements, adaptive MFA policies, and an Identity audit trail integrated with the Comply module. Technical leads discussed specific failure modes in SCIM sync, a redesigned attribute mapping UI with inline validation, and a phased approach to adaptive MFA starting with location and device posture signals. The session also touched on competitive pressure from SentinelShield, lingering customer trust concerns following a March Detect outage, and cross-team alignment with the Comply team around SOC 2 reporting gaps."
+      },
+      {
+        "meeting_id": "01KQ51DC4345D9DAE005678C",
+        "title": "Aegis / Redwood Clinical - Product Feedback Session",
+        "topics": [
+          "hipaa reporting",
+          "compliance tooling",
+          "feature gaps",
+          "product feedback",
+          "audit workflow",
+          "roadmap"
+        ],
+        "summary": "Daniel Okafor and Lisa Park held a structured feedback session with Thomas Hargrove from the healthcare vertical to discuss pain points with Aegis Comply after eight months of use. Thomas outlined four prioritized feature gaps: granular control-family filtering in HIPAA reports, scheduled automated report delivery to stakeholders, an executive summary layer, and period-over-period delta tracking for compliance posture. Thomas noted that while Protect and Identity modules are performing well, Comply feels behind and could eventually prompt evaluation of competing tools like VaultEdge if gaps persist. The call concluded with agreed next steps including a written summary, follow-up on scheduled delivery roadmap status, and an introduction to the healthcare vertical product liaison."
+      },
+      {
+        "meeting_id": "01KQ5F364545B542671FF9CE",
+        "title": "Support Case #3546 - Meridian Capital SCIM Provisioning Request",
+        "topics": [
+          "scim provisioning",
+          "identity management",
+          "compliance",
+          "okta integration",
+          "deprovisioning",
+          "feature request"
+        ],
+        "summary": "Jason Hoffman (CISO) and Suki Nakamura (Compliance Director) from Meridian Capital contacted Aegis Cloud Security support to discuss SCIM 2.0 integration between Okta and Aegis Identity for automated user provisioning and deprovisioning. Sarah Chen and Marcus Williams confirmed that native SCIM 2.0 is on the roadmap but not yet generally available, and recommended using Aegis's REST API with Okta Workflows as an interim solution. The team agreed this API approach could meet Meridian's 24-hour deprovisioning compliance requirement, with audit logs accessible through Aegis Comply. Next steps include sending API documentation, logging the SCIM feature request with Meridian's specific use case, and looping in the account manager for a roadmap discussion."
+      },
+      {
+        "meeting_id": "01KQ92EA85FE4C537400227D",
+        "title": "Support Case #8811 - Blackridge Investments Custom Compliance Template",
+        "topics": [
+          "feature request",
+          "custom compliance templates",
+          "early access program",
+          "api integration",
+          "workaround",
+          "financial services"
+        ],
+        "summary": "Warren Beck from Blackridge, a financial services firm, contacted Aegis support to request a custom compliance template feature in Aegis Comply v2 that would allow them to track internal board and regulator controls alongside standard frameworks like SOC 2 and PCI DSS. Priya Patel confirmed the feature is on the near-term product roadmap and enrolled Warren in the early access/design partner program. In the meantime, Priya walked Warren through two workarounds: custom control annotations within existing reports and the Comply v2 API for exporting structured control data. The call concluded with clear next steps and a very positive tone from both parties."
+      }
+    ]
+  },
+  {
+    "cluster_id": 6,
+    "generated_label": "mfa / policy / mfa policy / management",
+    "meeting_count": 5,
+    "top_terms": [
+      "mfa",
+      "policy",
+      "mfa policy",
+      "management",
+      "sso",
+      "identity",
+      "victor",
+      "okta",
+      "access",
+      "access management",
+      "session",
+      "role"
+    ],
+    "top_topics": [
+      [
+        "identity access management",
+        2
+      ],
+      [
+        "identity roadmap",
+        1
+      ],
+      [
+        "mfa policy engine",
+        1
+      ],
+      [
+        "sso connectors",
+        1
+      ],
+      [
+        "qa process",
+        1
+      ],
+      [
+        "sprint planning",
+        1
+      ],
+      [
+        "infrastructure bottleneck",
+        1
+      ],
+      [
+        "identity deployment",
+        1
+      ],
+      [
+        "privileged access management",
+        1
+      ],
+      [
+        "mfa migration",
+        1
+      ]
+    ],
+    "key_moment_types": [
+      [
+        "concern",
+        5
+      ],
+      [
+        "feature_gap",
+        5
+      ],
+      [
+        "positive_pivot",
+        3
+      ],
+      [
+        "action_item",
+        2
+      ],
+      [
+        "technical_issue",
+        2
+      ],
+      [
+        "praise",
+        2
+      ],
+      [
+        "churn_signal",
+        1
+      ]
+    ],
+    "overall_sentiments": [
+      [
+        "mixed-positive",
+        3
+      ],
+      [
+        "very-positive",
+        2
+      ]
+    ],
+    "examples": [
+      {
+        "meeting_id": "01KQ4D504CE09A8F6ECA1F5A",
+        "title": "Product Sync - Identity Roadmap",
+        "topics": [
+          "identity roadmap",
+          "mfa policy engine",
+          "sso connectors",
+          "qa process",
+          "sprint planning",
+          "infrastructure bottleneck"
+        ],
+        "summary": "Ananya Sharma, Hannah Liu, and Nina Kowalski held a planning sync focused on the Aegis Identity Q2 roadmap. The team aligned on two primary workstreams: an MFA policy rules engine and an expanded SSO connector library, with the risk-signal/adaptive MFA layer pushed to Q3 due to scope and technical dependencies. They established a rough timeline targeting a May GA for the MFA rules engine and prioritized Okta, Azure AD, and Google Workspace as the first SSO connectors. Key process improvements were agreed upon, including locking specs two weeks before QA hand-off and including acceptance criteria upfront to enable parallel test case development."
+      },
+      {
+        "meeting_id": "01KQ5AFAE8264DDC0ED2AE7F",
+        "title": "Aegis / Crestline Wealth - Identity Module Deployment",
+        "topics": [
+          "identity deployment",
+          "privileged access management",
+          "mfa migration",
+          "compliance audit",
+          "entra id integration",
+          "compliance reporting"
+        ],
+        "summary": "Rachel Torres (Senior Account Manager) and Sofia Petrov (Senior Engineer) at Aegis held a pre-deployment discovery call with Derek Owens at Crestline to discuss adding the Aegis Identity module to their existing Protect and Detect deployment. Derek's organization has ~340 users on Entra ID with a mixed MFA environment and needs to address privileged access management gaps flagged in a February audit. Sofia outlined a three-phase deployment approach covering directory sync, MFA policy migration, and PAM, with an end-of-July target that is feasible given Crestline's environment. Derek also expressed interest in Aegis Comply v2 as a future add-on, which Rachel noted would benefit from the audit data generated during the Identity deployment."
+      },
+      {
+        "meeting_id": "01KQ65D43540846FA994B6C4",
+        "title": "Aegis / Frostbyte AI - Product Feedback",
+        "topics": [
+          "role management",
+          "feature gap",
+          "soc 2 compliance",
+          "session timeout policy",
+          "product roadmap",
+          "identity access management"
+        ],
+        "summary": "Rachel Torres and Sofia Petrov met with Victor Zheng of Frostbyte to discuss pain points after approximately eight months on Aegis Identity. Victor highlighted two key product gaps: the lack of hierarchical role inheritance in the flat role model, which causes manual permission duplication and complicates their ongoing SOC 2 audit, and the inability to configure session timeout policies per role or resource. Victor also praised Aegis Comply v2's on-demand SOC 2 reporting as a significant time-saver. He clarified he is not evaluating alternatives but wants assurance that Aegis Identity can scale with Frostbyte's rapid growth over the coming quarters."
+      },
+      {
+        "meeting_id": "01KQC3A2EBC501837E973B16",
+        "title": "Aegis / Frostbyte AI - Identity Module Setup",
+        "topics": [
+          "onboarding",
+          "sso configuration",
+          "mfa policy",
+          "identity access management",
+          "contractor access controls",
+          "okta migration"
+        ],
+        "summary": "This was an onboarding kickoff call for Aegis Identity with Victor Zheng and Olivia Strand as the new customers, joined by James Mitchell (account manager) and Ananya Sharma (senior engineer, technical point of contact). The customer is migrating from Okta and their primary goals are consolidating SSO across eight tools and implementing more granular MFA and conditional access policies, particularly for contractor vs. full-time employee differentiation. Ananya outlined a two-to-three week timeline for baseline SSO configuration and MFA rollout, faster than the customer anticipated. Next steps were clearly established, including Victor completing Okta API token setup and a user attribute mapping template before scheduling a live working session."
+      },
+      {
+        "meeting_id": "01KQCA6EA8B603EBB6C9FE34",
+        "title": "Aegis / Ridgeline Logistics - Identity Roadmap Discussion",
+        "topics": [
+          "shared workstation session management",
+          "mfa policy exceptions",
+          "sso integration",
+          "rbac enhancements",
+          "renewal",
+          "feature request"
+        ],
+        "summary": "Daniel Okafor (CSM) met with Paula Schneider from Ridgeline to review their experience with Aegis Identity after eight months on the platform. Paula raised several operational pain points including clunky shared workstation session management, lack of granular session timeout policies by device group, and inflexible MFA policy exceptions for service accounts. Daniel confirmed these items would be escalated internally, including a January support ticket that had gone unanswered, and noted an upcoming RBAC enhancement that may address some of her concerns. The call also touched on a potential SSO integration with a new fleet management platform and a Q3 renewal on the horizon."
+      }
+    ]
+  },
+  {
+    "cluster_id": 7,
+    "generated_label": "incident / communication / elena / outage",
+    "meeting_count": 13,
+    "top_terms": [
+      "incident",
+      "communication",
+      "elena",
+      "outage",
+      "incident communication",
+      "failure",
+      "vasquez",
+      "elena vasquez",
+      "patch",
+      "data",
+      "platform",
+      "churn_signal"
+    ],
+    "top_topics": [
+      [
+        "incident communication",
+        6
+      ],
+      [
+        "churn risk",
+        4
+      ],
+      [
+        "platform outage",
+        4
+      ],
+      [
+        "soc 2 audit",
+        2
+      ],
+      [
+        "compliance",
+        2
+      ],
+      [
+        "alert latency",
+        2
+      ],
+      [
+        "data backfill",
+        2
+      ],
+      [
+        "hipaa compliance",
+        2
+      ],
+      [
+        "incident communication failure",
+        2
+      ],
+      [
+        "access control",
+        1
+      ]
+    ],
+    "key_moment_types": [
+      [
+        "concern",
+        14
+      ],
+      [
+        "churn_signal",
+        13
+      ],
+      [
+        "technical_issue",
+        12
+      ],
+      [
+        "positive_pivot",
+        6
+      ],
+      [
+        "action_item",
+        3
+      ],
+      [
+        "feature_gap",
+        2
+      ],
+      [
+        "praise",
+        1
+      ],
+      [
+        "pricing_offer",
+        1
+      ]
+    ],
+    "overall_sentiments": [
+      [
+        "mixed-negative",
+        10
+      ],
+      [
+        "mixed-positive",
+        2
+      ],
+      [
+        "very-negative",
+        1
+      ]
+    ],
+    "examples": [
+      {
+        "meeting_id": "01KQ1267C6AA7D9B3125FEC8",
+        "title": "SOC 2 Audit Preparation - Internal",
+        "topics": [
+          "soc 2 audit",
+          "access control",
+          "change management",
+          "incident tracking",
+          "vendor management",
+          "security training"
+        ],
+        "summary": "Raj Kapoor convened a meeting with Tyler, Ravi, Brian, and Mike to prepare for an upcoming SOC 2 Type II audit with a 90-day observation period starting March 1st. The team reviewed key control areas including access control, change management, incident tracking, monitoring, vendor management, and employee security training. Several gaps were identified, including a broken Zendesk-PagerDuty integration, inconsistent hotfix documentation, alert fatigue in the monitoring system, and incomplete security training completions. Action items were assigned to each team member with tight deadlines before the observation window opens."
+      },
+      {
+        "meeting_id": "01KQ2217B066855A3B7814CB",
+        "title": "Aegis / Meridian Capital - Service Reliability Discussion",
+        "topics": [
+          "outage",
+          "churn risk",
+          "infrastructure reliability",
+          "compliance",
+          "vendor review",
+          "incident communication"
+        ],
+        "summary": "Suki Nakamura from a financial services firm expressed serious concern over a six-hour threat monitoring outage on Monday that left her security team blind during ongoing regulatory audit conversations. Ravi Gupta acknowledged a known architectural single point of failure in Aegis Detect's event processing pipeline and outlined remediation steps including redundant nodes and a circuit breaker pattern targeted for end-of-month deployment. Suki disclosed that her CISO has initiated a formal vendor review and that the company is actively evaluating competitor SentinelShield. The call concluded with concrete commitments: Ravi will send an infrastructure audit summary by Monday, the technical fix will ship by end of March, and a follow-up check-in call is scheduled for two weeks out."
+      },
+      {
+        "meeting_id": "01KQ325BDEDEE927D2970775",
+        "title": "Support Case #5889 - Ridgeline Logistics Detect Latency Issues",
+        "topics": [
+          "product outage",
+          "alert latency",
+          "sla breach",
+          "incident communication",
+          "ot security",
+          "service credits"
+        ],
+        "summary": "Priya Patel from Aegis support contacted Paula Schneider of Ridgeline (a manufacturing/logistics company) regarding a multi-day alert latency issue with the Aegis Detect product. Priya confirmed the problem was caused by a cascading failure in Aegis's event processing pipeline, not anything on the customer's side, and apologized for the lack of proactive communication. Paula expressed concern about the security gap created by hour-long alert delays across their OT and manufacturing environments, and noted potential SLA violations and cyber insurance reporting requirements. Priya committed to a two-hour written update with fix timeline and backfill status, and offered to involve the account manager for remediation and service credit discussions."
+      },
+      {
+        "meeting_id": "01KQ56D878454E5783DC6D94",
+        "title": "Support Case #3536 - Stratos Cloud LogVault Integration Timeout",
+        "topics": [
+          "technical issue",
+          "logvault integration",
+          "data backfill",
+          "circuit breaker",
+          "churn risk",
+          "incident follow-up"
+        ],
+        "summary": "Damien Rowe from Stratos Cloud contacted Aegis Cloud Security support regarding consistent timeout errors when Aegis Detect attempted to push event data to their LogVault HTTP Event Collector endpoint, an issue that had been ongoing since April 18th. David Kim and team lead Priya Patel diagnosed the root cause as a circuit breaker payload threshold introduced in the April 8th remediation build (v4.1.2) being triggered by Stratos's high event volume of 8,000-12,000 events per minute during peak hours. The fix involved switching the LogVault integration from batched to streaming mode to distribute load more evenly, followed by a retroactive backfill of four days of missed event data. Damien expressed serious frustration, noting this was the second major disruption this year and that his team was questioning whether to remain on the Aegis Detect platform."
+      },
+      {
+        "meeting_id": "01KQ5D47170D4828E89EDE37",
+        "title": "Support Case #7537 - Forge Industries Detect Recovery Confirmation",
+        "topics": [
+          "outage recovery",
+          "incident root cause",
+          "threat monitoring",
+          "data integrity",
+          "post-incident report",
+          "architectural remediation"
+        ],
+        "summary": "Elena Vasquez from Aegis Cloud Security support called Dana Moretti of Forge Industries to discuss the recovery and closure of support case 7537 related to a Detect platform outage. The outage began March 10th with approximately six hours of complete threat monitoring visibility loss caused by a single point of failure in the event ingestion layer, followed by degraded performance through March 15th. Aegis implemented architectural fixes including redundant processing nodes and a circuit breaker pattern, with full restoration confirmed March 18th. Dana needs documentation for her CISO, including a data recovery summary for the blind-spot window and a formal post-incident report."
+      }
+    ]
+  },
+  {
+    "cluster_id": 8,
+    "generated_label": "onboarding / backup / vanessa / hybrid",
+    "meeting_count": 6,
+    "top_terms": [
+      "onboarding",
+      "backup",
+      "vanessa",
+      "hybrid",
+      "data",
+      "data retention",
+      "retention",
+      "alert",
+      "recovery",
+      "cloudprime",
+      "yuki",
+      "backup recovery"
+    ],
+    "top_topics": [
+      [
+        "onboarding",
+        4
+      ],
+      [
+        "compliance",
+        2
+      ],
+      [
+        "data retention",
+        2
+      ],
+      [
+        "backup and recovery",
+        2
+      ],
+      [
+        "aws s3 connector",
+        1
+      ],
+      [
+        "backup failure",
+        1
+      ],
+      [
+        "403 error",
+        1
+      ],
+      [
+        "iam permissions",
+        1
+      ],
+      [
+        "service control policies",
+        1
+      ],
+      [
+        "connector configuration",
+        1
+      ]
+    ],
+    "key_moment_types": [
+      [
+        "concern",
+        6
+      ],
+      [
+        "positive_pivot",
+        5
+      ],
+      [
+        "feature_gap",
+        4
+      ],
+      [
+        "technical_issue",
+        3
+      ],
+      [
+        "praise",
+        3
+      ],
+      [
+        "churn_signal",
+        2
+      ],
+      [
+        "action_item",
+        1
+      ]
+    ],
+    "overall_sentiments": [
+      [
+        "mixed-positive",
+        3
+      ],
+      [
+        "very-positive",
+        3
+      ]
+    ],
+    "examples": [
+      {
+        "meeting_id": "01KQ3C837D7EF689408DCF95",
+        "title": "Support Case #2638 - Pineridge Systems CloudPrime S3 Backup Connector",
+        "topics": [
+          "aws s3 connector",
+          "backup failure",
+          "403 error",
+          "iam permissions",
+          "service control policies",
+          "connector configuration"
+        ],
+        "summary": "Priya from Aegis Cloud Security support and senior engineer Sarah Chen joined a call with Yuki Tanaka, Security Lead at Pineridge, to troubleshoot a failing CloudPrime S3 backup connector issue (Case 2638). Yuki reported that backup jobs were failing with a 403 error since the previous Thursday, despite no known IAM permission changes. Sarah identified two likely causes: a misconfigured connector endpoint (using the generic s3.amazonaws.com instead of the region-specific us-west-2 endpoint) and potentially restrictive CloudPrime Service Control Policies updated during a routine policy review around the same time. Yuki updated the endpoint setting live on the call and agreed to test the backup job, check SCP policies with their CloudPrime admin, and share CloudTrail logs with the Aegis team."
+      },
+      {
+        "meeting_id": "01KQ41FB5CCFD9EA583FB020",
+        "title": "Aegis / Harborview Banking - Threat Detection Tuning",
+        "topics": [
+          "alert tuning",
+          "false positives",
+          "compliance",
+          "alert routing",
+          "data retention",
+          "financial services"
+        ],
+        "summary": "Lisa Park and Kevin O'Brien from Aegis held a threat detection tuning session with Patricia Dunn (VP of Security) and Michael Russo (Compliance Officer) from Harborview Banking, who went live on Aegis Detect seven weeks ago. The primary concerns discussed were alert fatigue from false positives driven by geo-anomaly detection for multi-timezone staff, compliance coverage gaps for FFIEC/SOX/GLBA requirements, and inefficient alert routing to a single shared SOC inbox. Kevin enabled alert mode on the privileged access monitoring ruleset during the call and identified that the data retention setting needs to be updated from 90 days to at least 12 months. A follow-up working session was planned for the week of March 16th to configure trusted location profiles and work schedule profiles for the Manila team."
+      },
+      {
+        "meeting_id": "01KQ560FF1570C5E7F71D752",
+        "title": "Aegis / Coastal Living Co - Protect Module Expansion",
+        "topics": [
+          "onboarding",
+          "backup and recovery",
+          "hybrid environment",
+          "data protection",
+          "compliance",
+          "retail seasonality"
+        ],
+        "summary": "Kevin O'Brien from Aegis spoke with Vanessa Cruz at Coastal Living about deploying Aegis Protect for their hybrid backup and recovery environment following a successful spring collection launch. Vanessa described a fragmented backup setup across CloudPrime and on-prem systems totaling 80-100TB across 40-50 workloads, with poor visibility being the primary pain point. Kevin outlined a phased three-part implementation plan, confirmed compatibility with their infrastructure, and discussed RPO/RTO requirements for their critical customer data platform. The call concluded with plans for a kickoff meeting the following Wednesday and next steps around onboarding documentation."
+      },
+      {
+        "meeting_id": "01KQ77F2867FC54E13A8C495",
+        "title": "Aegis / Brightpath Commerce - Detect Module Deployment",
+        "topics": [
+          "onboarding",
+          "deployment planning",
+          "alert fatigue",
+          "reliability incident",
+          "cloud infrastructure",
+          "integrations"
+        ],
+        "summary": "James Mitchell (AE) and Kendra Wallace (Brightpath) held an onboarding planning call for the Aegis Detect deployment across Brightpath's CloudPrime and Azure environments. They discussed deployment sequencing, timeline (roughly one month end-to-end), and the importance of completing the rollout before Brightpath's spring peak season in late March. Key integrations with PagerDuty and LogVault were confirmed as natively supported, and the system's seven-day observation/baseline mode was highlighted as a solution to Kendra's alert fatigue concerns. A December reliability incident was raised by Kendra and addressed transparently by James, who agreed to share the post-incident report."
+      },
+      {
+        "meeting_id": "01KQ9BB82FD97C9607D57E90",
+        "title": "Aegis / Coastal Living Co - Onboarding Kickoff",
+        "topics": [
+          "onboarding",
+          "backup and recovery",
+          "hybrid infrastructure",
+          "pci dss compliance",
+          "data retention",
+          "aws integration"
+        ],
+        "summary": "Maria Santos (CSM at Aegis Cloud Security) held a kickoff onboarding call with Vanessa Cruz from Coastal Living, who recently chose Aegis Protect over competitors CyberNova and VaultEdge primarily due to superior recovery time objectives. Vanessa outlined their infrastructure \u2014 a hybrid CloudPrime multi-region setup plus on-prem warehouse systems \u2014 and Maria walked through the 4-6 week three-phase onboarding process including environment discovery, backup policy configuration, and restore drills. Key topics included custom data retention policies for PCI DSS compliance, hybrid environment support, and the unified management console. The call ended with clear next steps: Maria to send a formal project plan, Vanessa to provision CloudPrime access and connect Maria with their DevOps engineer Raj Patel, and a technical discovery call scheduled for the following week."
+      }
+    ]
+  },
+  {
+    "cluster_id": 9,
     "generated_label": "billing / overage / dispute / wayne",
     "meeting_count": 7,
     "top_terms": [
@@ -888,287 +1689,99 @@
     ]
   },
   {
-    "cluster_id": 5,
-    "generated_label": "mfa / identity / management / access management",
-    "meeting_count": 10,
+    "cluster_id": 10,
+    "generated_label": "sprint / sprint planning / planning / retrospective",
+    "meeting_count": 5,
     "top_terms": [
-      "mfa",
-      "identity",
-      "management",
-      "access management",
-      "access",
-      "sso",
-      "derek",
-      "policy",
-      "okta",
-      "sync",
-      "identity access",
-      "session"
+      "sprint",
+      "sprint planning",
+      "planning",
+      "retrospective",
+      "sprint retrospective",
+      "planning sprint",
+      "pipeline",
+      "sprint planning sprint",
+      "planning sprint planning",
+      "tyler",
+      "chris",
+      "retrospective sprint"
     ],
     "top_topics": [
       [
-        "churn risk",
+        "sprint planning",
+        4
+      ],
+      [
+        "sprint retrospective",
         3
       ],
       [
-        "identity & access management",
-        2
-      ],
-      [
-        "renewal",
-        2
-      ],
-      [
-        "identity access management",
-        2
-      ],
-      [
-        "support response time",
-        2
-      ],
-      [
-        "roadmap planning",
+        "pipeline reliability",
         1
       ],
       [
-        "scim / provisioning",
+        "kafka configuration",
         1
       ],
       [
-        "adaptive mfa",
+        "comply v2 launch",
         1
       ],
       [
-        "compliance integration",
+        "resource allocation",
         1
       ],
       [
-        "competitive landscape",
+        "timeline risk",
+        1
+      ],
+      [
+        "identity management",
+        1
+      ],
+      [
+        "estimation",
+        1
+      ],
+      [
+        "scim provisioning",
         1
       ]
     ],
     "key_moment_types": [
       [
-        "churn_signal",
-        10
-      ],
-      [
-        "feature_gap",
-        8
-      ],
-      [
-        "concern",
-        8
-      ],
-      [
         "positive_pivot",
-        6
-      ],
-      [
-        "technical_issue",
         5
       ],
       [
+        "concern",
+        4
+      ],
+      [
         "action_item",
-        2
+        4
+      ],
+      [
+        "technical_issue",
+        3
+      ],
+      [
+        "feature_gap",
+        3
       ],
       [
         "praise",
-        2
-      ],
-      [
-        "pricing_offer",
         1
       ]
     ],
     "overall_sentiments": [
       [
-        "mixed-negative",
-        5
-      ],
-      [
-        "very-positive",
-        2
-      ],
-      [
         "mixed-positive",
-        2
+        3
       ],
       [
         "positive",
         1
-      ]
-    ],
-    "examples": [
-      {
-        "meeting_id": "01KQ31ED026F745FE2A55CCD",
-        "title": "Identity Team - Q2 Roadmap",
-        "topics": [
-          "roadmap planning",
-          "identity & access management",
-          "scim / provisioning",
-          "adaptive mfa",
-          "compliance integration",
-          "competitive landscape"
-        ],
-        "summary": "The team held a Q2 roadmap planning session for the Identity product, covering three major themes: JIT provisioning and SCIM improvements, adaptive MFA policies, and an Identity audit trail integrated with the Comply module. Technical leads discussed specific failure modes in SCIM sync, a redesigned attribute mapping UI with inline validation, and a phased approach to adaptive MFA starting with location and device posture signals. The session also touched on competitive pressure from SentinelShield, lingering customer trust concerns following a March Detect outage, and cross-team alignment with the Comply team around SOC 2 reporting gaps."
-      },
-      {
-        "meeting_id": "01KQ5A966832A146DA4B7D41",
-        "title": "Aegis / Summit Trust - Platform Concerns Discussion",
-        "topics": [
-          "mfa enforcement",
-          "identity & access management",
-          "churn risk",
-          "support escalation",
-          "outage follow-up",
-          "renewal"
-        ],
-        "summary": "Maria Santos (CSM) met with Alicia Monroe from Summit Trust to address concerns ahead of their upcoming renewal. Alicia raised critical issues with Aegis Identity, including inconsistent MFA enforcement in their loan origination system and internal reporting portal, as well as SSO session timeouts occurring well before the configured 60-minute policy. Alicia also disclosed that her CISO has initiated exploratory conversations with competitor VaultEdge due to concerns that the IAM solution does not feel enterprise-grade, and brought up a six-hour Detect outage earlier in the month that damaged internal trust. Maria acknowledged the support escalation pattern as unacceptable and committed to several concrete follow-up actions to retain the account."
-      },
-      {
-        "meeting_id": "01KQ5AFAE8264DDC0ED2AE7F",
-        "title": "Aegis / Crestline Wealth - Identity Module Deployment",
-        "topics": [
-          "identity deployment",
-          "privileged access management",
-          "mfa migration",
-          "compliance audit",
-          "entra id integration",
-          "compliance reporting"
-        ],
-        "summary": "Rachel Torres (Senior Account Manager) and Sofia Petrov (Senior Engineer) at Aegis held a pre-deployment discovery call with Derek Owens at Crestline to discuss adding the Aegis Identity module to their existing Protect and Detect deployment. Derek's organization has ~340 users on Entra ID with a mixed MFA environment and needs to address privileged access management gaps flagged in a February audit. Sofia outlined a three-phase deployment approach covering directory sync, MFA policy migration, and PAM, with an end-of-July target that is feasible given Crestline's environment. Derek also expressed interest in Aegis Comply v2 as a future add-on, which Rachel noted would benefit from the audit data generated during the Identity deployment."
-      },
-      {
-        "meeting_id": "01KQ65D43540846FA994B6C4",
-        "title": "Aegis / Frostbyte AI - Product Feedback",
-        "topics": [
-          "role management",
-          "feature gap",
-          "soc 2 compliance",
-          "session timeout policy",
-          "product roadmap",
-          "identity access management"
-        ],
-        "summary": "Rachel Torres and Sofia Petrov met with Victor Zheng of Frostbyte to discuss pain points after approximately eight months on Aegis Identity. Victor highlighted two key product gaps: the lack of hierarchical role inheritance in the flat role model, which causes manual permission duplication and complicates their ongoing SOC 2 audit, and the inability to configure session timeout policies per role or resource. Victor also praised Aegis Comply v2's on-demand SOC 2 reporting as a significant time-saver. He clarified he is not evaluating alternatives but wants assurance that Aegis Identity can scale with Frostbyte's rapid growth over the coming quarters."
-      },
-      {
-        "meeting_id": "01KQ6A5CEAAFFBE3B0099E75",
-        "title": "Support Case #6539 - Steelpoint Manufacturing LDAP Sync Failures",
-        "topics": [
-          "ldap sync failure",
-          "ssl certificate",
-          "support response time",
-          "active directory",
-          "product feedback",
-          "churn risk"
-        ],
-        "summary": "Harold Jensen, IT Director at Steelpoint Manufacturing, called regarding a 3-day-old unresolved LDAP sync failure with Aegis Identity affecting 200+ employees on a 24/7 manufacturing floor. Marcus Williams diagnosed the root cause as an SSL handshake failure caused by an internal CA-issued certificate renewed during a maintenance window on March 18th that was not trusted by the Aegis connector. The issue was resolved live on the call by uploading the internal CA root certificate into the Aegis Identity TLS Configuration settings. Harold expressed significant frustration over the slow initial support response and broader confidence concerns about Aegis following a prior Detect outage, and Marcus committed to escalating the response time failure and arranging a follow-up call with the account manager."
-      }
-    ]
-  },
-  {
-    "cluster_id": 6,
-    "generated_label": "incident / outage / customer / communication",
-    "meeting_count": 14,
-    "top_terms": [
-      "incident",
-      "outage",
-      "customer",
-      "communication",
-      "incident response",
-      "diana",
-      "failure",
-      "response",
-      "risk",
-      "post",
-      "monitoring",
-      "customers"
-    ],
-    "top_topics": [
-      [
-        "incident response",
-        6
-      ],
-      [
-        "infrastructure reliability",
-        4
-      ],
-      [
-        "churn risk",
-        4
-      ],
-      [
-        "customer communication",
-        3
-      ],
-      [
-        "outage",
-        3
-      ],
-      [
-        "incident communication",
-        3
-      ],
-      [
-        "compliance",
-        2
-      ],
-      [
-        "sla compliance",
-        2
-      ],
-      [
-        "customer escalation",
-        2
-      ],
-      [
-        "pipeline failure",
-        2
-      ]
-    ],
-    "key_moment_types": [
-      [
-        "concern",
-        13
-      ],
-      [
-        "technical_issue",
-        12
-      ],
-      [
-        "churn_signal",
-        11
-      ],
-      [
-        "positive_pivot",
-        8
-      ],
-      [
-        "action_item",
-        6
-      ],
-      [
-        "feature_gap",
-        5
-      ],
-      [
-        "praise",
-        1
-      ]
-    ],
-    "overall_sentiments": [
-      [
-        "mixed-negative",
-        6
-      ],
-      [
-        "negative",
-        4
-      ],
-      [
-        "mixed-positive",
-        3
       ],
       [
         "very-positive",
@@ -1177,177 +1790,165 @@
     ],
     "examples": [
       {
-        "meeting_id": "01KQ03B0303900521BB089CA",
-        "title": "Detect Outage - Remediation Plan Review",
+        "meeting_id": "01KQ0CAE7F064EC93F0540CA",
+        "title": "Weekly Engineering Standup",
         "topics": [
-          "outage remediation",
+          "pipeline reliability",
+          "kafka configuration",
+          "sprint planning",
+          "comply v2 launch",
+          "resource allocation",
+          "timeline risk"
+        ],
+        "summary": "The engineering team held a sprint status check-in covering the Detect pipeline reliability work and the upcoming Comply v2 launch. Mike Romano reported being 60% through the event ingestion refactor, with the end-of-March deadline assessed at roughly 60-40 odds due to uncertainty around Kafka configuration and redundant node setup. Tyler Washington completed alert deduplication work and will assist by spiking on the Kafka investigation to help reduce risk. Tom Bradley will communicate to product that the March target stands but carries acknowledged technical uncertainty, while Chris Lee continues weekly syncs with Priya's team on the Comply v2 April launch."
+      },
+      {
+        "meeting_id": "01KQ3F90FF9EBC3DB3632514",
+        "title": "Identity Team - Sprint Retro",
+        "topics": [
+          "sprint retrospective",
+          "identity management",
+          "sprint planning",
+          "estimation",
+          "scim provisioning",
+          "comply integration"
+        ],
+        "summary": "The team held a sprint 22 retrospective covering the period of March 14-27 for the Identity team. The Detect outage on the 10th impacted sprint capacity, causing two tickets (MFA enforcement policy UI and SSO session timeout configuration) to slip into sprint 23. Completed work included SCIM provisioning bug fixes, SSO metadata refresh refactor, and partial IAM role hierarchy implementation. The team identified estimation issues with the SSO refactor, a test environment credential delay, and an upcoming Comply v2 integration as key concerns heading into sprint 23."
+      },
+      {
+        "meeting_id": "01KQ4EE836687F95080D92AB",
+        "title": "Detect Team - Sprint Planning",
+        "topics": [
+          "sprint planning",
+          "pipeline architecture",
+          "single point of failure",
+          "ci/cd improvement",
+          "capacity planning",
+          "sprint retrospective"
+        ],
+        "summary": "The team held a sprint twelve planning meeting that began with a quick retrospective on sprint eleven, where seven of nine tickets were completed. Key carry-overs include alert deduplication and a pipeline latency investigation that revealed a significant single point of failure in the event ingestion layer. The team agreed on primary sprint twelve commitments: deduplication carry-over, pipeline architecture remediation, and a CI gate improvement, with detection rule versioning pushed to a stretch goal or sprint thirteen. Capacity constraints and QA bandwidth were key factors in scoping decisions."
+      },
+      {
+        "meeting_id": "01KQ5BB8521F99E55470206E",
+        "title": "Detect Team - Sprint Planning",
+        "topics": [
+          "sprint planning",
+          "bug fix",
+          "architecture",
+          "ingestion pipeline",
+          "alert deduplication",
+          "qa"
+        ],
+        "summary": "The team held a sprint planning meeting to review carryover items and commit to work for the upcoming sprint. Nina flagged two edge cases in DETECT-219 related to wildcard regex matching that Tyler needs to fix before the ticket can be closed. Ananya raised an architectural concern about a single-node ingestion pipeline and proposed a design spike to address redundancy and failover, which Ravi agreed to scope collaboratively. The team settled on 13 story points for the sprint, including carryover, QA work, the design spike, and the alert deduplication ticket DETECT-231, intentionally leaving buffer after overcommitting last sprint."
+      },
+      {
+        "meeting_id": "01KQF9600A904ADE8605B3F0",
+        "title": "Detect Team - Reliability Sprint Retro",
+        "topics": [
+          "sprint retrospective",
+          "reliability engineering",
+          "circuit breaker implementation",
+          "monitoring gaps",
           "incident response",
-          "customer communication",
-          "security monitoring",
-          "postmortem planning",
-          "infrastructure reliability"
+          "knowledge sharing"
         ],
-        "summary": "Megan, Raj, and Brian convened on day three of an ongoing outage affecting the Detect product's event processing pipeline. Raj explained that a single point of failure in the event ingestion layer caused a cascading failure, leaving customers with zero threat monitoring visibility for approximately six hours. The remediation plan includes deploying redundant active-active processing nodes (live by end of day) and implementing a circuit breaker pattern (by Wednesday evening), with full tenant visibility restored in a phased rollout by tomorrow morning. The team aligned on communication protocols, retroactive security analysis, and a postmortem timeline."
-      },
-      {
-        "meeting_id": "01KQ1267C6AA7D9B3125FEC8",
-        "title": "SOC 2 Audit Preparation - Internal",
-        "topics": [
-          "soc 2 audit",
-          "access control",
-          "change management",
-          "incident tracking",
-          "vendor management",
-          "security training"
-        ],
-        "summary": "Raj Kapoor convened a meeting with Tyler, Ravi, Brian, and Mike to prepare for an upcoming SOC 2 Type II audit with a 90-day observation period starting March 1st. The team reviewed key control areas including access control, change management, incident tracking, monitoring, vendor management, and employee security training. Several gaps were identified, including a broken Zendesk-PagerDuty integration, inconsistent hotfix documentation, alert fatigue in the monitoring system, and incomplete security training completions. Action items were assigned to each team member with tight deadlines before the observation window opens."
-      },
-      {
-        "meeting_id": "01KQ2217B066855A3B7814CB",
-        "title": "Aegis / Meridian Capital - Service Reliability Discussion",
-        "topics": [
-          "outage",
-          "churn risk",
-          "infrastructure reliability",
-          "compliance",
-          "vendor review",
-          "incident communication"
-        ],
-        "summary": "Suki Nakamura from a financial services firm expressed serious concern over a six-hour threat monitoring outage on Monday that left her security team blind during ongoing regulatory audit conversations. Ravi Gupta acknowledged a known architectural single point of failure in Aegis Detect's event processing pipeline and outlined remediation steps including redundant nodes and a circuit breaker pattern targeted for end-of-month deployment. Suki disclosed that her CISO has initiated a formal vendor review and that the company is actively evaluating competitor SentinelShield. The call concluded with concrete commitments: Ravi will send an infrastructure audit summary by Monday, the technical fix will ship by end of March, and a follow-up check-in call is scheduled for two weeks out."
-      },
-      {
-        "meeting_id": "01KQ2331EFD78BF3B1CAB747",
-        "title": "Detect Outage - Customer Impact Assessment",
-        "topics": [
-          "product outage",
-          "churn risk",
-          "sla compliance",
-          "incident communication",
-          "internal monitoring failure",
-          "customer escalation"
-        ],
-        "summary": "The team convened an urgent internal call to address a significant outage of their Detect product that left customers without security monitoring for approximately six hours overnight. A single point of failure in the event ingestion pipeline caused a cascading failure, and critically, the company's own internal alerting also failed because the health checks were tied to the same broken pipeline \u2014 meaning a customer, not the team, flagged the outage. At least 47 support tickets have been logged, key enterprise accounts including Fortex and Meridian Financial are expressing dissatisfaction and referencing competitors, and SLA compliance issues are expected to result in credits. The team aligned on immediate action items including drafting a formal executive incident communication, pulling the full SLA exposure list, looping in legal and finance, and preparing customer-facing talking points to clarify that the Comply product was unaffected."
-      },
-      {
-        "meeting_id": "01KQ38C4101D6774F2F02331",
-        "title": "INCIDENT: Detect Pipeline Failure - War Room",
-        "topics": [
-          "outage",
-          "pipeline failure",
-          "customer escalation",
-          "incident response",
-          "data loss",
-          "technical debt"
-        ],
-        "summary": "A critical outage call was convened to address a complete failure of the Detect event processing pipeline that began around 9:14 AM Pacific. The ingestion pipeline's single primary node hit a memory ceiling and crashed due to lack of redundancy, a known tech debt issue that had been flagged but not prioritized. The outage went unannounced on the status page for approximately 90 minutes, causing enterprise customers including Harmon Financial and TerraLogix to escalate, with some customers mistakenly fearing a security breach. The team aligned on immediate actions: a stopgap fix involving a secondary node and temporary load balancer, a public customer statement clarifying there was no breach, and a post-mortem timeline, while acknowledging that 30-40% of event data during the outage window may be unrecoverable."
+        "summary": "Chris Lee held a sprint retrospective with Tyler Washington and Ravi Gupta to review the reliability sprint initiated after a major March outage. The team celebrated key achievements including redundant processing nodes and a circuit breaker implementation, with failover times hitting 12-14 seconds against a 30-second target. The team identified monitoring gaps in the event ingestion pipeline and discussed plans for a pipeline health dashboard. Chris proposed formalizing quarterly reliability-focused sprints and organizing a knowledge share with the broader engineering organization."
       }
     ]
   },
   {
-    "cluster_id": 7,
-    "generated_label": "backup / data / incident / elena",
-    "meeting_count": 18,
+    "cluster_id": 11,
+    "generated_label": "backup / performance / backup performance / david",
+    "meeting_count": 4,
     "top_terms": [
       "backup",
-      "data",
-      "incident",
-      "elena",
-      "outage",
-      "platform",
-      "communication",
-      "concern",
+      "performance",
+      "backup performance",
       "david",
-      "compliance",
-      "aegis",
-      "churn_signal"
+      "agent",
+      "debt",
+      "degradation",
+      "scheduler",
+      "sales",
+      "version",
+      "throughput",
+      "kendra"
     ],
     "top_topics": [
-      [
-        "compliance",
-        5
-      ],
-      [
-        "incident communication",
-        4
-      ],
-      [
-        "platform outage",
-        4
-      ],
-      [
-        "technical issue",
-        3
-      ],
-      [
-        "churn risk",
-        3
-      ],
-      [
-        "hipaa compliance",
-        3
-      ],
       [
         "backup performance",
         2
       ],
       [
+        "agent version update",
+        1
+      ],
+      [
+        "technical issue",
+        1
+      ],
+      [
+        "customer retention",
+        1
+      ],
+      [
+        "notification gap",
+        1
+      ],
+      [
         "escalation",
-        2
+        1
       ],
       [
-        "feature request",
-        2
+        "throughput degradation",
+        1
       ],
       [
-        "backup and recovery",
-        2
+        "platform incident",
+        1
+      ],
+      [
+        "sql server",
+        1
+      ],
+      [
+        "agent update",
+        1
       ]
     ],
     "key_moment_types": [
       [
         "concern",
-        21
-      ],
-      [
-        "churn_signal",
-        16
-      ],
-      [
-        "technical_issue",
-        14
-      ],
-      [
-        "positive_pivot",
-        8
-      ],
-      [
-        "feature_gap",
-        6
-      ],
-      [
-        "action_item",
         4
       ],
       [
-        "praise",
+        "technical_issue",
+        4
+      ],
+      [
+        "churn_signal",
         3
+      ],
+      [
+        "positive_pivot",
+        2
+      ],
+      [
+        "feature_gap",
+        2
+      ],
+      [
+        "action_item",
+        1
       ]
     ],
     "overall_sentiments": [
       [
         "mixed-negative",
-        11
+        3
       ],
       [
-        "mixed-positive",
-        4
-      ],
-      [
-        "very-positive",
-        2
-      ],
-      [
-        "very-negative",
+        "positive",
         1
       ]
     ],
@@ -1366,56 +1967,43 @@
         "summary": "Kendra Wallace from a retail company contacted Aegis Cloud Security support regarding severely degraded backup performance, with nightly jobs taking 4-6 hours instead of the usual 90 minutes over the past three weeks. David Kim identified a likely root cause: Kendra's environment is running backup agent version 3.4.1, which has a known change block tracking issue that causes over-scanning, while a fix was released in version 3.6.0 in late January. David acknowledged a process gap in that Kendra was not notified about the update. The resolution plan includes upgrading to 3.6.0 and a follow-up call on Monday, with escalation to senior engineering promised if the issue persists."
       },
       {
-        "meeting_id": "01KQ25D8AED944B5D2A9FF60",
-        "title": "Support Case #1514 - Meridian Capital Granular Restore Request",
+        "meeting_id": "01KQA7DFCE1285F52192B34B",
+        "title": "Support Case #9856 - Silverline Brands Backup Window Exceeded",
         "topics": [
-          "feature request",
-          "granular restore",
-          "backup and recovery",
-          "rto compliance",
-          "aws ebs",
-          "workaround"
+          "backup performance",
+          "throughput degradation",
+          "platform incident",
+          "sql server",
+          "agent update",
+          "support response time"
         ],
-        "summary": "Jason Hoffman from Meridian contacted Aegis support (Sarah Chen) regarding the lack of granular file-level restore capabilities in Aegis Protect. An analyst had accidentally overwritten config files on an EBS-backed EC2 trading platform, requiring a two-hour manual workaround involving spinning up a temporary instance to retrieve the files. Sarah confirmed that file-level restore is not currently supported and documented a formal feature request covering granular file-level restore from EBS snapshots, restore-to-alternate-path functionality, and a file metadata preview capability. The case will be logged, Jason's colleague Marcus Webb will be added, and the CSM will be looped in for follow-up."
+        "summary": "Dominic Flores, IT Director at Silverline Brands, called Aegis Cloud Security support regarding a two-week-old open case about backup jobs significantly overrunning their scheduled 1 AM\u20135 AM window, with SQL Server backups now taking up to 8\u20139 hours and causing production performance degradation. Support engineer David Kim identified a dramatic throughput drop from ~800 MB/s to ~180\u2013220 MB/s, potentially linked to backend network routing changes made during a March remediation effort for a separate module (Aegis Detect). David initiated immediate workarounds including a manual agent update to version 4.2.0 and SQL job priority adjustments, and escalated the issue as P1 to the infrastructure team. A follow-up call was scheduled for the next morning at 10 AM Central with a Protect platform engineer to review root cause findings."
       },
       {
-        "meeting_id": "01KQ325BDEDEE927D2970775",
-        "title": "Support Case #5889 - Ridgeline Logistics Detect Latency Issues",
+        "meeting_id": "01KQAC572C34475A8791F2C3",
+        "title": "Protect Team - Quarterly Planning",
         "topics": [
-          "product outage",
-          "alert latency",
-          "sla breach",
-          "incident communication",
-          "ot security",
-          "service credits"
+          "quarterly planning",
+          "incremental backup performance",
+          "restore ux improvement",
+          "multi-region replication",
+          "canary deployment",
+          "tech debt"
         ],
-        "summary": "Priya Patel from Aegis support contacted Paula Schneider of Ridgeline (a manufacturing/logistics company) regarding a multi-day alert latency issue with the Aegis Detect product. Priya confirmed the problem was caused by a cascading failure in Aegis's event processing pipeline, not anything on the customer's side, and apologized for the lack of proactive communication. Paula expressed concern about the security gap created by hour-long alert delays across their OT and manufacturing environments, and noted potential SLA violations and cyber insurance reporting requirements. Priya committed to a two-hour written update with fix timeline and backfill status, and offered to involve the account manager for remediation and service credit discussions."
+        "summary": "Mike Romano led a Q2 quarterly planning call for the Protect product with Ananya Sharma, Ravi Gupta, and Sofia Petrov. The team discussed three main initiatives: a 30%+ improvement to incremental backup performance targeting a late April canary rollout, a redesigned restore wizard UX that enables search-first file recovery, and multi-region replication which was scoped to Q3 rather than Q2 to avoid overpromising. The team also agreed to carve out capacity for tech debt work in the backup scheduler during Q2."
       },
       {
-        "meeting_id": "01KQ41FB5CCFD9EA583FB020",
-        "title": "Aegis / Harborview Banking - Threat Detection Tuning",
+        "meeting_id": "01KQD1270E98A7DFC55ADCF8",
+        "title": "Protect Performance - Scalability Concerns",
         "topics": [
-          "alert tuning",
-          "false positives",
-          "compliance",
-          "alert routing",
-          "data retention",
-          "financial services"
+          "performance degradation",
+          "architecture scalability",
+          "technical debt",
+          "incident risk",
+          "sales alignment",
+          "backup infrastructure"
         ],
-        "summary": "Lisa Park and Kevin O'Brien from Aegis held a threat detection tuning session with Patricia Dunn (VP of Security) and Michael Russo (Compliance Officer) from Harborview Banking, who went live on Aegis Detect seven weeks ago. The primary concerns discussed were alert fatigue from false positives driven by geo-anomaly detection for multi-timezone staff, compliance coverage gaps for FFIEC/SOX/GLBA requirements, and inefficient alert routing to a single shared SOC inbox. Kevin enabled alert mode on the privileged access monitoring ruleset during the call and identified that the data retention setting needs to be updated from 90 days to at least 12 months. A follow-up working session was planned for the week of March 16th to configure trusted location profiles and work schedule profiles for the Manila team."
-      },
-      {
-        "meeting_id": "01KQ560FF1570C5E7F71D752",
-        "title": "Aegis / Coastal Living Co - Protect Module Expansion",
-        "topics": [
-          "onboarding",
-          "backup and recovery",
-          "hybrid environment",
-          "data protection",
-          "compliance",
-          "retail seasonality"
-        ],
-        "summary": "Kevin O'Brien from Aegis spoke with Vanessa Cruz at Coastal Living about deploying Aegis Protect for their hybrid backup and recovery environment following a successful spring collection launch. Vanessa described a fragmented backup setup across CloudPrime and on-prem systems totaling 80-100TB across 40-50 workloads, with poor visibility being the primary pain point. Kevin outlined a phased three-part implementation plan, confirmed compatibility with their infrastructure, and discussed RPO/RTO requirements for their critical customer data platform. The call concluded with plans for a kickoff meeting the following Wednesday and next steps around onboarding documentation."
+        "summary": "The team convened to discuss alarming performance issues in the Protect module, triggered by load testing results showing backup job queue times spiking to 47 minutes at 2x P95 customer scale. Two compounding root causes were identified: a job scheduler not built for concurrent dispatch at current scale, and a synchronous I/O bottleneck in the snapshot deduplication layer. The full scheduler fix is estimated at six to eight weeks, raising concern about an upcoming growth quarter where sales is actively bundling Protect with Comply v2. As interim measures, the team agreed to throttle per-tenant job concurrency, fast-track an async fix for the dedup issue, and have a proactive conversation with sales about slowing Protect onboarding pace."
       }
     ]
   }

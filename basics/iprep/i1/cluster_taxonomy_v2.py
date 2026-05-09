@@ -45,9 +45,9 @@ Recommended interpretation:
 - Use rule-based or supervised classification for repeatable final reporting.
 
 Usage:
-    python basics/iprep/i1/cluster_taxonomy.py
-    python basics/iprep/i1/cluster_taxonomy.py --clusters 8
-    python basics/iprep/i1/cluster_taxonomy.py --auto-k --min-clusters 4 --max-clusters 12
+    python basics/iprep/i1/cluster_taxonomy_v2.py                          # auto-k (default)
+    python basics/iprep/i1/cluster_taxonomy_v2.py --no-auto-k --clusters 8 # fixed k
+    python basics/iprep/i1/cluster_taxonomy_v2.py --min-clusters 4 --max-clusters 12
 
 Outputs:
     basics/iprep/i1/cluster_work/meeting_clusters.csv
@@ -573,7 +573,7 @@ def main() -> None:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--clusters", type=int, default=8)
-    parser.add_argument("--auto-k", action="store_true")
+    parser.add_argument("--auto-k", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--min-clusters", type=int, default=4)
     parser.add_argument("--max-clusters", type=int, default=12)
     parser.add_argument("--top-terms", type=int, default=12)
@@ -586,13 +586,12 @@ def main() -> None:
     documents = load_meeting_documents(dataset_dir)
     if len(documents) < 2:
         raise SystemExit(f"Need at least two meeting summaries to cluster. Found {len(documents)}.")
-    
-    # The main output of this script is the cluster assignments and generated labels, but printing TF-IDF weights for a sample document can help verify that the vectorization is working as expected. This can be especially useful if the clustering results are not interpretable, as it allows you to inspect the underlying features that are being used to group the documents.
-    vectorizer, matrix, kmeans, cluster_labels = cluster_documents(documents, num_clusters=args.clusters, max_features=args.max_features)
-    print_vectorizer_info(vectorizer, matrix, documents)  
-    
-    
-    # Optional: automatically choose k by silhouette score over a candidate range. This is not a perfect method, but it provides a simple quantitative check to avoid picking a k where clusters are obviously overlapping or poorly separated. The final decision on k should still consider interpretability and business needs, not just the silhouette score.
+
+    vectorizer, matrix, kmeans, cluster_labels = cluster_documents(
+        documents, num_clusters=args.clusters, max_features=args.max_features
+    )
+    print_vectorizer_info(vectorizer, matrix, documents)
+
     clusters = args.clusters
     score_rows: list[dict[str, float | int]] = []
     if args.auto_k:
@@ -602,14 +601,17 @@ def main() -> None:
             max_clusters=args.max_clusters,
             random_state=args.random_state,
         )
+        # Re-cluster with the chosen k; vectorizer/matrix are k-independent
+        _, _, kmeans, cluster_labels = cluster_documents(
+            documents, num_clusters=clusters, max_features=args.max_features
+        )
+
     silhouette = compute_silhouette_score(matrix, list(cluster_labels))
     if not score_rows:
         score_rows = [{"clusters": clusters, "silhouette_score": silhouette if silhouette is not None else float("nan")}]
-        
-    # Print silhouette score with an interpretability guide. This helps evaluate the quality of the clustering results. A higher silhouette score indicates better-defined clusters, while a score near 0 suggests that clusters are overlapping. If the score is negative, it may indicate that many points are assigned to the wrong cluster. However, the silhouette score should be interpreted in the context of the specific dataset and business needs, as a low score does not necessarily mean the clusters are not useful for discovery and review.
+
     print_silhouette_score(silhouette)
 
-    # Extract top terms for each cluster and build a human-friendly summary of cluster contents. The summary includes the generated label, the most common original topics, and the most common key-moment types. These summaries are not definitive business taxonomy names, but they provide a starting point for human review and iteration.
     cluster_terms = get_top_terms(vectorizer, kmeans, args.top_terms)
     cluster_summary = summarize_clusters(
         documents=documents,
@@ -627,8 +629,7 @@ def main() -> None:
         "random_state": args.random_state,
         "max_features": args.max_features,
     }
-    
-    # Write outputs for review and downstream analysis. The generated CSV and JSON files include the cluster assignments for each meeting, the top TF-IDF terms for each cluster, a summary of cluster contents with examples, and the silhouette score for the selected clustering. These artifacts are designed to facilitate human review and iteration on the generated clusters.
+
     write_outputs(
         output_dir=args.output_dir.resolve(),
         documents=documents,
@@ -639,7 +640,6 @@ def main() -> None:
         score_rows=score_rows,
     )
 
-    # Print a compact terminal summary of generated clusters. This provides an immediate overview of the clustering results without needing to open the output files. It shows the generated label, the number of meetings in each cluster, the top TF-IDF terms, the most common original topics, and the most common key-moment types for each cluster.   
     print_cluster_summary(cluster_summary)
 
 
