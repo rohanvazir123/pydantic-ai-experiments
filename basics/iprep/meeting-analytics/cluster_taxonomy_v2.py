@@ -45,16 +45,16 @@ Recommended interpretation:
 - Use rule-based or supervised classification for repeatable final reporting.
 
 Usage:
-    python basics/iprep/i1/cluster_taxonomy_v2.py                          # auto-k (default)
-    python basics/iprep/i1/cluster_taxonomy_v2.py --no-auto-k --clusters 8 # fixed k
-    python basics/iprep/i1/cluster_taxonomy_v2.py --min-clusters 4 --max-clusters 12
+    python basics/iprep/meeting-analytics/cluster_taxonomy_v2.py                          # auto-k (default)
+    python basics/iprep/meeting-analytics/cluster_taxonomy_v2.py --no-auto-k --clusters 8 # fixed k
+    python basics/iprep/meeting-analytics/cluster_taxonomy_v2.py --min-clusters 4 --max-clusters 12
 
 Outputs:
-    basics/iprep/i1/cluster_work/meeting_clusters.csv
-    basics/iprep/i1/cluster_work/cluster_summary.json
-    basics/iprep/i1/cluster_work/cluster_terms.csv
-    basics/iprep/i1/cluster_work/cluster_metrics.json
-    basics/iprep/i1/cluster_work/cluster_scores.csv
+    basics/iprep/meeting-analytics/cluster_work/meeting_clusters.csv
+    basics/iprep/meeting-analytics/cluster_work/cluster_summary.json
+    basics/iprep/meeting-analytics/cluster_work/cluster_terms.csv
+    basics/iprep/meeting-analytics/cluster_work/cluster_metrics.json
+    basics/iprep/meeting-analytics/cluster_work/cluster_scores.csv
 """
 
 from __future__ import annotations
