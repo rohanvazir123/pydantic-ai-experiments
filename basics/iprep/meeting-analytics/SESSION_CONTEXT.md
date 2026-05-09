@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-09 (session 4)
+Last updated: 2026-05-09 (session 6)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -18,6 +18,18 @@ Three approaches to clustering meeting topics into themes:
 
 ## Current state
 
+### Housekeeping completed across sessions (session 6 additions)
+- take_c_design.md updated to v0.4 — Context & Goals rewritten with Goal 1/2/3 framing matching Take A and Take B
+- Postgres consolidated to ONE target: rag_db @ localhost:5434 (rag_user:rag_pass) for all three takes
+- Port inventory confirmed: 5432=local Windows Postgres (postgres:postgres, 10 Take A tables only, no pgvector), 5433=Apache AGE Docker (KG project, separate), 5434=Docker pgvector (rag_user:rag_pass, all 16 tables)
+- take_b/load_outputs_to_pg.py written — loads 3 Take B tables from outputs/ CSVs (no re-clustering needed)
+- take_c/load_outputs_to_pg.py written — loads 3 Take C tables from outputs/ JSON+CSVs (no re-embedding needed)
+- setup_all_tables.py written — master one-shot script: Take A --reset + Take B loader + Take C loader → 16 tables
+- export_all_to_csv.py written — exports all 16 Postgres tables to outputs/csv/ as flat-file backup
+- All three FAQs updated with "How do I reload tables into Postgres?" entries
+- Insight catalogue built: 10 insights with SQL, stakeholder, and reading for each
+- Background Take C re-run completed (exit code 0, 144s, 26 clusters again)
+
 ### Housekeeping completed across sessions
 - Directory renamed: basics/iprep/i1 → basics/iprep/meeting-analytics
 - Folder re-org: scripts split into take_a/, take_b/, take_c/ subdirs
@@ -27,6 +39,11 @@ Three approaches to clustering meeting topics into themes:
 - faq.txt split into per-take markdown files with TOC (take_a_faq.md, take_b_faq.md, take_c_faq.md)
 - take_c_design.md updated to v0.3 — actual run results, corrected schema, resolved open questions
 - compare_b_vs_c.py written and run — cross-validation complete
+- take_a_design.md written (v0.1) — full retrospective design doc
+- take_a_faq.md expanded to 10 entries (was 1)
+- take_b_faq.md expanded to 6 entries — output→step mapping added, step labels added to source
+- take_c_faq.md expanded to 12 entries — UMAP/HDBSCAN mechanics, LLM vs HDBSCAN output split
+- Pipeline step labels [1/7]–[7/7] added to cluster_taxonomy_v2.py main()
 
 ### Take B — complete and validated
 File: basics/iprep/meeting-analytics/take_b/cluster_taxonomy_v2.py
@@ -66,23 +83,28 @@ Steps:
 Result: 26 clusters, 22 noise phrases (6.4%), 9 tight / 17 review / 0 loose.
 All 26 clusters got clean LLM labels — zero fallbacks triggered.
 
-### Postgres store — fully implemented and working
-File: basics/iprep/meeting-analytics/take_c/take_c_pg_store.py
-DB: rag_db @ localhost:5434 (rag_user:rag_pass) — pgvector installed, meeting_analytics schema
-Tables in meeting_analytics schema:
-  semantic_clusters        — cluster_id, theme_title, audience, rationale
-  semantic_phrases         — canonical text + vector(768) IVFFlat + tsvector GIN
-  semantic_meeting_themes  — meeting_id, cluster_id, is_primary, call_type, sentiment
+### Postgres — all 16 tables in meeting_analytics @ rag_db localhost:5434
+DB: rag_db @ localhost:5434 (rag_user:rag_pass) — pgvector installed
+Credentials in: basics/iprep/meeting-analytics/.env
 
-8 insight query methods (all implemented, run automatically after persist):
-  insight_theme_sentiment()
-  insight_churn_by_theme()
-  insight_call_type_theme_matrix()
-  insight_feature_gap_themes()
-  insight_sentiment_distribution_by_theme()
-  insight_signal_counts_by_theme()
-  insight_theme_cooccurrence()
-  insight_high_risk_meetings()
+Take A tables (10): meetings, meeting_participants, meeting_summaries, summary_topics,
+  action_items, key_moments, transcript_lines, meeting_themes, call_types, sentiment_features
+
+Take B tables (3):
+  kmeans_clusters         — cluster_id, label (top-4 centroid terms), meeting_count, silhouette_score
+  kmeans_cluster_terms    — cluster_id, rank, term (top-12 per cluster)
+  kmeans_meeting_clusters — meeting_id → cluster_id (hard single assignment)
+
+Take C tables (3):
+  semantic_clusters        — cluster_id, theme_title, audience, rationale, phrase_count
+  semantic_phrases         — canonical text + vector(768) + tsvector GIN (embedding=NULL in CSV path)
+  semantic_meeting_themes  — meeting_id, cluster_id, is_primary, call_type, call_confidence, sentiment
+
+Setup scripts:
+  setup_all_tables.py       — one-shot: Take A --reset + Take B loader + Take C loader (16 tables)
+  take_b/load_outputs_to_pg.py — load Take B from outputs/ CSVs only (no re-clustering)
+  take_c/load_outputs_to_pg.py — load Take C from outputs/ JSON+CSVs only (no re-embedding)
+  export_all_to_csv.py      — snapshot all 16 tables to outputs/csv/ (run after any pipeline change)
 
 ### Take B vs Take C cross-validation — COMPLETE
 Script: basics/iprep/meeting-analytics/compare_b_vs_c.py (run from repo root)
@@ -102,25 +124,21 @@ Key findings:
 
 1. DELIVERABLES (from req.md — all three required)
 
-   a) Slide deck (30-min presentation to product + engineering leadership)
-      - Lead with insights, not code
-      - Show all 3 approaches + progression reasoning
-      - Key charts: theme x sentiment heatmap, churn by theme, call type distribution
-      - Headline finding: B vs C cross-validation confirms themes are real signal
-      - At least 2-3 bonus insight ideas beyond the required tasks
-
-   b) Jupyter notebook (technical reference material)
-      - Must be clean and runnable end-to-end
-      - Cover: data loading, Take A (rule-based), Take B (TF-IDF/KMeans),
-        Take C (semantic clustering), insight queries, key findings
-      - Include UMAP 2-dim scatter plot (viz_coords already saved in outputs)
-      - Include B vs C cross-tab comparison
+   a) Jupyter notebook (technical reference material) — START HERE
+      - Connect to rag_db @ localhost:5434 for all queries
+      - Cover: data loading, Take A, Take B, Take C, insight queries, key findings
+      - 10 insight queries catalogued (see session 6 notes) — turn into charts
+      - Include UMAP 2-dim scatter plot (viz_coords.csv in take_c/outputs/ — check if still there)
+      - Include B vs C cross-tab comparison (compare_b_vs_c.py output)
       - Kernel: pydantic_ai_agents conda env
-      - Explain key decisions in markdown cells
+
+   b) Slide deck (30-min presentation to product + engineering leadership)
+      - Lead with insights, not code
+      - Key charts from notebook: theme x sentiment heatmap, churn by theme, call type distribution
+      - Headline finding: Reliability is the #1 churn driver (1.04 churn signals/meeting)
+      - B vs C cross-validation confirms themes are real signal, not artefacts
 
    c) Video demo (5-10 min screen recording with narration)
-      - Show pipeline running
-      - Walk through outputs and insights/visualizations
 
 ---
 
@@ -143,6 +161,8 @@ meeting-analytics/
 ├── SESSION_CONTEXT.md
 ├── req.md / req.pdf           source of truth for deliverables
 ├── compare_b_vs_c.py          Take B vs Take C cross-validation script
+├── setup_all_tables.py        One-shot: reload all 16 tables (Take A --reset + B + C loaders)
+├── export_all_to_csv.py       Snapshot all 16 Postgres tables to outputs/csv/
 ├── notes.txt                  running project notes
 ├── schema_dump.sql            DBeaver introspection queries
 ├── list_of_topics.txt         351 unique topics extracted across 100 meetings
@@ -151,22 +171,24 @@ meeting-analytics/
 ├── take_a/
 │   ├── generate_rule_based_taxonomy.py   main Take A script
 │   ├── load_dataset_to_postgres.py       raw JSON → Postgres loader
-│   ├── export_taxonomy_prompt_inputs.py  exports topics for LLM taxonomy review
-│   ├── take_a_faq.md                     FAQ with TOC
-│   └── taxonomy_work/                    taxonomy_input.json + taxonomy_prompt.md
+│   ├── take_a_design.md                  design doc (v0.1) — pipeline, schema, decisions
+│   └── take_a_faq.md                     FAQ with TOC (11 entries)
 ├── take_b/
-│   ├── cluster_taxonomy_v2.py            TF-IDF + KMeans (auto-k default)
-│   ├── take_b_faq.md                     FAQ with TOC (5 entries)
+│   ├── cluster_taxonomy_v2.py            TF-IDF + KMeans (auto-k default, [1/7]–[7/7] steps labelled)
+│   ├── load_outputs_to_pg.py             Load Take B outputs → 3 Postgres tables (no re-clustering)
+│   ├── take_b_faq.md                     FAQ with TOC (7 entries)
 │   └── outputs/                          meeting_clusters.csv, cluster_summary.json,
 │                                         cluster_terms.csv, take_b_run.log, ...
+├── outputs/csv/                           Flat-file backup of all 16 Postgres tables
 └── take_c/
     ├── take_c_semantic_clustering.py     main Take C pipeline (9 steps)
     ├── take_c_pg_store.py                Postgres store (SemanticClusterStore)
-    ├── take_c_design.md                  design decisions — v0.3, fully updated
-    ├── take_c_faq.md                     FAQ with TOC (12 entries)
+    ├── load_outputs_to_pg.py             Load Take C outputs → 3 Postgres tables (no re-embedding)
+    ├── take_c_design.md                  design decisions — v0.4, Goal 1/2/3 framing added
+    ├── take_c_faq.md                     FAQ with TOC (13 entries)
     └── outputs/                          meeting_themes.csv, phrase_clusters.csv,
                                           semantic_clusters.json, cluster_metrics.json,
-                                          take_c_run.log (131KB)
+                                          take_c_run.log
 ```
 
 ---

@@ -1,0 +1,601 @@
+meeting_id,topic,normalized_topic
+01KQ03B0303900521BB089CA,outage remediation,outage remediation
+01KQ03B0303900521BB089CA,incident response,incident response
+01KQ03B0303900521BB089CA,customer communication,customer communication
+01KQ03B0303900521BB089CA,security monitoring,security monitoring
+01KQ03B0303900521BB089CA,postmortem planning,postmortem planning
+01KQ03B0303900521BB089CA,infrastructure reliability,infrastructure reliability
+01KQ0C1280EDA4E70AAD7C35,billing dispute,billing dispute
+01KQ0C1280EDA4E70AAD7C35,seat overage,seat overage
+01KQ0C1280EDA4E70AAD7C35,migration cleanup,migration cleanup
+01KQ0C1280EDA4E70AAD7C35,identity management,identity management
+01KQ0C1280EDA4E70AAD7C35,billing adjustment,billing adjustment
+01KQ0C1280EDA4E70AAD7C35,provisioning,provisioning
+01KQ0CAE7F064EC93F0540CA,pipeline reliability,pipeline reliability
+01KQ0CAE7F064EC93F0540CA,kafka configuration,kafka configuration
+01KQ0CAE7F064EC93F0540CA,sprint planning,sprint planning
+01KQ0CAE7F064EC93F0540CA,comply v2 launch,comply v2 launch
+01KQ0CAE7F064EC93F0540CA,resource allocation,resource allocation
+01KQ0CAE7F064EC93F0540CA,timeline risk,timeline risk
+01KQ0DFE299AC7A74E8022CA,iso 27001,iso 27001
+01KQ0DFE299AC7A74E8022CA,compliance reporting,compliance reporting
+01KQ0DFE299AC7A74E8022CA,onboarding,onboarding
+01KQ0DFE299AC7A74E8022CA,healthcare,healthcare
+01KQ0DFE299AC7A74E8022CA,multi-framework coverage,multi-framework coverage
+01KQ0DFE299AC7A74E8022CA,audit preparation,audit preparation
+01KQ0F8AFF3DA34FD4580008,renewal,renewal
+01KQ0F8AFF3DA34FD4580008,outage,outage
+01KQ0F8AFF3DA34FD4580008,competitive threat,competitive threat
+01KQ0F8AFF3DA34FD4580008,compliance,compliance
+01KQ0F8AFF3DA34FD4580008,cloud expansion,cloud expansion
+01KQ0F8AFF3DA34FD4580008,pricing,pricing
+01KQ1267C6AA7D9B3125FEC8,soc 2 audit,soc 2 audit
+01KQ1267C6AA7D9B3125FEC8,access control,access control
+01KQ1267C6AA7D9B3125FEC8,change management,change management
+01KQ1267C6AA7D9B3125FEC8,incident tracking,incident tracking
+01KQ1267C6AA7D9B3125FEC8,vendor management,vendor management
+01KQ1267C6AA7D9B3125FEC8,security training,security training
+01KQ1A6B7E81B06F4A13B60D,backup performance,backup performance
+01KQ1A6B7E81B06F4A13B60D,agent version update,agent version update
+01KQ1A6B7E81B06F4A13B60D,technical issue,technical issue
+01KQ1A6B7E81B06F4A13B60D,customer retention,customer retention
+01KQ1A6B7E81B06F4A13B60D,notification gap,notification gap
+01KQ1A6B7E81B06F4A13B60D,escalation,escalation
+01KQ1DC6CA536DE1B31ED8F5,renewal,renewal
+01KQ1DC6CA536DE1B31ED8F5,billing dispute,billing dispute
+01KQ1DC6CA536DE1B31ED8F5,overage charges,overage charges
+01KQ1DC6CA536DE1B31ED8F5,compliance,compliance
+01KQ1DC6CA536DE1B31ED8F5,contract negotiation,contract negotiation
+01KQ1DC6CA536DE1B31ED8F5,product add-on,product add-on
+01KQ1DCC80852AE384C898C9,outage,outage
+01KQ1DCC80852AE384C898C9,renewal,renewal
+01KQ1DCC80852AE384C898C9,compliance,compliance
+01KQ1DCC80852AE384C898C9,competitive evaluation,competitive evaluation
+01KQ1DCC80852AE384C898C9,pricing,pricing
+01KQ1DCC80852AE384C898C9,sla breach,sla breach
+01KQ1DE954A807A5D2653175,launch readiness,launch readiness
+01KQ1DE954A807A5D2653175,compliance reporting,compliance reporting
+01KQ1DE954A807A5D2653175,api rate limiting,api rate limiting
+01KQ1DE954A807A5D2653175,documentation,documentation
+01KQ1DE954A807A5D2653175,incident impact,incident impact
+01KQ1DE954A807A5D2653175,hipaa,hipaa
+01KQ2217B066855A3B7814CB,outage,outage
+01KQ2217B066855A3B7814CB,churn risk,churn risk
+01KQ2217B066855A3B7814CB,infrastructure reliability,infrastructure reliability
+01KQ2217B066855A3B7814CB,compliance,compliance
+01KQ2217B066855A3B7814CB,vendor review,vendor review
+01KQ2217B066855A3B7814CB,incident communication,incident communication
+01KQ2331EFD78BF3B1CAB747,product outage,product outage
+01KQ2331EFD78BF3B1CAB747,churn risk,churn risk
+01KQ2331EFD78BF3B1CAB747,sla compliance,sla compliance
+01KQ2331EFD78BF3B1CAB747,incident communication,incident communication
+01KQ2331EFD78BF3B1CAB747,internal monitoring failure,internal monitoring failure
+01KQ2331EFD78BF3B1CAB747,customer escalation,customer escalation
+01KQ25D8AED944B5D2A9FF60,feature request,feature request
+01KQ25D8AED944B5D2A9FF60,granular restore,granular restore
+01KQ25D8AED944B5D2A9FF60,backup and recovery,backup and recovery
+01KQ25D8AED944B5D2A9FF60,rto compliance,rto compliance
+01KQ25D8AED944B5D2A9FF60,aws ebs,aws ebs
+01KQ25D8AED944B5D2A9FF60,workaround,workaround
+01KQ298F2846EFE59B0D70E2,platform outage,platform outage
+01KQ298F2846EFE59B0D70E2,competitive displacement,competitive displacement
+01KQ298F2846EFE59B0D70E2,customer retention,customer retention
+01KQ298F2846EFE59B0D70E2,post-mortem,post-mortem
+01KQ298F2846EFE59B0D70E2,product launch,product launch
+01KQ298F2846EFE59B0D70E2,compliance,compliance
+01KQ2B4878EC7B3EE5547007,compliance automation,compliance automation
+01KQ2B4878EC7B3EE5547007,soc 2,soc 2
+01KQ2B4878EC7B3EE5547007,iso 27001,iso 27001
+01KQ2B4878EC7B3EE5547007,audit preparation,audit preparation
+01KQ2B4878EC7B3EE5547007,product demo,product demo
+01KQ2B4878EC7B3EE5547007,platform integration,platform integration
+01KQ2D93184912F0147315E7,service outage,service outage
+01KQ2D93184912F0147315E7,threat monitoring failure,threat monitoring failure
+01KQ2D93184912F0147315E7,sla breach,sla breach
+01KQ2D93184912F0147315E7,churn risk,churn risk
+01KQ2D93184912F0147315E7,incident escalation,incident escalation
+01KQ2D93184912F0147315E7,proactive communication failure,proactive communication failure
+01KQ31ED026F745FE2A55CCD,roadmap planning,roadmap planning
+01KQ31ED026F745FE2A55CCD,identity & access management,identity & access management
+01KQ31ED026F745FE2A55CCD,scim / provisioning,scim / provisioning
+01KQ31ED026F745FE2A55CCD,adaptive mfa,adaptive mfa
+01KQ31ED026F745FE2A55CCD,compliance integration,compliance integration
+01KQ31ED026F745FE2A55CCD,competitive landscape,competitive landscape
+01KQ325BDEDEE927D2970775,product outage,product outage
+01KQ325BDEDEE927D2970775,alert latency,alert latency
+01KQ325BDEDEE927D2970775,sla breach,sla breach
+01KQ325BDEDEE927D2970775,incident communication,incident communication
+01KQ325BDEDEE927D2970775,ot security,ot security
+01KQ325BDEDEE927D2970775,service credits,service credits
+01KQ351E141926AB7CAB668D,outage,outage
+01KQ351E141926AB7CAB668D,compliance,compliance
+01KQ351E141926AB7CAB668D,churn risk,churn risk
+01KQ351E141926AB7CAB668D,sla review,sla review
+01KQ351E141926AB7CAB668D,incident response,incident response
+01KQ351E141926AB7CAB668D,renewal,renewal
+01KQ38C4101D6774F2F02331,outage,outage
+01KQ38C4101D6774F2F02331,pipeline failure,pipeline failure
+01KQ38C4101D6774F2F02331,customer escalation,customer escalation
+01KQ38C4101D6774F2F02331,incident response,incident response
+01KQ38C4101D6774F2F02331,data loss,data loss
+01KQ38C4101D6774F2F02331,technical debt,technical debt
+01KQ38FE02AEE5AA5157F042,product bug,product bug
+01KQ38FE02AEE5AA5157F042,compliance reporting,compliance reporting
+01KQ38FE02AEE5AA5157F042,pdf rendering,pdf rendering
+01KQ38FE02AEE5AA5157F042,new release issue,new release issue
+01KQ38FE02AEE5AA5157F042,audit deadline,audit deadline
+01KQ38FE02AEE5AA5157F042,workaround,workaround
+01KQ3BD8DEEBC7FECD107F0F,hipaa compliance,hipaa compliance
+01KQ3BD8DEEBC7FECD107F0F,compliance reporting,compliance reporting
+01KQ3BD8DEEBC7FECD107F0F,proof of concept,proof of concept
+01KQ3BD8DEEBC7FECD107F0F,logvault integration,logvault integration
+01KQ3BD8DEEBC7FECD107F0F,multi-framework support,multi-framework support
+01KQ3BD8DEEBC7FECD107F0F,audit automation,audit automation
+01KQ3C837D7EF689408DCF95,aws s3 connector,aws s3 connector
+01KQ3C837D7EF689408DCF95,backup failure,backup failure
+01KQ3C837D7EF689408DCF95,403 error,403 error
+01KQ3C837D7EF689408DCF95,iam permissions,iam permissions
+01KQ3C837D7EF689408DCF95,service control policies,service control policies
+01KQ3C837D7EF689408DCF95,connector configuration,connector configuration
+01KQ3CE40428CCC5FF433FFC,outage post-mortem,outage post-mortem
+01KQ3CE40428CCC5FF433FFC,infrastructure reliability,infrastructure reliability
+01KQ3CE40428CCC5FF433FFC,customer communication,customer communication
+01KQ3CE40428CCC5FF433FFC,product visibility,product visibility
+01KQ3CE40428CCC5FF433FFC,roadmap prioritization,roadmap prioritization
+01KQ3CE40428CCC5FF433FFC,renewal risk,renewal risk
+01KQ3D8C1EF16C042F31FAFD,renewal,renewal
+01KQ3D8C1EF16C042F31FAFD,compliance,compliance
+01KQ3D8C1EF16C042F31FAFD,outage follow-up,outage follow-up
+01KQ3D8C1EF16C042F31FAFD,product upsell,product upsell
+01KQ3D8C1EF16C042F31FAFD,pricing,pricing
+01KQ3D8C1EF16C042F31FAFD,pci dss,pci dss
+01KQ3F90FF9EBC3DB3632514,sprint retrospective,sprint retrospective
+01KQ3F90FF9EBC3DB3632514,identity management,identity management
+01KQ3F90FF9EBC3DB3632514,sprint planning,sprint planning
+01KQ3F90FF9EBC3DB3632514,estimation,estimation
+01KQ3F90FF9EBC3DB3632514,scim provisioning,scim provisioning
+01KQ3F90FF9EBC3DB3632514,comply integration,comply integration
+01KQ410FB7E434BA3F99EE7D,renewal,renewal
+01KQ410FB7E434BA3F99EE7D,contract negotiation,contract negotiation
+01KQ410FB7E434BA3F99EE7D,api rate limits,api rate limits
+01KQ410FB7E434BA3F99EE7D,compliance reporting,compliance reporting
+01KQ410FB7E434BA3F99EE7D,platform outage,platform outage
+01KQ410FB7E434BA3F99EE7D,competitive displacement,competitive displacement
+01KQ41FB5CCFD9EA583FB020,alert tuning,alert tuning
+01KQ41FB5CCFD9EA583FB020,false positives,false positives
+01KQ41FB5CCFD9EA583FB020,compliance,compliance
+01KQ41FB5CCFD9EA583FB020,alert routing,alert routing
+01KQ41FB5CCFD9EA583FB020,data retention,data retention
+01KQ41FB5CCFD9EA583FB020,financial services,financial services
+01KQ445B1B5B890316C9E300,post-mortem follow-up,post-mortem follow-up
+01KQ445B1B5B890316C9E300,compliance bug,compliance bug
+01KQ445B1B5B890316C9E300,circuit breaker,circuit breaker
+01KQ445B1B5B890316C9E300,load testing,load testing
+01KQ445B1B5B890316C9E300,incident response,incident response
+01KQ445B1B5B890316C9E300,runbook,runbook
+01KQ4529010F423FD9DB40BD,win-loss analysis,win-loss analysis
+01KQ4529010F423FD9DB40BD,competitive intelligence,competitive intelligence
+01KQ4529010F423FD9DB40BD,reliability / outage impact,reliability / outage impact
+01KQ4529010F423FD9DB40BD,sales process,sales process
+01KQ4529010F423FD9DB40BD,collateral gaps,collateral gaps
+01KQ4529010F423FD9DB40BD,q1 review,q1 review
+01KQ45C0AD36B351A3571940,compliance,compliance
+01KQ45C0AD36B351A3571940,pci dss,pci dss
+01KQ45C0AD36B351A3571940,product demo,product demo
+01KQ45C0AD36B351A3571940,audit readiness,audit readiness
+01KQ45C0AD36B351A3571940,feature request,feature request
+01KQ45C0AD36B351A3571940,product integration,product integration
+01KQ45C76AF3AEA6B3EA6697,renewal,renewal
+01KQ45C76AF3AEA6B3EA6697,outage,outage
+01KQ45C76AF3AEA6B3EA6697,sla,sla
+01KQ45C76AF3AEA6B3EA6697,compliance,compliance
+01KQ45C76AF3AEA6B3EA6697,cmmc,cmmc
+01KQ45C76AF3AEA6B3EA6697,competitive threat,competitive threat
+01KQ45F6F7349D0A620571F1,churn risk,churn risk
+01KQ45F6F7349D0A620571F1,outage post-mortem,outage post-mortem
+01KQ45F6F7349D0A620571F1,competitor evaluation,competitor evaluation
+01KQ45F6F7349D0A620571F1,alert fatigue,alert fatigue
+01KQ45F6F7349D0A620571F1,contract renewal,contract renewal
+01KQ45F6F7349D0A620571F1,compliance,compliance
+01KQ46A9DE0AECB006D897A0,service outage,service outage
+01KQ46A9DE0AECB006D897A0,incident response,incident response
+01KQ46A9DE0AECB006D897A0,customer communication,customer communication
+01KQ46A9DE0AECB006D897A0,architecture gap,architecture gap
+01KQ46A9DE0AECB006D897A0,churn risk,churn risk
+01KQ46A9DE0AECB006D897A0,sla compliance,sla compliance
+01KQ4D01DCB15C69672AB5AF,onboarding,onboarding
+01KQ4D01DCB15C69672AB5AF,compliance,compliance
+01KQ4D01DCB15C69672AB5AF,hipaa,hipaa
+01KQ4D01DCB15C69672AB5AF,soc 2,soc 2
+01KQ4D01DCB15C69672AB5AF,deployment,deployment
+01KQ4D01DCB15C69672AB5AF,multi-framework support,multi-framework support
+01KQ4D504CE09A8F6ECA1F5A,identity roadmap,identity roadmap
+01KQ4D504CE09A8F6ECA1F5A,mfa policy engine,mfa policy engine
+01KQ4D504CE09A8F6ECA1F5A,sso connectors,sso connectors
+01KQ4D504CE09A8F6ECA1F5A,qa process,qa process
+01KQ4D504CE09A8F6ECA1F5A,sprint planning,sprint planning
+01KQ4D504CE09A8F6ECA1F5A,infrastructure bottleneck,infrastructure bottleneck
+01KQ4D71CDFB1045A2458216,renewal,renewal
+01KQ4D71CDFB1045A2458216,compliance,compliance
+01KQ4D71CDFB1045A2458216,incident review,incident review
+01KQ4D71CDFB1045A2458216,product update,product update
+01KQ4D71CDFB1045A2458216,expansion,expansion
+01KQ4D71CDFB1045A2458216,healthcare security,healthcare security
+01KQ4EE836687F95080D92AB,sprint planning,sprint planning
+01KQ4EE836687F95080D92AB,pipeline architecture,pipeline architecture
+01KQ4EE836687F95080D92AB,single point of failure,single point of failure
+01KQ4EE836687F95080D92AB,ci/cd improvement,ci/cd improvement
+01KQ4EE836687F95080D92AB,capacity planning,capacity planning
+01KQ4EE836687F95080D92AB,sprint retrospective,sprint retrospective
+01KQ51DC4345D9DAE005678C,hipaa reporting,hipaa reporting
+01KQ51DC4345D9DAE005678C,compliance tooling,compliance tooling
+01KQ51DC4345D9DAE005678C,feature gaps,feature gaps
+01KQ51DC4345D9DAE005678C,product feedback,product feedback
+01KQ51DC4345D9DAE005678C,audit workflow,audit workflow
+01KQ51DC4345D9DAE005678C,roadmap,roadmap
+01KQ54917E3931712516916D,compliance reporting,compliance reporting
+01KQ54917E3931712516916D,product demo,product demo
+01KQ54917E3931712516916D,onboarding,onboarding
+01KQ54917E3931712516916D,pci dss,pci dss
+01KQ54917E3931712516916D,multi-framework support,multi-framework support
+01KQ54917E3931712516916D,upgrade rollout,upgrade rollout
+01KQ560FF1570C5E7F71D752,onboarding,onboarding
+01KQ560FF1570C5E7F71D752,backup and recovery,backup and recovery
+01KQ560FF1570C5E7F71D752,hybrid environment,hybrid environment
+01KQ560FF1570C5E7F71D752,data protection,data protection
+01KQ560FF1570C5E7F71D752,compliance,compliance
+01KQ560FF1570C5E7F71D752,retail seasonality,retail seasonality
+01KQ56786DD1E8A1BF174FDD,compliance reporting,compliance reporting
+01KQ56786DD1E8A1BF174FDD,product release,product release
+01KQ56786DD1E8A1BF174FDD,multi-framework support,multi-framework support
+01KQ56786DD1E8A1BF174FDD,feature request,feature request
+01KQ56786DD1E8A1BF174FDD,upgrade migration,upgrade migration
+01KQ56786DD1E8A1BF174FDD,hipaa,hipaa
+01KQ56AA6B60801ABC01AB1C,billing dispute,billing dispute
+01KQ56AA6B60801ABC01AB1C,overage charges,overage charges
+01KQ56AA6B60801ABC01AB1C,product migration,product migration
+01KQ56AA6B60801ABC01AB1C,outage impact,outage impact
+01KQ56AA6B60801ABC01AB1C,compliance reporting,compliance reporting
+01KQ56AA6B60801ABC01AB1C,alert misconfiguration,alert misconfiguration
+01KQ56D878454E5783DC6D94,technical issue,technical issue
+01KQ56D878454E5783DC6D94,logvault integration,logvault integration
+01KQ56D878454E5783DC6D94,data backfill,data backfill
+01KQ56D878454E5783DC6D94,circuit breaker,circuit breaker
+01KQ56D878454E5783DC6D94,churn risk,churn risk
+01KQ56D878454E5783DC6D94,incident follow-up,incident follow-up
+01KQ5A966832A146DA4B7D41,mfa enforcement,mfa enforcement
+01KQ5A966832A146DA4B7D41,identity & access management,identity & access management
+01KQ5A966832A146DA4B7D41,churn risk,churn risk
+01KQ5A966832A146DA4B7D41,support escalation,support escalation
+01KQ5A966832A146DA4B7D41,outage follow-up,outage follow-up
+01KQ5A966832A146DA4B7D41,renewal,renewal
+01KQ5AFAE8264DDC0ED2AE7F,identity deployment,identity deployment
+01KQ5AFAE8264DDC0ED2AE7F,privileged access management,privileged access management
+01KQ5AFAE8264DDC0ED2AE7F,mfa migration,mfa migration
+01KQ5AFAE8264DDC0ED2AE7F,compliance audit,compliance audit
+01KQ5AFAE8264DDC0ED2AE7F,entra id integration,entra id integration
+01KQ5AFAE8264DDC0ED2AE7F,compliance reporting,compliance reporting
+01KQ5BB8521F99E55470206E,sprint planning,sprint planning
+01KQ5BB8521F99E55470206E,bug fix,bug fix
+01KQ5BB8521F99E55470206E,architecture,architecture
+01KQ5BB8521F99E55470206E,ingestion pipeline,ingestion pipeline
+01KQ5BB8521F99E55470206E,alert deduplication,alert deduplication
+01KQ5BB8521F99E55470206E,qa,qa
+01KQ5D47170D4828E89EDE37,outage recovery,outage recovery
+01KQ5D47170D4828E89EDE37,incident root cause,incident root cause
+01KQ5D47170D4828E89EDE37,threat monitoring,threat monitoring
+01KQ5D47170D4828E89EDE37,data integrity,data integrity
+01KQ5D47170D4828E89EDE37,post-incident report,post-incident report
+01KQ5D47170D4828E89EDE37,architectural remediation,architectural remediation
+01KQ5EC1665DCFD7A6B62A59,saml certificate rotation,saml certificate rotation
+01KQ5EC1665DCFD7A6B62A59,product bug,product bug
+01KQ5EC1665DCFD7A6B62A59,authentication failure,authentication failure
+01KQ5EC1665DCFD7A6B62A59,service outage,service outage
+01KQ5EC1665DCFD7A6B62A59,customer reliability concerns,customer reliability concerns
+01KQ5EC1665DCFD7A6B62A59,identity federation,identity federation
+01KQ5F364545B542671FF9CE,scim provisioning,scim provisioning
+01KQ5F364545B542671FF9CE,identity management,identity management
+01KQ5F364545B542671FF9CE,compliance,compliance
+01KQ5F364545B542671FF9CE,okta integration,okta integration
+01KQ5F364545B542671FF9CE,deprovisioning,deprovisioning
+01KQ5F364545B542671FF9CE,feature request,feature request
+01KQ65D43540846FA994B6C4,role management,role management
+01KQ65D43540846FA994B6C4,feature gap,feature gap
+01KQ65D43540846FA994B6C4,soc 2 compliance,soc 2 compliance
+01KQ65D43540846FA994B6C4,session timeout policy,session timeout policy
+01KQ65D43540846FA994B6C4,product roadmap,product roadmap
+01KQ65D43540846FA994B6C4,identity access management,identity access management
+01KQ68FB3E9E60C4477CDAB4,product launch,product launch
+01KQ68FB3E9E60C4477CDAB4,compliance reporting,compliance reporting
+01KQ68FB3E9E60C4477CDAB4,infrastructure deployment,infrastructure deployment
+01KQ68FB3E9E60C4477CDAB4,qa and testing,qa and testing
+01KQ68FB3E9E60C4477CDAB4,observability and alerting,observability and alerting
+01KQ68FB3E9E60C4477CDAB4,rollback planning,rollback planning
+01KQ6A5CEAAFFBE3B0099E75,ldap sync failure,ldap sync failure
+01KQ6A5CEAAFFBE3B0099E75,ssl certificate,ssl certificate
+01KQ6A5CEAAFFBE3B0099E75,support response time,support response time
+01KQ6A5CEAAFFBE3B0099E75,active directory,active directory
+01KQ6A5CEAAFFBE3B0099E75,product feedback,product feedback
+01KQ6A5CEAAFFBE3B0099E75,churn risk,churn risk
+01KQ6CAA850EAFDC48B52846,outage,outage
+01KQ6CAA850EAFDC48B52846,compliance reporting,compliance reporting
+01KQ6CAA850EAFDC48B52846,competitive threat,competitive threat
+01KQ6CAA850EAFDC48B52846,ot security,ot security
+01KQ6CAA850EAFDC48B52846,trust recovery,trust recovery
+01KQ6CAA850EAFDC48B52846,sla negotiation,sla negotiation
+01KQ764171AC27A3A94DC695,post-incident review,post-incident review
+01KQ764171AC27A3A94DC695,service outage,service outage
+01KQ764171AC27A3A94DC695,compliance risk,compliance risk
+01KQ764171AC27A3A94DC695,customer retention,customer retention
+01KQ764171AC27A3A94DC695,internal communications,internal communications
+01KQ764171AC27A3A94DC695,product early access,product early access
+01KQ773D68723289E4A98889,billing dispute,billing dispute
+01KQ773D68723289E4A98889,invoice overage,invoice overage
+01KQ773D68723289E4A98889,data retention,data retention
+01KQ773D68723289E4A98889,backup policy,backup policy
+01KQ773D68723289E4A98889,account management,account management
+01KQ773D68723289E4A98889,usage monitoring,usage monitoring
+01KQ77F2867FC54E13A8C495,onboarding,onboarding
+01KQ77F2867FC54E13A8C495,deployment planning,deployment planning
+01KQ77F2867FC54E13A8C495,alert fatigue,alert fatigue
+01KQ77F2867FC54E13A8C495,reliability incident,reliability incident
+01KQ77F2867FC54E13A8C495,cloud infrastructure,cloud infrastructure
+01KQ77F2867FC54E13A8C495,integrations,integrations
+01KQ7B802912366FC0A24D4F,outage post-mortem,outage post-mortem
+01KQ7B802912366FC0A24D4F,product launch,product launch
+01KQ7B802912366FC0A24D4F,compliance reporting,compliance reporting
+01KQ7B802912366FC0A24D4F,reliability engineering,reliability engineering
+01KQ7B802912366FC0A24D4F,roadmap planning,roadmap planning
+01KQ7B802912366FC0A24D4F,product bug,product bug
+01KQ7BF0D56037FF89DC89B6,platform outage,platform outage
+01KQ7BF0D56037FF89DC89B6,detect pipeline failure,detect pipeline failure
+01KQ7BF0D56037FF89DC89B6,pci compliance,pci compliance
+01KQ7BF0D56037FF89DC89B6,churn risk,churn risk
+01KQ7BF0D56037FF89DC89B6,incident communication,incident communication
+01KQ7BF0D56037FF89DC89B6,fraud monitoring,fraud monitoring
+01KQ7F58A2E07B857C24624D,competitive analysis,competitive analysis
+01KQ7F58A2E07B857C24624D,product gaps,product gaps
+01KQ7F58A2E07B857C24624D,siem integration,siem integration
+01KQ7F58A2E07B857C24624D,compliance features,compliance features
+01KQ7F58A2E07B857C24624D,pricing pressure,pricing pressure
+01KQ7F58A2E07B857C24624D,roadmap prioritization,roadmap prioritization
+01KQ7FA71CF70FAFEE4B6251,renewal,renewal
+01KQ7FA71CF70FAFEE4B6251,service outage,service outage
+01KQ7FA71CF70FAFEE4B6251,compliance reporting,compliance reporting
+01KQ7FA71CF70FAFEE4B6251,churn risk,churn risk
+01KQ7FA71CF70FAFEE4B6251,competitive evaluation,competitive evaluation
+01KQ7FA71CF70FAFEE4B6251,product feedback,product feedback
+01KQ85D10E82A26A8F754FB8,hipaa audit prep,hipaa audit prep
+01KQ85D10E82A26A8F754FB8,multi-framework compliance,multi-framework compliance
+01KQ85D10E82A26A8F754FB8,evidence management,evidence management
+01KQ85D10E82A26A8F754FB8,product roadmap,product roadmap
+01KQ85D10E82A26A8F754FB8,healthcare,healthcare
+01KQ85D10E82A26A8F754FB8,reporting,reporting
+01KQ88B8EAEAA819C26CCBE7,platform outage,platform outage
+01KQ88B8EAEAA819C26CCBE7,hipaa compliance,hipaa compliance
+01KQ88B8EAEAA819C26CCBE7,soc 2 audit,soc 2 audit
+01KQ88B8EAEAA819C26CCBE7,churn risk,churn risk
+01KQ88B8EAEAA819C26CCBE7,incident communication failure,incident communication failure
+01KQ88B8EAEAA819C26CCBE7,infrastructure architecture,infrastructure architecture
+01KQ8C5A044F54EE1774D53C,outage post-mortem,outage post-mortem
+01KQ8C5A044F54EE1774D53C,churn risk,churn risk
+01KQ8C5A044F54EE1774D53C,false positives,false positives
+01KQ8C5A044F54EE1774D53C,pipeline reliability,pipeline reliability
+01KQ8C5A044F54EE1774D53C,competitor evaluation,competitor evaluation
+01KQ8C5A044F54EE1774D53C,detection tuning,detection tuning
+01KQ8D9A06510DD623EFB1A6,feature requests,feature requests
+01KQ8D9A06510DD623EFB1A6,alert fatigue,alert fatigue
+01KQ8D9A06510DD623EFB1A6,incident review,incident review
+01KQ8D9A06510DD623EFB1A6,compliance reporting,compliance reporting
+01KQ8D9A06510DD623EFB1A6,product roadmap,product roadmap
+01KQ8D9A06510DD623EFB1A6,siem integration,siem integration
+01KQ92EA85FE4C537400227D,feature request,feature request
+01KQ92EA85FE4C537400227D,custom compliance templates,custom compliance templates
+01KQ92EA85FE4C537400227D,early access program,early access program
+01KQ92EA85FE4C537400227D,api integration,api integration
+01KQ92EA85FE4C537400227D,workaround,workaround
+01KQ92EA85FE4C537400227D,financial services,financial services
+01KQ94C2B8B9B4668F3D3491,platform outage,platform outage
+01KQ94C2B8B9B4668F3D3491,event ingestion pipeline,event ingestion pipeline
+01KQ94C2B8B9B4668F3D3491,ot/scada monitoring,ot/scada monitoring
+01KQ94C2B8B9B4668F3D3491,data backfill,data backfill
+01KQ94C2B8B9B4668F3D3491,sla credits,sla credits
+01KQ94C2B8B9B4668F3D3491,compliance,compliance
+01KQ9772B2348F500FB09D1E,mfa failure,mfa failure
+01KQ9772B2348F500FB09D1E,totp,totp
+01KQ9772B2348F500FB09D1E,okta sso integration,okta sso integration
+01KQ9772B2348F500FB09D1E,p1 escalation,p1 escalation
+01KQ9772B2348F500FB09D1E,user lockout,user lockout
+01KQ9772B2348F500FB09D1E,reliability concern,reliability concern
+01KQ9A6BE09D73A9BB5798C7,feature gap,feature gap
+01KQ9A6BE09D73A9BB5798C7,custom reporting,custom reporting
+01KQ9A6BE09D73A9BB5798C7,compliance frameworks,compliance frameworks
+01KQ9A6BE09D73A9BB5798C7,product roadmap,product roadmap
+01KQ9A6BE09D73A9BB5798C7,audit workflow,audit workflow
+01KQ9A6BE09D73A9BB5798C7,early access program,early access program
+01KQ9BB82FD97C9607D57E90,onboarding,onboarding
+01KQ9BB82FD97C9607D57E90,backup and recovery,backup and recovery
+01KQ9BB82FD97C9607D57E90,hybrid infrastructure,hybrid infrastructure
+01KQ9BB82FD97C9607D57E90,pci dss compliance,pci dss compliance
+01KQ9BB82FD97C9607D57E90,data retention,data retention
+01KQ9BB82FD97C9607D57E90,aws integration,aws integration
+01KQ9BCA1794C9472726FFAD,product launch,product launch
+01KQ9BCA1794C9472726FFAD,compliance reporting,compliance reporting
+01KQ9BCA1794C9472726FFAD,adoption metrics,adoption metrics
+01KQ9BCA1794C9472726FFAD,cross-sell,cross-sell
+01KQ9BCA1794C9472726FFAD,gdpr roadmap,gdpr roadmap
+01KQ9BCA1794C9472726FFAD,customer feedback,customer feedback
+01KQA0F0BE68E74D66EB4171,competitive positioning,competitive positioning
+01KQA0F0BE68E74D66EB4171,platform reliability,platform reliability
+01KQA0F0BE68E74D66EB4171,product launch,product launch
+01KQA0F0BE68E74D66EB4171,compliance,compliance
+01KQA0F0BE68E74D66EB4171,sales strategy,sales strategy
+01KQA0F0BE68E74D66EB4171,incident remediation,incident remediation
+01KQA1AFDC1306A000B0C7D9,hybrid backup strategy,hybrid backup strategy
+01KQA1AFDC1306A000B0C7D9,hipaa compliance,hipaa compliance
+01KQA1AFDC1306A000B0C7D9,disaster recovery testing,disaster recovery testing
+01KQA1AFDC1306A000B0C7D9,data retention policies,data retention policies
+01KQA1AFDC1306A000B0C7D9,onboarding,onboarding
+01KQA1AFDC1306A000B0C7D9,healthcare data management,healthcare data management
+01KQA502E222E2A60330237B,quarterly business review,quarterly business review
+01KQA502E222E2A60330237B,renewal,renewal
+01KQA502E222E2A60330237B,compliance,compliance
+01KQA502E222E2A60330237B,disaster recovery,disaster recovery
+01KQA502E222E2A60330237B,product update,product update
+01KQA502E222E2A60330237B,pricing,pricing
+01KQA7DFCE1285F52192B34B,backup performance,backup performance
+01KQA7DFCE1285F52192B34B,throughput degradation,throughput degradation
+01KQA7DFCE1285F52192B34B,platform incident,platform incident
+01KQA7DFCE1285F52192B34B,sql server,sql server
+01KQA7DFCE1285F52192B34B,agent update,agent update
+01KQA7DFCE1285F52192B34B,support response time,support response time
+01KQAC572C34475A8791F2C3,quarterly planning,quarterly planning
+01KQAC572C34475A8791F2C3,incremental backup performance,incremental backup performance
+01KQAC572C34475A8791F2C3,restore ux improvement,restore ux improvement
+01KQAC572C34475A8791F2C3,multi-region replication,multi-region replication
+01KQAC572C34475A8791F2C3,canary deployment,canary deployment
+01KQAC572C34475A8791F2C3,tech debt,tech debt
+01KQADC32D89E2B76B698E84,sso outage,sso outage
+01KQADC32D89E2B76B698E84,identity module regression,identity module regression
+01KQADC32D89E2B76B698E84,saml configuration,saml configuration
+01KQADC32D89E2B76B698E84,incident communication,incident communication
+01KQADC32D89E2B76B698E84,workaround,workaround
+01KQADC32D89E2B76B698E84,patch deployment,patch deployment
+01KQADF3D76E82BF8BA19AF2,product launch,product launch
+01KQADF3D76E82BF8BA19AF2,qa coverage,qa coverage
+01KQADF3D76E82BF8BA19AF2,customer churn,customer churn
+01KQADF3D76E82BF8BA19AF2,upsell opportunity,upsell opportunity
+01KQADF3D76E82BF8BA19AF2,technical issue,technical issue
+01KQADF3D76E82BF8BA19AF2,roadmap planning,roadmap planning
+01KQAEA50436D047BC39CFC7,renewal,renewal
+01KQAEA50436D047BC39CFC7,pricing,pricing
+01KQAEA50436D047BC39CFC7,compliance roadmap,compliance roadmap
+01KQAEA50436D047BC39CFC7,data backup,data backup
+01KQAEA50436D047BC39CFC7,threat detection,threat detection
+01KQAEA50436D047BC39CFC7,support issue,support issue
+01KQAFB8DBF6E1E2FDEF0B75,soc 2 compliance,soc 2 compliance
+01KQAFB8DBF6E1E2FDEF0B75,audit preparation,audit preparation
+01KQAFB8DBF6E1E2FDEF0B75,evidence collection,evidence collection
+01KQAFB8DBF6E1E2FDEF0B75,multi-framework compliance,multi-framework compliance
+01KQAFB8DBF6E1E2FDEF0B75,onboarding,onboarding
+01KQAFB8DBF6E1E2FDEF0B75,pci dss,pci dss
+01KQB3B16F255B65F39597D0,design review,design review
+01KQB3B16F255B65F39597D0,compliance reporting,compliance reporting
+01KQB3B16F255B65F39597D0,multi-framework support,multi-framework support
+01KQB3B16F255B65F39597D0,pdf export,pdf export
+01KQB3B16F255B65F39597D0,performance testing,performance testing
+01KQB3B16F255B65F39597D0,roadmap planning,roadmap planning
+01KQB632F1ADC378C42F2C03,billing discrepancy,billing discrepancy
+01KQB632F1ADC378C42F2C03,proration error,proration error
+01KQB632F1ADC378C42F2C03,license upgrade,license upgrade
+01KQB632F1ADC378C42F2C03,compliance reporting,compliance reporting
+01KQB632F1ADC378C42F2C03,credit request,credit request
+01KQB632F1ADC378C42F2C03,product features,product features
+01KQB95605C6F873C6036285,pci dss compliance,pci dss compliance
+01KQB95605C6F873C6036285,audit preparation,audit preparation
+01KQB95605C6F873C6036285,multi-framework reporting,multi-framework reporting
+01KQB95605C6F873C6036285,product demo,product demo
+01KQB95605C6F873C6036285,detect outage follow-up,detect outage follow-up
+01KQB95605C6F873C6036285,soc 2,soc 2
+01KQBB7C4D4789DB2F3DA9C2,siem integration,siem integration
+01KQBB7C4D4789DB2F3DA9C2,technical issue,technical issue
+01KQBB7C4D4789DB2F3DA9C2,compliance,compliance
+01KQBB7C4D4789DB2F3DA9C2,support response time,support response time
+01KQBB7C4D4789DB2F3DA9C2,product bug,product bug
+01KQBB7C4D4789DB2F3DA9C2,documentation gap,documentation gap
+01KQBBF753B44DE677670E6D,alert latency,alert latency
+01KQBBF753B44DE677670E6D,incident communication failure,incident communication failure
+01KQBBF753B44DE677670E6D,platform outage,platform outage
+01KQBBF753B44DE677670E6D,regulatory compliance,regulatory compliance
+01KQBBF753B44DE677670E6D,infrastructure rebalancing,infrastructure rebalancing
+01KQBBF753B44DE677670E6D,product gap,product gap
+01KQC1267BEB344076DD7656,outage post-mortem,outage post-mortem
+01KQC1267BEB344076DD7656,renewal,renewal
+01KQC1267BEB344076DD7656,platform reliability,platform reliability
+01KQC1267BEB344076DD7656,compliance,compliance
+01KQC1267BEB344076DD7656,competitive evaluation,competitive evaluation
+01KQC1267BEB344076DD7656,configuration review,configuration review
+01KQC166F678CBA584AAFF8B,provisioning sync delay,provisioning sync delay
+01KQC166F678CBA584AAFF8B,identity policy propagation,identity policy propagation
+01KQC166F678CBA584AAFF8B,shared cluster performance,shared cluster performance
+01KQC166F678CBA584AAFF8B,support response time,support response time
+01KQC166F678CBA584AAFF8B,renewal risk,renewal risk
+01KQC166F678CBA584AAFF8B,compliance requirements,compliance requirements
+01KQC3A2EBC501837E973B16,onboarding,onboarding
+01KQC3A2EBC501837E973B16,sso configuration,sso configuration
+01KQC3A2EBC501837E973B16,mfa policy,mfa policy
+01KQC3A2EBC501837E973B16,identity access management,identity access management
+01KQC3A2EBC501837E973B16,contractor access controls,contractor access controls
+01KQC3A2EBC501837E973B16,okta migration,okta migration
+01KQCA6EA8B603EBB6C9FE34,shared workstation session management,shared workstation session management
+01KQCA6EA8B603EBB6C9FE34,mfa policy exceptions,mfa policy exceptions
+01KQCA6EA8B603EBB6C9FE34,sso integration,sso integration
+01KQCA6EA8B603EBB6C9FE34,rbac enhancements,rbac enhancements
+01KQCA6EA8B603EBB6C9FE34,renewal,renewal
+01KQCA6EA8B603EBB6C9FE34,feature request,feature request
+01KQCF9872BF130D33B1B5EC,launch readiness,launch readiness
+01KQCF9872BF130D33B1B5EC,qa sign-off,qa sign-off
+01KQCF9872BF130D33B1B5EC,compliance reporting,compliance reporting
+01KQCF9872BF130D33B1B5EC,safari bug,safari bug
+01KQCF9872BF130D33B1B5EC,hipaa validation,hipaa validation
+01KQCF9872BF130D33B1B5EC,incident communications,incident communications
+01KQD1270E98A7DFC55ADCF8,performance degradation,performance degradation
+01KQD1270E98A7DFC55ADCF8,architecture scalability,architecture scalability
+01KQD1270E98A7DFC55ADCF8,technical debt,technical debt
+01KQD1270E98A7DFC55ADCF8,incident risk,incident risk
+01KQD1270E98A7DFC55ADCF8,sales alignment,sales alignment
+01KQD1270E98A7DFC55ADCF8,backup infrastructure,backup infrastructure
+01KQD199788883B6F18C81E8,renewal,renewal
+01KQD199788883B6F18C81E8,compliance,compliance
+01KQD199788883B6F18C81E8,incident review,incident review
+01KQD199788883B6F18C81E8,product roadmap,product roadmap
+01KQD199788883B6F18C81E8,identity management,identity management
+01KQD199788883B6F18C81E8,ot security,ot security
+01KQD4D9DEBA2D55AC2AA9F5,renewal,renewal
+01KQD4D9DEBA2D55AC2AA9F5,compliance,compliance
+01KQD4D9DEBA2D55AC2AA9F5,product launch,product launch
+01KQD4D9DEBA2D55AC2AA9F5,upsell,upsell
+01KQD4D9DEBA2D55AC2AA9F5,technical incident,technical incident
+01KQD4D9DEBA2D55AC2AA9F5,healthcare,healthcare
+01KQDD5172176D02DB51360A,api outage,api outage
+01KQDD5172176D02DB51360A,backup failure,backup failure
+01KQDD5172176D02DB51360A,hipaa compliance,hipaa compliance
+01KQDD5172176D02DB51360A,healthcare data,healthcare data
+01KQDD5172176D02DB51360A,incident communication,incident communication
+01KQDD5172176D02DB51360A,escalation,escalation
+01KQE110900B8A65D80AE694,incident review,incident review
+01KQE110900B8A65D80AE694,pipeline failure,pipeline failure
+01KQE110900B8A65D80AE694,infrastructure reliability,infrastructure reliability
+01KQE110900B8A65D80AE694,health checks,health checks
+01KQE110900B8A65D80AE694,chaos engineering,chaos engineering
+01KQE110900B8A65D80AE694,post-mortem,post-mortem
+01KQEDB92E33CF9945A7F71B,outage,outage
+01KQEDB92E33CF9945A7F71B,platform reliability,platform reliability
+01KQEDB92E33CF9945A7F71B,threat monitoring,threat monitoring
+01KQEDB92E33CF9945A7F71B,churn risk,churn risk
+01KQEDB92E33CF9945A7F71B,incident response,incident response
+01KQEDB92E33CF9945A7F71B,service credit,service credit
+01KQEDE682B4A8D67C657CF1,false positives,false positives
+01KQEDE682B4A8D67C657CF1,patch management,patch management
+01KQEDE682B4A8D67C657CF1,behavioral detection,behavioral detection
+01KQEDE682B4A8D67C657CF1,customer retention risk,customer retention risk
+01KQEDE682B4A8D67C657CF1,incident communication,incident communication
+01KQEDE682B4A8D67C657CF1,baseline configuration,baseline configuration
+01KQF9600A904ADE8605B3F0,sprint retrospective,sprint retrospective
+01KQF9600A904ADE8605B3F0,reliability engineering,reliability engineering
+01KQF9600A904ADE8605B3F0,circuit breaker implementation,circuit breaker implementation
+01KQF9600A904ADE8605B3F0,monitoring gaps,monitoring gaps
+01KQF9600A904ADE8605B3F0,incident response,incident response
+01KQF9600A904ADE8605B3F0,knowledge sharing,knowledge sharing
+01KQFEEFFF8E80B0DFD10880,soc 2 type ii audit,soc 2 type ii audit
+01KQFEEFFF8E80B0DFD10880,compliance,compliance
+01KQFEEFFF8E80B0DFD10880,incident response,incident response
+01KQFEEFFF8E80B0DFD10880,audit evidence packaging,audit evidence packaging
+01KQFEEFFF8E80B0DFD10880,product dogfooding,product dogfooding
+01KQFEEFFF8E80B0DFD10880,customer renewals,customer renewals
+01KQFFC0F889AE8CFEE7A00D,renewal,renewal
+01KQFFC0F889AE8CFEE7A00D,compliance reporting,compliance reporting
+01KQFFC0F889AE8CFEE7A00D,incident post-mortem,incident post-mortem
+01KQFFC0F889AE8CFEE7A00D,product expansion,product expansion
+01KQFFC0F889AE8CFEE7A00D,identity management,identity management
+01KQFFC0F889AE8CFEE7A00D,early access,early access

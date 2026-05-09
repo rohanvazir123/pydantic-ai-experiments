@@ -8,6 +8,7 @@
 - [What does the confidence score in call\_types mean?](#what-does-the-confidence-score-in-call_types-mean)
 - [What files are loaded vs discarded, and why?](#what-files-are-loaded-vs-discarded-and-why)
 - [What are the 10 Postgres tables and what is in each?](#what-are-the-10-postgres-tables-and-what-is-in-each)
+- [How do I reload the Take A tables from scratch?](#how-do-i-reload-the-take-a-tables-from-scratch)
 - [What is sentiment\_features and how is net\_sentiment computed?](#what-is-sentiment_features-and-how-is-net_sentiment-computed)
 - [How does the external taxonomy.json work?](#how-does-the-external-taxonomyjson-work)
 - [Why does concern not get a direct theme boost?](#why-does-concern-not-get-a-direct-theme-boost)
@@ -272,3 +273,44 @@ the boost, rather than making an assumption about what concerns are typically ab
 Example: a meeting with `concern` + summary text mentioning "audit deadline" and
 "soc 2" will correctly boost "Compliance / Audit / Security Assurance". Without
 the summary scan, it would boost nothing useful.
+
+---
+
+## How do I reload the Take A tables from scratch?
+
+Take A's source of truth is the raw dataset (100 meeting folders). There are no
+intermediate output files — the script reads JSON and writes directly to Postgres.
+
+**Full reset (drop schema + recreate + reload):**
+
+```bash
+python basics/iprep/meeting-analytics/take_a/generate_rule_based_taxonomy.py --reset
+```
+
+This drops the entire `meeting_analytics` schema and rebuilds it from scratch,
+including all 10 tables. **This will also drop Take B and Take C tables** — run
+`setup_all_tables.py` instead if you want all three takes reloaded together.
+
+**Reload all three takes in one shot:**
+
+```bash
+python basics/iprep/meeting-analytics/setup_all_tables.py
+```
+
+Target: `rag_db @ localhost:5434` (rag_user:rag_pass). Credentials read from
+`meeting-analytics/.env`. Output: 16 tables in `meeting_analytics` schema.
+
+**What each Take A table comes from:**
+
+| Table | Source in dataset |
+|-------|------------------|
+| `meetings` | `meeting-info.json` |
+| `meeting_participants` | `meeting-info.json participants` |
+| `meeting_summaries` | `summary.json summary + sentiment` |
+| `summary_topics` | `summary.json topics` |
+| `action_items` | `summary.json actionItems` |
+| `key_moments` | `summary.json keyMoments` |
+| `transcript_lines` | `transcript.json data[]` |
+| `meeting_themes` | derived by `infer_themes()` |
+| `call_types` | derived by `infer_call_type()` |
+| `sentiment_features` | aggregated from `transcript_lines` |

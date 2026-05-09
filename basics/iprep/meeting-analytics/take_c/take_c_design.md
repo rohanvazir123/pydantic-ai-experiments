@@ -7,6 +7,7 @@
 | v0.1    | 2026-05-08 | rohan  | Initial design — pipeline skeleton, tradeoffs, decision log |
 | v0.2    | 2026-05-08 | rohan  | Implementation complete — `take_c_semantic_clustering.py`; dry-run verified: 100 meetings loaded, 600 raw topics → 351 exact-dedup → 343 fuzzy-dedup; deps: rapidfuzz, umap-learn, hdbscan |
 | v0.3    | 2026-05-09 | rohan  | Full pipeline run complete — 26 clusters found (not 8–15 as estimated); added coherence check step; actual Postgres schema documented; 8 insight queries implemented; open questions resolved; file path corrected after directory rename |
+| v0.4    | 2026-05-09 | rohan  | Context & Goals rewritten to use consistent Goal 1/2/3 framing matching Take A and Take B design docs |
 
 ---
 
@@ -32,22 +33,37 @@
 
 ## 1. Context & Goals
 
-**Dataset:** ~100 meeting `summary.json` files, each containing:
-- `summary` (free text)
-- `topics` (list of short phrase strings)
-- `keyMoments[].type` (churn_signal, concern, technical_issue, feature_gap, praise, pricing_offer)
-- `overallSentiment`, `sentimentScore`
-- `actionItems`, `meetingId`
+**Dataset:** 100 meeting folders, each with `summary.json` (topics, key moments,
+action items, sentiment) and `transcript.json` (sentence-level data).
 
-**Goal 1 (primary):** Cluster the raw topics (~350 unique phrases from `list_of_topics.txt`) into broader, human-readable **themes** suitable for Engineering, Product, and Sales leadership.
+The three goals carried across all takes:
 
-**Goal 1b:** Infer **call type** (customer-support / external-account / internal-engineering) per meeting.
+**Goal 1 — Theme assignment:** Assign each meeting one or more business themes
+from a discoverable taxonomy.
+→ **Take C addresses this.** 343 deduplicated topic phrases are embedded with
+nomic-embed-text, reduced via UMAP, and clustered with HDBSCAN into 26 semantic
+clusters. Each cluster receives an LLM-generated label (theme title, target
+audience, rationale). Meetings are assigned to themes by mapping their topics to
+cluster assignments.
+
+**Goal 2 — Call type inference:** Infer the kind of conversation per meeting
+(support, external, internal).
+→ **Take C addresses this.** Step 7 sends each meeting's summary + topics to
+llama3.1:8b and receives a structured call type label (support / external /
+internal). Stored in `semantic_meeting_themes.call_type`.
+
+**Goal 3 — Postgres persistence:** Persist raw and derived fields to a schema
+shaped for analytical queries.
+→ **Take C addresses this.** Step 9 persists to 3 tables in the `meeting_analytics`
+schema (`semantic_clusters`, `semantic_phrases`, `semantic_meeting_themes`) and
+runs 8 insight queries automatically. Extends Take A's schema — does not duplicate
+the 10 existing tables.
 
 **Why not Take A (rule-based)?** Brittle — misses semantic equivalents (e.g. `pipeline failure` ≡ `detect pipeline failure` ≡ `ingestion pipeline`).
 
 **Why not Take B (TF-IDF + K-Means)?** Requires pre-specifying K; bag-of-words misses phrase semantics; very short phrases kill TF-IDF signal.
 
-**Why Take C?** The topic strings are short, semantically dense, and conceptually overlapping. A vector embedding captures "outage recovery" ≈ "outage remediation" ≈ "post-mortem" without hand-crafted rules.
+**Why Take C?** The topic strings are short, semantically dense, and conceptually overlapping. A vector embedding captures "outage recovery" ≈ "outage remediation" ≈ "post-mortem" without hand-crafted rules. HDBSCAN finds the natural cluster count without a fixed K. LLM labels make clusters immediately legible to stakeholders without manual review.
 
 ---
 

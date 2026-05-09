@@ -7,6 +7,7 @@
 - [How is K chosen, and is it stable across re-runs?](#how-is-k-chosen-and-is-it-stable-across-re-runs)
 - [How many top terms make a good cluster label?](#how-many-top-terms-make-a-good-cluster-label)
 - [What does build\_document\_text() do, and why does repeat\_terms exist?](#what-does-build_document_text-do-and-why-does-repeat_terms-exist)
+- [How do I load Take B outputs into Postgres?](#how-do-i-load-take-b-outputs-into-postgres)
 
 ---
 
@@ -220,3 +221,41 @@ topics (×4) > key moment types (×3) > prose fields (×1)
 Topics are the most curated signal. Key moment types (`churn_signal`, `feature_gap`, etc.)
 are structured but less specific. Summary prose and action items are already verbose.
 If clustering results look off, adjusting these counts is a valid tuning lever.
+
+---
+
+## How do I load Take B outputs into Postgres?
+
+Take B was designed as an analytical validation tool, not a loader. Its primary outputs
+are CSV and JSON. A Postgres loader was added to bring it into the shared schema.
+
+**The 3 Take B tables and what feeds them:**
+
+| Table | Source file | What it contains |
+|-------|-------------|-----------------|
+| `kmeans_clusters` | `cluster_summary.json` + `cluster_metrics.json` | cluster_id, label (top-4 terms), meeting_count, silhouette_score |
+| `kmeans_cluster_terms` | `cluster_terms.csv` | top-12 centroid terms per cluster, ranked by TF-IDF weight |
+| `kmeans_meeting_clusters` | `meeting_clusters.csv` | one row per meeting → its single hard cluster assignment |
+
+**Load from existing outputs (fast — no re-clustering):**
+
+```bash
+python basics/iprep/meeting-analytics/take_b/load_outputs_to_pg.py
+```
+
+**Re-run the full clustering pipeline then load:**
+
+```bash
+python basics/iprep/meeting-analytics/take_b/cluster_taxonomy_v2.py
+python basics/iprep/meeting-analytics/take_b/load_outputs_to_pg.py
+```
+
+**Load all three takes in one shot:**
+
+```bash
+python basics/iprep/meeting-analytics/setup_all_tables.py
+```
+
+Target: `rag_db @ localhost:5434` (rag_user:rag_pass). Credentials from
+`meeting-analytics/.env`. Take B adds 3 tables to the 10 from Take A and 3 from Take C
+— 16 tables total in `meeting_analytics` schema.

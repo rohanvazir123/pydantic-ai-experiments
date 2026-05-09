@@ -1,0 +1,344 @@
+canonical,cluster_id,theme_title,x,y
+outage remediation,9,Outage Prevention and Recovery,-1.6097,1.5259
+incident response,8,Incident Response and Review,-0.4944,0.8918
+customer communication,6,Customer Renewal and Retention,-0.1965,2.1802
+security monitoring,19,Security and Alerting,-1.1549,5.844
+postmortem planning,8,Incident Response and Review,-1.066,0.3902
+infrastructure reliability,25,Platform Reliability,-1.4684,2.4712
+billing dispute,13,Billing and Pricing Issues,0.294,1.9384
+seat overage,13,Billing and Pricing Issues,-0.3023,1.6153
+migration cleanup,18,Product and Service Expansion,2.7172,3.5511
+identity management,15,Identity and Access Governance,1.1186,5.5522
+billing adjustment,13,Billing and Pricing Issues,0.4472,1.9665
+provisioning,20,Customer Onboarding and Support,1.1771,4.3369
+pipeline reliability,25,Platform Reliability,-1.5508,2.5454
+kafka configuration,3,Cloud and Integration Configuration,3.5333,5.3225
+sprint planning,21,IT Operations and Deployment,1.8266,4.4618
+comply v2 launch,11,Compliance and Governance,2.51,6.6176
+resource allocation,21,IT Operations and Deployment,1.4237,4.2015
+timeline risk,6,Customer Renewal and Retention,-0.4707,1.7966
+iso 27001,15,Identity and Access Governance,0.085,5.8021
+compliance reporting,11,Compliance and Governance,2.1996,7.0626
+onboarding,20,Customer Onboarding and Support,0.9405,4.3243
+healthcare,4,Healthcare Data Security,0.1417,6.2773
+multi-framework coverage,11,Compliance and Governance,1.8282,7.4293
+audit preparation,12,Audit Compliance Readiness,1.3036,6.3709
+renewal,6,Customer Renewal and Retention,0.5661,2.5823
+outage,9,Outage Prevention and Recovery,-1.6867,1.37
+competitive threat,2,Competitive Strategy,-2.4501,5.8821
+compliance,11,Compliance and Governance,2.482,7.1462
+cloud expansion,18,Product and Service Expansion,1.9871,3.6364
+pricing,13,Billing and Pricing Issues,0.885,1.9151
+soc 2 audit,12,Audit Compliance Readiness,1.7633,6.3674
+access control,15,Identity and Access Governance,0.2994,4.9414
+change management,15,Identity and Access Governance,0.8197,5.4879
+incident tracking,8,Incident Response and Review,-0.5549,0.6866
+vendor management,15,Identity and Access Governance,0.8133,5.3869
+security training,19,Security and Alerting,-0.8957,6.0343
+backup performance,14,Data Protection and Recovery,-0.9638,3.9845
+agent version update,18,Product and Service Expansion,1.346,3.027
+technical issue,24,System Reliability and Support,0.0792,3.0285
+customer retention,6,Customer Renewal and Retention,0.0513,2.3742
+notification gap,22,Product Maturity Gaps,-2.3237,4.3229
+escalation,7,Escalation Process,0.2132,1.306
+overage charges,13,Billing and Pricing Issues,-0.178,1.6567
+contract negotiation,13,Billing and Pricing Issues,0.9089,1.9147
+product add-on,18,Product and Service Expansion,1.6684,3.1558
+competitive evaluation,2,Competitive Strategy,-2.4745,5.8495
+sla breach,0,Service Level Agreement Management,2.8286,0.6398
+launch readiness,18,Product and Service Expansion,1.3551,4.3473
+api rate limiting,13,Billing and Pricing Issues,0.7413,2.0629
+documentation,15,Identity and Access Governance,0.1537,5.6841
+incident impact,8,Incident Response and Review,-0.5107,0.7926
+hipaa,10,HIPAA Compliance and Reporting,0.3982,6.6984
+churn risk,6,Customer Renewal and Retention,-0.3504,2.0691
+vendor review,1,Quality Assurance Review Process,1.3884,1.4072
+incident communication,8,Incident Response and Review,-0.4661,1.1793
+product outage,9,Outage Prevention and Recovery,-1.7315,1.3515
+sla compliance,0,Service Level Agreement Management,2.7873,0.6435
+internal monitoring failure,24,System Reliability and Support,-0.8867,2.8105
+customer escalation,7,Escalation Process,0.2803,1.4874
+feature request,18,Product and Service Expansion,1.2874,3.3949
+granular restore,14,Data Protection and Recovery,-0.8159,3.2899
+backup and recovery,14,Data Protection and Recovery,-0.743,3.6136
+rto compliance,11,Compliance and Governance,2.401,7.3585
+aws ebs,3,Cloud and Integration Configuration,3.2794,6.0886
+workaround,18,Product and Service Expansion,0.2837,3.3521
+platform outage,9,Outage Prevention and Recovery,-1.5501,1.4762
+competitive displacement,2,Competitive Strategy,-2.5615,5.8396
+post-mortem,8,Incident Response and Review,-1.0785,0.4193
+product launch,18,Product and Service Expansion,1.2791,3.3613
+compliance automation,11,Compliance and Governance,2.3539,6.9802
+soc 2,12,Audit Compliance Readiness,2.1615,6.3001
+product demo,18,Product and Service Expansion,1.2349,3.1111
+platform integration,3,Cloud and Integration Configuration,3.6399,6.6738
+service outage,9,Outage Prevention and Recovery,-1.6906,1.3136
+threat monitoring failure,24,System Reliability and Support,-1.2701,5.3217
+incident escalation,7,Escalation Process,-0.019,1.1197
+proactive communication failure,24,System Reliability and Support,-0.6365,2.5784
+roadmap planning,16,Roadmap Planning and Compliance,2.2037,5.0454
+identity & access management,15,Identity and Access Governance,0.6921,5.3213
+scim / provisioning,21,IT Operations and Deployment,1.4145,4.8101
+adaptive mfa,5,Multi-Factor Authentication Management,3.5146,3.6521
+compliance integration,11,Compliance and Governance,2.7272,7.0122
+competitive landscape,2,Competitive Strategy,-2.598,5.9492
+alert latency,19,Security and Alerting,-1.561,5.1799
+ot security,19,Security and Alerting,-0.8798,6.0259
+service credits,20,Customer Onboarding and Support,0.6299,4.0789
+sla review,0,Service Level Agreement Management,2.7706,0.6534
+pipeline failure,25,Platform Reliability,-1.6115,2.6989
+data loss,14,Data Protection and Recovery,-0.645,4.4542
+technical debt,24,System Reliability and Support,-0.2074,3.5882
+product bug,18,Product and Service Expansion,1.1765,3.0158
+pdf rendering,18,Product and Service Expansion,1.3882,3.8023
+new release issue,18,Product and Service Expansion,1.0058,3.2367
+audit deadline,12,Audit Compliance Readiness,1.3431,6.3471
+hipaa compliance,10,HIPAA Compliance and Reporting,0.5214,6.7549
+proof of concept,18,Product and Service Expansion,0.4383,4.1044
+logvault integration,3,Cloud and Integration Configuration,3.6641,6.5767
+multi-framework support,11,Compliance and Governance,1.797,7.435
+audit automation,12,Audit Compliance Readiness,1.3976,6.3918
+aws s3 connector,3,Cloud and Integration Configuration,3.5296,5.9929
+backup failure,14,Data Protection and Recovery,-0.8349,3.7583
+403 error,24,System Reliability and Support,-0.3818,2.9483
+iam permissions,15,Identity and Access Governance,0.5196,5.19
+service control policies,15,Identity and Access Governance,0.126,4.6858
+connector configuration,3,Cloud and Integration Configuration,3.5785,5.593
+outage post-mortem,8,Incident Response and Review,-1.3934,0.7518
+product visibility,18,Product and Service Expansion,1.2428,3.0895
+roadmap prioritization,16,Roadmap Planning and Compliance,2.2375,5.1534
+renewal risk,6,Customer Renewal and Retention,-0.0212,2.3474
+outage follow-up,9,Outage Prevention and Recovery,-1.8039,1.2905
+product upsell,17,Upselling and Cross-Selling Strategy,1.5635,2.2922
+pci dss,11,Compliance and Governance,2.7606,6.402
+sprint retrospective,21,IT Operations and Deployment,1.4713,4.2288
+estimation,19,Security and Alerting,-0.7636,5.5664
+comply integration,11,Compliance and Governance,3.2117,6.7308
+api rate limits,13,Billing and Pricing Issues,0.6862,1.9672
+alert tuning,19,Security and Alerting,-1.5809,5.3284
+false positives,4,Healthcare Data Security,-0.4861,5.7995
+alert routing,19,Security and Alerting,-1.5435,5.2203
+data retention,14,Data Protection and Recovery,-0.5134,4.5236
+financial services,20,Customer Onboarding and Support,0.6091,4.1854
+post-mortem follow-up,8,Incident Response and Review,-1.0172,0.4622
+compliance bug,11,Compliance and Governance,2.3175,6.8686
+circuit breaker,9,Outage Prevention and Recovery,-1.8577,1.696
+load testing,14,Data Protection and Recovery,-1.3522,4.1799
+runbook,21,IT Operations and Deployment,1.5236,4.3285
+win-loss analysis,2,Competitive Strategy,-2.2524,5.7656
+competitive intelligence,2,Competitive Strategy,-2.4695,5.8752
+reliability / outage impact,9,Outage Prevention and Recovery,-1.6946,1.7877
+sales process,17,Upselling and Cross-Selling Strategy,1.627,2.0958
+collateral gaps,22,Product Maturity Gaps,-2.3905,4.1959
+q1 review,1,Quality Assurance Review Process,1.6454,1.1539
+audit readiness,12,Audit Compliance Readiness,1.3079,6.3422
+product integration,3,Cloud and Integration Configuration,3.7022,6.5651
+sla,0,Service Level Agreement Management,2.7887,0.6163
+cmmc,21,IT Operations and Deployment,1.1993,5.0471
+competitor evaluation,2,Competitive Strategy,-2.3956,5.8129
+alert fatigue,19,Security and Alerting,-1.6494,5.3262
+contract renewal,6,Customer Renewal and Retention,0.5121,2.4012
+architecture gap,23,Infrastructure Architecture Challenges,-2.407,3.74
+deployment,21,IT Operations and Deployment,1.6013,4.7759
+identity roadmap,16,Roadmap Planning and Compliance,1.9659,5.3237
+mfa policy engine,5,Multi-Factor Authentication Management,3.4493,3.5974
+sso connectors,3,Cloud and Integration Configuration,3.7433,5.8234
+qa process,1,Quality Assurance Review Process,1.9614,1.0973
+infrastructure bottleneck,23,Infrastructure Architecture Challenges,-2.0577,3.3874
+incident review,8,Incident Response and Review,-0.3482,0.6958
+product update,18,Product and Service Expansion,1.3826,2.959
+expansion,18,Product and Service Expansion,2.0936,3.5776
+healthcare security,4,Healthcare Data Security,-0.0452,6.2994
+pipeline architecture,23,Infrastructure Architecture Challenges,-2.2046,3.1452
+single point of failure,24,System Reliability and Support,-0.966,2.827
+ci/cd improvement,18,Product and Service Expansion,1.6307,3.5829
+capacity planning,21,IT Operations and Deployment,2.021,4.626
+hipaa reporting,10,HIPAA Compliance and Reporting,0.585,6.8091
+compliance tooling,11,Compliance and Governance,2.4178,7.0057
+feature gaps,22,Product Maturity Gaps,-2.4025,4.1996
+product feedback,18,Product and Service Expansion,1.3668,2.767
+audit workflow,12,Audit Compliance Readiness,1.3684,6.3752
+roadmap,16,Roadmap Planning and Compliance,2.206,5.1936
+upgrade rollout,18,Product and Service Expansion,2.189,3.6708
+hybrid environment,23,Infrastructure Architecture Challenges,-1.7921,3.5581
+data protection,14,Data Protection and Recovery,-0.5004,4.8052
+retail seasonality,17,Upselling and Cross-Selling Strategy,1.3542,2.4795
+product release,18,Product and Service Expansion,1.3586,3.1456
+upgrade migration,18,Product and Service Expansion,2.475,3.5202
+product migration,18,Product and Service Expansion,2.6492,3.4796
+outage impact,9,Outage Prevention and Recovery,-1.778,1.4118
+alert misconfiguration,19,Security and Alerting,-1.7411,5.2585
+data backfill,14,Data Protection and Recovery,-0.7047,4.3257
+incident follow-up,8,Incident Response and Review,-0.6474,0.7216
+mfa enforcement,5,Multi-Factor Authentication Management,3.4849,3.6068
+support escalation,7,Escalation Process,0.1761,1.3258
+identity deployment,15,Identity and Access Governance,1.5049,5.26
+privileged access management,15,Identity and Access Governance,0.4803,5.0167
+mfa migration,5,Multi-Factor Authentication Management,3.176,3.555
+compliance audit,11,Compliance and Governance,2.2772,7.0578
+entra id integration,3,Cloud and Integration Configuration,3.7373,6.5774
+bug fix,18,Product and Service Expansion,0.7609,3.2851
+architecture,23,Infrastructure Architecture Challenges,-2.3342,3.4105
+ingestion pipeline,25,Platform Reliability,-1.8426,2.7902
+alert deduplication,19,Security and Alerting,-1.6748,5.4961
+qa,1,Quality Assurance Review Process,2.0276,1.0392
+outage recovery,9,Outage Prevention and Recovery,-1.7412,1.506
+incident root cause,8,Incident Response and Review,-0.6079,1.0409
+threat monitoring,19,Security and Alerting,-1.388,5.8137
+data integrity,14,Data Protection and Recovery,-0.5166,4.7171
+post-incident report,8,Incident Response and Review,-0.5817,0.6795
+architectural remediation,23,Infrastructure Architecture Challenges,-2.1201,3.0791
+saml certificate rotation,3,Cloud and Integration Configuration,3.3116,5.5299
+authentication failure,24,System Reliability and Support,-0.6139,2.9739
+customer reliability concerns,25,Platform Reliability,-0.7865,2.1827
+identity federation,15,Identity and Access Governance,1.4903,5.5001
+okta integration,3,Cloud and Integration Configuration,3.8017,6.4618
+role management,15,Identity and Access Governance,0.8595,5.5679
+soc 2 compliance,11,Compliance and Governance,2.2457,6.4971
+session timeout policy,15,Identity and Access Governance,-0.0322,4.5563
+product roadmap,16,Roadmap Planning and Compliance,2.1576,5.0687
+infrastructure deployment,21,IT Operations and Deployment,1.4479,4.7416
+qa and testing,1,Quality Assurance Review Process,1.9634,1.0949
+observability and alerting,19,Security and Alerting,-1.6386,5.6527
+rollback planning,21,IT Operations and Deployment,2.0391,4.5024
+ldap sync failure,24,System Reliability and Support,-0.9749,2.6861
+ssl certificate,3,Cloud and Integration Configuration,3.4931,5.5683
+support response time,24,System Reliability and Support,-0.1398,2.8887
+active directory,15,Identity and Access Governance,0.3003,5.5898
+trust recovery,14,Data Protection and Recovery,-0.9195,3.3236
+sla negotiation,0,Service Level Agreement Management,2.7174,0.6937
+post-incident review,8,Incident Response and Review,-0.5103,0.6176
+compliance risk,11,Compliance and Governance,2.6332,7.2055
+internal communications,24,System Reliability and Support,-0.5776,2.4616
+product early access,18,Product and Service Expansion,0.9925,3.9515
+invoice overage,13,Billing and Pricing Issues,-0.359,1.5921
+backup policy,14,Data Protection and Recovery,-0.7816,3.948
+account management,15,Identity and Access Governance,0.8651,5.5735
+usage monitoring,19,Security and Alerting,-1.031,5.6627
+deployment planning,21,IT Operations and Deployment,1.8754,4.7145
+reliability incident,25,Platform Reliability,-1.0318,2.3848
+cloud infrastructure,23,Infrastructure Architecture Challenges,-1.9127,3.4396
+integrations,3,Cloud and Integration Configuration,3.6993,6.611
+reliability engineering,25,Platform Reliability,-1.2672,2.2623
+detect pipeline failure,25,Platform Reliability,-1.6925,2.6986
+pci compliance,11,Compliance and Governance,2.6378,6.7323
+fraud monitoring,19,Security and Alerting,-1.078,5.8077
+competitive analysis,2,Competitive Strategy,-2.4577,5.8673
+product gaps,22,Product Maturity Gaps,-2.3586,4.2348
+siem integration,3,Cloud and Integration Configuration,3.7211,6.4998
+compliance features,11,Compliance and Governance,2.4662,7.0513
+pricing pressure,13,Billing and Pricing Issues,0.8435,1.8633
+hipaa audit prep,10,HIPAA Compliance and Reporting,0.6025,6.6206
+multi-framework compliance,11,Compliance and Governance,2.0045,7.3686
+evidence management,15,Identity and Access Governance,0.5813,5.6932
+reporting,10,HIPAA Compliance and Reporting,1.2031,7.0687
+incident communication failure,24,System Reliability and Support,-0.6913,2.4553
+infrastructure architecture,23,Infrastructure Architecture Challenges,-2.2551,3.3618
+detection tuning,19,Security and Alerting,-1.4514,5.509
+custom compliance templates,11,Compliance and Governance,2.4896,7.2529
+early access program,18,Product and Service Expansion,0.681,4.3294
+api integration,3,Cloud and Integration Configuration,3.8103,6.7238
+event ingestion pipeline,25,Platform Reliability,-1.8672,2.7908
+ot/scada monitoring,19,Security and Alerting,-1.1415,5.8323
+sla credits,0,Service Level Agreement Management,2.7391,0.6558
+mfa failure,5,Multi-Factor Authentication Management,3.4174,3.5353
+totp,20,Customer Onboarding and Support,0.2269,3.1362
+okta sso integration,3,Cloud and Integration Configuration,3.7839,6.0359
+p1 escalation,7,Escalation Process,0.2688,1.1436
+user lockout,15,Identity and Access Governance,0.076,4.9863
+reliability concern,25,Platform Reliability,-1.1062,2.2802
+custom reporting,10,HIPAA Compliance and Reporting,1.5012,7.2062
+compliance frameworks,11,Compliance and Governance,2.3926,7.2373
+hybrid infrastructure,23,Infrastructure Architecture Challenges,-1.9217,3.4813
+pci dss compliance,11,Compliance and Governance,2.6756,6.6428
+aws integration,3,Cloud and Integration Configuration,3.522,6.3189
+adoption metrics,19,Security and Alerting,-0.6891,5.5848
+cross-sell,17,Upselling and Cross-Selling Strategy,1.6073,2.0488
+gdpr roadmap,16,Roadmap Planning and Compliance,2.2348,5.28
+customer feedback,6,Customer Renewal and Retention,0.1051,2.3895
+competitive positioning,2,Competitive Strategy,-2.6205,5.9704
+platform reliability,25,Platform Reliability,-1.2347,2.1721
+sales strategy,17,Upselling and Cross-Selling Strategy,1.599,2.1117
+incident remediation,8,Incident Response and Review,-0.4676,1.0381
+hybrid backup strategy,14,Data Protection and Recovery,-0.9768,3.8517
+disaster recovery testing,14,Data Protection and Recovery,-1.07,3.3644
+data retention policies,14,Data Protection and Recovery,-0.4976,4.5407
+healthcare data management,4,Healthcare Data Security,0.4133,5.7939
+quarterly business review,1,Quality Assurance Review Process,1.551,1.2613
+disaster recovery,14,Data Protection and Recovery,-1.0812,3.2468
+throughput degradation,14,Data Protection and Recovery,-1.4565,3.6054
+platform incident,8,Incident Response and Review,-0.8125,1.1287
+sql server,20,Customer Onboarding and Support,0.6369,4.4676
+agent update,18,Product and Service Expansion,1.043,2.853
+quarterly planning,21,IT Operations and Deployment,2.1655,4.6401
+incremental backup performance,14,Data Protection and Recovery,-0.881,3.9763
+restore ux improvement,18,Product and Service Expansion,0.9384,3.3786
+multi-region replication,18,Product and Service Expansion,2.2868,3.526
+canary deployment,21,IT Operations and Deployment,1.6066,4.7874
+tech debt,24,System Reliability and Support,-0.2628,3.6133
+sso outage,3,Cloud and Integration Configuration,3.8329,5.7116
+identity module regression,15,Identity and Access Governance,1.223,5.4747
+saml configuration,3,Cloud and Integration Configuration,3.4772,5.4574
+patch deployment,21,IT Operations and Deployment,1.4169,4.8238
+qa coverage,1,Quality Assurance Review Process,2.0121,1.0665
+customer churn,6,Customer Renewal and Retention,0.0179,2.2142
+upsell opportunity,17,Upselling and Cross-Selling Strategy,1.5781,2.0713
+compliance roadmap,16,Roadmap Planning and Compliance,2.2931,5.6526
+data backup,14,Data Protection and Recovery,-0.7706,4.0834
+threat detection,19,Security and Alerting,-1.632,5.7385
+support issue,24,System Reliability and Support,0.0899,3.0116
+evidence collection,15,Identity and Access Governance,-0.0957,5.784
+design review,1,Quality Assurance Review Process,1.4232,1.285
+pdf export,18,Product and Service Expansion,1.6604,3.3661
+performance testing,14,Data Protection and Recovery,-1.3162,4.181
+billing discrepancy,13,Billing and Pricing Issues,0.3082,2.0755
+proration error,24,System Reliability and Support,-0.2512,3.0008
+license upgrade,18,Product and Service Expansion,2.0682,3.5338
+credit request,20,Customer Onboarding and Support,0.5195,3.8626
+product features,18,Product and Service Expansion,1.54,3.1506
+multi-framework reporting,11,Compliance and Governance,1.7366,7.3846
+detect outage follow-up,9,Outage Prevention and Recovery,-1.8559,1.4394
+documentation gap,22,Product Maturity Gaps,-2.2808,4.3296
+regulatory compliance,11,Compliance and Governance,2.5117,7.2121
+infrastructure rebalancing,23,Infrastructure Architecture Challenges,-2.1144,3.2995
+configuration review,3,Cloud and Integration Configuration,3.455,5.0803
+provisioning sync delay,24,System Reliability and Support,-0.603,4.0251
+identity policy propagation,15,Identity and Access Governance,1.4573,5.3598
+shared cluster performance,14,Data Protection and Recovery,-1.0336,4.2095
+compliance requirements,11,Compliance and Governance,2.5093,7.1126
+sso configuration,3,Cloud and Integration Configuration,3.7229,5.73
+mfa policy,5,Multi-Factor Authentication Management,3.4795,3.5645
+contractor access controls,15,Identity and Access Governance,0.3417,4.9204
+okta migration,18,Product and Service Expansion,2.8398,3.71
+shared workstation session management,15,Identity and Access Governance,0.141,4.7719
+mfa policy exceptions,5,Multi-Factor Authentication Management,3.4787,3.6206
+sso integration,3,Cloud and Integration Configuration,3.8136,6.0298
+rbac enhancements,18,Product and Service Expansion,1.9352,3.4715
+qa sign-off,1,Quality Assurance Review Process,2.0129,1.0702
+safari bug,18,Product and Service Expansion,0.7445,3.1867
+hipaa validation,10,HIPAA Compliance and Reporting,0.3461,6.7018
+performance degradation,14,Data Protection and Recovery,-1.2604,3.8701
+architecture scalability,23,Infrastructure Architecture Challenges,-2.3496,3.4061
+incident risk,8,Incident Response and Review,-0.6687,1.1834
+sales alignment,17,Upselling and Cross-Selling Strategy,1.6686,2.1143
+backup infrastructure,14,Data Protection and Recovery,-0.9408,3.8196
+upsell,17,Upselling and Cross-Selling Strategy,1.5375,2.1479
+technical incident,8,Incident Response and Review,-0.6158,1.2216
+api outage,9,Outage Prevention and Recovery,-1.731,1.3238
+healthcare data,4,Healthcare Data Security,0.0575,6.1794
+health checks,4,Healthcare Data Security,0.1877,6.3812
+chaos engineering,25,Platform Reliability,-1.2866,2.1871
+patch management,15,Identity and Access Governance,0.7944,5.2234
+behavioral detection,19,Security and Alerting,-1.4415,5.7435
+customer retention risk,6,Customer Renewal and Retention,-0.1158,2.3093
+baseline configuration,3,Cloud and Integration Configuration,3.3943,5.1569
+circuit breaker implementation,9,Outage Prevention and Recovery,-1.5842,1.9287
+monitoring gaps,22,Product Maturity Gaps,-2.3382,4.3068
+knowledge sharing,20,Customer Onboarding and Support,0.3942,4.2311
+soc 2 type ii audit,12,Audit Compliance Readiness,1.7151,6.4278
+audit evidence packaging,12,Audit Compliance Readiness,0.8847,6.2335
+product dogfooding,18,Product and Service Expansion,1.4249,3.013
+customer renewals,6,Customer Renewal and Retention,0.266,2.3726
+incident post-mortem,8,Incident Response and Review,-0.9347,0.4603
+product expansion,18,Product and Service Expansion,1.8518,3.1286
+early access,18,Product and Service Expansion,0.7551,4.2209

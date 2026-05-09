@@ -1,0 +1,398 @@
+meeting_id,action_index,owner,action_item
+01KQ03B0303900521BB089CA,1,Megan Lawson,Draft updated customer communication explaining the phased rollout and revised timeline within the hour
+01KQ03B0303900521BB089CA,2,Raj Kapoor,Send evening status update to Megan and Brian once the first phase of the redundant node rollout is complete
+01KQ03B0303900521BB089CA,3,Raj Kapoor,Deliver internal retroactive event analysis summary report by Wednesday
+01KQ03B0303900521BB089CA,4,Brian Cho,Prepare affected account breakdown with priority tiers and impact durations for the postmortem by Thursday
+01KQ0C1280EDA4E70AAD7C35,1,Sarah Chen,Submit billing adjustment request to finance team for the 200-seat overage on invoice INV-2026-00847 and send reference number to Gregory
+01KQ0C1280EDA4E70AAD7C35,2,Sarah Chen,Email Gregory the knowledge base article on bulk deprovisioning and include steps for configuring usage threshold alerts
+01KQ0C1280EDA4E70AAD7C35,3,Gregory Fisk,Have IT team bulk deprovision the ~200 test accounts created during the December migration before the February billing period closes
+01KQ0C1280EDA4E70AAD7C35,4,Gregory Fisk,Configure usage threshold alerts in the admin console under Account Settings > Billing and Usage
+01KQ0CAE7F064EC93F0540CA,1,Tyler Washington,Carve out time this week to investigate and document Kafka configuration interactions with the redundant node setup to provide clearer inputs for Mike
+01KQ0CAE7F064EC93F0540CA,2,Mike Romano,"Finalize and clean up the retry logic PR, targeting ready-for-review status by Wednesday"
+01KQ0CAE7F064EC93F0540CA,3,Chris Lee,Review Mike's retry logic PR on Thursday and update the sprint board to reflect Tyler's merged deduplication tickets
+01KQ0CAE7F064EC93F0540CA,4,Tom Bradley,Communicate to product that end-of-March is still the target for Detect reliability work but flag active technical uncertainty being worked down
+01KQ0DFE299AC7A74E8022CA,1,Kevin O'Brien,"Send calendar invite for technical working session in two weeks, including Thomas and Priya"
+01KQ0DFE299AC7A74E8022CA,2,Daniel Okafor,Activate Comply v2 module on Redwood's tenant and complete configuration review
+01KQ0DFE299AC7A74E8022CA,3,Kevin O'Brien,Send prep document explaining what to expect from the baseline ISO 27001 readiness report
+01KQ0DFE299AC7A74E8022CA,4,Thomas Hargrove,Have Priya prepared to join the technical working session after baseline report is run
+01KQ0F8AFF3DA34FD4580008,1,Lisa Park,Send the full post-incident review document for the March Detect outage to Lauren and her team
+01KQ0F8AFF3DA34FD4580008,2,Lisa Park,Prepare two renewal proposal options (base tier and expanded workload growth option) by approximately the 24th
+01KQ0F8AFF3DA34FD4580008,3,Lisa Park,Schedule a compliance specialist walkthrough for Comply v2 PCI DSS coverage in June
+01KQ0F8AFF3DA34FD4580008,4,Lauren Bishop,Share post-incident review with her team and determine whether a solutions architect follow-up session is needed
+01KQ1267C6AA7D9B3125FEC8,1,Ravi Gupta,Complete log retention inventory by Wednesday and build a CI/CD hard gate requiring ticket references for all production deployments before March 1st
+01KQ1267C6AA7D9B3125FEC8,2,Mike Romano,Investigate and fix the broken Zendesk-PagerDuty integration and compile a vendor compliance documentation inventory
+01KQ1267C6AA7D9B3125FEC8,3,Tyler Washington,"Pull LMS security training completion report today, follow up with legal on BAAs for vendors touching customer data, and organize access review records"
+01KQ1267C6AA7D9B3125FEC8,4,Raj Kapoor,Send calendar invite for alert tuning session (Tuesday or Wednesday) and set up a shared tracker for all action items with a check-in planned for next Friday
+01KQ1A6B7E81B06F4A13B60D,1,David Kim,Send upgrade instructions to Kendra's inbox within 30 minutes of the call
+01KQ1A6B7E81B06F4A13B60D,2,Kendra Wallace,Schedule agent upgrade to version 3.6.0 tonight or tomorrow night outside the backup window
+01KQ1A6B7E81B06F4A13B60D,3,David Kim,Follow up Monday morning to confirm backup performance improvement and keep the case open
+01KQ1A6B7E81B06F4A13B60D,4,David Kim,Investigate why Kendra's account was not notified about the known issue in version 3.4.x and escalate to senior engineering and account manager if unresolved
+01KQ1DC6CA536DE1B31ED8F5,1,Rachel Torres,"Send a revised pricing summary by end of week comparing the current Detect tier vs. 750M event tier, including Comply module pricing and renewal bundle options"
+01KQ1DC6CA536DE1B31ED8F5,2,Maria Santos,Schedule a follow-up check-in with Wayne after the proposal is sent to address any questions
+01KQ1DC6CA536DE1B31ED8F5,3,Wayne Keller,Share the pricing proposal with finance and legal teams by mid-March to allow processing time before contract expiration
+01KQ1DCC80852AE384C898C9,1,Maria Santos,Send full technical remediation report and coordinate an engineering call with Aegis engineering team for Leo by early next week
+01KQ1DCC80852AE384C898C9,2,Maria Santos,"Deliver a renewal proposal by Thursday including SLA credit, revised pricing, and Comply v2 access bundled in"
+01KQ1DCC80852AE384C898C9,3,Maria Santos,Arrange a demo or early preview of Aegis Comply v2 for Brianna and Leo before renewal closes
+01KQ1DCC80852AE384C898C9,4,Brianna Foster,Review the renewal proposal and provide feedback with enough time for legal to finalize by first week of April
+01KQ1DE954A807A5D2653175,1,Chris Lee,Confirm Priya is fully back on Comply work starting Monday and report go/no-go status on all four frameworks to Megan by the 1st
+01KQ1DE954A807A5D2653175,2,Megan Lawson,Send intro connecting Damon to Aisha on the content team for a technical review of the HIPAA documentation today
+01KQ1DE954A807A5D2653175,3,Megan Lawson,Raise tiered API rate limiting proposal with the revenue team in Thursday's pricing sync
+01KQ1DE954A807A5D2653175,4,Chris Lee,Ensure Megan is on the distribution list for March 28th load test results and notify her same-day of any failures
+01KQ2217B066855A3B7814CB,1,Ravi Gupta,Send redacted infrastructure audit summary to Suki by end of day Monday
+01KQ2217B066855A3B7814CB,2,Ravi Gupta,Complete production deployment of circuit breaker fix and redundant processing nodes by end of March
+01KQ2217B066855A3B7814CB,3,Rachel Torres,Schedule a follow-up check-in call with Suki in two weeks to review interim monitoring status
+01KQ2217B066855A3B7814CB,4,Lisa Park,Follow up with Suki on Comply compliance narrative features after the Detect issues are resolved
+01KQ2331EFD78BF3B1CAB747,1,Priya Patel,Send confirmed RCA technical details to Diana by noon today
+01KQ2331EFD78BF3B1CAB747,2,Aisha Johnson,Pull full list of customers with contractual uptime SLAs on Detect from Salesforce and deliver by 4 PM
+01KQ2331EFD78BF3B1CAB747,3,Lisa Park,Loop in legal and finance on SLA exposure and send Diana the Meridian Financial contact information
+01KQ2331EFD78BF3B1CAB747,4,Diana Reeves,Draft formal executive incident communication using only confirmed facts and personally reach out to Fortex CISO and Brightline account today
+01KQ25D8AED944B5D2A9FF60,1,Sarah Chen,"Submit formal feature request (Case 1514) for granular file-level restore from EBS snapshots, alternate path restore, and file metadata preview into the Protect product feedback system"
+01KQ25D8AED944B5D2A9FF60,2,Sarah Chen,Add Marcus Webb to Case 1514 documentation and loop in Meridian's CSM for ongoing updates
+01KQ25D8AED944B5D2A9FF60,3,Jason Hoffman,Monitor portal for case documentation update expected within the hour
+01KQ25D8AED944B5D2A9FF60,4,Sarah Chen,Ensure CSM provides Jason with roadmap updates on the feature request to avoid it going untracked
+01KQ298F2846EFE59B0D70E2,1,Megan Lawson,Update competitive battlecards this week to reflect the outage response story and SentinelShield's own historical incident data
+01KQ298F2846EFE59B0D70E2,2,Brian Cho,Prepare a customer-facing technical summary of the incident and remediation steps by end of day Monday
+01KQ298F2846EFE59B0D70E2,3,James Mitchell,Reach out to Hartfield Financial early next week to schedule a call with their CISO above the procurement level
+01KQ298F2846EFE59B0D70E2,4,Daniel Okafor,Prepare a strong follow-up pitch for Clearvale Systems including potential enhanced SLA commitments to salvage the deal
+01KQ2B4878EC7B3EE5547007,1,Daniel Okafor,Send Damien a scheduling link for the demo within the week
+01KQ2B4878EC7B3EE5547007,2,Daniel Okafor,Prepare a one-pager on SOC 2 and ISO 27001 framework mapping to share with Damien's team ahead of the demo
+01KQ2B4878EC7B3EE5547007,3,Damien Rowe,Add Head of Security Priya and a senior DevOps engineer to the demo invite
+01KQ2B4878EC7B3EE5547007,4,James Mitchell,Ensure all pre-demo materials are sent to Damien the same day as the call
+01KQ2D93184912F0147315E7,1,Marcus Williams,Call Julia Tran directly the moment threat visibility is restored on Blackridge's account
+01KQ2D93184912F0147315E7,2,Marcus Williams,"Provide a formal written incident report including full timeline, root cause, and remediation steps for Julia's board meeting"
+01KQ2D93184912F0147315E7,3,Marcus Williams,Loop in Blackridge's account executive for SLA breach review and compensation conversation
+01KQ2D93184912F0147315E7,4,Marcus Williams,Confirm in writing from engineering whether events during the outage window will be backfilled or are lost
+01KQ31ED026F745FE2A55CCD,1,Mike Romano,"Break Q2 roadmap themes (JIT/SCIM, adaptive MFA, audit trail) into epics in Jira and flag shared infrastructure dependencies by end of week"
+01KQ31ED026F745FE2A55CCD,2,Jordan Whitfield,Share redesigned attribute mapping designs in Figma in the Identity channel by tomorrow morning for async team feedback
+01KQ31ED026F745FE2A55CCD,3,Ananya Sharma,"Collaborate with Mike Romano on JIT provisioning and SCIM improvements, targeting a four-to-five week timeline with strong test coverage"
+01KQ31ED026F745FE2A55CCD,4,Alex Reyes,Follow up with Priya on the Comply team to formalize cross-team alignment on the Identity audit trail API integration
+01KQ325BDEDEE927D2970775,1,Priya Patel,"Send Paula a written update within two hours covering the fix timeline, event backfill status, and a full incident summary"
+01KQ325BDEDEE927D2970775,2,Priya Patel,Provide Paula with a direct escalation path including her personal line and the on-call Detect engineering bridge number
+01KQ325BDEDEE927D2970775,3,Priya Patel,Loop in Paula's account manager to discuss SLA remediation and service credits once the incident is resolved
+01KQ325BDEDEE927D2970775,4,Priya Patel,Confirm with engineering the exact backfill situation for Ridgeline's tenant and report back
+01KQ351E141926AB7CAB668D,1,Maria Santos,Send written confirmation of event data integrity to Grace within the hour
+01KQ351E141926AB7CAB668D,2,Maria Santos,"Deliver a full post-mortem document (timeline, root cause, remediation, prevention) by end of this week"
+01KQ351E141926AB7CAB668D,3,Maria Santos,Schedule an executive and VP of Engineering call with Grace and her CISO for early next week (Monday or Tuesday)
+01KQ351E141926AB7CAB668D,4,Maria Santos,Initiate a review of Northstar's SLA tier to propose enterprise-level commitments ahead of the June renewal
+01KQ38C4101D6774F2F02331,1,Tom Bradley,Draft and publish a customer-facing statement within 15 minutes explicitly clarifying this is not a security breach and providing an honest update on the pipeline failure
+01KQ38C4101D6774F2F02331,2,Sofia Petrov,Complete the stopgap fix (secondary ingestion node and temporary load balancer) and document the full failure sequence timeline in Confluence
+01KQ38C4101D6774F2F02331,3,Ananya Sharma,Support Sofia on the technical fix and assist with the incident timeline documentation
+01KQ38C4101D6774F2F02331,4,Brian Cho,"Manage customer communications and escalation triage, including addressing Harmon Financial and TerraLogix, and prepare messaging around partial event data loss"
+01KQ38FE02AEE5AA5157F042,1,Marcus Williams,"File bug report with engineering team immediately, flagging audit timeline urgency, and send Oliver an email ETA update later today"
+01KQ38FE02AEE5AA5157F042,2,Marcus Williams,Check with engineering and case queue to determine if other customers are reporting the same PDF rendering issues
+01KQ38FE02AEE5AA5157F042,3,Oliver Grant,Download the CSV export from the Comply dashboard as a backup reference for the internal audit review while the fix is pending
+01KQ38FE02AEE5AA5157F042,4,Oliver Grant,Regenerate the SOC 2 report after the patch is deployed and verify the formatting issues are resolved
+01KQ3BD8DEEBC7FECD107F0F,1,Lisa Park,Send Warren a proposed POC timeline and scope for the HIPAA reporting proof of concept by end of week
+01KQ3BD8DEEBC7FECD107F0F,2,Lisa Park,Provide Julia with a direct contact from the Aegis implementation team for technical environment discussions
+01KQ3BD8DEEBC7FECD107F0F,3,Maria Santos,"Send Julia and Warren the Comply v2 release notes, a sample HIPAA report PDF, and regulated-industry customer case studies"
+01KQ3BD8DEEBC7FECD107F0F,4,Warren Beck,Loop in Blackridge legal and compliance team before advancing further into the POC process
+01KQ3C837D7EF689408DCF95,1,Yuki Tanaka,Run a test backup job after updating the S3 connector endpoint to s3.us-west-2.amazonaws.com and report results back via the case email
+01KQ3C837D7EF689408DCF95,2,Yuki Tanaka,Loop in CloudPrime admin to review SCPs and bucket policies referencing the IAM role ARN found in Aegis Protect Connector Settings
+01KQ3C837D7EF689408DCF95,3,Yuki Tanaka,Pull CloudTrail logs from last Thursday through today and attach them to Case 2638
+01KQ3C837D7EF689408DCF95,4,Yuki Tanaka,Enable the Retry Policy in the S3 connector Advanced Options to reduce manual re-triggering of failed jobs
+01KQ3CE40428CCC5FF433FFC,1,Tom Bradley,"Deliver the full technical PIR document (root cause, fix, and prevention measures) to Diana by tomorrow morning"
+01KQ3CE40428CCC5FF433FFC,2,Diana Reeves,"Adapt PIR into customer-facing language and send to affected accounts by end of week, coordinating calls with enterprise and mid-renewal accounts"
+01KQ3CE40428CCC5FF433FFC,3,Megan Lawson,Review roadmap by end of week to assess feasibility of pulling forward the heartbeat alert feature
+01KQ3CE40428CCC5FF433FFC,4,Tom Bradley,Make himself available for technical deep-dive calls with up to three or four enterprise customers flagged by Diana
+01KQ3D8C1EF16C042F31FAFD,1,Rachel Torres,Send Isaac a one-pager with business case and ROI framing around compliance time savings for CFO/procurement by end of week
+01KQ3D8C1EF16C042F31FAFD,2,Rachel Torres,Loop in contracts team to issue formal renewal documents with target signing before end of April
+01KQ3D8C1EF16C042F31FAFD,3,Chris Lee,Schedule and lead a technical onboarding call with Isaac's infrastructure team after contract is signed
+01KQ3D8C1EF16C042F31FAFD,4,Isaac Brennan,Run the renewal proposal through internal procurement and advocate for approval
+01KQ3F90FF9EBC3DB3632514,1,Nina Kowalski,Update the grooming template to include a checklist item for certificate rotation scenarios
+01KQ3F90FF9EBC3DB3632514,2,Sofia Petrov,Schedule a design session for the IAM role hierarchy inheritance logic for early next week (Tuesday)
+01KQ3F90FF9EBC3DB3632514,3,Mike Romano,Follow up after Monday's meeting with the Comply team to scope the audit log attribution integration work for sprint 23
+01KQ3F90FF9EBC3DB3632514,4,Nina Kowalski,Send out retro notes by end of day and ensure test environment credentials are refreshed as part of sprint kickoff going forward
+01KQ410FB7E434BA3F99EE7D,1,Aisha Johnson,"Send formal three-year proposal with elastic seat model, enterprise API tier, and QBR cadence by end of next week"
+01KQ410FB7E434BA3F99EE7D,2,Aisha Johnson,Send scheduling link today for technical deep dive on streaming API endpoint with a solutions engineer for early next week
+01KQ410FB7E434BA3F99EE7D,3,Aisha Johnson,Set up a dedicated ISO 27001 readiness walkthrough session with the compliance team closer to the customer's 2027 certification timeline
+01KQ410FB7E434BA3F99EE7D,4,Ryan Caldwell,Loop in VP of Finance and legal team on the renewal proposal for final sign-off and contract language review
+01KQ41FB5CCFD9EA583FB020,1,Kevin O'Brien,"Send session summary with storage estimate for 12-month retention, bulk high-mobility user update template, and PagerDuty integration instructions"
+01KQ41FB5CCFD9EA583FB020,2,Patricia Dunn,Provide Manila office static IP ranges and coordinate availability for follow-up configuration session the week of March 16th
+01KQ41FB5CCFD9EA583FB020,3,Lisa Park,Send calendar invite for follow-up working session once Patricia's team confirms availability
+01KQ41FB5CCFD9EA583FB020,4,Patricia Dunn,Alert SOC team about expected initial burst of privileged access monitoring alerts over the next 24 hours and obtain PagerDuty API key for integration setup
+01KQ445B1B5B890316C9E300,1,Sofia Petrov,"Develop and submit PR for Comply v2 audit log pagination fix by end of day tomorrow, targeting production deployment early next week"
+01KQ445B1B5B890316C9E300,2,Ravi Gupta,Add health check probe to circuit breaker PR and ping Sofia for review by end of day
+01KQ445B1B5B890316C9E300,3,Sofia Petrov,Complete the two outstanding detection pipeline sections of the post-mortem runbook this week
+01KQ445B1B5B890316C9E300,4,Ravi Gupta,Add load testing suite to Jira roadmap with April 28th start date and two-week sprint plan
+01KQ4529010F423FD9DB40BD,1,Kevin O'Brien,"Create a one-pager on the March Detect outage resolution covering what happened, what was fixed, and why it won't recur"
+01KQ4529010F423FD9DB40BD,2,Brian Cho,Develop a formal competitive brief on VaultEdge focused on Protect and RTO benchmarking
+01KQ4529010F423FD9DB40BD,3,Raj Kapoor,Speak with VP of Sales about enforcing loss note quality with required fields and minimum character counts
+01KQ4529010F423FD9DB40BD,4,Maria Santos,Tighten the engagement model for late-stage evaluations to ensure Customer Success stays closer during competitive deals
+01KQ45C0AD36B351A3571940,1,Kevin O'Brien,Send scheduling link today for post-GA hands-on walkthrough with Dominic's compliance lead
+01KQ45C0AD36B351A3571940,2,Kevin O'Brien,Send Comply v2 release notes and PCI DSS mapping documentation to Dominic ahead of the walkthrough
+01KQ45C0AD36B351A3571940,3,Kevin O'Brien,Flag comparison/diff view feature request to the product team
+01KQ45C0AD36B351A3571940,4,Dominic Flores,Loop compliance lead into the scheduling link and share pre-read documentation with her
+01KQ45C76AF3AEA6B3EA6697,1,Daniel Okafor,"Send revised proposal document by Thursday or Friday including updated SLA language, two-year pricing scenario, and roadmap commitments"
+01KQ45C76AF3AEA6B3EA6697,2,Sofia Petrov,Arrange a call between Harold and the Comply product manager to discuss CMMC roadmap timeline
+01KQ45C76AF3AEA6B3EA6697,3,Harold Jensen,Share the proposal document with his legal team and leadership for review
+01KQ45C76AF3AEA6B3EA6697,4,Daniel Okafor,Formalize the enhanced 99.9% Detect uptime SLA with remediation credits in writing as part of the renewal package
+01KQ45F6F7349D0A620571F1,1,Aisha Johnson,"Send follow-up email today summarizing the technical session plan, timeline, and Priya's contact information"
+01KQ45F6F7349D0A620571F1,2,Aisha Johnson,Share the real engineering post-mortem and architecture change documentation (non-marketing version) with Kendra for Priya to review before the session
+01KQ45F6F7349D0A620571F1,3,Aisha Johnson,"Organize a technical session in early May with the Detect engineering lead (no sales slides, live architecture and config walkthrough)"
+01KQ45F6F7349D0A620571F1,4,Kendra Wallace,Connect Priya (lead engineer) with Aisha to schedule the technical session and prepare questions
+01KQ46A9DE0AECB006D897A0,1,Diana Reeves,Personally call Crestwood Health and Hartwell Financial account leads within the next hour
+01KQ46A9DE0AECB006D897A0,2,Diana Reeves,Draft first customer communication email template and send to Marcus within fifteen minutes
+01KQ46A9DE0AECB006D897A0,3,Marcus Williams,"Own customer comms cadence, coordinate with CSMs, and ensure one centralized voice for all outreach"
+01KQ46A9DE0AECB006D897A0,4,Tyler Washington,"Feed engineering status updates to Marcus every thirty minutes, starting by 10:30"
+01KQ4D01DCB15C69672AB5AF,1,Mike Romano,Send CloudFormation template for CloudPrime IAM role creation to Natalie's team today
+01KQ4D01DCB15C69672AB5AF,2,Natalie Simmons,"Verify multi-region CloudTrail logging is enabled and run the CloudFormation template, then share the IAM role ARN with Mike"
+01KQ4D01DCB15C69672AB5AF,3,Aisha Johnson,Send Thursday calendar invite to all participants for the baseline HIPAA report review call
+01KQ4D01DCB15C69672AB5AF,4,Ajay Mehta,Confirm Thursday availability and coordinate with Natalie to prioritize connector setup this week
+01KQ4D504CE09A8F6ECA1F5A,1,Hannah Liu,Follow up with the infra lead to prioritize the dedicated Identity staging tenant ticket
+01KQ4D504CE09A8F6ECA1F5A,2,Ananya Sharma,Check on Azure AD sandbox account availability through the internal Nextera agreement
+01KQ4D504CE09A8F6ECA1F5A,3,Nina Kowalski,Confirm the Okta dev account is still active and available for QA testing
+01KQ4D504CE09A8F6ECA1F5A,4,Hannah Liu,Schedule a mid-March check-in for the same group to review progress against the Q2 plan
+01KQ4D71CDFB1045A2458216,1,James Mitchell,"Send final renewal documents to Evelyn today including flat pricing, Comply v2 year-one inclusion, and 20% seat expansion rider"
+01KQ4D71CDFB1045A2458216,2,Ravi Gupta,Deliver the final post-incident report for the March 10th Detect outage to Evelyn for internal compliance documentation
+01KQ4D71CDFB1045A2458216,3,Kevin O'Brien,Schedule a Comply v2 deep-dive session with Evelyn's compliance manager
+01KQ4D71CDFB1045A2458216,4,Kevin O'Brien,Coordinate a pre-acquisition readiness check for Bridgeport's incoming regional clinic when the deal gets closer to closing
+01KQ4EE836687F95080D92AB,1,Chris Lee,Share the rough detection rule versioning spec doc with the team after the call
+01KQ4EE836687F95080D92AB,2,Ananya Sharma,Draft pipeline architecture sub-tasks today and share in the team channel for review before the board is finalized
+01KQ4EE836687F95080D92AB,3,Chris Lee,Update the sprint board and send a summary to the team channel
+01KQ4EE836687F95080D92AB,4,Nina Kowalski,Create a chore ticket for CI gating to prevent unvalidated config merges
+01KQ51DC4345D9DAE005678C,1,Lisa Park,Send Thomas a written summary of all captured feedback and priority rankings by end of week
+01KQ51DC4345D9DAE005678C,2,Lisa Park,Confirm and share current roadmap status for scheduled automated report delivery feature
+01KQ51DC4345D9DAE005678C,3,Lisa Park,Introduce Thomas to product liaison Ren for a follow-up call focused on control filtering use case
+01KQ51DC4345D9DAE005678C,4,Daniel Okafor,Provide more concrete timeline on granular control filtering roadmap item once internal details are available
+01KQ54917E3931712516916D,1,Keith Donovan,Have Priya (security engineering lead) email Kevin to coordinate technical onboarding details
+01KQ54917E3931712516916D,2,Kevin O'Brien,Send recap email and onboarding guide to Keith this afternoon
+01KQ54917E3931712516916D,3,Kevin O'Brien,Reserve Nimbus a spot in the April 7th first-wave rollout and intro onboarding specialist to Priya
+01KQ54917E3931712516916D,4,Keith Donovan,Share call recording with head of security engineering regarding multi-framework reporting capabilities
+01KQ560FF1570C5E7F71D752,1,Kevin O'Brien,"Send formal onboarding plan document including three-phase timeline, resource requirements, and business impact analysis template by end of day tomorrow"
+01KQ560FF1570C5E7F71D752,2,Kevin O'Brien,Send calendar invite for Wednesday kickoff call with implementation lead copied in
+01KQ560FF1570C5E7F71D752,3,Vanessa Cruz,Loop in two senior engineers for the Wednesday kickoff call
+01KQ560FF1570C5E7F71D752,4,Vanessa Cruz,Schedule a follow-up conversation about Aegis Comply v2 and PCI DSS reporting after Protect is up and running
+01KQ56786DD1E8A1BF174FDD,1,David Kim,"Send Forge Industries team the April 10th v2 customer webinar invite, including Dana's two compliance analysts"
+01KQ56786DD1E8A1BF174FDD,2,Dana Moretti,Email David Kim with compliance analysts' contact details to be added to webinar invite
+01KQ56786DD1E8A1BF174FDD,3,Elena Vasquez,Follow up in writing with specifics on custom control labeling and metadata field support in Comply v2
+01KQ56786DD1E8A1BF174FDD,4,Elena Vasquez,Log custom internal policy cross-referencing as a formal feature request with the product team and flag Forge Industries as a reference customer candidate
+01KQ56AA6B60801ABC01AB1C,1,Sarah Chen,Escalate Comply overage dispute internally as high priority and send written response with credit/reversal determination within 48 hours
+01KQ56AA6B60801ABC01AB1C,2,Marcus Williams,Pull backend pipeline event ingestion logs for March 10–16 to identify queued replay traffic and document findings by end of day
+01KQ56AA6B60801ABC01AB1C,3,Sarah Chen,Send written call summary and next steps to Ajay Mehta and Natalie Simmons before end of business today
+01KQ56AA6B60801ABC01AB1C,4,Sarah Chen,Escalate missing overage alert configuration on v2-migrated accounts to billing and product teams
+01KQ56D878454E5783DC6D94,1,David Kim,"Switch Stratos Cloud's LogVault integration to streaming mode and initiate the four-day event data backfill, sending confirmation emails when the job starts and completes"
+01KQ56D878454E5783DC6D94,2,Priya Patel,"Draft and send a detailed incident summary including root cause, timeline, affected data, and remediation steps by end of business tomorrow"
+01KQ764171AC27A3A94DC695,1,Chris Lee,Talk to Priya about getting Meridian Financial into an early access or beta program for the expanded event telemetry dashboard by mid-May
+01KQ56D878454E5783DC6D94,3,Priya Patel,Schedule a substantive follow-up call with Damien Rowe and the customer success team to review Stratos Cloud's overall Aegis Detect configuration and address platform reliability concerns
+01KQ5A966832A146DA4B7D41,1,Maria Santos,Escalate the open MFA ticket today and provide Alicia with a real status update by end of day
+01KQ5A966832A146DA4B7D41,2,Maria Santos,"Schedule a technical Identity specialist call for next week and deliver a written summary with accountable action items, owners, and timelines afterward"
+01KQ5A966832A146DA4B7D41,3,Maria Santos,Send Alicia a formal post-incident report on the March Detect outage and arrange an engineering briefing for her CISO on the architecture changes
+01KQ5A966832A146DA4B7D41,4,Maria Santos,"Develop a formal remediation plan for all Aegis Identity issues including MFA enforcement, session timeout behavior, and support response quality"
+01KQ5AFAE8264DDC0ED2AE7F,1,Sofia Petrov,"Prepare and send deployment plan document by end of day Monday, including three-phase timeline, Entra ID and ServiceNow integration checklist, MFA phased migration framework, and just-in-time PAM overview"
+01KQ5AFAE8264DDC0ED2AE7F,2,Rachel Torres,Send calendar invite with options for a kickoff call early next week
+01KQ5AFAE8264DDC0ED2AE7F,3,Derek Owens,Share deployment plan document with manager for review before the kickoff call
+01KQ5AFAE8264DDC0ED2AE7F,4,Derek Owens,Bring Aegis Comply v2 SOC 2 reporting capabilities to the attention of the Chief Compliance Officer
+01KQ5BB8521F99E55470206E,1,Tyler Washington,Review Nina's repro steps for the wildcard regex edge case in DETECT-219 and apply fix today
+01KQ5BB8521F99E55470206E,2,Nina Kowalski,Send Tyler the repro steps for the DETECT-219 wildcard matching issue after the call
+01KQ5BB8521F99E55470206E,3,Ananya Sharma and Ravi Gupta,Block time Wednesday afternoon to assess ingestion node redundancy and return with a rough scope estimate
+01KQ5BB8521F99E55470206E,4,Sofia Petrov,Track sprint commitments at 13 points and monitor for mid-sprint adjustments if DETECT-231 testing surface expands
+01KQ5D47170D4828E89EDE37,1,Elena Vasquez,"Send Forge Industries a data recovery summary detailing what event data was and was not captured during the six-hour outage window, targeting Thursday but no later than Friday"
+01KQ5D47170D4828E89EDE37,2,Elena Vasquez,Share the finalized post-incident report (PIR/RCA) with Dana Moretti once it is out of draft
+01KQ5D47170D4828E89EDE37,3,Elena Vasquez,Add tenant health confirmation metrics and timestamp to the case notes and keep case open until both documents are received and confirmed
+01KQ5D47170D4828E89EDE37,4,Dana Moretti,"Prepare CISO briefing using the root cause details, timeline, and remediation information provided, incorporating incoming documentation"
+01KQ5EC1665DCFD7A6B62A59,1,Elena Vasquez,Walk Priya through manually re-importing new certificate metadata for all 14 service provider connections in the admin console
+01KQ5EC1665DCFD7A6B62A59,2,Marcus Williams,Document the call and escalate reliability concerns (Detect outage and SAML wizard bug) to the customer success team for a follow-up conversation with Vanessa
+01KQ5EC1665DCFD7A6B62A59,3,Elena Vasquez,Ensure the customer advisory warning admins not to use the certificate rotation wizard until patch 3.4.2 is distributed today
+01KQ5EC1665DCFD7A6B62A59,4,Aegis Engineering,Release patch 3.4.2 with the certificate rotation wizard fix by the week of April 6th
+01KQ5F364545B542671FF9CE,1,Marcus Williams,"Send user management API documentation and, if available, a sample Okta Workflows integration community post to Jason and Suki today"
+01KQ5F364545B542671FF9CE,2,Sarah Chen,Log native SCIM 2.0 as a formal feature request with Meridian Capital's financial services compliance use case details attached
+01KQ5F364545B542671FF9CE,3,Sarah Chen,Notify Meridian Capital's account manager to follow up on SCIM roadmap timeline within one to two business days
+01KQ5F364545B542671FF9CE,4,Suki Nakamura,Schedule a separate session with Aegis to explore fuller usage of Aegis Comply for compliance reporting
+01KQ65D43540846FA994B6C4,1,Rachel Torres,Follow up with product management to get a more concrete timeline on hierarchical role inheritance and share it with Victor
+01KQ65D43540846FA994B6C4,2,Rachel Torres,Formally submit both feature requests (hierarchical roles and granular session timeout policies) to the product team with the compliance audit context to support prioritization
+01KQ65D43540846FA994B6C4,3,Rachel Torres,"Send a summary email to Victor recapping the discussion, feature requests, and next steps"
+01KQ65D43540846FA994B6C4,4,Sofia Petrov,Verify current roadmap status of role-based or resource-based session timeout policies and relay findings to Rachel
+01KQ68FB3E9E60C4477CDAB4,1,Ravi Gupta,Add Lambda warm-up ping to the pre-deploy checklist before the April 6th deployment
+01KQ68FB3E9E60C4477CDAB4,2,Ravi Gupta and Nina Kowalski,Coordinate and configure MetricFlow queue depth alert for the reporting service by April 6th
+01KQ68FB3E9E60C4477CDAB4,3,Ananya Sharma,Update the deployment runbook with alert config and warm-up ping notes and circulate for final review by EOD Thursday
+01KQ68FB3E9E60C4477CDAB4,4,Mike Romano,Track PCI DSS hardcoded version strings cleanup as a v2.0.1 ticket post-launch
+01KQ6A5CEAAFFBE3B0099E75,1,Marcus Williams,Send case summary email within the hour and copy the account manager on all case notes
+01KQ6A5CEAAFFBE3B0099E75,2,Marcus Williams,Escalate response time failure internally and flag Steelpoint account for priority routing on future cases
+01KQ6A5CEAAFFBE3B0099E75,3,Marcus Williams,Coordinate with account manager to schedule a follow-up call with Harold Jensen to address broader experience concerns including the Detect outage
+01KQ6A5CEAAFFBE3B0099E75,4,Marcus Williams,Log product feedback with the Identity team requesting more descriptive SSL/TLS error messaging in the LDAP connector UI
+01KQ6CAA850EAFDC48B52846,1,Maria Santos,Send RCA documentation for the March outage to Catherine and Russell this week
+01KQ6CAA850EAFDC48B52846,2,Maria Santos,Schedule Comply v2 demo with ISO 27001 focus for Wednesday and send calendar invite today
+01KQ6CAA850EAFDC48B52846,3,Maria Santos,Engage account executive and VP of Customer Success to develop a monitoring-specific SLA and credit structure proposal
+01KQ6CAA850EAFDC48B52846,4,Maria Santos,Set up a technical session with the Aegis OT security specialist tailored to the customer's manufacturing and Siemens PLC environment
+01KQ764171AC27A3A94DC695,2,Tyler Washington,Draft a customer-facing incident summary document and share with Diana for tone review by end of week
+01KQ764171AC27A3A94DC695,3,Diana Reeves,Check Treswick Healthcare's contract to determine if they are on Comply and explore a platform expansion conversation
+01KQ764171AC27A3A94DC695,4,Chris Lee,Update on-call runbook to ensure Customer Success receives a heads-up notification whenever a circuit breaker activation occurs
+01KQ773D68723289E4A98889,1,Marcus Williams,"Send case summary email to Kendra including invoice reference INV-2026-0847, January usage figures, January 3rd policy change log, and Devon Park's contact information"
+01KQ773D68723289E4A98889,2,Kendra Wallace,Reach out to account manager Devon Park to discuss potential billing adjustment for the overage charge
+01KQ773D68723289E4A98889,3,Sarah Chen,Ensure Kendra's infrastructure lead is looped in to enable usage threshold alerts in the Aegis Protect portal dashboard
+01KQ773D68723289E4A98889,4,Kendra Wallace,Have infrastructure lead review usage dashboard in the portal and configure real-time usage alerts going forward
+01KQ77F2867FC54E13A8C495,1,James Mitchell,"Send post-incident report, IAM permissions template, and onboarding portal credentials to Kendra by end of day"
+01KQ77F2867FC54E13A8C495,2,James Mitchell,"Loop in onboarding team to schedule kickoff session with Marcus Okonkwo, targeting early next week"
+01KQ77F2867FC54E13A8C495,3,Kendra Wallace,Send Marcus Okonkwo's contact information to James and notify Marcus to expect outreach from the onboarding team
+01KQ77F2867FC54E13A8C495,4,Kendra Wallace,Check with Marcus on VPC Flow Log configuration coverage across all production environments
+01KQ7B802912366FC0A24D4F,1,Ravi Gupta,Scope the chaos engineering staging run for Detect and target mid-May for execution
+01KQ7B802912366FC0A24D4F,2,Ananya Sharma,Investigate and fix the intermittent timeout bug when queuing more than three simultaneous Comply reports
+01KQ7B802912366FC0A24D4F,3,Hannah Liu,Assign the PCI DSS PDF formatting bug to a front-end team member
+01KQ7B802912366FC0A24D4F,4,Hannah Liu,Send out meeting summary with action items and document the Q2 Detect prioritization rationale for leadership
+01KQ7BF0D56037FF89DC89B6,1,Elena Vasquez,"Escalate case to P1 priority and tag account for direct engineering contact, then follow up with Isaac within two hours"
+01KQ7BF0D56037FF89DC89B6,2,Elena Vasquez,Loop in Isaac's account manager to provide direct leadership-level communication channel for ongoing updates
+01KQ7BF0D56037FF89DC89B6,3,Elena Vasquez,"Deliver a formal written incident report including root cause, timeline, and remediation plan before end of week"
+01KQ7BF0D56037FF89DC89B6,4,Isaac Brennan,Conduct manual review of fraud transaction logs through secondary tooling as a stop-gap while Detect is down
+01KQ7F58A2E07B857C24624D,1,Jordan Whitfield,"Clean up the competitive deck, add a summary slide with the competitive matrix, and share before EOD tomorrow"
+01KQ7F58A2E07B857C24624D,2,Tom Bradley,Review the updated deck thoroughly before the product review meeting next week
+01KQ7F58A2E07B857C24624D,3,Jordan Whitfield,Frame the LogVault connector gap as a risk item for leadership visibility in the product review
+01KQ7F58A2E07B857C24624D,4,Tom Bradley,Assess engineering bandwidth feasibility around improving the LogVault connector configuration experience
+01KQ7FA71CF70FAFEE4B6251,1,Aisha Johnson,Set up Aegis Comply v2 preview environment for Stephanie and her compliance lead Sarah before the renewal decision
+01KQ7FA71CF70FAFEE4B6251,2,Aisha Johnson,Pull and personally resolve the unresolved January support ticket regarding Detect alert signal-to-noise from Stephanie's SOC analyst
+01KQ7FA71CF70FAFEE4B6251,3,Aisha Johnson,Prepare a written summary of Detect remediation steps and updated SLA commitments for Stephanie's CISO
+01KQ7FA71CF70FAFEE4B6251,4,Aisha Johnson,Loop in account executive to explore commercial flexibility and set up a pricing conversation with Stephanie
+01KQ85D10E82A26A8F754FB8,1,Maria Santos,Schedule a Comply v2 preview session for Evelyn's team
+01KQ85D10E82A26A8F754FB8,2,Kevin O'Brien,Prepare and send a healthcare-specific SOC 2 to HIPAA framework mapping document by end of next week
+01KQ85D10E82A26A8F754FB8,3,Kevin O'Brien,Audit Evelyn's current evidence library structure to identify SOC 2 controls that translate to HIPAA and verify PHI access logging setup
+01KQ88B8EAEAA819C26CCBE7,1,Elena Vasquez,Send 30-minute email updates to Grace and Frank until the event pipeline outage is fully resolved
+01KQ88B8EAEAA819C26CCBE7,2,Elena Vasquez,"Produce detailed audit-ready incident documentation covering timeline, root cause, data preservation, and remediation steps for Northstar's SOC 2 auditors"
+01KQ88B8EAEAA819C26CCBE7,3,Elena Vasquez,Confirm scheduling of VP of Engineering and CSM call within 48 hours of incident resolution before end of business today
+01KQ88B8EAEAA819C26CCBE7,4,Elena Vasquez,"Arrange a post-incident architecture review with Northstar covering redundancy, failover posture, and Detect integration into their broader security stack"
+01KQ8C5A044F54EE1774D53C,1,Kevin O'Brien,Prepare a CTO-readable technical brief documenting the remediation steps and new redundant pipeline architecture by end of this week
+01KQ8C5A044F54EE1774D53C,2,Kevin O'Brien,Schedule and conduct a detection tuning working session with Helix to address false positive noise and custom rule configuration issues within the next two weeks
+01KQ8C5A044F54EE1774D53C,3,Maria Santos,Develop and present a commercial make-right proposal to Charles by end of this week
+01KQ8C5A044F54EE1774D53C,4,Maria Santos,Schedule a mid-week follow-up call (Tuesday or Wednesday) with Charles Ng and Helix security lead Priya to review all deliverables
+01KQ8D9A06510DD623EFB1A6,1,Rachel Torres,Log formal feature requests for entity grouping with custom behavioral baselines and in-product pipeline health status with proactive degradation alerts
+01KQ8D9A06510DD623EFB1A6,2,Rachel Torres,Send Sandra confirmed threat intel feed list for correlation layer (including FS-ISAC status) and LogVault native connector timeline details
+01KQ8D9A06510DD623EFB1A6,3,Rachel Torres,Schedule Comply v2 demo with Sandra and Marcus during the week of April 20th
+01KQ8D9A06510DD623EFB1A6,4,Rachel Torres,Connect Sandra with product team to provide direct context on entity grouping and custom baseline requirements
+01KQ92EA85FE4C537400227D,1,Priya Patel,Log feature request for custom compliance templates against Warren's account and flag as priority to the product team
+01KQ92EA85FE4C537400227D,2,Priya Patel,Send follow-up email within the hour with early access intake form and links to Comply v2 API documentation
+01KQ92EA85FE4C537400227D,3,Warren Beck,Complete the early access intake form and explore the custom annotation feature in the SOC 2 report UI
+01KQ92EA85FE4C537400227D,4,Warren Beck,Loop in internal data team to evaluate the Comply v2 API for pulling control data into internal dashboards
+01KQ94C2B8B9B4668F3D3491,1,Elena Vasquez,"Escalate the case to Sev 1 and send a written status update to Mark within two hours, followed by a direct callback"
+01KQ94C2B8B9B4668F3D3491,2,Elena Vasquez,Flag the case to Mark's account manager to proactively discuss SLA credits
+01KQ94C2B8B9B4668F3D3491,3,Sarah Chen,"Ensure engineering has visibility into account RLL-4482 workspaces ridgeline-prod-detect and ridgeline-staging-detect, and explicitly raise the data backfill requirement in the internal escalation"
+01KQ94C2B8B9B4668F3D3491,4,Sarah Chen,"Ensure a full written incident report with root cause, remediation steps, and recurrence prevention is delivered to Mark once the issue is resolved"
+01KQ9772B2348F500FB09D1E,1,Elena Vasquez,Escalate case 3677 as P1 business-critical to Identity engineering team with active user lockout flag
+01KQ9772B2348F500FB09D1E,2,Elena Vasquez,Send follow-up email to Vanessa with root cause update by end of business today
+01KQ9772B2348F500FB09D1E,3,Elena Vasquez,Notify Vanessa's account team to schedule a broader reliability discussion
+01KQ9772B2348F500FB09D1E,4,Vanessa Cruz,Enable email OTP fallback in Aegis Identity admin console and notify affected users to retry login
+01KQ9A6BE09D73A9BB5798C7,1,David Kim,"Escalate formal feature request (case 3615) to product team with full business context, cross-framework matrix format requirements, and SOC 2/ISO 27001/PCI DSS scope"
+01KQ9A6BE09D73A9BB5798C7,2,David Kim,Flag Nimbus Platform as a candidate for early access and beta programs in the escalation documentation
+01KQ9A6BE09D73A9BB5798C7,3,David Kim,Send email confirmation with updated case notes to Keith Donovan after closing call documentation
+01KQ9A6BE09D73A9BB5798C7,4,Keith Donovan,Follow up with account manager Sarah Chen for periodic roadmap and feature request status updates
+01KQ9BB82FD97C9607D57E90,1,Maria Santos,"Send formal onboarding project plan document (phase timeline, resource requirements, kick-off checklist) by end of week"
+01KQ9BB82FD97C9607D57E90,2,Vanessa Cruz,Provision read-only CloudPrime access for Aegis implementation engineer
+01KQ9BB82FD97C9607D57E90,3,Vanessa Cruz,Introduce Maria to Raj Patel (Senior DevOps Engineer) via email after the call
+01KQ9BB82FD97C9607D57E90,4,Maria Santos,Schedule technical discovery call with Vanessa and Raj Patel for next week
+01KQ9BCA1794C9472726FFAD,1,Megan Lawson,"Prepare a one-pager for the exec review covering adoption numbers, HIPAA findings, and cross-sell signals"
+01KQ9BCA1794C9472726FFAD,2,Tom Bradley,Deploy the ISO 27001 control numbering formatting fix in the next patch by end of next week
+01KQ9BCA1794C9472726FFAD,3,Diana Reeves,"Pull customer testimonial quotes from recent QBRs, including the healthcare company audit prep quote"
+01KQ9BCA1794C9472726FFAD,4,Megan Lawson,Initiate internal conversation about scoping and resourcing GDPR framework addition
+01KQA0F0BE68E74D66EB4171,1,Tom Bradley,Create a high-level technical architecture overview of the March incident remediation to share with prospects by end of next week
+01KQA0F0BE68E74D66EB4171,2,Jordan Whitfield,"Complete updated competitive battlecard including CyberNova comparison, targeting end of next week"
+01KQA0F0BE68E74D66EB4171,3,Rachel Torres,Schedule a technical call with Hartfield Manufacturing's infrastructure team for next week focused on Comply v2 and SOC 2 reporting
+01KQA0F0BE68E74D66EB4171,4,Kevin O'Brien,Attend Hartfield Manufacturing technical call and support the Comply v2 demo angle around their active SOC 2 audit
+01KQA1AFDC1306A000B0C7D9,1,Aisha Johnson,"Draft a phased implementation plan based on today's discussion, starting with CloudPrime workloads, including pre-work checklist items for Raymond's team"
+01KQA1AFDC1306A000B0C7D9,2,Lisa Park,Send follow-up calendar invite for next week's session along with the implementation plan draft and dashboard demo agenda
+01KQA1AFDC1306A000B0C7D9,3,Raymond Burke,Loop in infrastructure lead for the next session to cover VMware integration technical details
+01KQA1AFDC1306A000B0C7D9,4,Raymond Burke,"Distribute pre-work checklist to internal team to begin preparing network access, vSphere API credentials, and CloudPrime IAM roles"
+01KQA502E222E2A60330237B,1,Ananya Sharma,Create a tiered restore playbook tailored to Pineridge's architecture based on DR drill learnings
+01KQA502E222E2A60330237B,2,Daniel Okafor,Send customized ROI template for Aegis Comply v2 that Yuki can present to CFO and leadership
+01KQA502E222E2A60330237B,3,Daniel Okafor,Add Yuki Tanaka to the Aegis Comply v2 early access communication list ahead of April 7th GA
+01KQA502E222E2A60330237B,4,Daniel Okafor,Schedule commercial renewal follow-up call with Yuki for the week of April 13th
+01KQA7DFCE1285F52192B34B,1,David Kim,Escalate case to Protect infrastructure team as P1 and investigate backend network routing changes from March remediation as root cause of throughput degradation
+01KQA7DFCE1285F52192B34B,2,David Kim,Deploy agent update 4.2.0 to Silverline Brands environment manually within the hour and adjust SQL backup job priority settings for tonight's run
+01KQA7DFCE1285F52192B34B,3,David Kim,Send calendar invite and case update email to Dominic within 30 minutes for 10 AM Central follow-up call with a Protect platform engineer
+01KQA7DFCE1285F52192B34B,4,David Kim,Set up alert to be paged directly if SQL backup job duration exceeds six hours during tonight's backup window
+01KQAC572C34475A8791F2C3,1,Ananya Sharma,Write a technical brief explaining Q2 incremental backup work and how it sets up multi-region replication for Q3
+01KQAC572C34475A8791F2C3,2,Sofia Petrov,Share Figma prototype link for the new restore wizard in the planning doc
+01KQAC572C34475A8791F2C3,3,Ravi Gupta,Review current pipeline config and post notes on scheduling file index updates without contention with backup jobs
+01KQAC572C34475A8791F2C3,4,Mike Romano,Update the planning doc with meeting outcomes and send a summary to the channel
+01KQADC32D89E2B76B698E84,1,Sarah Chen,Escalate patch priority with engineering and follow up with updated fix ETA by end of day today
+01KQADC32D89E2B76B698E84,2,Sarah Chen,Flag status page communication gap internally and ensure a status update is published for affected customers
+01KQADC32D89E2B76B698E84,3,Elena Vasquez,Draft and send an incident summary email within the hour for Stephanie to share with her CISO
+01KQADC32D89E2B76B698E84,4,Andre Coleman,Apply bulk Authentication Override workaround to approximately 450 affected users in the Aegis Identity admin console
+01KQADF3D76E82BF8BA19AF2,1,Megan Lawson,Prepare a write-up on the Detect ingestion layer bottleneck by Tuesday for Raj to assess scope and resource needs
+01KQADF3D76E82BF8BA19AF2,2,Megan Lawson,Provide Diana with Comply v2 talking points and a draft feature summary by end of next week for strategic account briefings
+01KQADF3D76E82BF8BA19AF2,3,Diana Reeves,"Close upsell deals with Brentwood Logistics and TechCore, and set up Comply v2 early access briefings for 3-4 strategic accounts before April launch"
+01KQADF3D76E82BF8BA19AF2,4,Raj Kapoor,Schedule a meeting with Megan and Lena from engineering leadership to discuss potential Identity roadmap shifts to Q3
+01KQAEA50436D047BC39CFC7,1,Maria Santos,Send a side-by-side renewal quote (1-year vs 2-year options) reflecting updated data volume by February 27th
+01KQAEA50436D047BC39CFC7,2,Maria Santos,Provide a written technical summary of Detect pipeline resilience improvements by February 27th
+01KQAEA50436D047BC39CFC7,3,Maria Santos,Pull and review the November/December backup failure support ticket to understand the delayed response
+01KQAEA50436D047BC39CFC7,4,Derek Owens,Present renewal options to CFO and provide a decision or direction by March 5th
+01KQAFB8DBF6E1E2FDEF0B75,1,Aisha Johnson,Send calendar invite for a 30-minute demo session early next week including Nathan and his lead engineer Rachel
+01KQAFB8DBF6E1E2FDEF0B75,2,Aisha Johnson,Send a written summary of the call along with SOC 2 framework mapping resources for Nathan to share internally
+01KQAFB8DBF6E1E2FDEF0B75,3,Nathan Perry,Loop in lead engineer Rachel and confirm availability for the demo and follow-up technical scoping call
+01KQAFB8DBF6E1E2FDEF0B75,4,Sofia Petrov,Prepare for technical scoping session covering Maplewood's CloudPrime/Azure environment and connector integration requirements
+01KQB3B16F255B65F39597D0,1,Mike Romano,Share a sample PDF report with placeholder data to the shared drive today
+01KQB3B16F255B65F39597D0,2,Hannah Liu,Update the spec doc with agreed decisions and send for final review
+01KQB3B16F255B65F39597D0,3,Ananya Sharma,Execute mid-March load test simulating concurrent report jobs to validate queue and worker scaling
+01KQB3B16F255B65F39597D0,4,Hannah Liu,Move report annotation feature to the v2.1 backlog
+01KQB632F1ADC378C42F2C03,1,David Kim,Issue a $255 billing credit to Silverline Brands account to be applied on the May 1st invoice
+01KQB632F1ADC378C42F2C03,2,David Kim,Attach proration calculation breakdown to support case 7570 for the customer's finance team
+01KQB632F1ADC378C42F2C03,3,David Kim,Escalate proration miscalculation to billing systems team for a broader review of all April 7th v2 upgrades
+01KQB632F1ADC378C42F2C03,4,David Kim,Send email summary through the case portal to the customer within the hour
+01KQB95605C6F873C6036285,1,Maria Santos,Send Gerald the Detect post-incident review and Comply v2 product brief by end of day
+01KQB95605C6F873C6036285,2,Ananya Sharma,Prepare a customized PCI DSS to SOC 2 control mapping one-pager for Gerald's internal conversations
+01KQB95605C6F873C6036285,3,Maria Santos,Schedule a technical deep-dive demo session with Gerald's team and Ananya for approximately one week out
+01KQB95605C6F873C6036285,4,Gerald Hutchins,Share the post-incident review materials with his steering committee to address internal concerns about Detect reliability
+01KQBB7C4D4789DB2F3DA9C2,1,Sarah Chen,"Send follow-up email within the hour containing retry_on_timeout config syntax, upgrade steps to 3.5.0, recommended F5 connection limit settings, and all available parameter documentation"
+01KQBB7C4D4789DB2F3DA9C2,2,Raymond Burke,Apply interim config changes today (retry_on_timeout and F5 connection limit increase) and plan connector upgrade to 3.5.0 for the weekend
+01KQBB7C4D4789DB2F3DA9C2,3,Priya Patel,Ensure account executive reaches out to Vanta Health Systems this week to discuss broader support experience concerns
+01KQBB7C4D4789DB2F3DA9C2,4,Priya Patel,Flag internally the process failure around proactive customer notification for affected connector versions and escalate documentation gap for retry_on_timeout parameter
+01KQBBF753B44DE677670E6D,1,David Kim,Submit emergency infrastructure rebalance request (IR-8842) to migrate Summit Trust tenant to a less-loaded node cluster and monitor completion
+01KQBBF753B44DE677670E6D,2,David Kim,"Deliver formal written incident summary covering the March outage, latency root cause, and resolution to Alicia, Gregory, and their account manager by EOB tomorrow"
+01KQBBF753B44DE677670E6D,3,David Kim,Escalate the March outage communication failure as a separate internal escalation item and loop in the account manager for upcoming QBR
+01KQBBF753B44DE677670E6D,4,David Kim,"Include documentation on setting up a synthetic LogVault-based latency monitoring workaround in the follow-up email, and flag native latency alerting as a product feedback gap"
+01KQC1267BEB344076DD7656,1,Kevin O'Brien,Send technical brief with updated architecture diagrams to Tanya's team within one week
+01KQC1267BEB344076DD7656,2,Maria Santos,Schedule a Detect configuration review with Tanya's security engineering team
+01KQC1267BEB344076DD7656,3,Maria Santos,Deliver a formatted external post-mortem document to Robert by end of next week
+01KQC1267BEB344076DD7656,4,Maria Santos,Obtain initial SLA proposal with updated Detect uptime terms from commercial team within two weeks
+01KQC166F678CBA584AAFF8B,1,Sarah Chen,Submit provisioning request to move CWG-04471 from shared to dedicated sync worker tier and send email confirmation within the hour
+01KQC166F678CBA584AAFF8B,2,Sarah Chen,Escalate case to P1 and engage backend engineering team for root cause investigation with 48-hour SLA
+01KQC166F678CBA584AAFF8B,3,Sarah Chen,Follow up personally with Derek on Wednesday with engineering root cause determination and remediation plan
+01KQC166F678CBA584AAFF8B,4,Sarah Chen,Flag Derek's negative support experience to his account team ahead of renewal conversations
+01KQC3A2EBC501837E973B16,1,Victor Zheng,Complete the Okta API token request and fill out the user attribute mapping template by end of next week
+01KQC3A2EBC501837E973B16,2,Ananya Sharma,Send Okta API token request guide and user attribute mapping template to Victor this afternoon
+01KQC3A2EBC501837E973B16,3,Ananya Sharma,Create and share a project milestone tracking document with the team
+01KQC3A2EBC501837E973B16,4,Victor Zheng,Schedule a 90-minute working session with Ananya for the Okta connector setup after completing prerequisites
+01KQCA6EA8B603EBB6C9FE34,1,Daniel Okafor,Track down and escalate the January support ticket regarding shared workstation session management
+01KQCA6EA8B603EBB6C9FE34,2,Daniel Okafor,Set up a call between Paula and product manager Marcus to discuss session policy granularity roadmap timeline
+01KQCA6EA8B603EBB6C9FE34,3,Daniel Okafor,Formally log MFA policy exception feature request with operational impact framing and send RBAC preview doc under NDA
+01KQCA6EA8B603EBB6C9FE34,4,Paula Schneider,Send Translog technical specifications to Daniel once available for SSO compatibility review
+01KQCF9872BF130D33B1B5EC,1,Jordan Whitfield,Submit a one-line CSS fix PR for the Safari flexbox rendering bug in the download modal by end of day
+01KQCF9872BF130D33B1B5EC,2,Nina Kowalski,"Verify Jordan's Safari CSS fix once merged, estimated 20-minute test suite run"
+01KQCF9872BF130D33B1B5EC,3,Alex Reyes,Incorporate 'dedicated infrastructure' language into the Comply v2 launch announcement copy to proactively address Detect outage concerns
+01KQCF9872BF130D33B1B5EC,4,Alex Reyes,Update the launch checklist in Notion this afternoon and collect sign-offs from all three team members
+01KQD1270E98A7DFC55ADCF8,1,Chris Lee,Set up a conversation with the sales lead this week to discuss thoughtful onboarding pace for Protect over the next six to eight weeks
+01KQD1270E98A7DFC55ADCF8,2,Nina Kowalski,"Compile a QA summary document including QA-1847 findings, new load test data, and timeline of when issues were flagged, to deliver to Chris by tomorrow morning"
+01KQD1270E98A7DFC55ADCF8,3,Sofia Petrov,Prototype the async deduplication worker fix and coordinate with Tyler on the scheduler architecture design doc
+01KQD1270E98A7DFC55ADCF8,4,Tyler Washington,Annotate load test traces and share with Sofia to support the scheduler architecture design document
+01KQD199788883B6F18C81E8,1,Daniel Okafor,"Send formal renewal proposal this week with flat pricing on Protect, Detect, and Comply modules"
+01KQD199788883B6F18C81E8,2,Wayne Keller,Introduce Daniel to IT Director Priya Sanjay over email to set up an Aegis Identity discovery call
+01KQD199788883B6F18C81E8,3,Mike Romano,Share the product roadmap deck for Detect and Protect once cleared for external sharing
+01KQD199788883B6F18C81E8,4,Wayne Keller,Pull together notes on unexplained OT plant floor network activity to share with Mike as a use case for upcoming anomaly detection features
+01KQD4D9DEBA2D55AC2AA9F5,1,Lisa Park,Send renewal paperwork for Protect and Comply at current rates by end of week
+01KQD4D9DEBA2D55AC2AA9F5,2,Lisa Park,"Coordinate with solutions engineering team to schedule a Detect module technical demo within 2-3 weeks, including Philip's CISO"
+01KQD4D9DEBA2D55AC2AA9F5,3,Philip Lau,Connect with Lisa about developing a case study on Aegis Comply time savings
+01KQD4D9DEBA2D55AC2AA9F5,4,Rachel Torres,Follow up on Detect bundle pricing proposal after the demo is completed
+01KQDD5172176D02DB51360A,1,Priya Patel,Escalate to Protect infrastructure team immediately and initiate manual backup snapshots for Dr. Cheng's environment within one hour
+01KQDD5172176D02DB51360A,2,Priya Patel,Send written incident summary to Dr. Cheng by end of day for use in HIPAA audit documentation
+01KQDD5172176D02DB51360A,3,Priya Patel,Follow up with root cause analysis and fix deployment timeline within four hours via email and phone
+01KQDD5172176D02DB51360A,4,Priya Patel,Include direct contact information in confirmation email and escalate communication failure feedback to Aegis leadership
+01KQE110900B8A65D80AE694,1,Mike Romano,Write a proper scope document today for circuit breaker implementation and redundant ingestion node architecture
+01KQE110900B8A65D80AE694,2,Ananya Sharma and Tyler Washington,"Investigate and implement health check improvements, specifically adding readiness checks"
+01KQE110900B8A65D80AE694,3,Nina Kowalski,"Scope out a chaos testing framework for the ingestion pipeline, coordinating with Tyler Washington"
+01KQE110900B8A65D80AE694,4,Sofia Petrov,"Circulate the post-mortem draft by end of day tomorrow, including transparent account of known-risk deprioritization"
+01KQEDB92E33CF9945A7F71B,1,David Kim,"Send Lauren Bishop email updates every 15 minutes until service is restored, and call directly if significant changes occur"
+01KQEDB92E33CF9945A7F71B,2,David Kim,Flag service credit request in the incident record and escalate to Lauren's account manager
+01KQEDB92E33CF9945A7F71B,3,David Kim,Ensure Lauren receives a written root cause analysis and documentation of remediation steps from engineering leadership
+01KQEDB92E33CF9945A7F71B,4,David Kim,Notify account team to schedule follow-up conversation with Lauren regarding the incident and retention concerns
+01KQEDE682B4A8D67C657CF1,1,Sarah Chen,Send follow-up email with suppression rule recommendations and a written explanation of the incident within one hour
+01KQEDE682B4A8D67C657CF1,2,Sarah Chen,Copy account manager directly on case notes to ensure a follow-up conversation about the broader confidence and stability concerns
+01KQEDE682B4A8D67C657CF1,3,Sarah Chen,Escalate internal feedback about inadequate proactive patch advisory communication to the appropriate team
+01KQEDE682B4A8D67C657CF1,4,Michelle Tan,Monitor alert volumes on back-office server agent group after baseline restore and confirm normalization
+01KQF9600A904ADE8605B3F0,1,Tyler Washington,Write up the pipeline health dashboard as a formal Jira ticket before EOD
+01KQF9600A904ADE8605B3F0,2,Chris Lee,Set up a knowledge share session with the broader engineering group in a couple weeks once the runbook is polished
+01KQF9600A904ADE8605B3F0,3,Tyler Washington,Lead a live walkthrough of the circuit breaker implementation for the engineering knowledge share
+01KQF9600A904ADE8605B3F0,4,Chris Lee,Loop in leadership to officially establish quarterly reliability-focused sprints
+01KQFEEFFF8E80B0DFD10880,1,Nina Kowalski,Complete final QA sign-off on the evidence package by Wednesday
+01KQFEEFFF8E80B0DFD10880,2,Ravi Gupta,Do a final pass on the evidence package Thursday morning and submit to auditors Thursday afternoon; send Nina the specific page reference for the availability exception note
+01KQFEEFFF8E80B0DFD10880,3,Tyler Washington,Remain on standby for any last-minute evidence questions during final review
+01KQFEEFFF8E80B0DFD10880,4,Diana Reeves,Hold communications with the auditor contact and update the five dependent enterprise accounts that the submission is on track
+01KQFFC0F889AE8CFEE7A00D,1,Aisha Johnson,Send post-mortem documentation for the January Detect processing incident to Julia today
+01KQFFC0F889AE8CFEE7A00D,2,Aisha Johnson,Deliver full renewal proposal including all-four-module bundle pricing and Comply v2 early access by end of next week
+01KQFFC0F889AE8CFEE7A00D,3,Aisha Johnson,Loop in solutions team to draft an Identity deployment scope document for Julia to present to her IT director
+01KQFFC0F889AE8CFEE7A00D,4,Ananya Sharma,Ensure Blackridge is enrolled in Comply v2 early access live onboarding sessions at launch

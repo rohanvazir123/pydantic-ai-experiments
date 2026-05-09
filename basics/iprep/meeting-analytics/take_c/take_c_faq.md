@@ -13,6 +13,7 @@
 - [Which Take C outputs were produced by HDBSCAN and which by the LLM?](#which-take-c-outputs-were-produced-by-hdbscan-and-which-by-the-llm)
 - [How does UMAP work?](#how-does-umap-work)
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
+- [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
 
 ---
 
@@ -502,3 +503,48 @@ cluster centroid as a post-processing step.
 | Handles noise | Yes — ambiguous phrases labeled −1 | No — all points forced into a cluster |
 | Variable cluster size | Yes — clusters of 5 and 37 are both valid | Tends to equalize sizes |
 | Density-adaptive | Yes — tight groups stay tight | No |
+
+---
+
+## How do I reload the Take C tables into Postgres?
+
+Take C has two recovery paths depending on whether you want to re-run the full pipeline
+or just reload from the saved outputs.
+
+**The 3 Take C tables and what feeds them:**
+
+| Table | Source file | What it contains |
+|-------|-------------|-----------------|
+| `semantic_clusters` | `take_c/outputs/semantic_clusters.json` | 26 clusters: cluster_id, LLM-generated theme_title, audience, rationale, phrase_count |
+| `semantic_phrases` | `take_c/outputs/phrase_clusters.csv` | 343 deduplicated topic phrases with cluster assignment (embedding=NULL in CSV path) |
+| `semantic_meeting_themes` | `take_c/outputs/meeting_themes.csv` | 516 rows: one per (meeting, cluster) combination, with call_type and sentiment |
+
+**Fast path — load from saved outputs (30 seconds, no Ollama needed):**
+
+```bash
+python basics/iprep/meeting-analytics/take_c/load_outputs_to_pg.py
+```
+
+Note: this leaves `semantic_phrases.embedding` as NULL. Vector search won't work,
+but all analytical insight queries do — they join on cluster_id, not embeddings.
+
+**Full re-run — re-embeds + re-clusters + re-labels (2–3 minutes, requires Ollama):**
+
+```bash
+python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py
+```
+
+The full pipeline re-embeds all 343 phrases (nomic-embed-text), re-runs UMAP + HDBSCAN,
+re-labels all clusters with llama3.1:8b, infers call types for 100 meetings, and
+persists to Postgres. Cluster count and labels may differ slightly between runs
+(HDBSCAN is density-based, LLM labels are stochastic).
+
+**Load all three takes in one shot:**
+
+```bash
+python basics/iprep/meeting-analytics/setup_all_tables.py
+```
+
+Uses fast-path loaders for Takes B and C (no Ollama required), and re-runs Take A
+from raw JSON. Target: `rag_db @ localhost:5434` (rag_user:rag_pass). All credentials
+from `meeting-analytics/.env`.

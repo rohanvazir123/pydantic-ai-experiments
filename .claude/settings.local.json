@@ -131,7 +131,8 @@
       "PowerShell(Rename-Item *)",
       "PowerShell(Get-Command *)",
       "Bash(sc query *)",
-      "Bash(reg query *)"
+      "Bash(reg query *)",
+      "Bash(Measure-Object -Line)"
     ]
   },
   "enableAllProjectMcpServers": true,
