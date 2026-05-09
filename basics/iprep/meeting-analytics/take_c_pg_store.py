@@ -2,7 +2,7 @@
 PostgreSQL persistence for Take C semantic clustering.
 
 
-Tables added to iprep_i1_functional schema:
+Tables added to meeting_analytics schema:
   semantic_clusters        cluster_id, theme_title, audience, rationale, phrase_count
   semantic_phrases         canonical text + vector(768) embedding + tsvector index
   semantic_meeting_themes  meeting_id, cluster_id, is_primary, call_type, sentiment
@@ -36,7 +36,7 @@ from pgvector.asyncpg import register_vector
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = "iprep_i1_functional"
+SCHEMA = "meeting_analytics"
 
 # IVFFlat lists: sqrt(~343 phrases) ≈ 18.  Kept small; same index type as RAG store.
 _IVFFLAT_LISTS = 15
@@ -100,7 +100,7 @@ class PhraseSearchResult:
 # ---------------------------------------------------------------------------
 
 
-class IprepPhraseStore:
+class SemanticClusterStore:
     """
     Hybrid pgvector + tsvector store for Take C semantic phrases.
 
@@ -147,7 +147,7 @@ class IprepPhraseStore:
             await self._create_indexes(conn)
 
         self._initialized = True
-        logger.info("IprepPhraseStore initialised — schema %s", SCHEMA)
+        logger.info("SemanticClusterStore initialised — schema %s", SCHEMA)
 
     async def _create_tables(self, conn: asyncpg.Connection) -> None:
         await conn.execute(f"""

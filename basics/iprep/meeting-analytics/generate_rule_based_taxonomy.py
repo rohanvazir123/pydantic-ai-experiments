@@ -89,7 +89,7 @@ from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
-DEFAULT_SCHEMA = "iprep_i1_functional"
+DEFAULT_SCHEMA = "meeting_analytics"
 DEFAULT_TAXONOMY_PATH = SCRIPT_DIR / "taxonomy.json"
 
 SUPPORTED_FILES = {

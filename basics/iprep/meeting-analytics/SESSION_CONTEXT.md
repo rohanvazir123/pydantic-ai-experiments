@@ -2,24 +2,33 @@
 Last updated: 2026-05-09
 
 ## How to reload this session
-Tell Claude: "Read basics/iprep/i1/SESSION_CONTEXT.md and pick up where we left off."
+Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
 
 ---
 
 ## What we are building
-Transcript Intelligence take-home assignment (see basics/iprep/i1/req.md).
-100 meeting summary JSONs in basics/iprep/i1/dataset/.
+Transcript Intelligence take-home assignment (see basics/iprep/meeting-analytics/req.md).
+100 meeting summary JSONs in basics/iprep/meeting-analytics/dataset/.
 Three approaches to clustering meeting topics into themes:
   - Take A: rule-based (generate_rule_based_taxonomy.py) — DONE, runs against Postgres
-  - Take B: TF-IDF + K-Means (cluster_taxonomy_v2.py) — implemented, not yet validated
+  - Take B: TF-IDF + K-Means (cluster_taxonomy_v2.py) — DONE, runs end-to-end (auto-k default)
   - Take C: LLM-assisted semantic clustering — MAIN FOCUS, implemented, not yet run end-to-end
 
 ---
 
 ## Current state (as of session end)
 
+### Take B — complete and validated
+File: basics/iprep/meeting-analytics/cluster_taxonomy_v2.py
+- auto-k on by default (BooleanOptionalAction); use --no-auto-k --clusters N to pin k
+- cluster_taxonomy.py (v1) deleted
+- Last run: k=12 chosen, silhouette=0.0322
+- Output log: basics/iprep/meeting-analytics/cluster_work/take_b_run.log
+- Outputs in cluster_work/: meeting_clusters.csv, cluster_summary.json, cluster_terms.csv,
+  cluster_metrics.json, cluster_scores.csv
+
 ### Take C pipeline — fully implemented, dry-run verified
-File: basics/iprep/i1/take_c_semantic_clustering.py
+File: basics/iprep/meeting-analytics/take_c_semantic_clustering.py
 Steps:
   [1/9] Load 100 meeting records from raw JSON
   [2/9] Extract + deduplicate topics: 600 raw -> 351 exact-dedup -> 343 fuzzy-dedup
@@ -34,7 +43,7 @@ Steps:
   [9/9] Persist to Postgres (iprep_i1_functional schema) + print insight queries
 
 ### Postgres store — fully implemented
-File: basics/iprep/i1/take_c_pg_store.py
+File: basics/iprep/meeting-analytics/take_c_pg_store.py
 Adapted from rag/storage/vector_store/postgres.py (no RAG imports).
 Tables in iprep_i1_functional schema:
   semantic_clusters        — cluster_id, theme_title, audience, rationale
@@ -60,18 +69,18 @@ Note: signal-count queries join Take A's key_moments table.
 
 ## What was NOT done yet (next steps)
 
-1. ACTUALLY RUN the full pipeline end-to-end
-   Command: python basics/iprep/i1/take_c_semantic_clustering.py --reset-pg --skip-viz
+1. ACTUALLY RUN Take C end-to-end
+   Command: python basics/iprep/meeting-analytics/take_c_semantic_clustering.py --reset-pg --skip-viz
    Requires: ollama serve, nomic-embed-text and llama3.1:8b pulled
    Then review themes output and check coherence scores
 
-2. Validate cluster quality
-   - Check coherence scores in cluster_metrics.json (tight >=0.6, review 0.4-0.6, LOOSE <0.4)
+2. Validate Take C cluster quality
+   - Check coherence scores in cluster_work_c/cluster_metrics.json (tight >=0.6, review 0.4-0.6, LOOSE <0.4)
    - Scan phrase_clusters.csv per cluster — do phrases belong together?
-   - Compare Take C clusters vs Take A THEME_KEYWORDS (are same groupings discovered?)
+   - Compare Take C clusters vs Take B's 12 clusters — agreement = evidence both are right
 
 3. Run Take A first (if key_moments not yet populated)
-   Command: python basics/iprep/i1/generate_rule_based_taxonomy.py --reset
+   Command: python basics/iprep/meeting-analytics/generate_rule_based_taxonomy.py --reset
    This populates key_moments, sentiment_features — needed for churn/feature_gap insights
 
 4. Trend analysis pipeline (paused — foundation in place)
@@ -79,11 +88,7 @@ Note: signal-count queries join Take A's key_moments table.
    - Temporal trend query (theme frequency / sentiment drift over time using meeting timestamps)
    - Thin reporting layer (CSV export or print) for the slide deck
 
-5. Take B validation
-   - Get cluster_taxonomy_v2.py working end-to-end
-   - Compare its clusters against Take C's — agreement = evidence both are right
-
-6. Slide deck
+5. Slide deck
    - Lead with insights, not code
    - Show all 3 approaches + progression reasoning
    - Key charts: theme x sentiment heatmap, churn by theme, call type distribution
@@ -114,11 +119,11 @@ Note: signal-count queries join Take A's key_moments table.
 | take_c_semantic_clustering.py | Main pipeline (9 steps) |
 | take_c_pg_store.py | Postgres store (pgvector + tsvector + insight queries) |
 | generate_rule_based_taxonomy.py | Take A — rule-based |
-| cluster_taxonomy_v2.py | Take B — TF-IDF + K-Means (keep, delete v1) |
-| cluster_taxonomy.py | Take B v1 — DELETE this |
+| cluster_taxonomy_v2.py | Take B — TF-IDF + K-Means (auto-k default) |
 | schema_dump.sql | DBeaver introspection queries — not a pipeline, aside only |
 | list_of_topics.txt | All 351 unique topics extracted across 100 meetings |
 | dataset/ | 100 meeting folders, each with summary.json |
+| cluster_work/ | Take B outputs |
 | cluster_work_c/ | Take C outputs (created on first run) |
 
 ---

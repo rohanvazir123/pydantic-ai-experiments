@@ -5,7 +5,7 @@ Pipeline:
   Extract topics → Dedup (exact + fuzzy) → Embed (nomic-embed-text via Ollama)
   → UMAP (10-dim) → HDBSCAN → Noise reassignment → LLM label clusters
   → Assign meetings to themes → Infer call types → Write outputs
-  → Persist to Postgres (pgvector + tsvector via take_c_pg_store.IprepPhraseStore)
+  → Persist to Postgres (pgvector + tsvector via take_c_pg_store.SemanticClusterStore)
 
 Why this approach over Take A/B:
   Topics are short semantic phrases; embeddings capture similarity that
@@ -26,7 +26,7 @@ Outputs (in basics/iprep/i1/cluster_work_c/):
     viz_coords.csv          -- 2D UMAP coordinates for scatter plot
     cluster_metrics.json    -- run metadata (params, noise ratio, timing)
 
-  Postgres (iprep_i1_functional schema):
+  Postgres (meeting_analytics schema):
     semantic_clusters        -- cluster labels
     semantic_phrases         -- phrase embeddings (pgvector) + tsvector index
     semantic_meeting_themes  -- meeting → theme assignments + call type + sentiment
@@ -54,7 +54,7 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
-from take_c_pg_store import IprepPhraseStore
+from take_c_pg_store import SemanticClusterStore
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -734,13 +734,13 @@ def print_summary(
 
 
 async def persist_to_postgres(
-    store: IprepPhraseStore,
+    store: SemanticClusterStore,
     phrases: list[TopicPhrase],
     labels: list[ClusterLabel],
     assignments: list[MeetingThemeAssignment],
     reset: bool = False,
 ) -> None:
-    """Write clustering results into the iprep_i1_functional Postgres schema."""
+    """Write clustering results into the meeting_analytics Postgres schema."""
     if reset:
         print("  Resetting semantic tables...")
         await store.reset_semantic_tables()
@@ -796,7 +796,7 @@ async def persist_to_postgres(
     print(f"  Row counts: {counts}")
 
 
-async def print_pg_insights(store: IprepPhraseStore) -> None:
+async def print_pg_insights(store: SemanticClusterStore) -> None:
     """Print all insight queries against the persisted data."""
     print("\n─── Insight: Theme Sentiment (avg) ──────────────────────────")
     rows = await store.insight_theme_sentiment()
@@ -889,7 +889,7 @@ async def main() -> None:
     print("=== Take C: LLM-Assisted Semantic Clustering ===")
     print(f"  Embedding model : {EMBEDDING_MODEL}  ({EMBEDDING_BASE_URL})")
     print(f"  LLM model       : {LLM_MODEL}  ({LLM_BASE_URL})")
-    print(f"  Postgres        : {'skip' if args.skip_pg else 'enabled (iprep_i1_functional)'}")
+    print(f"  Postgres        : {'skip' if args.skip_pg else 'enabled (meeting_analytics)'}")
 
     # Step 1
     print("\n[1/9] Loading meeting records...")
@@ -966,8 +966,8 @@ async def main() -> None:
 
     # Step 9 — persist to Postgres (pgvector + tsvector)
     if not args.skip_pg:
-        print("\n[9/9] Persisting to Postgres (iprep_i1_functional)...")
-        store = IprepPhraseStore()
+        print("\n[9/9] Persisting to Postgres (meeting_analytics)...")
+        store = SemanticClusterStore()
         try:
             await persist_to_postgres(
                 store, phrases, labels, assignments, reset=args.reset_pg

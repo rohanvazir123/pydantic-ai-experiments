@@ -127,7 +127,8 @@
       "PowerShell($f = Get-Item \"rag/legal/cuad_eval.json\"; Write-Output \"$\\($f.Name\\): $\\([math]::Round\\($f.Length/1MB,2\\)\\) MB\")",
       "Bash(ruff check *)",
       "Skill(update-config)",
-      "PowerShell(conda run *)"
+      "PowerShell(conda run *)",
+      "PowerShell(Rename-Item *)"
     ]
   },
   "enableAllProjectMcpServers": true,
