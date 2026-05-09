@@ -40,7 +40,7 @@ The script supports two taxonomy sources, both deterministic at runtime:
   the observed summary topic vocabulary and the assignment's stakeholder needs.
 
 - External taxonomy JSON:
-  If basics/iprep/i1/taxonomy.json exists, load_taxonomy() reads human-reviewed
+  If basics/iprep/meeting-analytics/taxonomy.json exists, load_taxonomy() reads human-reviewed
   taxonomy config and uses that instead of the fallback maps.
   The expected JSON shape is:
 
@@ -65,9 +65,9 @@ require one and does not call one. It only consumes explicit keyword config and
 produces repeatable database rows.
 
 Usage:
-    python basics/iprep/i1/generate_rule_based_taxonomy.py --dry-run
-    python basics/iprep/i1/generate_rule_based_taxonomy.py --reset
-    python basics/iprep/i1/generate_rule_based_taxonomy.py --taxonomy basics/iprep/i1/taxonomy.json --reset
+    python basics/iprep/meeting-analytics/generate_rule_based_taxonomy.py --dry-run
+    python basics/iprep/meeting-analytics/generate_rule_based_taxonomy.py --reset
+    python basics/iprep/meeting-analytics/generate_rule_based_taxonomy.py --taxonomy basics/iprep/meeting-analytics/taxonomy.json --reset
 
 Connection environment variables:
     PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
@@ -88,7 +88,7 @@ from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
+DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
 DEFAULT_SCHEMA = "meeting_analytics"
 DEFAULT_TAXONOMY_PATH = SCRIPT_DIR / "taxonomy.json"
 
@@ -293,14 +293,14 @@ def load_dotenv() -> None:
     The script supports two locations:
 
     - repo root .env, useful if the workspace already has shared database vars.
-    - basics/iprep/i1/.env, useful for assignment-specific credentials.
+    - basics/iprep/meeting-analytics/.env, useful for assignment-specific credentials.
 
     Existing environment variables always win. This lets a shell session or CI
     job override local files without editing them. The parser is intentionally
     tiny because the file only needs simple KEY=value pairs.
     """
 
-    for env_file in (SCRIPT_DIR.parents[2] / ".env", SCRIPT_DIR / ".env"):
+    for env_file in (SCRIPT_DIR.parent / ".env",):
         if not env_file.exists():
             continue
         for raw in env_file.read_text(encoding="utf-8").splitlines():
@@ -542,7 +542,9 @@ def infer_call_type(
         scores["support_escalation"] += 1
     if theme_scores["Internal Engineering / Planning / Execution"] > 0:
         scores["internal_planning"] += 1
-    if theme_scores["Reliability / Incidents / Outages"] > 0 and "customer" not in clean_topic(combined):
+    if theme_scores[
+        "Reliability / Incidents / Outages"
+    ] > 0 and "customer" not in clean_topic(combined):
         scores["internal_incident"] += 1
 
     if not scores:
@@ -746,7 +748,9 @@ async def create_schema(conn: asyncpg.Connection, schema: str, reset: bool) -> N
         "meeting_themes",
         "call_types",
     ):
-        await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_meeting_idx ON {q_schema}.{table}(meeting_id)")
+        await conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {table}_meeting_idx ON {q_schema}.{table}(meeting_id)"
+        )
 
 
 async def truncate_tables(conn: asyncpg.Connection, schema: str) -> None:
@@ -825,7 +829,9 @@ async def load_functional_tables(
     for record in records:
         info = record.meeting_info
         summary = record.summary
-        meeting_id = summary.get("meetingId") or info.get("meetingId") or record.meeting_id
+        meeting_id = (
+            summary.get("meetingId") or info.get("meetingId") or record.meeting_id
+        )
 
         await conn.execute(
             f"""
@@ -841,7 +847,10 @@ async def load_functional_tables(
             info.get("duration"),
         )
 
-        for role, emails in (("all_email", info.get("allEmails", [])), ("invitee", info.get("invitees", []))):
+        for role, emails in (
+            ("all_email", info.get("allEmails", [])),
+            ("invitee", info.get("invitees", [])),
+        ):
             for email in emails:
                 await conn.execute(
                     f"INSERT INTO {q_schema}.meeting_participants VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -914,7 +923,9 @@ async def load_functional_tables(
                 line.get("sentence"),
             )
 
-        theme_scores = infer_themes(topics, key_moment_types, summary.get("summary") or "", taxonomy)
+        theme_scores = infer_themes(
+            topics, key_moment_types, summary.get("summary") or "", taxonomy
+        )
         primary_theme = theme_scores.most_common(1)[0][0] if theme_scores else None
         for theme, evidence_count in theme_scores.items():
             await conn.execute(
@@ -1008,8 +1019,12 @@ def print_schema_plan(file_counts: Counter[str], records: list[MeetingRecord]) -
     topic_counts = Counter()
     moment_counts = Counter()
     for record in records:
-        topic_counts.update(clean_topic(str(t)) for t in record.summary.get("topics", []))
-        moment_counts.update(m.get("type") for m in record.summary.get("keyMoments", []) if m.get("type"))
+        topic_counts.update(
+            clean_topic(str(t)) for t in record.summary.get("topics", [])
+        )
+        moment_counts.update(
+            m.get("type") for m in record.summary.get("keyMoments", []) if m.get("type")
+        )
 
     print("\nTop detected topics:")
     for topic, count in topic_counts.most_common(12):
@@ -1048,9 +1063,15 @@ async def print_counts(conn: asyncpg.Connection, schema: str) -> None:
         print(f"  {table:20s} {count:>8,}")
 
     print("\nUseful DBeaver queries:")
-    print(f"  SELECT * FROM {schema}.meeting_themes WHERE is_primary ORDER BY theme, evidence_count DESC;")
-    print(f"  SELECT call_type, count(*), avg(negative_ratio) FROM {schema}.call_types JOIN {schema}.sentiment_features USING (meeting_id) GROUP BY 1;")
-    print(f"  SELECT theme, count(*) FROM {schema}.meeting_themes GROUP BY 1 ORDER BY 2 DESC;")
+    print(
+        f"  SELECT * FROM {schema}.meeting_themes WHERE is_primary ORDER BY theme, evidence_count DESC;"
+    )
+    print(
+        f"  SELECT call_type, count(*), avg(negative_ratio) FROM {schema}.call_types JOIN {schema}.sentiment_features USING (meeting_id) GROUP BY 1;"
+    )
+    print(
+        f"  SELECT theme, count(*) FROM {schema}.meeting_themes GROUP BY 1 ORDER BY 2 DESC;"
+    )
 
 
 async def main() -> None:
@@ -1085,7 +1106,11 @@ async def main() -> None:
         help="Human-reviewed taxonomy JSON. Falls back to built-in rules if missing.",
     )
     parser.add_argument("--reset", action="store_true")
-    parser.add_argument("--dry-run", action="store_true", help="Show inferred schema plan without connecting to Postgres.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show inferred schema plan without connecting to Postgres.",
+    )
     args = parser.parse_args()
 
     dataset_dir = args.dataset.resolve()
@@ -1095,7 +1120,9 @@ async def main() -> None:
     records, file_counts = load_records(dataset_dir)
     taxonomy = load_taxonomy(args.taxonomy)
     print_schema_plan(file_counts, records)
-    print(f"\nTaxonomy source: {args.taxonomy if args.taxonomy.exists() else 'built-in fallback'}")
+    print(
+        f"\nTaxonomy source: {args.taxonomy if args.taxonomy.exists() else 'built-in fallback'}"
+    )
     print(f"  themes:     {len(taxonomy.theme_keywords)}")
     print(f"  call types: {len(taxonomy.call_type_hints)}")
 

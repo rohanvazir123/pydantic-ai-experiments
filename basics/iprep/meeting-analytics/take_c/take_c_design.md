@@ -6,6 +6,7 @@
 |---------|------------|--------|------------------------------------------------|
 | v0.1    | 2026-05-08 | rohan  | Initial design — pipeline skeleton, tradeoffs, decision log |
 | v0.2    | 2026-05-08 | rohan  | Implementation complete — `take_c_semantic_clustering.py`; dry-run verified: 100 meetings loaded, 600 raw topics → 351 exact-dedup → 343 fuzzy-dedup; deps: rapidfuzz, umap-learn, hdbscan |
+| v0.3    | 2026-05-09 | rohan  | Full pipeline run complete — 26 clusters found (not 8–15 as estimated); added coherence check step; actual Postgres schema documented; 8 insight queries implemented; open questions resolved; file path corrected after directory rename |
 
 ---
 
@@ -175,27 +176,35 @@ Key hyperparameters and their tradeoffs:
 | `min_samples` | More aggressive clustering | More noise points | 3 |
 | `cluster_selection_epsilon` | Tight clusters | Merges nearby clusters | 0.0 (default) |
 
-**Noise handling:** Phrases labeled `-1` (noise) will be assigned to their nearest cluster centroid via cosine similarity as a post-processing step — they are too few to throw away, but HDBSCAN correctly isolates genuinely ambiguous phrases.
+**Actual result:** `min_cluster_size=5`, `min_samples=3` → **26 clusters**, 22 noise phrases (6.4% noise ratio). Noise phrases were reassigned to nearest centroid as designed.
+
+**Noise handling:** Phrases labeled `-1` (noise) are assigned to their nearest cluster centroid via cosine similarity as a post-processing step.
+
+**Coherence check (added during implementation):** After clustering, each cluster's avg pairwise cosine similarity is computed and flagged:
+- `tight` ≥ 0.6 — 9 of 26 clusters
+- `review` 0.4–0.6 — 17 of 26 clusters
+- `LOOSE` < 0.4 — 0 clusters
+
+All 26 clusters are in review+ range; no loose clusters requiring manual inspection.
 
 ---
 
 ### 3.6 LLM Cluster Labeling
 
-For each discovered cluster, sample up to 20 representative phrases (by proximity to cluster centroid) and ask a local LLM to assign a leadership-ready theme label.
+For each discovered cluster, sample up to 20 phrases (first N in natural cluster order — centroid-proximity sort was not implemented) and ask a local LLM to assign a leadership-ready theme label.
 
-**Prompt template:**
+**Actual prompt used:**
 ```
-You are categorizing customer call topics for B2B SaaS leadership.
+You are categorizing customer call topics for a B2B SaaS company's leadership team.
 
-Topics from this group:
-{topic_list}
+The following phrases all come from one theme cluster discovered by semantic clustering.
+Based only on these phrases, provide a short, executive-level theme label.
 
-Generate:
-1. A short theme title (3-6 words, title case)
-2. Which audience it matters most to: Engineering / Product / Sales / All
-3. One sentence: why this theme matters to that audience
+Phrases:
+{phrases}
 
-Return JSON: {"title": "...", "audience": "...", "rationale": "..."}
+Respond with valid JSON only — no extra text, no markdown fences:
+{"theme_title": "<3-6 words, title case>", "audience": "<Engineering | Product | Sales | All>", "rationale": "<one sentence: why this theme matters to that audience>"}
 ```
 
 | Labeling strategy | Pros | Cons |
@@ -205,11 +214,11 @@ Return JSON: {"title": "...", "audience": "...", "rationale": "..."}
 | Iterative (label → review → refine) | Highest quality | Requires human loop |
 | Hierarchical (label sub-clusters first) | Natural for large K | Over-engineering at this scale |
 
-**Decision:** Single-shot per cluster. At ~350 unique phrases and likely 8–15 clusters, this is ~10 LLM calls — trivially fast with Ollama.
+**Decision:** Single-shot per cluster. With 26 clusters this was 26 LLM calls — completed in ~141s total (dominated by embedding, not labeling). All 26 produced valid labels; no fallback was triggered.
 
-**Model:** `llama3.1:8b` (already configured). If cluster label quality is poor, bump to `llama3.3:70b` or add a one-shot example in the prompt.
+**Model:** `llama3.1:8b` (already configured), temperature=0.2 for consistency. If label quality degrades on re-run, bump to `llama3.3:70b` or add a one-shot example.
 
-**Structured output:** Use `instructor` or `pydantic_ai` model with a `ClusterLabel` response model to guarantee parseable JSON.
+**Structured output:** Implemented with regex JSON extraction (`_extract_json()`), not `instructor` or `pydantic_ai`. The response strips markdown fences, finds the first `{...}` block, and parses it. 3 retry attempts per cluster; falls back to a `"phrase1 / phrase2 / phrase3"` title if all retries fail (no fallbacks were needed in the actual run).
 
 ---
 
@@ -229,21 +238,48 @@ Each meeting has a hidden call type (support / external / internal). Two sub-app
 
 ### 3.8 Output & Downstream Use
 
-Final artifacts written to Postgres (reusing Take A schema, extending `meeting_themes`):
+Final artifacts written to Postgres (`meeting_analytics` schema, three new tables):
 
 ```sql
--- One row per (meeting, theme)
-INSERT INTO meeting_themes (meeting_id, theme_id, theme_title, audience, confidence)
-
--- New table for cluster metadata
-CREATE TABLE semantic_clusters (
+-- Cluster metadata (one row per cluster)
+CREATE TABLE meeting_analytics.semantic_clusters (
     cluster_id   INTEGER PRIMARY KEY,
     theme_title  TEXT,
     audience     TEXT,   -- Engineering | Product | Sales | All
-    rationale    TEXT,
-    phrase_count INTEGER
+    rationale    TEXT
+);
+
+-- Embedded phrases (one row per canonical topic phrase)
+CREATE TABLE meeting_analytics.semantic_phrases (
+    id            SERIAL PRIMARY KEY,
+    canonical     TEXT,
+    cluster_id    INTEGER REFERENCES semantic_clusters(cluster_id),
+    embedding     vector(768),     -- IVFFlat index for cosine search
+    content_tsv   tsvector         -- GIN index for full-text search
+);
+
+-- Meeting-to-theme assignments (one row per meeting × theme)
+CREATE TABLE meeting_analytics.semantic_meeting_themes (
+    meeting_id   TEXT,
+    cluster_id   INTEGER REFERENCES semantic_clusters(cluster_id),
+    is_primary   BOOLEAN,
+    call_type    TEXT,   -- support | external | internal
+    sentiment    TEXT
 );
 ```
+
+**8 insight query methods** (all run automatically after persist, implemented in `take_c_pg_store.py`):
+
+| Method | What it shows |
+|--------|--------------|
+| `insight_theme_sentiment()` | Avg sentiment score per theme |
+| `insight_churn_by_theme()` | Churn signal count per theme |
+| `insight_call_type_theme_matrix()` | Meeting count by call type × theme |
+| `insight_feature_gap_themes()` | Feature gap signal count per theme |
+| `insight_sentiment_distribution_by_theme()` | Sentiment bucket breakdown per theme |
+| `insight_signal_counts_by_theme()` | All keyMoment signal types per theme |
+| `insight_theme_cooccurrence()` | Which themes appear together in the same meeting |
+| `insight_high_risk_meetings()` | Meetings with churn signals + negative sentiment |
 
 For the slide deck / dashboard:
 - Heatmap: call type × theme (which themes dominate each call type)
@@ -298,7 +334,7 @@ class MeetingThemeAssignment(BaseModel):
 
 ## 6. Implementation Sketch
 
-Target file: `basics/iprep/i1/take_c_semantic_clustering.py`
+Target file: `basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py`
 
 ```
 Functions (async throughout):
@@ -326,14 +362,19 @@ rapidfuzz
 
 ---
 
-## 7. Open Questions
+## 7. Open Questions — Resolved
 
-1. **How many clusters will HDBSCAN find?** Looking at `list_of_topics.txt`, there are visually ~10–14 natural groupings (IAM, Compliance/Audit, Incidents/Outages, Backup/Recovery, Billing, Product Roadmap, Sales/Renewal, Engineering Reliability, Competitive…). HDBSCAN should land in this range with `min_cluster_size=5`.
+1. **How many clusters will HDBSCAN find?**
+   → **26 clusters** with `min_cluster_size=5`, `min_samples=3`. Estimate of 8–15 was too conservative; the semantic embedding space supports finer resolution than TF-IDF k=8.
 
-2. **Is topics-only sufficient, or do we need `keyMoments`?** Initial design uses topics only. If cluster quality is poor, add `keyMoments[].description` as additional phrases per meeting.
+2. **Is topics-only sufficient, or do we need `keyMoments`?**
+   → Topics-only was sufficient. All 26 clusters have coherence ≥ 0.45; no cluster required `keyMoments` augmentation.
 
-3. **Should themes be hierarchical?** E.g. `Compliance` → `HIPAA`, `SOC 2`, `PCI DSS`. At 100 meetings this is optional but could add value for the Product leadership audience. Defer to v0.2 if time allows.
+3. **Should themes be hierarchical?**
+   → Not needed at this scale. The 26 clusters are already specific enough (e.g. HIPAA Compliance and Reporting vs Audit Readiness vs Compliance and Governance as distinct clusters). Hierarchy deferred — would add value only in a live product with growing data.
 
-4. **Reuse Take A's Postgres records?** Notes in `notes.txt` flag that Take B re-parsed raw JSON instead of querying Postgres — a code smell. Take C should load from the `meetings` table if Take A has already run, falling back to raw JSON otherwise.
+4. **Reuse Take A's Postgres records?**
+   → Take C loads from raw JSON (same as Take B) for independence. The Postgres store (`take_c_pg_store.py`) writes to new tables in the existing `meeting_analytics` schema rather than duplicating the schema.
 
-5. **Visualization output?** UMAP at 2 dims → scatter plot colored by cluster → quick sanity check before LLM labeling. Include as a matplotlib/plotly side output in the notebook.
+5. **Visualization output?**
+   → 2-dim UMAP is computed but scatter plot rendering is deferred to the Jupyter notebook deliverable (next step).

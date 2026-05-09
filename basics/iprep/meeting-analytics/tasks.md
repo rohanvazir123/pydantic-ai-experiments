@@ -58,7 +58,7 @@
 
 ## Schema Reference
 
-**PostgreSQL schema:** `iprep_i1`
+**PostgreSQL schema:** `iprep_meeting-analytics`
 
 ### Table (real)
 
@@ -164,12 +164,12 @@ Indexes: `raw_files_file_type_idx` B-tree `(file_type)`, `raw_files_payload_gin_
 ```
 dataset/
   <meeting_id>/
-    meeting-info.json   → iprep_i1.meetings (view)
-    transcript.json     → iprep_i1.transcript_lines (view)
-    summary.json        → iprep_i1.summaries, summary_topics, action_items (views)
-    speakers.json       → iprep_i1.speaker_turns (view)
-    events.json         → iprep_i1.participant_events (view)
-    speaker-meta.json   → iprep_i1.speaker_meta (view)
+    meeting-info.json   → iprep_meeting-analytics.meetings (view)
+    transcript.json     → iprep_meeting-analytics.transcript_lines (view)
+    summary.json        → iprep_meeting-analytics.summaries, summary_topics, action_items (views)
+    speakers.json       → iprep_meeting-analytics.speaker_turns (view)
+    events.json         → iprep_meeting-analytics.participant_events (view)
+    speaker-meta.json   → iprep_meeting-analytics.speaker_meta (view)
 ```
 
 ---
@@ -178,7 +178,7 @@ dataset/
 
 | Port | DB | Purpose |
 |---|---|---|
-| 5432 | postgres | iprep_i1 schema lives here (this project) |
+| 5432 | postgres | iprep_meeting-analytics schema lives here (this project) |
 | 5433 | legal_graph | Apache AGE knowledge graph (RAG project) |
 | 5434 | rag_db | RAG pgvector docs/chunks/embeddings |
 
@@ -188,5 +188,5 @@ MCP PostgreSQL tool → `localhost:5432/postgres`
 
 ## Notes / Decisions Log
 
-- Schema: `iprep_i1` (all 6 tables live here, on port 5432)
+- Schema: `iprep_meeting-analytics` (all 6 tables live here, on port 5432)
 - `speakers.json`, `events.json`, `speaker-meta.json` in `raw_files` only — no dedicated typed tables yet

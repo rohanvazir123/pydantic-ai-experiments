@@ -18,7 +18,7 @@ Insight queries (for dashboard / slide deck):
   insight_call_type_theme_matrix() call_type x theme meeting counts
   insight_feature_gap_themes()     feature_gap signal count per theme
 
-Connection: reads DATABASE_URL first, then falls back to PG_HOST/PORT/USER/PASSWORD/DATABASE.
+Connection: PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE (local .env only).
 """
 
 from __future__ import annotations
@@ -51,27 +51,22 @@ EMBEDDING_DIMENSION = 768
 
 
 def _load_dotenv() -> None:
-    script_dir = Path(__file__).resolve().parent
-    for env_file in (script_dir.parents[2] / ".env", script_dir / ".env"):
-        if not env_file.exists():
+    env_file = Path(__file__).resolve().parent.parent / ".env"
+    if not env_file.exists():
+        return
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
             continue
-        for raw in env_file.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            if key.strip() and key.strip() not in os.environ:
-                os.environ[key.strip()] = value.strip().strip('"').strip("'")
+        key, _, value = line.partition("=")
+        if key.strip():
+            os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 
 _load_dotenv()
 
 
 def _build_dsn() -> str:
-    """Prefer DATABASE_URL; fall back to individual PG_* vars (Take A pattern)."""
-    url = os.getenv("DATABASE_URL", "")
-    if url:
-        return url
     host = os.getenv("PG_HOST", "localhost")
     port = os.getenv("PG_PORT", "5432")
     user = os.getenv("PG_USER", "postgres")
@@ -687,6 +682,19 @@ class SemanticClusterStore:
         except Exception as exc:
             logger.warning("insight_high_risk_meetings: %s (Take A tables may not exist)", exc)
             return []
+
+    async def has_key_moments(self) -> bool:
+        """Return True if the Take A key_moments table exists in this schema."""
+        await self.initialize()
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = $1 AND table_name = 'key_moments'
+                """,
+                SCHEMA,
+            )
+        return row is not None
 
     async def row_counts(self) -> dict[str, int]:
         """Sanity-check row counts for the three semantic tables."""

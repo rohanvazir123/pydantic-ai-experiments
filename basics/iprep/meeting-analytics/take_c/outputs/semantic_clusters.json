@@ -1,0 +1,463 @@
+[
+  {
+    "cluster_id": 0,
+    "theme_title": "Service Level Agreement Management",
+    "audience": "All",
+    "rationale": "Understanding and managing SLA compliance is critical for maintaining customer trust, avoiding penalties, and ensuring business continuity.",
+    "representative_phrases": [
+      "sla breach",
+      "sla compliance",
+      "sla review",
+      "sla",
+      "sla negotiation",
+      "sla credits"
+    ],
+    "phrase_count": 6
+  },
+  {
+    "cluster_id": 1,
+    "theme_title": "Quality Assurance Process",
+    "audience": "All",
+    "rationale": "This theme matters to all stakeholders as it ensures the quality and reliability of our software, impacting customer satisfaction and business reputation.",
+    "representative_phrases": [
+      "vendor review",
+      "q1 review",
+      "qa process",
+      "qa",
+      "qa and testing",
+      "quarterly business review",
+      "qa coverage",
+      "design review",
+      "qa sign-off"
+    ],
+    "phrase_count": 9
+  },
+  {
+    "cluster_id": 2,
+    "theme_title": "Competitive Market Positioning",
+    "audience": "All",
+    "rationale": "Understanding the competitive landscape is crucial for informed business decisions and strategic growth.",
+    "representative_phrases": [
+      "competitive threat",
+      "competitive evaluation",
+      "competitive displacement",
+      "competitive landscape",
+      "win-loss analysis",
+      "competitive intelligence",
+      "competitor evaluation",
+      "competitive analysis",
+      "competitive positioning"
+    ],
+    "phrase_count": 9
+  },
+  {
+    "cluster_id": 3,
+    "theme_title": "Cloud and Integration Configuration",
+    "audience": "Engineering",
+    "rationale": "This theme matters to the engineering team because it highlights their responsibility in ensuring seamless integration and configuration of various cloud services and security protocols.",
+    "representative_phrases": [
+      "kafka configuration",
+      "aws ebs",
+      "platform integration",
+      "logvault integration",
+      "aws s3 connector",
+      "connector configuration",
+      "product integration",
+      "sso connectors",
+      "entra id integration",
+      "saml certificate rotation"
+    ],
+    "phrase_count": 23
+  },
+  {
+    "cluster_id": 4,
+    "theme_title": "Healthcare Data Security",
+    "audience": "All",
+    "rationale": "Ensuring the integrity and accuracy of healthcare data is crucial for patient care, regulatory compliance, and business reputation.",
+    "representative_phrases": [
+      "healthcare",
+      "false positives",
+      "healthcare security",
+      "healthcare data management",
+      "healthcare data",
+      "health checks"
+    ],
+    "phrase_count": 6
+  },
+  {
+    "cluster_id": 5,
+    "theme_title": "Multi-Factor Authentication Management",
+    "audience": "Engineering",
+    "rationale": "Effective MFA management is crucial for our engineering team to ensure seamless user experiences and robust security controls.",
+    "representative_phrases": [
+      "adaptive mfa",
+      "mfa policy engine",
+      "mfa enforcement",
+      "mfa migration",
+      "mfa failure",
+      "mfa policy",
+      "mfa policy exceptions"
+    ],
+    "phrase_count": 7
+  },
+  {
+    "cluster_id": 6,
+    "theme_title": "Customer Renewal and Retention",
+    "audience": "All",
+    "rationale": "Understanding customer retention and renewal risks is crucial for maintaining revenue stability and growth across the organization.",
+    "representative_phrases": [
+      "customer communication",
+      "timeline risk",
+      "renewal",
+      "customer retention",
+      "churn risk",
+      "renewal risk",
+      "contract renewal",
+      "customer feedback",
+      "customer churn",
+      "customer retention risk"
+    ],
+    "phrase_count": 11
+  },
+  {
+    "cluster_id": 7,
+    "theme_title": "Escalation Process and Management",
+    "audience": "All",
+    "rationale": "Understanding escalation procedures is crucial for ensuring timely issue resolution, maintaining customer satisfaction, and optimizing support operations across the organization.",
+    "representative_phrases": [
+      "escalation",
+      "customer escalation",
+      "incident escalation",
+      "support escalation",
+      "p1 escalation"
+    ],
+    "phrase_count": 5
+  },
+  {
+    "cluster_id": 8,
+    "theme_title": "Incident Response and Review",
+    "audience": "All",
+    "rationale": "Effective incident response and review processes are critical for maintaining customer trust, minimizing downtime, and ensuring business continuity.",
+    "representative_phrases": [
+      "incident response",
+      "postmortem planning",
+      "incident tracking",
+      "incident impact",
+      "incident communication",
+      "post-mortem",
+      "outage post-mortem",
+      "post-mortem follow-up",
+      "incident review",
+      "incident follow-up"
+    ],
+    "phrase_count": 18
+  },
+  {
+    "cluster_id": 9,
+    "theme_title": "Outage Prevention and Recovery",
+    "audience": "Engineering",
+    "rationale": "Effective outage remediation is crucial for maintaining customer trust and ensuring business continuity, making it a top priority for the engineering team.",
+    "representative_phrases": [
+      "outage remediation",
+      "outage",
+      "product outage",
+      "platform outage",
+      "service outage",
+      "outage follow-up",
+      "circuit breaker",
+      "reliability / outage impact",
+      "outage impact",
+      "outage recovery"
+    ],
+    "phrase_count": 13
+  },
+  {
+    "cluster_id": 10,
+    "theme_title": "HIPAA Compliance and Reporting",
+    "audience": "All",
+    "rationale": "Compliance with HIPAA regulations is a critical concern for our customers, and effective reporting is essential for meeting these requirements.",
+    "representative_phrases": [
+      "hipaa",
+      "hipaa compliance",
+      "hipaa reporting",
+      "hipaa audit prep",
+      "reporting",
+      "custom reporting",
+      "hipaa validation"
+    ],
+    "phrase_count": 7
+  },
+  {
+    "cluster_id": 11,
+    "theme_title": "Compliance and Governance",
+    "audience": "All",
+    "rationale": "Effective compliance management is critical for maintaining customer trust, avoiding regulatory penalties, and ensuring the long-term viability of our business.",
+    "representative_phrases": [
+      "comply v2 launch",
+      "compliance reporting",
+      "multi-framework coverage",
+      "compliance",
+      "rto compliance",
+      "compliance automation",
+      "compliance integration",
+      "multi-framework support",
+      "pci dss",
+      "comply integration"
+    ],
+    "phrase_count": 24
+  },
+  {
+    "cluster_id": 12,
+    "theme_title": "Audit Readiness and Compliance",
+    "audience": "All",
+    "rationale": "Ensuring timely completion of SOC 2 audits is critical for maintaining customer trust and meeting regulatory requirements.",
+    "representative_phrases": [
+      "audit preparation",
+      "soc 2 audit",
+      "soc 2",
+      "audit deadline",
+      "audit automation",
+      "audit readiness",
+      "audit workflow",
+      "soc 2 type ii audit",
+      "audit evidence packaging"
+    ],
+    "phrase_count": 9
+  },
+  {
+    "cluster_id": 13,
+    "theme_title": "Billing and Pricing Issues",
+    "audience": "Sales | Customer Support",
+    "rationale": "This theme matters to the sales team because they need to address customer concerns about billing and pricing, while also ensuring accurate revenue recognition.",
+    "representative_phrases": [
+      "billing dispute",
+      "seat overage",
+      "billing adjustment",
+      "pricing",
+      "overage charges",
+      "contract negotiation",
+      "api rate limiting",
+      "api rate limits",
+      "invoice overage",
+      "pricing pressure"
+    ],
+    "phrase_count": 11
+  },
+  {
+    "cluster_id": 14,
+    "theme_title": "Data Backup and Recovery",
+    "audience": "All",
+    "rationale": "Effective data backup and recovery strategies are critical for business continuity, customer trust, and revenue protection.",
+    "representative_phrases": [
+      "backup performance",
+      "granular restore",
+      "backup and recovery",
+      "data loss",
+      "backup failure",
+      "data retention",
+      "load testing",
+      "data protection",
+      "data backfill",
+      "data integrity"
+    ],
+    "phrase_count": 23
+  },
+  {
+    "cluster_id": 15,
+    "theme_title": "Identity and Access Security",
+    "audience": "All",
+    "rationale": "Effective identity management is critical for maintaining data security, compliance, and user experience across the organization.",
+    "representative_phrases": [
+      "identity management",
+      "iso 27001",
+      "access control",
+      "change management",
+      "vendor management",
+      "documentation",
+      "identity & access management",
+      "iam permissions",
+      "service control policies",
+      "identity deployment"
+    ],
+    "phrase_count": 24
+  },
+  {
+    "cluster_id": 16,
+    "theme_title": "Compliance and Roadmap Planning",
+    "audience": "All",
+    "rationale": "Understanding the company's compliance requirements and roadmap planning is crucial for leadership to ensure strategic alignment and risk mitigation across all teams.",
+    "representative_phrases": [
+      "roadmap planning",
+      "roadmap prioritization",
+      "identity roadmap",
+      "roadmap",
+      "product roadmap",
+      "gdpr roadmap",
+      "compliance roadmap"
+    ],
+    "phrase_count": 7
+  },
+  {
+    "cluster_id": 17,
+    "theme_title": "Upselling and Cross-Selling Strategy",
+    "audience": "Sales",
+    "rationale": "Effective sales alignment is crucial for identifying and capitalizing on upsell and cross-sell opportunities, driving revenue growth.",
+    "representative_phrases": [
+      "product upsell",
+      "sales process",
+      "retail seasonality",
+      "cross-sell",
+      "sales strategy",
+      "upsell opportunity",
+      "sales alignment",
+      "upsell"
+    ],
+    "phrase_count": 8
+  },
+  {
+    "cluster_id": 18,
+    "theme_title": "Product and Feature Development",
+    "audience": "All",
+    "rationale": "This theme is critical for the leadership team as it encompasses various aspects of product growth, maintenance, and customer satisfaction.",
+    "representative_phrases": [
+      "migration cleanup",
+      "cloud expansion",
+      "agent version update",
+      "product add-on",
+      "launch readiness",
+      "feature request",
+      "workaround",
+      "product launch",
+      "product demo",
+      "product bug"
+    ],
+    "phrase_count": 37
+  },
+  {
+    "cluster_id": 19,
+    "theme_title": "Alert and Security Management",
+    "audience": "All",
+    "rationale": "Effective alert management is critical for security, reliability, and customer adoption of our SaaS platform.",
+    "representative_phrases": [
+      "security monitoring",
+      "security training",
+      "alert latency",
+      "ot security",
+      "estimation",
+      "alert tuning",
+      "alert routing",
+      "alert fatigue",
+      "alert misconfiguration",
+      "alert deduplication"
+    ],
+    "phrase_count": 19
+  },
+  {
+    "cluster_id": 20,
+    "theme_title": "Customer Onboarding and Support",
+    "audience": "All",
+    "rationale": "Effective onboarding and support processes are critical for customer satisfaction, retention, and ultimately revenue growth.",
+    "representative_phrases": [
+      "provisioning",
+      "onboarding",
+      "service credits",
+      "financial services",
+      "totp",
+      "sql server",
+      "credit request",
+      "knowledge sharing"
+    ],
+    "phrase_count": 8
+  },
+  {
+    "cluster_id": 21,
+    "theme_title": "IT Operations and Planning",
+    "audience": "Engineering",
+    "rationale": "Effective IT operations planning enables efficient deployment, reduces downtime, and ensures compliance, directly impacting the engineering team's productivity and service quality.",
+    "representative_phrases": [
+      "sprint planning",
+      "resource allocation",
+      "scim / provisioning",
+      "sprint retrospective",
+      "runbook",
+      "cmmc",
+      "deployment",
+      "capacity planning",
+      "infrastructure deployment",
+      "rollback planning"
+    ],
+    "phrase_count": 14
+  },
+  {
+    "cluster_id": 22,
+    "theme_title": "Product Maturity Gaps",
+    "audience": "All",
+    "rationale": "Understanding these gaps is crucial for leadership to prioritize product development and resource allocation.",
+    "representative_phrases": [
+      "notification gap",
+      "collateral gaps",
+      "feature gaps",
+      "product gaps",
+      "documentation gap",
+      "monitoring gaps"
+    ],
+    "phrase_count": 6
+  },
+  {
+    "cluster_id": 23,
+    "theme_title": "Infrastructure Architecture Challenges",
+    "audience": "Engineering | Product",
+    "rationale": "This theme matters to Engineering and Product teams because it highlights the need for effective infrastructure architecture planning to support scalability, performance, and hybrid environments.",
+    "representative_phrases": [
+      "architecture gap",
+      "infrastructure bottleneck",
+      "pipeline architecture",
+      "hybrid environment",
+      "architecture",
+      "architectural remediation",
+      "cloud infrastructure",
+      "infrastructure architecture",
+      "hybrid infrastructure",
+      "infrastructure rebalancing"
+    ],
+    "phrase_count": 11
+  },
+  {
+    "cluster_id": 24,
+    "theme_title": "System Reliability and Support",
+    "audience": "All",
+    "rationale": "Effective system reliability and support directly impact customer satisfaction, business continuity, and revenue.",
+    "representative_phrases": [
+      "technical issue",
+      "internal monitoring failure",
+      "threat monitoring failure",
+      "proactive communication failure",
+      "technical debt",
+      "403 error",
+      "single point of failure",
+      "authentication failure",
+      "ldap sync failure",
+      "support response time"
+    ],
+    "phrase_count": 16
+  },
+  {
+    "cluster_id": 25,
+    "theme_title": "Platform Reliability and Resilience",
+    "audience": "All",
+    "rationale": "Ensuring the reliability of our platform is critical to maintaining customer trust and driving business growth.",
+    "representative_phrases": [
+      "infrastructure reliability",
+      "pipeline reliability",
+      "pipeline failure",
+      "ingestion pipeline",
+      "customer reliability concerns",
+      "reliability incident",
+      "reliability engineering",
+      "detect pipeline failure",
+      "event ingestion pipeline",
+      "reliability concern"
+    ],
+    "phrase_count": 12
+  }
+]

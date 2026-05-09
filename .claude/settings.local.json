@@ -129,7 +129,9 @@
       "Skill(update-config)",
       "PowerShell(conda run *)",
       "PowerShell(Rename-Item *)",
-      "PowerShell(Get-Command *)"
+      "PowerShell(Get-Command *)",
+      "Bash(sc query *)",
+      "Bash(reg query *)"
     ]
   },
   "enableAllProjectMcpServers": true,

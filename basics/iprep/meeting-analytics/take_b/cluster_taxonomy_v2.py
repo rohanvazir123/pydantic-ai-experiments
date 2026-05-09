@@ -50,11 +50,11 @@ Usage:
     python basics/iprep/meeting-analytics/cluster_taxonomy_v2.py --min-clusters 4 --max-clusters 12
 
 Outputs:
-    basics/iprep/meeting-analytics/cluster_work/meeting_clusters.csv
-    basics/iprep/meeting-analytics/cluster_work/cluster_summary.json
-    basics/iprep/meeting-analytics/cluster_work/cluster_terms.csv
-    basics/iprep/meeting-analytics/cluster_work/cluster_metrics.json
-    basics/iprep/meeting-analytics/cluster_work/cluster_scores.csv
+    basics/iprep/meeting-analytics/take_b/outputs/meeting_clusters.csv
+    basics/iprep/meeting-analytics/take_b/outputs/cluster_summary.json
+    basics/iprep/meeting-analytics/take_b/outputs/cluster_terms.csv
+    basics/iprep/meeting-analytics/take_b/outputs/cluster_metrics.json
+    basics/iprep/meeting-analytics/take_b/outputs/cluster_scores.csv
 """
 
 from __future__ import annotations
@@ -77,8 +77,8 @@ from sklearn.metrics import silhouette_score
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
-DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "cluster_work"
+DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
+DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "outputs"
 
 
 @dataclass
@@ -564,8 +564,7 @@ def print_cluster_summary(cluster_summary: list[dict[str, Any]]) -> None:
     """
 
     for cluster in cluster_summary:
-        print()
-        print(f"Cluster {cluster['cluster_id']}: {cluster['generated_label']}")
+        print(f"\nCluster {cluster['cluster_id']}: {cluster['generated_label']}")
         print(f"  meetings: {cluster['meeting_count']}")
         print(f"  top terms: {', '.join(cluster['top_terms'][:10])}")
         print(

@@ -15,11 +15,11 @@ Why this approach over Take A/B:
 See take_c_design.md for full tradeoff analysis.
 
 Usage:
-    python basics/iprep/i1/take_c_semantic_clustering.py
-    python basics/iprep/i1/take_c_semantic_clustering.py --dry-run
-    python basics/iprep/i1/take_c_semantic_clustering.py --min-cluster-size 4 --min-samples 2
+    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py
+    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py --dry-run
+    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py --min-cluster-size 4 --min-samples 2
 
-Outputs (in basics/iprep/i1/cluster_work_c/):
+Outputs (in basics/iprep/meeting-analytics/cluster_work_c/):
     semantic_clusters.json  -- cluster definitions with LLM-generated labels
     meeting_themes.csv      -- per-meeting theme assignment + inferred call type
     phrase_clusters.csv     -- every topic phrase with its cluster assignment
@@ -34,7 +34,7 @@ Outputs (in basics/iprep/i1/cluster_work_c/):
 Environment variables (reads .env in repo root or script dir):
     EMBEDDING_BASE_URL, EMBEDDING_MODEL, EMBEDDING_API_KEY
     LLM_BASE_URL, LLM_MODEL, LLM_API_KEY
-    DATABASE_URL  (or PG_HOST/PORT/USER/PASSWORD/DATABASE for Take A compat)
+    PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ from take_c_pg_store import SemanticClusterStore
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
-DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "cluster_work_c"
+DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
+DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "outputs"
 
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text:latest"
 DEFAULT_LLM_MODEL = "llama3.1:8b"
@@ -91,7 +91,7 @@ FUZZY_THRESHOLD = 90
 
 
 def _load_dotenv() -> None:
-    for env_file in (SCRIPT_DIR.parents[2] / ".env", SCRIPT_DIR / ".env"):
+    for env_file in (SCRIPT_DIR.parent / ".env",):
         if not env_file.exists():
             continue
         for raw in env_file.read_text(encoding="utf-8").splitlines():
@@ -241,7 +241,9 @@ async def embed_phrases(phrases: list[TopicPhrase]) -> list[TopicPhrase]:
         batch = texts[i : i + EMBEDDING_BATCH_SIZE]
         response = await client.embeddings.create(model=EMBEDDING_MODEL, input=batch)
         all_embeddings.extend(data.embedding for data in response.data)
-        print(f"  Embedded {min(i + EMBEDDING_BATCH_SIZE, len(texts))}/{len(texts)} phrases")
+        print(
+            f"  Embedded {min(i + EMBEDDING_BATCH_SIZE, len(texts))}/{len(texts)} phrases"
+        )
 
     for phrase, embedding in zip(phrases, all_embeddings):
         phrase.embedding = embedding
@@ -286,7 +288,9 @@ def reduce_dimensions_2d(embeddings: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def _compute_centroids(reduced: np.ndarray, labels: np.ndarray) -> dict[int, np.ndarray]:
+def _compute_centroids(
+    reduced: np.ndarray, labels: np.ndarray
+) -> dict[int, np.ndarray]:
     cluster_ids = sorted(set(labels) - {-1})
     return {cid: reduced[labels == cid].mean(axis=0) for cid in cluster_ids}
 
@@ -334,7 +338,9 @@ def cluster_phrases(
     n_clusters = len(set(raw_labels) - {-1})
     n_noise = int(np.sum(raw_labels == -1))
     noise_pct = n_noise / len(phrases) * 100
-    print(f"  HDBSCAN: {n_clusters} clusters, {n_noise} noise points ({noise_pct:.1f}%)")
+    print(
+        f"  HDBSCAN: {n_clusters} clusters, {n_noise} noise points ({noise_pct:.1f}%)"
+    )
 
     final_labels = _reassign_noise(reduced, raw_labels)
 
@@ -452,14 +458,18 @@ async def label_clusters(phrases: list[TopicPhrase]) -> list[ClusterLabel]:
                     if parsed and "theme_title" in parsed:
                         return ClusterLabel(
                             cluster_id=cluster_id,
-                            theme_title=parsed.get("theme_title", f"Cluster {cluster_id}"),
+                            theme_title=parsed.get(
+                                "theme_title", f"Cluster {cluster_id}"
+                            ),
                             audience=parsed.get("audience", "All"),
                             rationale=parsed.get("rationale", ""),
                             representative_phrases=sample[:10],
                         )
                 except Exception as exc:  # noqa: BLE001
                     if attempt == 2:
-                        print(f"  Warning: label failed for cluster {cluster_id}: {exc}")
+                        print(
+                            f"  Warning: label failed for cluster {cluster_id}: {exc}"
+                        )
 
         # Fallback: derive title from top phrases
         return ClusterLabel(
@@ -470,7 +480,9 @@ async def label_clusters(phrases: list[TopicPhrase]) -> list[ClusterLabel]:
             representative_phrases=sample[:10],
         )
 
-    labels = await asyncio.gather(*[label_one(cid, cp) for cid, cp in sorted(by_cluster.items())])
+    labels = await asyncio.gather(
+        *[label_one(cid, cp) for cid, cp in sorted(by_cluster.items())]
+    )
     await client.close()
     return list(labels)
 
@@ -572,7 +584,9 @@ async def infer_call_types(records: list[MeetingRecord]) -> dict[str, tuple[str,
                         return record.meeting_id, (call_type, confidence)
                 except Exception as exc:  # noqa: BLE001
                     if attempt == 2:
-                        print(f"  Warning: call-type inference failed for {record.meeting_id}: {exc}")
+                        print(
+                            f"  Warning: call-type inference failed for {record.meeting_id}: {exc}"
+                        )
 
         return record.meeting_id, ("unknown", "low")
 
@@ -607,7 +621,9 @@ def write_outputs(
                     "audience": lb.audience,
                     "rationale": lb.rationale,
                     "representative_phrases": lb.representative_phrases,
-                    "phrase_count": sum(1 for p in phrases if p.cluster_id == lb.cluster_id),
+                    "phrase_count": sum(
+                        1 for p in phrases if p.cluster_id == lb.cluster_id
+                    ),
                 }
                 for lb in sorted(labels, key=lambda x: x.cluster_id)
             ],
@@ -617,8 +633,12 @@ def write_outputs(
     )
 
     # phrase_clusters.csv
-    with (output_dir / "phrase_clusters.csv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["cluster_id", "theme_title", "canonical", "aliases"])
+    with (output_dir / "phrase_clusters.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as fh:
+        writer = csv.DictWriter(
+            fh, fieldnames=["cluster_id", "theme_title", "canonical", "aliases"]
+        )
         writer.writeheader()
         for phrase in sorted(phrases, key=lambda p: (p.cluster_id, p.canonical)):
             lb = label_by_id.get(phrase.cluster_id)
@@ -632,7 +652,9 @@ def write_outputs(
             )
 
     # meeting_themes.csv
-    with (output_dir / "meeting_themes.csv").open("w", encoding="utf-8", newline="") as fh:
+    with (output_dir / "meeting_themes.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as fh:
         writer = csv.DictWriter(
             fh,
             fieldnames=[
@@ -652,7 +674,9 @@ def write_outputs(
         for a in assignments:
             primary_lb = label_by_id.get(a.primary_theme_id)
             all_titles = "; ".join(
-                label_by_id[tid].theme_title for tid in a.theme_ids if tid in label_by_id
+                label_by_id[tid].theme_title
+                for tid in a.theme_ids
+                if tid in label_by_id
             )
             writer.writerow(
                 {
@@ -676,7 +700,9 @@ def write_outputs(
 
     # viz_coords.csv (for scatter plot, optional)
     if viz_coords is not None:
-        with (output_dir / "viz_coords.csv").open("w", encoding="utf-8", newline="") as fh:
+        with (output_dir / "viz_coords.csv").open(
+            "w", encoding="utf-8", newline=""
+        ) as fh:
             writer = csv.DictWriter(
                 fh, fieldnames=["canonical", "cluster_id", "theme_title", "x", "y"]
             )
@@ -709,23 +735,239 @@ def print_summary(
     sentiment_by_theme: dict[int, list[float]] = {}
     for a in assignments:
         if a.sentiment_score is not None:
-            sentiment_by_theme.setdefault(a.primary_theme_id, []).append(a.sentiment_score)
+            sentiment_by_theme.setdefault(a.primary_theme_id, []).append(
+                a.sentiment_score
+            )
 
-    print("\n─── Discovered Themes ───────────────────────────────────────")
+    print("\n--- Discovered Themes ---------------------------------------")
     for lb in sorted(labels, key=lambda x: -theme_counts.get(x.cluster_id, 0)):
         count = theme_counts.get(lb.cluster_id, 0)
         scores = sentiment_by_theme.get(lb.cluster_id, [])
-        avg_sentiment = f"{sum(scores)/len(scores):.2f}" if scores else "n/a"
+        avg_sentiment = f"{sum(scores) / len(scores):.2f}" if scores else "n/a"
         coh = coherence.get(lb.cluster_id, 0.0)
         coh_flag = "tight" if coh >= 0.6 else ("review" if coh >= 0.4 else "LOOSE")
         print(f"\n  [{lb.cluster_id}] {lb.theme_title}  ({lb.audience})")
         print(f"       {lb.rationale}")
-        print(f"       {count} meetings  |  avg sentiment: {avg_sentiment}  |  coherence: {coh} [{coh_flag}]")
+        print(
+            f"       {count} meetings  |  avg sentiment: {avg_sentiment}  |  coherence: {coh} [{coh_flag}]"
+        )
         print(f"       sample phrases: {', '.join(lb.representative_phrases[:4])}")
 
-    print("\n─── Call Type Distribution ──────────────────────────────────")
+    print("\n--- Call Type Distribution ----------------------------------")
     for call_type, count in sorted(call_type_counts.items(), key=lambda x: -x[1]):
         print(f"  {call_type:12s}  {count:3d} meetings")
+
+
+# ---------------------------------------------------------------------------
+# Run log  (mirrors take_b_run.log format for side-by-side review)
+# ---------------------------------------------------------------------------
+
+
+def write_run_log(
+    output_dir: Path,
+    phrases: list[TopicPhrase],
+    labels: list[ClusterLabel],
+    assignments: list[MeetingThemeAssignment],
+    records: list[MeetingRecord],
+    coherence: dict[int, float],
+    metrics: dict[str, Any],
+    signal_rows: list[dict[str, Any]] | None = None,
+) -> None:
+    """
+    Write cluster_work_c/take_c_run.log with three sections:
+
+      1. Per-meeting topic → cluster mapping   (like Take B's TF-IDF weights per doc)
+      2. Per-cluster full detail               (phrases, meetings, signals)
+      3. Coherence summary + noise stats
+    """
+    import datetime
+
+    log_path = output_dir / "take_c_run.log"
+
+    label_by_id: dict[int, ClusterLabel] = {lb.cluster_id: lb for lb in labels}
+    phrase_to_cluster: dict[str, int] = {}
+    for p in phrases:
+        phrase_to_cluster[p.canonical] = p.cluster_id
+        for alias in p.aliases:
+            phrase_to_cluster[alias] = p.cluster_id
+
+    phrases_by_cluster: dict[int, list[TopicPhrase]] = {}
+    for p in phrases:
+        phrases_by_cluster.setdefault(p.cluster_id, []).append(p)
+
+    meetings_by_cluster: dict[int, list[MeetingThemeAssignment]] = {}
+    for a in assignments:
+        meetings_by_cluster.setdefault(a.primary_theme_id, []).append(a)
+
+    record_by_id: dict[str, MeetingRecord] = {r.meeting_id: r for r in records}
+
+    signals_by_theme: dict[str, dict[str, int]] = {}
+    if signal_rows:
+        for row in signal_rows:
+            signals_by_theme[row["theme_title"]] = {
+                "churn_signal": row.get("churn_signal", 0) or 0,
+                "concern": row.get("concern", 0) or 0,
+                "feature_gap": row.get("feature_gap", 0) or 0,
+                "technical_issue": row.get("technical_issue", 0) or 0,
+                "praise": row.get("praise", 0) or 0,
+                "pricing_offer": row.get("pricing_offer", 0) or 0,
+            }
+
+    lines: list[str] = []
+
+    def w(s: str = "") -> None:
+        lines.append(s)
+
+    # ---- Header ----
+    w("=== Take C Run Log ===")
+    w(f"Date      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    w(f"Embedding : {metrics.get('embedding_model', EMBEDDING_MODEL)}")
+    w(f"LLM       : {metrics.get('llm_model', LLM_MODEL)}")
+    w(
+        f"UMAP      : n_components={metrics.get('umap_n_components')}  "
+        f"n_neighbors={metrics.get('umap_n_neighbors')}  "
+        f"metric={metrics.get('umap_metric')}  "
+        f"random_state={metrics.get('umap_random_state')}"
+    )
+    w(
+        f"HDBSCAN   : min_cluster_size={metrics.get('min_cluster_size')}  "
+        f"min_samples={metrics.get('min_samples')}"
+    )
+    w()
+    w(
+        f"Dataset   : {metrics.get('meeting_count')} meetings  |  "
+        f"{metrics.get('phrase_count')} phrases after dedup"
+    )
+    w(
+        f"Clusters  : {metrics.get('n_clusters')}  |  "
+        f"noise before reassignment: {metrics.get('n_noise_raw')} "
+        f"({metrics.get('noise_ratio', 0) * 100:.1f}%)"
+    )
+    w(f"Elapsed   : {metrics.get('elapsed_seconds')}s")
+
+    # ---- Section 1: Per-meeting topic → cluster mapping ----
+    w()
+    w("=" * 70)
+    w("SECTION 1 — Per-Meeting Topic → Cluster Mapping")
+    w("=" * 70)
+    w("(Analogous to Take B's per-document TF-IDF weights)")
+    w()
+
+    for a in sorted(assignments, key=lambda x: x.primary_theme_id):
+        primary_lb = label_by_id.get(a.primary_theme_id)
+        primary_title = (
+            primary_lb.theme_title if primary_lb else f"cluster {a.primary_theme_id}"
+        )
+        rec = record_by_id.get(a.meeting_id)
+        raw_topics = [
+            _clean_topic(str(t)) for t in (rec.summary.get("topics", []) if rec else [])
+        ]
+
+        w(
+            f"Meeting {a.meeting_id}  |  call={a.inferred_call_type} ({a.call_confidence})"
+            f"  |  sentiment={a.sentiment_score} ({a.overall_sentiment})"
+        )
+        w(f"  primary theme: [{a.primary_theme_id}] {primary_title}")
+        secondary = [
+            f"[{tid}] {label_by_id[tid].theme_title}"
+            for tid in a.theme_ids
+            if tid != a.primary_theme_id and tid in label_by_id
+        ]
+        if secondary:
+            w(f"  secondary    : {', '.join(secondary)}")
+        w("  topics extracted -> cluster:")
+        for topic in raw_topics:
+            cid = phrase_to_cluster.get(topic)
+            if cid is not None and cid in label_by_id:
+                w(f"    {topic:<45s} -> [{cid}] {label_by_id[cid].theme_title}")
+            else:
+                w(f"    {topic:<45s} -> (no cluster match)")
+        w()
+
+    # ---- Section 2: Per-cluster full detail ----
+    w("=" * 70)
+    w("SECTION 2 — Per-Cluster Detail")
+    w("=" * 70)
+    w()
+
+    for lb in sorted(
+        labels, key=lambda x: -len(meetings_by_cluster.get(x.cluster_id, []))
+    ):
+        coh = coherence.get(lb.cluster_id, 0.0)
+        coh_flag = "tight" if coh >= 0.6 else ("review" if coh >= 0.4 else "LOOSE")
+        cluster_meetings = meetings_by_cluster.get(lb.cluster_id, [])
+        cluster_phrases = sorted(
+            phrases_by_cluster.get(lb.cluster_id, []), key=lambda p: p.canonical
+        )
+        avg_scores = [
+            a.sentiment_score for a in cluster_meetings if a.sentiment_score is not None
+        ]
+        avg_sent = f"{sum(avg_scores) / len(avg_scores):.2f}" if avg_scores else "n/a"
+
+        w(f"[{lb.cluster_id}] {lb.theme_title}  ({lb.audience})")
+        w(
+            f"    coherence={coh} [{coh_flag}]  |  {len(cluster_meetings)} meetings  |  avg sentiment={avg_sent}"
+        )
+        w(f"    rationale: {lb.rationale}")
+
+        w(f"    Phrases ({len(cluster_phrases)}):")
+        for p in cluster_phrases:
+            alias_str = f"  (also: {'; '.join(p.aliases)})" if p.aliases else ""
+            w(f"      {p.canonical}{alias_str}")
+
+        w(f"    Meetings — primary assignments ({len(cluster_meetings)}):")
+        for a in sorted(cluster_meetings, key=lambda x: x.sentiment_score or 99):
+            rec = record_by_id.get(a.meeting_id)
+            raw_topics = [
+                _clean_topic(str(t))
+                for t in (rec.summary.get("topics", []) if rec else [])
+            ]
+            topics_str = ", ".join(raw_topics[:6])
+            if len(raw_topics) > 6:
+                topics_str += f" (+{len(raw_topics) - 6} more)"
+            w(
+                f"      {a.meeting_id}  call={a.inferred_call_type:<8s}  "
+                f"score={str(a.sentiment_score):<5}  {a.overall_sentiment or ''}"
+            )
+            w(f"        topics: {topics_str}")
+
+        sigs = signals_by_theme.get(lb.theme_title)
+        if sigs:
+            w("    Signals (from key_moments):")
+            for sig_name, sig_count in sorted(sigs.items(), key=lambda x: -x[1]):
+                bar = "#" * min(sig_count, 30)
+                w(f"      {sig_name:<20s} {sig_count:3d}  {bar}")
+        elif signal_rows is not None:
+            w("    Signals: (no key_moments for this theme)")
+
+        w()
+
+    # ---- Section 3: Coherence summary ----
+    w("=" * 70)
+    w("SECTION 3 — Coherence Summary")
+    w("=" * 70)
+    tight = [(cid, v) for cid, v in coherence.items() if v >= 0.6]
+    review = [(cid, v) for cid, v in coherence.items() if 0.4 <= v < 0.6]
+    loose = [(cid, v) for cid, v in coherence.items() if v < 0.4]
+    w(
+        f"  Tight  (>=0.6): {len(tight):2d} clusters  {[cid for cid, _ in sorted(tight)]}"
+    )
+    w(
+        f"  Review (0.4-0.6): {len(review):2d} clusters  {[cid for cid, _ in sorted(review)]}"
+    )
+    w(
+        f"  LOOSE  (<0.4):  {len(loose):2d} clusters  {[cid for cid, _ in sorted(loose)]}"
+    )
+    w()
+    w("Per-cluster coherence (sorted high to low):")
+    for cid, v in sorted(coherence.items(), key=lambda x: -x[1]):
+        lb = label_by_id.get(cid)
+        title = lb.theme_title if lb else f"cluster {cid}"
+        flag = "tight" if v >= 0.6 else ("review" if v >= 0.4 else "LOOSE")
+        w(f"  [{cid:2d}] {v:.3f} [{flag}]  {title}")
+
+    log_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"  take_c_run.log")
 
 
 # ---------------------------------------------------------------------------
@@ -798,50 +1040,65 @@ async def persist_to_postgres(
 
 async def print_pg_insights(store: SemanticClusterStore) -> None:
     """Print all insight queries against the persisted data."""
-    print("\n─── Insight: Theme Sentiment (avg) ──────────────────────────")
+    has_km = await store.has_key_moments()
+
+    print("\n--- Insight: Theme Sentiment (avg) --------------------------")
     rows = await store.insight_theme_sentiment()
     for r in rows:
         bar = "+" if (r["avg_sentiment"] or 0) >= 3.5 else "-"
-        print(f"  [{bar}] {r['theme_title']:<40s}  "
-              f"avg={r['avg_sentiment']}  meetings={r['meeting_count']}")
+        print(
+            f"  [{bar}] {r['theme_title']:<40s}  "
+            f"avg={r['avg_sentiment']}  meetings={r['meeting_count']}"
+        )
 
-    print("\n─── Insight: Sentiment Distribution by Theme ────────────────")
+    print("\n--- Insight: Sentiment Distribution by Theme ----------------")
     rows = await store.insight_sentiment_distribution_by_theme()
     current_theme = None
     for r in rows:
         if r["theme_title"] != current_theme:
             current_theme = r["theme_title"]
             print(f"\n  {current_theme}")
-        print(f"    {r['overall_sentiment']:<20s}  {r['meeting_count']:3d} meetings  "
-              f"avg_score={r['avg_score']}")
+        print(
+            f"    {r['overall_sentiment']:<20s}  {r['meeting_count']:3d} meetings  "
+            f"avg_score={r['avg_score']}"
+        )
 
-    print("\n─── Insight: Signal Counts by Theme ─────────────────────────")
-    rows = await store.insight_signal_counts_by_theme()
-    if rows:
+    print("\n--- Insight: Signal Counts by Theme -------------------------")
+    if has_km:
+        rows = await store.insight_signal_counts_by_theme()
         print(f"  {'Theme':<40s}  churn  concern  feat_gap  tech  praise  pricing")
         for r in rows:
-            print(f"  {r['theme_title']:<40s}  "
-                  f"{r['churn_signal']:5d}  {r['concern']:7d}  "
-                  f"{r['feature_gap']:8d}  {r['technical_issue']:4d}  "
-                  f"{r['praise']:6d}  {r['pricing_offer']:7d}")
+            print(
+                f"  {r['theme_title']:<40s}  "
+                f"{r['churn_signal']:5d}  {r['concern']:7d}  "
+                f"{r['feature_gap']:8d}  {r['technical_issue']:4d}  "
+                f"{r['praise']:6d}  {r['pricing_offer']:7d}"
+            )
     else:
-        print("  (key_moments table not found — run Take A first)")
+        print("  (skipped -- key_moments table not present; run Take A first)")
 
-    print("\n─── Insight: Theme Co-occurrence ────────────────────────────")
+    print("\n--- Insight: Theme Co-occurrence ----------------------------")
     rows = await store.insight_theme_cooccurrence(top_n=10)
     for r in rows:
-        print(f"  {r['theme_a']:<35s} + {r['theme_b']:<35s}  "
-              f"{r['co_occurrence_count']} meetings")
+        print(
+            f"  {r['theme_a']:<35s} + {r['theme_b']:<35s}  "
+            f"{r['co_occurrence_count']} meetings"
+        )
 
-    print("\n─── Insight: High-Risk Meetings (churn + low sentiment) ─────")
-    rows = await store.insight_high_risk_meetings()
-    if rows:
-        for r in rows[:10]:
-            print(f"  {r['meeting_id']}  theme={r['theme_title']}  "
-                  f"call={r['call_type']}  score={r['sentiment_score']}  "
-                  f"churn_signals={r['churn_signals']}")
+    print("\n--- Insight: High-Risk Meetings (churn + low sentiment) -----")
+    if has_km:
+        rows = await store.insight_high_risk_meetings()
+        if rows:
+            for r in rows[:10]:
+                print(
+                    f"  {r['meeting_id']}  theme={r['theme_title']}  "
+                    f"call={r['call_type']}  score={r['sentiment_score']}  "
+                    f"churn_signals={r['churn_signals']}"
+                )
+        else:
+            print("  (no high-risk meetings found)")
     else:
-        print("  (key_moments table not found — run Take A first)")
+        print("  (skipped -- key_moments table not present; run Take A first)")
 
 
 # ---------------------------------------------------------------------------
@@ -856,27 +1113,35 @@ async def main() -> None:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument(
-        "--min-cluster-size", type=int, default=5,
+        "--min-cluster-size",
+        type=int,
+        default=5,
         help="HDBSCAN min_cluster_size. Lower = more clusters. (default: 5)",
     )
     parser.add_argument(
-        "--min-samples", type=int, default=3,
+        "--min-samples",
+        type=int,
+        default=3,
         help="HDBSCAN min_samples. Higher = more noise points. (default: 3)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Load and deduplicate topics, then exit without calling Ollama.",
     )
     parser.add_argument(
-        "--skip-viz", action="store_true",
+        "--skip-viz",
+        action="store_true",
         help="Skip 2D UMAP for visualization (saves ~10s).",
     )
     parser.add_argument(
-        "--skip-pg", action="store_true",
+        "--skip-pg",
+        action="store_true",
         help="Skip Postgres persistence step.",
     )
     parser.add_argument(
-        "--reset-pg", action="store_true",
+        "--reset-pg",
+        action="store_true",
         help="Drop and recreate semantic tables before inserting.",
     )
     args = parser.parse_args()
@@ -889,33 +1154,60 @@ async def main() -> None:
     print("=== Take C: LLM-Assisted Semantic Clustering ===")
     print(f"  Embedding model : {EMBEDDING_MODEL}  ({EMBEDDING_BASE_URL})")
     print(f"  LLM model       : {LLM_MODEL}  ({LLM_BASE_URL})")
-    print(f"  Postgres        : {'skip' if args.skip_pg else 'enabled (meeting_analytics)'}")
+    print(
+        f"  Postgres        : {'skip' if args.skip_pg else 'enabled (meeting_analytics)'}"
+    )
 
     # Step 1
     print("\n[1/9] Loading meeting records...")
     records = load_records(dataset_dir)
     print(f"  Loaded {len(records)} meetings")
+    call_type_raw_counts: Counter[str] = Counter(
+        str(r.summary.get("callType", "unknown")) for r in records
+    )
+    print(f"  Raw call types in JSON  : {dict(call_type_raw_counts)}")
+    topic_counts = [len(r.summary.get("topics", [])) for r in records]
+    print(
+        f"  Topics per meeting      : min={min(topic_counts)}  max={max(topic_counts)}  avg={sum(topic_counts) / len(topic_counts):.1f}"
+    )
+    sentiment_scores = [
+        r.summary.get("sentimentScore")
+        for r in records
+        if r.summary.get("sentimentScore") is not None
+    ]
+    if sentiment_scores:
+        print(
+            f"  Sentiment scores        : min={min(sentiment_scores):.2f}  max={max(sentiment_scores):.2f}  avg={sum(sentiment_scores) / len(sentiment_scores):.2f}"
+        )
 
     # Step 2
     print("\n[2/9] Extracting and deduplicating topic phrases...")
     phrases = extract_topic_phrases(records)
+    print(f"  Sample phrases (first 10 canonical):")
+    for p in phrases[:10]:
+        alias_str = f"  (also: {', '.join(p.aliases)})" if p.aliases else ""
+        print(f"    {p.canonical}{alias_str}")
 
     if args.dry_run:
         print("\n[dry-run] Stopping before Ollama calls.")
-        print("  Sample phrases (first 15):")
-        for phrase in phrases[:15]:
-            alias_str = f"  (also: {', '.join(phrase.aliases)})" if phrase.aliases else ""
-            print(f"    {phrase.canonical}{alias_str}")
         return
 
     # Step 3
     print("\n[3/9] Generating embeddings...")
+    print(f"  Model   : {EMBEDDING_MODEL}")
+    print(f"  Phrases : {len(phrases)}  (batch size {EMBEDDING_BATCH_SIZE})")
     phrases = await embed_phrases(phrases)
+    print(f"  Embedding dim: {len(phrases[0].embedding)}")
 
     # Step 4
     print("\n[4/9] Reducing dimensions with UMAP...")
+    print(f"  Input : {len(phrases)} x {len(phrases[0].embedding)} embedding matrix")
+    print(
+        f"  UMAP  : {UMAP_N_COMPONENTS}-dim  n_neighbors={UMAP_N_NEIGHBORS}  metric={UMAP_METRIC}  seed={UMAP_RANDOM_STATE}"
+    )
     embeddings_matrix = np.array([p.embedding for p in phrases])
     reduced = reduce_dimensions(embeddings_matrix)
+    print(f"  Output: {reduced.shape[0]} x {reduced.shape[1]} reduced matrix")
 
     viz_coords: np.ndarray | None = None
     if not args.skip_viz:
@@ -924,6 +1216,9 @@ async def main() -> None:
 
     # Step 5
     print("\n[5/9] Clustering with HDBSCAN...")
+    print(
+        f"  min_cluster_size={args.min_cluster_size}  min_samples={args.min_samples}  metric=euclidean (in UMAP space)"
+    )
     phrases, metrics = cluster_phrases(
         phrases=phrases,
         reduced=reduced,
@@ -931,27 +1226,74 @@ async def main() -> None:
         min_samples=args.min_samples,
     )
 
-    # Step 5b — coherence check (pure numpy, no extra deps)
+    # Step 5b — coherence check
+    print("\n  Coherence check (avg pairwise cosine similarity within each cluster):")
+    print("  >=0.6 tight | 0.4-0.6 review | <0.4 LOOSE")
     coherence = compute_cluster_coherence(phrases)
     for cid, score in sorted(coherence.items()):
         flag = "tight" if score >= 0.6 else ("review" if score >= 0.4 else "LOOSE")
-        print(f"  cluster {cid:2d}  coherence={score}  [{flag}]")
+        cluster_size = sum(1 for p in phrases if p.cluster_id == cid)
+        print(
+            f"  cluster {cid:2d}  size={cluster_size:3d}  coherence={score:.3f}  [{flag}]"
+        )
+
+    tight_count = sum(1 for v in coherence.values() if v >= 0.6)
+    review_count = sum(1 for v in coherence.values() if 0.4 <= v < 0.6)
+    loose_count = sum(1 for v in coherence.values() if v < 0.4)
+    print(
+        f"\n  Summary: {tight_count} tight / {review_count} review / {loose_count} LOOSE"
+    )
 
     # Step 6
     print("\n[6/9] Labeling clusters with LLM...")
+    print(
+        f"  Model: {LLM_MODEL}  |  concurrency={LLM_CONCURRENCY}  |  sample={LABEL_SAMPLE_SIZE} phrases/cluster"
+    )
     labels = await label_clusters(phrases)
     for lb in sorted(labels, key=lambda x: x.cluster_id):
-        print(f"  [{lb.cluster_id}] {lb.theme_title}  ({lb.audience})")
+        coh = coherence.get(lb.cluster_id, 0.0)
+        flag = "tight" if coh >= 0.6 else ("review" if coh >= 0.4 else "LOOSE")
+        size = sum(1 for p in phrases if p.cluster_id == lb.cluster_id)
+        print(f"  [{lb.cluster_id:2d}] {lb.theme_title:<45s} ({lb.audience})")
+        print(f"       {size} phrases  coherence={coh:.3f} [{flag}]")
+        print(f"       {lb.rationale}")
+        print(f"       rep phrases: {', '.join(lb.representative_phrases[:5])}")
 
-    # Step 7 (call types run before theme assignment so we can pass them together)
-    print("\n[7/9] Inferring call types...")
+    # Step 7 — call types
+    print("\n[7/9] Inferring call types via LLM...")
+    print(f"  Model: {LLM_MODEL}  |  concurrency={LLM_CONCURRENCY}")
     call_types = await infer_call_types(records)
     call_type_dist = Counter(v for v, _ in call_types.values())
+    conf_dist = Counter(conf for _, conf in call_types.values())
     print(f"  Classified {len(call_types)} meetings: {dict(call_type_dist)}")
+    print(f"  Confidence distribution: {dict(conf_dist)}")
 
     # Step 8
     print("\n[8/9] Assigning meetings to themes...")
     assignments = assign_meetings_to_themes(records, phrases, labels, call_types)
+
+    # verbose assignment summary
+    label_by_id: dict[int, ClusterLabel] = {lb.cluster_id: lb for lb in labels}
+    theme_counts: Counter[int] = Counter(a.primary_theme_id for a in assignments)
+    print(
+        f"  {len(assignments)} meetings assigned  |  {len(theme_counts)} themes received at least 1 primary assignment"
+    )
+    empty_themes = [lb for lb in labels if theme_counts.get(lb.cluster_id, 0) == 0]
+    if empty_themes:
+        print(
+            f"  Themes with 0 primary meetings ({len(empty_themes)}): "
+            + ", ".join(f"[{lb.cluster_id}] {lb.theme_title}" for lb in empty_themes)
+        )
+    print(f"\n  {'Theme':<45s} {'meetings':>8}  {'avg_sentiment':>13}")
+    for lb in sorted(labels, key=lambda x: -theme_counts.get(x.cluster_id, 0)):
+        count = theme_counts.get(lb.cluster_id, 0)
+        scores = [
+            a.sentiment_score
+            for a in assignments
+            if a.primary_theme_id == lb.cluster_id and a.sentiment_score is not None
+        ]
+        avg_s = f"{sum(scores) / len(scores):.2f}" if scores else "n/a"
+        print(f"  [{lb.cluster_id:2d}] {lb.theme_title:<41s} {count:>8}  {avg_s:>13}")
 
     elapsed = time.monotonic() - t_start
     metrics["elapsed_seconds"] = round(elapsed, 1)
@@ -965,6 +1307,7 @@ async def main() -> None:
     print_summary(labels, assignments, coherence)
 
     # Step 9 — persist to Postgres (pgvector + tsvector)
+    signal_rows: list[dict[str, Any]] | None = None
     if not args.skip_pg:
         print("\n[9/9] Persisting to Postgres (meeting_analytics)...")
         store = SemanticClusterStore()
@@ -973,10 +1316,24 @@ async def main() -> None:
                 store, phrases, labels, assignments, reset=args.reset_pg
             )
             await print_pg_insights(store)
+            if await store.has_key_moments():
+                signal_rows = await store.insight_signal_counts_by_theme()
         finally:
             await store.close()
     else:
         print("\n[9/9] Postgres step skipped (--skip-pg)")
+
+    print("\nWriting run log...")
+    write_run_log(
+        output_dir,
+        phrases,
+        labels,
+        assignments,
+        records,
+        coherence,
+        metrics,
+        signal_rows,
+    )
 
     print(f"\nDone in {elapsed:.1f}s")
 

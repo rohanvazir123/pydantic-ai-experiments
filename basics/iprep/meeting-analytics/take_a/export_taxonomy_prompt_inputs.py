@@ -6,7 +6,7 @@ This creates:
   - taxonomy_prompt.md: prompt to paste into an LLM
 
 Usage:
-    python basics/iprep/i1/export_taxonomy_prompt_inputs.py
+    python basics/iprep/meeting-analytics/export_taxonomy_prompt_inputs.py
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
+DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
 DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "taxonomy_work"
 
 
@@ -107,7 +107,9 @@ def collect_counts(dataset_dir: Path) -> dict[str, Any]:
     for summary_path in sorted(dataset_dir.glob("*/summary.json")):
         meeting_count += 1
         summary = load_json(summary_path)
-        topic_counts.update(clean_topic(str(topic)) for topic in summary.get("topics", []))
+        topic_counts.update(
+            clean_topic(str(topic)) for topic in summary.get("topics", [])
+        )
         sentiment = summary.get("overallSentiment")
         if sentiment:
             sentiment_counts[str(sentiment)] += 1
@@ -166,7 +168,9 @@ def main() -> None:
     print("\nAfter the LLM returns taxonomy JSON, save it as:")
     print(f"  {SCRIPT_DIR / 'taxonomy.json'}")
     print("\nThen run:")
-    print("  python basics\\iprep\\i1\\load_functional_schema_to_postgres.py --reset")
+    print(
+        "  python basics\\iprep\\meeting-analytics\\load_functional_schema_to_postgres.py --reset"
+    )
 
 
 if __name__ == "__main__":

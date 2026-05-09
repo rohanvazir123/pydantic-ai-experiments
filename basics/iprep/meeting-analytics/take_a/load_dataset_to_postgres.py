@@ -6,9 +6,9 @@ This keeps the initial database shape intentionally simple:
   - a few SQL views that flatten the obvious things worth scanning
 
 Usage:
-    python basics/iprep/i1/load_dataset_to_postgres.py
-    python basics/iprep/i1/load_dataset_to_postgres.py --reset
-    python basics/iprep/i1/load_dataset_to_postgres.py --schema transcript_intel
+    python basics/iprep/meeting-analytics/load_dataset_to_postgres.py
+    python basics/iprep/meeting-analytics/load_dataset_to_postgres.py --reset
+    python basics/iprep/meeting-analytics/load_dataset_to_postgres.py --schema transcript_intel
 
 Connection environment variables:
     PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
@@ -26,13 +26,13 @@ import asyncpg
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_DIR = SCRIPT_DIR / "dataset"
-DEFAULT_SCHEMA = "iprep_i1"
+DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
+DEFAULT_SCHEMA = "iprep_meeting-analytics"
 
 
 def load_dotenv() -> None:
     """Load .env from repo root or this folder without requiring python-dotenv."""
-    for env_file in (SCRIPT_DIR.parents[2] / ".env", SCRIPT_DIR / ".env"):
+    for env_file in (SCRIPT_DIR.parent / ".env",):
         if not env_file.exists():
             continue
         for raw in env_file.read_text(encoding="utf-8").splitlines():
@@ -77,7 +77,9 @@ def iter_json_files(dataset_dir: Path) -> list[tuple[str, str, Path]]:
     return rows
 
 
-async def create_schema_objects(conn: asyncpg.Connection, schema: str, reset: bool) -> None:
+async def create_schema_objects(
+    conn: asyncpg.Connection, schema: str, reset: bool
+) -> None:
     q_schema = quote_ident(schema)
 
     if reset:
@@ -265,10 +267,16 @@ async def print_counts(conn: asyncpg.Connection, schema: str) -> None:
     q_schema = quote_ident(schema)
     raw_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.raw_files")
     meeting_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.meetings")
-    line_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.transcript_lines")
+    line_count = await conn.fetchval(
+        f"SELECT count(*) FROM {q_schema}.transcript_lines"
+    )
     summary_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.summaries")
-    speaker_turn_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.speaker_turns")
-    event_count = await conn.fetchval(f"SELECT count(*) FROM {q_schema}.participant_events")
+    speaker_turn_count = await conn.fetchval(
+        f"SELECT count(*) FROM {q_schema}.speaker_turns"
+    )
+    event_count = await conn.fetchval(
+        f"SELECT count(*) FROM {q_schema}.participant_events"
+    )
 
     print("\nLoaded:")
     print(f"  raw_files         {raw_count:>8,}")
@@ -280,8 +288,12 @@ async def print_counts(conn: asyncpg.Connection, schema: str) -> None:
 
     print("\nTry these in DBeaver:")
     print(f"  SELECT * FROM {schema}.meetings LIMIT 20;")
-    print(f"  SELECT * FROM {schema}.transcript_lines ORDER BY meeting_id, line_index LIMIT 100;")
-    print(f"  SELECT topic, count(*) FROM {schema}.summary_topics GROUP BY 1 ORDER BY 2 DESC;")
+    print(
+        f"  SELECT * FROM {schema}.transcript_lines ORDER BY meeting_id, line_index LIMIT 100;"
+    )
+    print(
+        f"  SELECT topic, count(*) FROM {schema}.summary_topics GROUP BY 1 ORDER BY 2 DESC;"
+    )
 
 
 async def main() -> None:
