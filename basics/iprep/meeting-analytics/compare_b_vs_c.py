@@ -75,8 +75,8 @@ def main() -> None:
         top_c = counts[counts["n"] > 0]
         print(f"\nB-{b_id} [{label_b}]  ({len(subset)} meetings)")
         for _, row in top_c.iterrows():
-            bar = "█" * row["n"]
-            print(f"  → C-{int(row['primary_theme_id']):02d} {row['primary_theme_title']:<45s} {bar} ({row['n']})")
+            bar = "#" * row["n"]
+            print(f"  -> C-{int(row['primary_theme_id']):02d} {row['primary_theme_title']:<45s} {bar} ({row['n']})")
 
     # --- Alignment summary ---
     print()
@@ -118,7 +118,7 @@ def main() -> None:
     for _, row in summary_df.iterrows():
         splits = int(row["C-splits"])
         if splits > 1:
-            print(f"  {row['B-cluster']} '{row['B-label']}' → {splits} distinct C themes")
+            print(f"  {row['B-cluster']} '{row['B-label']}' -> {splits} distinct C themes")
 
     # --- Overall agreement proxy ---
     # For each meeting, assign its B cluster's "dominant C theme"

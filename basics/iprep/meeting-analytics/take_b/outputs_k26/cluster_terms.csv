@@ -1,0 +1,313 @@
+cluster_id,rank,term
+0,1,post mortem
+0,2,mortem
+0,3,competitive
+0,4,post
+0,5,outage
+0,6,reliability
+0,7,outage post
+0,8,outage post mortem
+0,9,product launch
+0,10,launch
+0,11,customer
+0,12,sales
+1,1,backup
+1,2,connector
+1,3,communication
+1,4,backup failure
+1,5,dr
+1,6,workaround
+1,7,failure backup failure
+1,8,failure backup
+1,9,backup failure backup
+1,10,patch
+1,11,incident communication
+1,12,failure
+2,1,preparation
+2,2,audit preparation
+2,3,demo
+2,4,audit
+2,5,pci dss
+2,6,dss
+2,7,pci
+2,8,compliance
+2,9,iso
+2,10,soc
+2,11,preparation audit preparation
+2,12,preparation audit
+3,1,mfa
+3,2,sso
+3,3,okta
+3,4,management
+3,5,identity
+3,6,access management
+3,7,sso integration
+3,8,access
+3,9,mfa policy
+3,10,policy
+3,11,integration
+3,12,migration
+4,1,renewal
+4,2,expansion
+4,3,identity
+4,4,product update
+4,5,pricing
+4,6,renewal renewal
+4,7,incident
+4,8,early access
+4,9,pricing_offer
+4,10,identity management
+4,11,update product update
+4,12,update product
+5,1,launch
+5,2,product launch
+5,3,product launch product
+5,4,launch product
+5,5,launch product launch
+5,6,adoption
+5,7,upsell
+5,8,qa
+5,9,product
+5,10,customer
+5,11,compliance
+5,12,compliance reporting
+6,1,outage
+6,2,incident
+6,3,incident response
+6,4,failure
+6,5,customer
+6,6,sla
+6,7,service
+6,8,communication
+6,9,churn
+6,10,monitoring
+6,11,risk
+6,12,response
+7,1,sprint
+7,2,sprint planning
+7,3,planning
+7,4,planning sprint
+7,5,planning sprint planning
+7,6,sprint planning sprint
+7,7,qa
+7,8,pipeline
+7,9,deduplication
+7,10,sso
+7,11,retrospective
+7,12,alert deduplication
+8,1,pdf
+8,2,export
+8,3,rendering
+8,4,pdf export
+8,5,report
+8,6,release
+8,7,design review
+8,8,bug
+8,9,performance
+8,10,compliance reporting
+8,11,design
+8,12,workaround
+9,1,backup
+9,2,performance
+9,3,agent
+9,4,degradation
+9,5,backup performance
+9,6,version
+9,7,throughput
+9,8,sync
+9,9,response time
+9,10,support response
+9,11,sales
+9,12,support response time
+10,1,renewal
+10,2,pricing
+10,3,outage
+10,4,sla
+10,5,competitive
+10,6,compliance
+10,7,renewal renewal
+10,8,competitive threat
+10,9,threat
+10,10,pricing pricing
+10,11,outage outage
+10,12,threat competitive
+11,1,hybrid
+11,2,backup
+11,3,onboarding
+11,4,recovery
+11,5,data
+11,6,backup recovery
+11,7,data retention
+11,8,retention
+11,9,onboarding onboarding
+11,10,cloudprime
+11,11,hybrid environment
+11,12,backup recovery backup
+12,1,overage
+12,2,charges
+12,3,overage charges
+12,4,dispute
+12,5,billing
+12,6,billing dispute
+12,7,charges overage
+12,8,charges overage charges
+12,9,overage charges overage
+12,10,billing dispute billing
+12,11,dispute billing dispute
+12,12,dispute billing
+13,1,certificate
+13,2,bug
+13,3,response
+13,4,support response
+13,5,response time
+13,6,certificate rotation
+13,7,rotation
+13,8,support response time
+13,9,product bug
+13,10,sync failure
+13,11,connector
+13,12,failure
+14,1,feature
+14,2,roadmap
+14,3,early access
+14,4,custom
+14,5,role
+14,6,program
+14,7,early access program
+14,8,access program
+14,9,access
+14,10,workflow
+14,11,audit workflow
+14,12,early
+15,1,outage
+15,2,communication
+15,3,incident
+15,4,incident communication
+15,5,platform outage
+15,6,platform
+15,7,infrastructure
+15,8,failure
+15,9,latency
+15,10,monitoring
+15,11,outage platform
+15,12,ot
+16,1,hipaa
+16,2,multi framework
+16,3,multi
+16,4,framework
+16,5,framework support
+16,6,multi framework support
+16,7,reporting
+16,8,support multi framework
+16,9,support multi
+16,10,framework support multi
+16,11,compliance
+16,12,evidence
+17,1,restore
+17,2,file
+17,3,backup
+17,4,multi region
+17,5,granular
+17,6,region
+17,7,tech
+17,8,tech debt
+17,9,debt
+17,10,workaround
+17,11,feature request
+17,12,backup performance
+18,1,scim
+18,2,provisioning
+18,3,deprovisioning
+18,4,scim provisioning
+18,5,adaptive
+18,6,adaptive mfa
+18,7,identity
+18,8,provisioning scim
+18,9,okta
+18,10,integration
+18,11,provisioning scim provisioning
+18,12,scim provisioning scim
+19,1,logvault integration
+19,2,backfill
+19,3,logvault
+19,4,data backfill
+19,5,stratos
+19,6,data
+19,7,circuit breaker
+19,8,breaker
+19,9,circuit
+19,10,technical issue
+19,11,integration
+19,12,issue
+20,1,alert fatigue
+20,2,fatigue
+20,3,siem
+20,4,siem integration
+20,5,alert
+20,6,logvault
+20,7,reliability incident
+20,8,product
+20,9,competitive
+20,10,feature requests
+20,11,alert fatigue alert
+20,12,fatigue alert
+21,1,ii
+21,2,type ii
+21,3,management
+21,4,audit
+21,5,type
+21,6,change management
+21,7,soc type ii
+21,8,soc type
+21,9,audit soc
+21,10,evidence
+21,11,ii audit
+21,12,type ii audit
+22,1,false
+22,2,alert
+22,3,false positives
+22,4,positives
+22,5,tuning
+22,6,detection
+22,7,patch
+22,8,positives false
+22,9,false positives false
+22,10,positives false positives
+22,11,competitor evaluation
+22,12,retention
+23,1,breaker
+23,2,circuit
+23,3,circuit breaker
+23,4,breaker implementation
+23,5,circuit breaker implementation
+23,6,load testing
+23,7,knowledge
+23,8,runbook
+23,9,incident response
+23,10,post mortem
+23,11,mortem
+23,12,testing
+24,1,billing
+24,2,overage
+24,3,invoice
+24,4,usage
+24,5,discrepancy
+24,6,billing discrepancy
+24,7,seat
+24,8,adjustment
+24,9,billing adjustment
+24,10,billing dispute
+24,11,dispute
+24,12,backup policy
+25,1,api
+25,2,rate
+25,3,api rate
+25,4,launch
+25,5,launch readiness
+25,6,hipaa
+25,7,readiness
+25,8,readiness launch
+25,9,launch readiness launch
+25,10,readiness launch readiness
+25,11,reporting
+25,12,compliance reporting

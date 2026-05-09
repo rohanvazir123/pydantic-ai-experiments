@@ -1,0 +1,10 @@
+{
+  "meeting_count": 100,
+  "clusters": 26,
+  "silhouette_score": 0.04675725604387541,
+  "auto_k": false,
+  "min_clusters": null,
+  "max_clusters": null,
+  "random_state": 42,
+  "max_features": 2000
+}

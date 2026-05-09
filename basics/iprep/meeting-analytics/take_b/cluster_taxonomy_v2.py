@@ -606,18 +606,24 @@ def main() -> None:
     parser.add_argument("--random-state", type=int, default=42)
     args = parser.parse_args()
 
+    # [1/7] Load meetings + build flat document text per meeting
     dataset_dir = args.dataset.resolve()
     documents = load_meeting_documents(dataset_dir)
     if len(documents) < 2:
         raise SystemExit(f"Need at least two meeting summaries to cluster. Found {len(documents)}.")
 
+    # [2/7] Extract participant names for stop-word filtering
     participant_names = load_participant_names(dataset_dir)
+
+    # [3/7] TF-IDF vectorization → 100×2000 matrix (initial clustering at default/fixed k)
     vectorizer, matrix, kmeans, cluster_labels = cluster_documents(
         documents, num_clusters=args.clusters, max_features=args.max_features,
         extra_stop_words=participant_names,
     )
     print_vectorizer_info(vectorizer, matrix, documents)
 
+    # [4/7] Auto-k: fit KMeans for k=min..max, score by silhouette, pick best k
+    #        then re-cluster at chosen k (skipped if --no-auto-k)
     clusters = args.clusters
     score_rows: list[dict[str, float | int]] = []
     if args.auto_k:
@@ -633,12 +639,16 @@ def main() -> None:
             extra_stop_words=participant_names,
         )
 
+    # [5/7] Compute silhouette on final clustering
+    #        Redundant in --auto-k mode (step 4 already has it); only independently
+    #        useful with --no-auto-k. The if-guard below reflects this.
     silhouette = compute_silhouette_score(matrix, list(cluster_labels))
     if not score_rows:
         score_rows = [{"clusters": clusters, "silhouette_score": silhouette if silhouette is not None else float("nan")}]
 
     print_silhouette_score(silhouette)
 
+    # [6/7] Extract top-N centroid terms → cluster label strings + per-cluster summaries
     cluster_terms = get_top_terms(vectorizer, kmeans, args.top_terms)
     cluster_summary = summarize_clusters(
         documents=documents,
@@ -657,6 +667,7 @@ def main() -> None:
         "max_features": args.max_features,
     }
 
+    # [7/7] Write all output files to outputs/
     write_outputs(
         output_dir=args.output_dir.resolve(),
         documents=documents,
