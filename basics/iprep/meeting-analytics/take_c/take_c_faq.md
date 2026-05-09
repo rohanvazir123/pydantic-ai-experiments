@@ -15,6 +15,7 @@
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
 - [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
 - [What 3 Postgres tables does Take C create, and what is in each?](#what-3-postgres-tables-does-take-c-create-and-what-is-in-each)
+- [Why does Take C extend Take A's schema instead of creating its own?](#why-does-take-c-extend-take-as-schema-instead-of-creating-its-own)
 - [Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?](#take-b-labels-clusters-by-concatenating-top-centroid-terms--why-cant-take-c-do-the-same)
 
 ---
@@ -714,3 +715,54 @@ theme_title = " / ".join(sample[:3])  # e.g. "mfa enforcement / scim provisionin
 
 The failure mode degrades gracefully to the Take B approach — top phrases concatenated
 with " / ". The cluster grouping is preserved; only the label quality drops.
+
+---
+
+## Why does Take C extend Take A's schema instead of creating its own?
+
+Take A already loads all the raw data into `meeting_analytics` — `meetings`,
+`meeting_summaries`, `key_moments`, `sentiment_features`, `transcript_lines`, etc.
+Take C doesn't re-load any of that. It only adds 3 new tables for its clustering
+results (`semantic_clusters`, `semantic_phrases`, `semantic_meeting_themes`) into
+the same schema.
+
+**The benefit: cross-take JOINs work without any schema gymnastics.**
+
+```sql
+-- Take C themes × Take A sentiment — works because same schema
+SELECT sc.theme_title, round(avg(sf.net_sentiment)::numeric, 3) AS avg_sentiment
+FROM meeting_analytics.semantic_meeting_themes smt
+JOIN meeting_analytics.semantic_clusters sc      ON smt.cluster_id = sc.cluster_id
+JOIN meeting_analytics.sentiment_features sf     ON smt.meeting_id = sf.meeting_id
+WHERE smt.is_primary = true
+GROUP BY sc.theme_title
+ORDER BY avg_sentiment;
+```
+
+If Take C used a separate schema, every cross-take query would need schema-qualified
+references across two schemas. One schema keeps everything flat and queryable from
+a single DBeaver connection.
+
+**What Take C does NOT duplicate:**
+
+| Take A table | Take C status |
+|---|---|
+| `meetings` | Reused via FK — `semantic_meeting_themes.meeting_id` references it |
+| `sentiment_features` | Reused via JOIN — churn counts, net_sentiment, etc. |
+| `key_moments` | Reused via JOIN — pricing_offer, churn_signal, feature_gap etc. |
+| `call_types` | Reused via JOIN — preferred over Take C's LLM call_type |
+| `meeting_themes` | Independent — Take A's rule-based themes vs Take C's semantic clusters |
+
+**Important: the LLM does not use Take A's schema.**
+
+The LLM (step 6) has zero database interaction. It receives a list of phrases and
+returns JSON labels — nothing more. The schema extension is a step 9 (persistence)
+decision, made after the LLM is already done.
+
+```
+[1–5]  Extract → dedup → embed → UMAP → HDBSCAN
+[6]    LLM reads phrases, returns labels     ← no DB, no schema
+[7]    Infer call types (LLM)                ← no DB, no schema
+[8]    Assign meetings to themes             ← no DB, no schema
+[9]    Persist to Postgres                   ← THIS is where Take A's schema is extended
+```
