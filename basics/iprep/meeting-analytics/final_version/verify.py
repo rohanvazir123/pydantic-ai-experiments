@@ -1,9 +1,6 @@
 """
 Verify meeting_analytics tables after running the final_version loaders.
 
-Sources sql/01_verify_tables.sql -- queries each table individually so missing
-Take A / Take B tables are reported as SKIP rather than crashing the script.
-
 Usage (from repo root):
   python basics/iprep/meeting-analytics/final_version/verify.py
 
@@ -19,15 +16,6 @@ Expected row counts:
   semantic_clusters           26
   semantic_phrases           343
   semantic_meeting_themes    516
-  -- Take A (optional -- generate_rule_based_taxonomy.py) --------------
-  summary_topics             600
-  meeting_themes             466
-  call_types                 100
-  sentiment_features         100
-  -- Take B (optional -- take_b/load_outputs_to_pg.py) -----------------
-  kmeans_clusters              8
-  kmeans_cluster_terms        96
-  kmeans_meeting_clusters    100
 """
 
 from __future__ import annotations
@@ -55,15 +43,6 @@ _EXPECTED: dict[str, tuple[int, str]] = {
     "semantic_clusters":       (26,   "semantic"),
     "semantic_phrases":        (343,  "semantic"),
     "semantic_meeting_themes": (516,  "semantic"),
-    # Take A -- optional
-    "summary_topics":          (600,  "take_a"),
-    "meeting_themes":          (466,  "take_a"),
-    "call_types":              (100,  "take_a"),
-    "sentiment_features":      (100,  "take_a"),
-    # Take B -- optional
-    "kmeans_clusters":         (8,    "take_b"),
-    "kmeans_cluster_terms":    (96,   "take_b"),
-    "kmeans_meeting_clusters": (100,  "take_b"),
 }
 
 _SPOT_CHECKS: list[tuple[str, str, int]] = [
@@ -126,8 +105,6 @@ async def _verify(conn: asyncpg.Connection) -> bool:
             labels = {
                 "base":     "Final Version base tables (load_raw_jsons_to_db.py)",
                 "semantic": "Final Version semantic tables (load_output_csvs_to_db.py)",
-                "take_a":   "Take A -- optional",
-                "take_b":   "Take B -- optional",
             }
             print(f"  -- {labels[group]} {'-' * max(0, 52 - len(labels[group]))}")
 

@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-09 (session 10)
+Last updated: 2026-05-09 (session 11)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -48,7 +48,7 @@ their own tables on top; the 6 base table names overlap but inserts are idempote
 |-------|------|---------------|
 | `meetings` | 100 | meeting_id, title, organizer_email, duration_minutes, start_time |
 | `meeting_participants` | 311 | meeting_id, email (unique allEmails pairs from meeting-info.json) |
-| `meeting_summaries` | 100 | summary_text, overall_sentiment, sentiment_score, **topics TEXT[]** |
+| `meeting_summaries` | 100 | summary_text, overall_sentiment, sentiment_score, topics TEXT[], **products TEXT[]** (extracted at load time from summary + actionItems + keyMoments text; sorted, deduped) |
 | `key_moments` | 402 | moment_type (8 types), text, speaker, time_seconds |
 | `action_items` | 397 | meeting_id, owner, text |
 | `transcript_lines` | 4313 | speaker, sentence, sentiment_type, time_seconds |
@@ -192,6 +192,13 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
 
 ---
 
+## Session 11 — what changed
+
+- `meeting_summaries` gained `products TEXT[]` column (Detect/Protect/Comply/Identity — extracted at load time). Query: `WHERE 'Detect' = ANY(products)`. Coverage: Comply 59, Detect 59, Protect 24, Identity 23, untagged 8.
+- Removed all Take A / Take B references from `final_version/faq.md`, `final_version/design.md`, `final_version/verify.py`, `sql/01_verify_tables.sql`.
+- `INSIGHTS_GUIDE.md` created and finalized: company/product context, narrative arc, 9-slide deck structure, all SQL for notebook (N1–N_final2, E1–E3, S1–S4, P1–P4, Su1–Su4), open questions.
+- Slide deck is 9 slides: slides 3–4 are design/tradeoffs (approaches compared + why HDBSCAN); slides 5–8 are the findings + watchlist.
+
 ## Next steps
 
 ### Deliverables (from req.md — all three required):
@@ -208,8 +215,14 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
   5. High-risk meeting watchlist (I7) — most actionable output for leadership
 
 **b) Slide deck** — 30-min presentation to product + engineering leadership
-- Lead with insights, not code
-- Headline: Reliability is the #1 churn driver (1.04 signals/meeting)
+- **9-slide structure** (see INSIGHTS_GUIDE.md "Slide Deck Sequence"):
+  - Slides 1–2: data overview
+  - Slides 3–4: design — three approaches evaluated + why embedding+HDBSCAN wins
+  - Slides 5–6: V1 heatmap + V2 churn density (the findings)
+  - Slide 7: verbal findings (3 bullets)
+  - Slide 8: V3 high-risk watchlist
+  - Slide 9: recommendations
+- Lead with insights, not code. Headline: Reliability is the #1 churn driver (1.04 signals/meeting)
 
 **c) Video demo** — 5-10 min screen recording with narration
 
@@ -231,6 +244,7 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
 ```
 meeting-analytics/
 ├── SESSION_CONTEXT.md
+├── INSIGHTS_GUIDE.md            insight catalogue, SQL queries, 9-slide deck structure — START HERE for notebook build
 ├── req.md / req.pdf             source of truth for deliverables
 ├── .env                         PG credentials (rag_db @ localhost:5434)
 ├── notes.txt                    running project notes

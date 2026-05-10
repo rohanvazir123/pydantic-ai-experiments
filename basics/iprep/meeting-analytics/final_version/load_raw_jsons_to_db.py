@@ -14,10 +14,15 @@ Why these tables exist:
 Tables created:
   meetings              meeting_id, title, organizer_email, duration_minutes, start_time
   meeting_participants  meeting_id, email
-  meeting_summaries     meeting_id, summary_text, overall_sentiment, sentiment_score
+  meeting_summaries     meeting_id, summary_text, overall_sentiment, sentiment_score, topics, products
   key_moments           meeting_id, moment_index, moment_type, text, speaker, time_seconds
   action_items          meeting_id, item_index, owner, text
   transcript_lines      meeting_id, line_index, speaker, sentence, sentiment_type, time_seconds
+
+products TEXT[] on meeting_summaries:
+  Extracted at load time by scanning summary text, action items, and key moment text for
+  known AegisCloud product names. Sorted, deduplicated list. Empty array if none found.
+  Maintained in KNOWN_PRODUCTS — add new products there if the lineup changes.
 
 Usage (from repo root):
   python basics/iprep/meeting-analytics/final_version/load_raw_jsons_to_db.py
@@ -38,6 +43,9 @@ import asyncpg
 SCHEMA = "meeting_analytics"
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
+
+# AegisCloud product names — add here if the product lineup changes.
+KNOWN_PRODUCTS: list[str] = ["Detect", "Protect", "Comply", "Identity"]
 
 
 def _add_dataset_arg(parser: argparse.ArgumentParser) -> None:
@@ -107,8 +115,14 @@ async def create_base_tables(conn: asyncpg.Connection) -> None:
             summary_text       TEXT,
             overall_sentiment  TEXT,
             sentiment_score    NUMERIC,
-            topics             TEXT[]   DEFAULT '{{}}'
+            topics             TEXT[]   DEFAULT '{{}}',
+            products           TEXT[]   DEFAULT '{{}}'
         )
+    """)
+    # Add column to pre-existing installs that predate the products field.
+    await conn.execute(f"""
+        ALTER TABLE {SCHEMA}.meeting_summaries
+        ADD COLUMN IF NOT EXISTS products TEXT[] DEFAULT '{{}}'
     """)
 
     await conn.execute(f"""
@@ -156,6 +170,17 @@ async def create_base_tables(conn: asyncpg.Connection) -> None:
         CREATE INDEX IF NOT EXISTS transcript_lines_meeting_idx
         ON {SCHEMA}.transcript_lines (meeting_id)
     """)
+
+
+def _extract_products(payload: dict) -> list[str]:
+    """Return sorted list of KNOWN_PRODUCTS mentioned in a summary.json payload."""
+    sources = [
+        payload.get("summary", ""),
+        *payload.get("actionItems", []),
+        *(km.get("text", "") for km in payload.get("keyMoments", [])),
+    ]
+    combined = " ".join(str(s) for s in sources)
+    return sorted({p for p in KNOWN_PRODUCTS if p in combined})
 
 
 def _parse_dt(raw: str | None) -> datetime | None:
@@ -212,6 +237,7 @@ async def load_files_into_db(
                 payload.get("overallSentiment"),
                 payload.get("sentimentScore"),
                 [str(t) for t in payload.get("topics", [])],
+                _extract_products(payload),
             ))
 
             for idx, km in enumerate(payload.get("keyMoments", [])):
@@ -256,8 +282,8 @@ async def load_files_into_db(
     )
     await conn.executemany(
         f"""INSERT INTO {SCHEMA}.meeting_summaries
-                (meeting_id, summary_text, overall_sentiment, sentiment_score, topics)
-            VALUES ($1, $2, $3, $4, $5)
+                (meeting_id, summary_text, overall_sentiment, sentiment_score, topics, products)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (meeting_id) DO NOTHING""",
         summary_rows,
     )

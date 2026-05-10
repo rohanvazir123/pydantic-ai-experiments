@@ -7,7 +7,7 @@
 | v0.1    | 2026-05-08 | rohan  | Initial design — pipeline skeleton, tradeoffs, decision log |
 | v0.2    | 2026-05-08 | rohan  | Implementation complete — `semantic_clustering.py`; dry-run verified: 100 meetings loaded, 600 raw topics → 351 exact-dedup → 343 fuzzy-dedup; deps: rapidfuzz, umap-learn, hdbscan |
 | v0.3    | 2026-05-09 | rohan  | Full pipeline run complete — 26 clusters found (not 8–15 as estimated); added coherence check step; actual Postgres schema documented; 8 insight queries implemented; open questions resolved; file path corrected after directory rename |
-| v0.4    | 2026-05-09 | rohan  | Context & Goals rewritten to use consistent Goal 1/2/3 framing matching Take A and Take B design docs |
+| v0.4    | 2026-05-09 | rohan  | Context & Goals rewritten to use consistent Goal 1/2/3 framing |
 | v0.5    | 2026-05-09 | rohan  | Self-contained architecture: `load_raw_jsons_to_db.py` creates all 6 base tables from raw JSON; `semantic_clustering.py` reads from Postgres (not files) so re-clustering works as dataset grows; all 9 tables live in one `meeting_analytics` schema; no Take A/B dependency |
 
 ---
@@ -63,9 +63,9 @@ live in the single `meeting_analytics` schema. The pipeline is fully self-contai
 — no dependency on any other folder or prior run. 8 insight queries join base tables
 and semantic tables in the same schema, requiring no cross-schema joins.
 
-**Why not Take A (rule-based)?** Brittle — misses semantic equivalents (e.g. `pipeline failure` ≡ `detect pipeline failure` ≡ `ingestion pipeline`).
+**Why not rule-based keyword matching?** Brittle — misses semantic equivalents (e.g. `pipeline failure` ≡ `detect pipeline failure` ≡ `ingestion pipeline`).
 
-**Why not Take B (TF-IDF + K-Means)?** Requires pre-specifying K; bag-of-words misses phrase semantics; very short phrases kill TF-IDF signal.
+**Why not TF-IDF + KMeans?** Requires pre-specifying K; bag-of-words misses phrase semantics; very short phrases kill TF-IDF signal.
 
 **Why Final Version?** The topic strings are short, semantically dense, and conceptually overlapping. A vector embedding captures "outage recovery" ≈ "outage remediation" ≈ "post-mortem" without hand-crafted rules. HDBSCAN finds the natural cluster count without a fixed K. LLM labels make clusters immediately legible to stakeholders without manual review.
 
@@ -340,7 +340,7 @@ For the slide deck / dashboard:
 | Cluster labeling LLM | llama3.1:8b via Ollama | OpenAI GPT-4o | Local, free, already configured |
 | Labeling strategy | Single-shot + structured JSON | Few-shot, iterative | Only ~10 clusters; fast iteration preferred |
 | Call-type inference | Direct LLM on summary | Theme-majority vote | Cleaner signal; summary text is explicit about context |
-| Schema | Single `meeting_analytics` schema (all 9 tables) | Separate schema per take | Self-contained; insight queries join base + semantic tables without cross-schema joins; new meetings added via `load_raw_jsons_to_db.py`, clustering re-reads from DB |
+| Schema | Single `meeting_analytics` schema (all 9 tables) | Separate schemas | Self-contained; insight queries join base + semantic tables without cross-schema joins; new meetings added via `load_raw_jsons_to_db.py`, clustering re-reads from DB |
 
 ---
 
