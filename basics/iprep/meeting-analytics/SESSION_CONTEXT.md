@@ -59,7 +59,7 @@ their own tables on top; the 6 base table names overlap but inserts are idempote
 |--------------|------|---------------|
 | `semantic_clusters` | 26 | theme_title (LLM), audience (LLM), rationale (LLM), phrase_count |
 | `semantic_phrases` | 343 | canonical phrase, cluster_id, embedding=NULL (CSV path), tsvector GIN |
-| `semantic_meeting_themes` | 516 | meeting_id, cluster_id, is_primary, call_type (LLM), sentiment |
+| `semantic_meeting_themes` | 516 | meeting_id, cluster_id, is_primary, call_type (LLM), sentiment, products TEXT[] (denormalized from meeting_summaries) |
 | `action_items_by_theme` *(view)* | 397 | action_items JOIN semantic_meeting_themes (primary) JOIN semantic_clusters — action item text + owner + theme_title + audience |
 
 26 clusters from 343 deduplicated topic phrases. 22 noise phrases (6.4%) reassigned to nearest centroid.
@@ -189,6 +189,59 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
 | `sql/01_verify_tables.sql` | Row count checks + spot checks (Final Version + optional Take A/B) |
 | `sql/02_insight_queries.sql` | 10 insight queries with stakeholder notes |
 | `sql/03_stakeholder_questions.sql` | 16 stakeholder questions — all verified |
+
+---
+
+## Session 12 — what changed
+
+- `semantic_meeting_themes` gained `products TEXT[]` column — denormalized from `meeting_summaries.products`, populated via post-insert UPDATE in `save_meeting_themes()`. Tables repopulated via `load_output_csvs_to_db.py --reset`. Enables product × theme queries with no extra join.
+- `final_version/data_model.md` created — full schema reference: all 9 tables + view, column types, enums, row counts, common join patterns.
+- `final_version/nl_questions.md` created — 20 questions organized by stakeholder (Engineering, Product, Sales & CS, Support/Ops, Cross-cutting). Top-down: decision → question → tables. Includes positive signal questions for each stakeholder.
+- `final_version/rationale.md` created — prepared Q&A answer for "how did you decide what to analyze?" Top-down method, risk + opportunity framing, one-liner: "we treated this as a product analytics problem, not a data exploration problem."
+- `tasks.md` fully rewritten to reflect current state (all phases 1–4 done, phase 5 in progress).
+
+## Session 12 — next steps (FOLLOW THIS PLAN)
+
+**Execution order: notebook → video → slides. Do not deviate.**
+
+Notebook is the video source. Slides pull screenshots from notebook. One pass of work, three deliverables.
+
+### a) Jupyter notebook — BUILD THIS FIRST
+File: `notebook/meeting_analytics.ipynb` (create new)
+Kernel: `pydantic_ai_agents` conda env
+Connection: `rag_db @ localhost:5434` (credentials from `final_version/.env`)
+**Must run top to bottom, standalone, no errors — video is recorded from this.**
+
+**Sections in order:**
+
+| # | Section | What it shows | Chart type |
+|---|---------|--------------|------------|
+| 1 | DB connection + dataset overview | Row counts, 4 products, call type split | Table / bar |
+| 2 | Clustering approach | UMAP 2-dim scatter, 26 clusters labeled | Scatter plot |
+| 3 | V1: Theme × sentiment heatmap | Detect negative, Comply positive — the core finding | Heatmap |
+| 4 | V2: Churn signal density by theme | Reliability 1.04/meeting vs Customer Retention 0.71 | Horizontal bar |
+| 5 | V3: High-risk watchlist | Named meetings, churn signals, sentiment — who to call | Table |
+| 6 | Product drill-down | Technical issues + churn signals per product (Detect/Protect/Comply/Identity) | Grouped bar |
+| 7 | Positive signals | Praise by product, Comply external sentiment — the counter-narrative | Bar |
+
+Sections 1–5 → slides. Sections 6–7 → notebook-only, Q&A ready.
+
+Data sources:
+- All queries: `meeting_analytics` schema @ `localhost:5434`
+- UMAP coords: `final_version/outputs/viz_coords.csv` (confirmed present)
+- Cluster labels: `semantic_clusters` table (26 rows)
+- `products` column: now on `semantic_meeting_themes` — no join needed for product × theme queries
+
+### b) Video demo — RECORD AFTER NOTEBOOK IS COMPLETE
+- 5–10 min screen recording with narration
+- Walk through notebook top to bottom
+- Narrate the "so what" for each chart, not the code
+- Record in one take if possible — no editing needed
+
+### c) Slide deck — BUILD LAST, PULL FROM NOTEBOOK
+- Screenshots of V1, V2, V3 from notebook
+- 9-slide structure in `INSIGHTS_GUIDE.md`
+- Lead with findings, not methodology
 
 ---
 

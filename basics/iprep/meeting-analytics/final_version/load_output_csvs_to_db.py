@@ -5,7 +5,7 @@ Self-contained — reads from outputs/ only, no other local modules needed.
 Writes three tables to the meeting_analytics schema:
   semantic_clusters        cluster_id, theme_title, audience, rationale, phrase_count
   semantic_phrases         canonical text + vector(768) embedding + tsvector index
-  semantic_meeting_themes  meeting_id, cluster_id, is_primary, call_type, sentiment
+  semantic_meeting_themes  meeting_id, cluster_id, is_primary, call_type, sentiment, products TEXT[]
 
 All writes are idempotent (ON CONFLICT DO UPDATE). Use --reset to drop and
 recreate the three semantic tables before loading.
@@ -177,14 +177,15 @@ class SemanticClusterStore:
 
         await conn.execute(f"""
             CREATE TABLE IF NOT EXISTS {SCHEMA}.semantic_meeting_themes (
-                meeting_id       TEXT NOT NULL,
-                cluster_id       INTEGER NOT NULL
-                                     REFERENCES {SCHEMA}.semantic_clusters(cluster_id),
-                is_primary       BOOLEAN NOT NULL DEFAULT false,
-                call_type        TEXT,
-                call_confidence  TEXT,
-                sentiment_score  NUMERIC,
+                meeting_id        TEXT NOT NULL,
+                cluster_id        INTEGER NOT NULL
+                                      REFERENCES {SCHEMA}.semantic_clusters(cluster_id),
+                is_primary        BOOLEAN NOT NULL DEFAULT false,
+                call_type         TEXT,
+                call_confidence   TEXT,
+                sentiment_score   NUMERIC,
                 overall_sentiment TEXT,
+                products          TEXT[] DEFAULT '{{}}',
                 PRIMARY KEY (meeting_id, cluster_id)
             )
         """)
@@ -367,6 +368,14 @@ class SemanticClusterStore:
                 """,
                 rows,
             )
+            # Populate products from meeting_summaries — idempotent, no-op if
+            # meeting_summaries hasn't been loaded yet.
+            await conn.execute(f"""
+                UPDATE {SCHEMA}.semantic_meeting_themes smt
+                SET products = COALESCE(ms.products, '{{}}')
+                FROM {SCHEMA}.meeting_summaries ms
+                WHERE smt.meeting_id = ms.meeting_id
+            """)
         logger.info(
             "Saved %d meeting-theme rows for %d meetings", len(rows), len(assignments)
         )

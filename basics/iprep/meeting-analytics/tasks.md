@@ -10,183 +10,114 @@
 ## Phase 1: Data Ingestion
 
 - [x] Parse dataset directory structure (`<meeting_id>/` with 6 JSON files each)
-- [x] Load raw JSONs into PostgreSQL (`raw_files` table — payload as JSONB)
-- [x] Flatten `meeting-info.json` → `meetings` table
-- [x] Flatten `summary.json` → `summaries`, `summary_topics`, `action_items` tables
-- [x] Flatten `transcript.json` → `transcript_lines` view (per-line with speaker, sentiment, timing)
-- [x] Flatten `speakers.json` → `speaker_turns` view (turn-level speaker/timestamp)
-- [x] Flatten `events.json` → `participant_events` view (join/leave events with timestamps)
-- [x] Flatten `speaker-meta.json` → `speaker_meta` view (speaker_id → name mapping)
+- [x] Flatten all JSON files → 6 real Postgres tables (not views) in `meeting_analytics` schema
+  - `meetings` (100 rows)
+  - `meeting_participants` (311 rows)
+  - `meeting_summaries` (100 rows) — includes `products TEXT[]` column (Comply/Detect/Protect/Identity)
+  - `key_moments` (402 rows) — 8 moment types
+  - `action_items` (397 rows)
+  - `transcript_lines` (4313 rows)
+- [x] Script: `final_version/load_raw_jsons_to_db.py` (standalone, `--reset` flag)
 
 ---
 
 ## Phase 2: Categorization Pipeline (Task 1)
 
-- [ ] Decide approach: LLM-based / clustering / hybrid
-- [ ] Build topic categorization pipeline over transcripts
-- [ ] Store category labels per meeting (new table or column on `meetings`)
-- [ ] Document category taxonomy + examples per category
-- [ ] Evaluate category quality (spot-check, coverage)
+All three approaches implemented and loaded into Postgres.
+
+### Take A — Rule-based keyword taxonomy
+- [x] Keyword taxonomy → 8 themes, 5 call types
+- [x] Tables: `meeting_themes`, `call_types`, `sentiment_features`, `summary_topics`, `action_items_by_theme` view
+- [x] Script: `take_a/generate_rule_based_taxonomy.py`
+
+### Take B — TF-IDF + KMeans clustering
+- [x] TF-IDF vectorization over topic phrases, KMeans k=8 (silhouette=0.0376)
+- [x] Tables: `kmeans_clusters`, `kmeans_cluster_terms`, `kmeans_meeting_clusters`
+- [x] Script: `take_b/cluster_taxonomy_v2.py` + `take_b/load_outputs_to_pg.py`
+
+### Final Version — Semantic embedding + HDBSCAN + LLM labeling
+- [x] 343 deduplicated topic phrases embedded (nomic-embed-text 768 dims via Ollama)
+- [x] UMAP 10-dim reduction → HDBSCAN → 26 clusters (6.4% noise reassigned to nearest centroid)
+- [x] LLM labeling: `llama3.1:8b` → `theme_title`, `audience`, `rationale` per cluster
+- [x] Call type inference: LLM per meeting → `support` / `external` / `internal`
+- [x] Tables: `semantic_clusters` (26), `semantic_phrases` (343), `semantic_meeting_themes` (516)
+- [x] View: `action_items_by_theme` (action items joined to primary semantic theme)
+- [x] Script: `final_version/semantic_clustering.py` + `final_version/load_output_csvs_to_db.py`
 
 ---
 
 ## Phase 3: Sentiment Analysis (Task 2)
 
-- [ ] Aggregate sentiment by call type (support / external / internal)
-- [ ] Identify sentiment trends over time
-- [ ] Surface outliers / anomalies worth calling out
-- [ ] Write narrative: what the trends mean, who should care
+- [x] Transcript-grounded net sentiment per meeting (`sentiment_features` table via Take A)
+- [x] Sentiment by theme — heatmap query (I2), net sentiment by theme (I3)
+- [x] Churn signal density by theme (I4) — Reliability 1.04/meeting vs Customer Retention 0.71
+- [x] High-risk meeting watchlist (I7) — churn ≥ 1 AND negative sentiment
+- [x] Sentiment by call type available via Take A `call_types` + `sentiment_features`
 
 ---
 
 ## Phase 4: Bonus Insights (Task 3)
 
-- [ ] Brainstorm 2–3 additional insight ideas with stakeholder mapping
-- [ ] Decide which to implement vs. describe
-- [ ] Implement chosen insights
-- [ ] Write up the rest with reasoning
+- [x] 10 core insight queries — `sql/02_insight_queries.sql` (all verified @ localhost:5434)
+- [x] 16 stakeholder questions — `sql/03_stakeholder_questions.sql` (all verified @ localhost:5434)
+- [x] NL question index — `nl_questions.md`
+- [x] Insight catalogue + 9-slide deck structure — `INSIGHTS_GUIDE.md`
+
+Key findings:
+- Reliability is the #1 churn driver (1.04 churn signals/meeting)
+- Reliability is the only theme with majority-negative sentiment profile
+- 12 of 47 support escalations are Reliability-primary — outages drive support volume
+- "Compliance + Product Expansion" co-occur in 33 meetings
 
 ---
 
 ## Phase 5: Deliverables
 
-- [ ] Slide deck (insights-first, 30-min presentation)
-- [ ] Notebook / code repo (clean, commented)
-- [ ] Video demo (5–10 min screen recording)
+- [ ] **Jupyter notebook** — connect to `rag_db @ localhost:5434`, kernel `pydantic_ai_agents`
+  - [ ] DB connection + schema overview
+  - [ ] Final Version clusters — theme titles, sizes, audience breakdown
+  - [ ] UMAP 2-dim scatter (`final_version/outputs/viz_coords.csv`)
+  - [ ] Key insight charts (I1–I10, selected stakeholder Qs)
+  - [ ] High-risk meeting watchlist (I7)
+- [x] **Slide deck structure** — 9-slide sequence in `INSIGHTS_GUIDE.md`
+- [ ] **Slide deck content** — charts + narrative in presentation tool
+- [ ] **Video demo** — 5–10 min screen recording with narration
 
 ---
 
-## Schema Reference
-
-**PostgreSQL schema:** `iprep_meeting-analytics`
-
-### Table (real)
-
-**`raw_files`** — PRIMARY KEY `(meeting_id, file_type)`
-
-| Column | Type | Nullable |
-|---|---|---|
-| meeting_id | text | NOT NULL |
-| file_type | text | NOT NULL |
-| payload | jsonb | NOT NULL |
-| source_path | text | NOT NULL |
-| loaded_at | timestamptz | NOT NULL DEFAULT now() |
-
-Indexes: `raw_files_file_type_idx` B-tree `(file_type)`, `raw_files_payload_gin_idx` GIN `(payload)`
-
-### Views (derived from `raw_files`)
-
-**`meetings`** — source `file_type = 'meeting-info'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| title | text |
-| organizer_email | text |
-| host | text |
-| start_time | timestamptz |
-| end_time | timestamptz |
-| duration_minutes | numeric |
-| all_emails | jsonb |
-| invitees | jsonb |
-
-**`summaries`** — source `file_type = 'summary'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| summary | text |
-| overall_sentiment | text |
-| sentiment_score | numeric |
-| topics | jsonb |
-| action_items | jsonb |
-| key_moments | jsonb |
-
-**`summary_topics`** — source `file_type = 'summary'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| topic | text |
-
-**`action_items`** — source `file_type = 'summary'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| action_index | integer |
-| action_item | text |
-
-**`transcript_lines`** — source `file_type = 'transcript'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| line_index | integer |
-| speaker_name | text |
-| speaker_id | text |
-| sentiment_type | text |
-| start_seconds | numeric |
-| end_seconds | numeric |
-| confidence | numeric |
-| sentence | text |
-
-**`speaker_turns`** — source `file_type = 'speakers'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| turn_index | integer |
-| speaker_name | text |
-| start_seconds | numeric |
-| end_seconds | numeric |
-
-**`participant_events`** — source `file_type = 'events'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| event_index | integer |
-| participant_name | text |
-| event_type | text |
-| seconds_from_start | numeric |
-| event_time | timestamptz |
-
-**`speaker_meta`** — source `file_type = 'speaker-meta'`
-
-| Column | Type |
-|---|---|
-| meeting_id | text |
-| speaker_id | integer |
-| speaker_name | text |
-
-### Source Files per Meeting
-```
-dataset/
-  <meeting_id>/
-    meeting-info.json   → iprep_meeting-analytics.meetings (view)
-    transcript.json     → iprep_meeting-analytics.transcript_lines (view)
-    summary.json        → iprep_meeting-analytics.summaries, summary_topics, action_items (views)
-    speakers.json       → iprep_meeting-analytics.speaker_turns (view)
-    events.json         → iprep_meeting-analytics.participant_events (view)
-    speaker-meta.json   → iprep_meeting-analytics.speaker_meta (view)
-```
-
----
-
-## Local DB Topology
+## DB Topology
 
 | Port | DB | Purpose |
-|---|---|---|
-| 5432 | postgres | iprep_meeting-analytics schema lives here (this project) |
-| 5433 | legal_graph | Apache AGE knowledge graph (RAG project) |
-| 5434 | rag_db | RAG pgvector docs/chunks/embeddings |
+|------|----|---------|
+| 5432 | postgres | local Windows Postgres — not used for this project |
+| 5433 | rag_db | Apache AGE Docker — knowledge graph project (unrelated) |
+| **5434** | **rag_db** | **Docker pgvector — canonical DB for this project** |
 
-MCP PostgreSQL tool → `localhost:5432/postgres`
+- Schema: `meeting_analytics` (all 9 tables + 1 view)
+- Credentials: `basics/iprep/meeting-analytics/.env`
+- MCP postgresql tool connects to 5432 — **never use it to verify schema changes**; use DBeaver or `psql` @ 5434
 
 ---
 
-## Notes / Decisions Log
+## Key Scripts
 
-- Schema: `iprep_meeting-analytics` (all 6 tables live here, on port 5432)
-- `speakers.json`, `events.json`, `speaker-meta.json` in `raw_files` only — no dedicated typed tables yet
+| Script | What it does |
+|--------|-------------|
+| `final_version/load_raw_jsons_to_db.py --reset` | Drop + recreate all 9 tables from raw JSON + outputs/ |
+| `final_version/load_output_csvs_to_db.py --reset` | Reload 3 semantic tables from outputs/ (no Ollama needed) |
+| `final_version/verify.py` | Check all 9 tables have correct row counts |
+| `take_a/generate_rule_based_taxonomy.py --reset` | Rebuild Take A tables (WARNING: wipes entire schema) |
+| `take_b/load_outputs_to_pg.py` | Load 3 Take B tables |
+
+## Key Docs
+
+| File | Purpose |
+|------|---------|
+| `SESSION_CONTEXT.md` | Full project state — reload this each session |
+| `INSIGHTS_GUIDE.md` | Insight catalogue, all SQL, 9-slide deck structure — start here for notebook |
+| `nl_questions.md` | All 26 NL questions indexed by stakeholder |
+| `req.md` | Source of truth for deliverables |
+| `final_version/design.md` | Pipeline design decisions |
+| `final_version/faq.md` | FAQ on clustering approach |
+| `sql/02_insight_queries.sql` | 10 insight queries |
+| `sql/03_stakeholder_questions.sql` | 16 stakeholder questions |

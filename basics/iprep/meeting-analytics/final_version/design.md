@@ -305,6 +305,14 @@ CREATE TABLE meeting_analytics.semantic_meeting_themes (
     call_type    TEXT,   -- support | external | internal
     sentiment    TEXT
 );
+
+-- Why row-per-(meeting, cluster) instead of a list of meeting_ids per cluster:
+-- `is_primary` is a junction attribute — it can't live on meetings (a meeting has many
+-- themes) or on clusters (a cluster touches many meetings). `sentiment` and `call_type`
+-- are denormalized here for query convenience; both originate at the meeting level but
+-- are needed in every theme-level aggregation (heatmaps, cross-tabs). A flat
+-- meeting_ids[] array per cluster would work for the drill-down use case but would
+-- break GROUP BY on sentiment/call_type without an additional join.
 ```
 
 **8 insight query methods** (all run automatically after persist, implemented in `load_output_csvs_to_db.py`):
@@ -341,6 +349,7 @@ For the slide deck / dashboard:
 | Labeling strategy | Single-shot + structured JSON | Few-shot, iterative | Only ~10 clusters; fast iteration preferred |
 | Call-type inference | Direct LLM on summary | Theme-majority vote | Cleaner signal; summary text is explicit about context |
 | Schema | Single `meeting_analytics` schema (all 9 tables) | Separate schemas | Self-contained; insight queries join base + semantic tables without cross-schema joins; new meetings added via `load_raw_jsons_to_db.py`, clustering re-reads from DB |
+| `semantic_meeting_themes` granularity | One row per (meeting × cluster) | One row per cluster with `meeting_ids[]` array | `is_primary` is a junction attribute; `sentiment` and `call_type` are denormalized here so heatmap/cross-tab queries don't need a second join |
 
 ---
 

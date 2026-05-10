@@ -1,4 +1,4 @@
-Take C — FAQ
+final_version text FAQ
 ============
 
 Q: Does the pipeline produce themes?

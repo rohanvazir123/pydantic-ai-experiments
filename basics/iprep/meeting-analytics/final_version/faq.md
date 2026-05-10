@@ -13,6 +13,7 @@
 - [How do I reload the Final Version tables into Postgres?](#how-do-i-reload-the-final-version-tables-into-postgres)
 - [What 3 Postgres tables does Final Version create, and what is in each?](#what-3-postgres-tables-does-final-version-create-and-what-is-in-each)
 - [Why can't we label clusters by concatenating top centroid terms?](#why-cant-we-label-clusters-by-concatenating-top-centroid-terms)
+- [Why does semantic_meeting_themes store one row per meeting × cluster instead of a list of meeting_ids per cluster?](#why-does-semantic_meeting_themes-store-one-row-per-meeting--cluster-instead-of-a-list-of-meeting_ids-per-cluster)
 
 ---
 
@@ -582,4 +583,28 @@ The failure mode degrades gracefully — top phrases concatenated with " / ". Th
 grouping is preserved; only the label quality drops.
 
 ---
+
+## Why does semantic_meeting_themes store one row per meeting × cluster instead of a list of meeting_ids per cluster?
+
+Short answer: `is_primary` is a junction attribute, and `sentiment`/`call_type` are denormalized here for query convenience.
+
+**Why a flat list wouldn't be enough:**
+
+The obvious simpler design would be a single row per cluster with a `meeting_ids TEXT[]` array. That works for the drill-down case ("give me all meetings in this cluster"), but breaks the analytical queries:
+
+- **`is_primary`** marks which cluster is the dominant theme for each meeting. It belongs to the (meeting, cluster) relationship — not to the meeting alone (one meeting has many clusters) and not to the cluster alone (a cluster touches many meetings). There is no natural home for it in a flat list.
+- **Theme × sentiment heatmap** (insight #2) groups by `cluster_id` and aggregates `overall_sentiment`. If sentiment lived only in `meeting_summaries`, every heatmap query would need an extra join back through `meeting_ids[]` unnest. Storing it in the junction row means a direct `GROUP BY cluster_id`.
+- **Call type × theme matrix** (insight #6) does the same: `GROUP BY cluster_id, call_type` is a single scan with no unnesting.
+
+**What is genuinely redundant:**
+
+`sentiment` and `call_type` are per-meeting values, not per-(meeting, cluster) values — the same sentiment/call_type appears on every row for a given meeting. This is deliberate denormalization: the duplication is small (516 rows, 100 meetings) and eliminates joins in the most-used queries. A normalized design would store them in `meetings` and join in — equally correct, slightly more verbose SQL.
+
+**Summary:**
+
+| Column | Why it's here |
+|--------|--------------|
+| `is_primary` | True junction attribute — no other table can own it |
+| `sentiment` / `call_type` | Denormalized from meeting level for join-free aggregation |
+| `meeting_id` + `cluster_id` | Primary key of the junction |
 
