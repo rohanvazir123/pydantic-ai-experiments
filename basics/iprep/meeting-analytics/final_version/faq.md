@@ -14,6 +14,7 @@
 - [What 3 Postgres tables does Final Version create, and what is in each?](#what-3-postgres-tables-does-final-version-create-and-what-is-in-each)
 - [Why can't we label clusters by concatenating top centroid terms?](#why-cant-we-label-clusters-by-concatenating-top-centroid-terms)
 - [Why does semantic_meeting_themes store one row per meeting × cluster instead of a list of meeting_ids per cluster?](#why-does-semantic_meeting_themes-store-one-row-per-meeting--cluster-instead-of-a-list-of-meeting_ids-per-cluster)
+- [What are feature gap moments labelled "growing/positive"?](#what-are-feature-gap-moments-labelled-growingpositive)
 
 ---
 
@@ -608,3 +609,33 @@ The obvious simpler design would be a single row per cluster with a `meeting_ids
 | `sentiment` / `call_type` | Denormalized from meeting level for join-free aggregation |
 | `meeting_id` + `cluster_id` | Primary key of the junction |
 
+---
+
+## What are feature gap moments labelled "growing/positive"?
+
+A **feature gap moment** (`moment_type = 'feature_gap'` in `key_moments`) is a transcript moment where a customer explicitly asks for something the product does not currently have.
+
+The **growing/positive** label comes from the *meeting's* overall sentiment — not from the feature request itself. A customer raising a feature gap in a meeting that is overall positive is in growth mode: they like what they have and want more. They are expanding their usage, not at risk of leaving.
+
+**Why the distinction matters (P1 question):**
+
+The same feature request carries completely different priority depending on the account posture:
+
+| Feature gap in a... | Customer posture | Priority |
+|---------------------|-----------------|----------|
+| Negative-sentiment meeting | Blocked — the gap is causing frustration, potentially threatening renewal | P0 — act now |
+| Positive-sentiment meeting | Growing — the gap is a wishlist item for an expanding account | Roadmap — schedule it |
+
+A product team that sees "5 Detect feature requests" without sentiment context will treat all five equally. The P1 chart splits them: requests from at-risk accounts (negative) vs requests from healthy, growing accounts (positive). Same backlog item, different urgency.
+
+**In the data:**
+
+```sql
+-- Feature gaps from at-risk accounts (blocked)
+WHERE km.moment_type = 'feature_gap'
+  AND ms.overall_sentiment IN ('negative', 'very-negative', 'mixed-negative')
+
+-- Feature gaps from growing accounts (wishlist)
+WHERE km.moment_type = 'feature_gap'
+  AND ms.overall_sentiment IN ('positive', 'very-positive', 'mixed-positive')
+```

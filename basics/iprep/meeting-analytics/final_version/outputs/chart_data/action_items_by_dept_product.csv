@@ -1,0 +1,21 @@
+department,product,action_items
+Sales,Detect,8
+Engineering,Detect,48
+Sales | Customer Support,Comply,11
+Engineering,Comply,36
+Sales | Customer Support,Identity,8
+Sales | Customer Success,Comply,32
+Engineering,Protect,12
+Sales | Customer Support,Protect,4
+Sales,Protect,8
+All,Identity,52
+Sales | Customer Support,Detect,11
+All,Protect,52
+Sales | Customer Success,Detect,44
+Sales | Customer Success,Identity,8
+Sales,Comply,12
+Sales,Identity,4
+Sales | Customer Success,Protect,20
+Engineering,Identity,20
+All,Comply,143
+All,Detect,123

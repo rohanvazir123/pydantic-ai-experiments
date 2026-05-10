@@ -140,7 +140,11 @@
       "Bash(git -C \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\" ls-files --others --exclude-standard \"basics/iprep/meeting-analytics/**take_c*\" \"basics/iprep/meeting-analytics/**/take_c*\")",
       "Bash(git -C \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\" rm \"basics/iprep/meeting-analytics/final_version/load_outputs_to_pg.py\" \"basics/iprep/meeting-analytics/take_c_design.md\")",
       "Bash(git -C \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\" rm -f \"basics/iprep/meeting-analytics/final_version/load_outputs_to_pg.py\" \"basics/iprep/meeting-analytics/take_c_design.md\")",
-      "Bash(git *)"
+      "Bash(git *)",
+      "PowerShell(& \"C:\\\\Users\\\\rohan\\\\anaconda3\\\\envs\\\\pydantic_ai_agents\\\\python.exe\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\basics\\\\iprep\\\\meeting-analytics\\\\final_version\\\\generate_charts.py\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\rohan\\\\anaconda3\\\\envs\\\\pydantic_ai_agents\\\\python.exe\" \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\basics\\\\iprep\\\\meeting-analytics\\\\final_version\\\\generate_charts.py\" --no-export 2>&1)",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\basics\\\\iprep\\\\meeting-analytics\\\\final_version\\\\outputs\\\\charts\\\\05_product_signals.png\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\rohan\\\\Documents\\\\ai_agents\\\\pydantic-ai-experiments\\\\basics\\\\iprep\\\\meeting-analytics\\\\final_version\\\\outputs\\\\charts\\\\09_action_item_owners.png\")"
     ]
   },
   "enableAllProjectMcpServers": true,

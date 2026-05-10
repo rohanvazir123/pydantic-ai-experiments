@@ -1,0 +1,9 @@
+product,sentiment_bucket,feature_gaps
+Detect,Growing (positive),15
+Detect,Blocked (negative),9
+Comply,Blocked (negative),5
+Comply,Growing (positive),29
+Identity,Growing (positive),15
+Protect,Growing (positive),12
+Identity,Blocked (negative),1
+Protect,Blocked (negative),3

@@ -1,0 +1,16 @@
+theme_title,meeting,moment_type,verbatim_quote
+Quality Assurance Review Process,Aegis / Pineridge Systems - Q1 Business Review,positive_pivot,"Yuki reported a successful DR drill with a two-hour RTO, meeting engineering leadership expectations"
+Competitive Strategy,Win/Loss Analysis - Q1,churn_signal,"Kevin reveals 34 closed-lost deals totaling $2.1M ACV in Q1, with SentinelShield appearing 9 times as a named competitor"
+Cloud and Integration Configuration,Support Case #2638 - Pineridge Systems CloudPrime S3 Backup Connector,feature_gap,Sarah identifies the misconfigured generic S3 endpoint as a likely contributor to the 403 errors due to cross-region routing
+Healthcare Data Security,Support Case #3103 - Silverline Brands Detect False Positives After Patch,action_item,"Sarah initiates baseline restore to pre-patch profile from March 13th targeting the back-office agent group, with Michelle confirming the tenant ID and staying on the line"
+Multi-Factor Authentication Management,Support Case #3677 - Coastal Living Co MFA Token Failures,churn_signal,"Vanessa reveals 40-45 users are locked out of production systems, emphasizing the critical business impact during spring inventory cycle"
+Customer Renewal and Retention,Aegis / Cobalt Software - Q2 Planning,action_item,Lauren agrees to a compliance specialist walkthrough in June ahead of her Q4 PCI audit cycle
+Incident Response and Review,Detect Outage - Remediation Plan Review,churn_signal,"Brian reveals 112 open support tickets tied to the outage, with ~30 from priority 1 or 2 accounts and several vocal customers"
+Outage Prevention and Recovery,Aegis / Quantum Edge - Renewal Concerns,action_item,Leo states that the engineering call on infrastructure remediation is the deciding factor for his technical recommendation on whether to stay with Aegis.
+HIPAA Compliance and Reporting,Aegis / Redwood Clinical - Product Feedback Session,churn_signal,Thomas reveals VaultEdge has come up internally and warns that unaddressed gaps in Comply could eventually prompt a formal evaluation.
+Compliance and Governance,Aegis / Redwood Clinical - ISO 27001 Preparation,concern,"Thomas reveals his CISO has been pressuring him about ISO 27001 since January, establishing urgency for the engagement"
+Audit Compliance Readiness,Aegis / Stratos Cloud - Audit Preparation,concern,"Damien describes a painful, fully manual compliance process costing significant engineering time"
+Billing and Pricing Issues,Support Case #9279 - Summit Trust Billing Inquiry,concern,"Gregory identifies a 200-seat discrepancy on his January invoice versus his contracted 1,200-seat count"
+Data Protection and Recovery,Support Case #6977 - Brightpath Commerce Slow Backup Performance,action_item,"David commits to sending upgrade instructions within 30 minutes, following up Monday morning, and escalating to senior engineering if the issue is unresolved"
+Identity and Access Governance,SOC 2 Audit Preparation - Internal,action_item,"Raj summarizes all assigned action items with owners and deadlines, and proposes a Friday check-in with a shared tracker to maintain accountability."
+Roadmap Planning and Compliance,Identity Team - Q2 Roadmap,churn_signal,"Alex highlights that SentinelShield already offers adaptive MFA and the team keeps getting asked about it in enterprise deals, underscoring competitive urgency."

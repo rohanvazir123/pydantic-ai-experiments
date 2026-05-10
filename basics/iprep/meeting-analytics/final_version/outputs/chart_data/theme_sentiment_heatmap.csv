@@ -1,0 +1,42 @@
+theme_title,overall_sentiment,meetings
+Incident Response and Review,mixed-negative,4
+Data Protection and Recovery,mixed-negative,3
+Cloud and Integration Configuration,mixed-negative,2
+Billing and Pricing Issues,mixed-negative,1
+Incident Response and Review,mixed-positive,2
+Compliance and Governance,positive,2
+Customer Renewal and Retention,mixed-negative,6
+Outage Prevention and Recovery,mixed-negative,7
+Quality Assurance Review Process,very-positive,1
+Compliance and Governance,very-positive,6
+Data Protection and Recovery,very-positive,3
+Outage Prevention and Recovery,negative,3
+Multi-Factor Authentication Management,mixed-negative,1
+Customer Onboarding and Support,mixed-positive,1
+Product and Service Expansion,mixed-positive,9
+Platform Reliability,mixed-negative,1
+Roadmap Planning and Compliance,positive,1
+System Reliability and Support,mixed-negative,4
+Customer Renewal and Retention,negative,1
+Billing and Pricing Issues,mixed-positive,4
+Roadmap Planning and Compliance,mixed-positive,1
+Product Maturity Gaps,mixed-positive,1
+System Reliability and Support,very-negative,1
+HIPAA Compliance and Reporting,mixed-positive,2
+Competitive Strategy,mixed-negative,1
+Customer Renewal and Retention,mixed-positive,2
+Customer Renewal and Retention,positive,2
+Audit Compliance Readiness,very-positive,2
+Outage Prevention and Recovery,very-negative,1
+IT Operations and Deployment,positive,2
+Competitive Strategy,mixed-positive,2
+Healthcare Data Security,mixed-negative,1
+Identity and Access Governance,mixed-positive,2
+Product and Service Expansion,very-positive,5
+Security and Alerting,mixed-positive,1
+Cloud and Integration Configuration,mixed-positive,1
+Security and Alerting,mixed-negative,2
+IT Operations and Deployment,mixed-positive,4
+Compliance and Governance,mixed-positive,1
+IT Operations and Deployment,very-positive,2
+Identity and Access Governance,very-positive,2

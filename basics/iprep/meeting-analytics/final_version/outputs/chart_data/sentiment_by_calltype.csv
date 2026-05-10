@@ -1,0 +1,7 @@
+call_type,bucket,meetings
+external,Positive,30
+external,Negative,3
+internal,Positive,20
+internal,Negative,4
+support,Negative,32
+support,Positive,11
