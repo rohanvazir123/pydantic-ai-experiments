@@ -189,6 +189,22 @@ class SemanticClusterStore:
             )
         """)
 
+        await conn.execute(f"""
+            CREATE OR REPLACE VIEW {SCHEMA}.action_items_by_theme AS
+            SELECT
+                ai.meeting_id,
+                ai.owner,
+                ai.text        AS action_item,
+                smt.cluster_id,
+                sc.theme_title,
+                sc.audience
+            FROM {SCHEMA}.action_items ai
+            JOIN {SCHEMA}.semantic_meeting_themes smt
+                ON ai.meeting_id = smt.meeting_id AND smt.is_primary = true
+            JOIN {SCHEMA}.semantic_clusters sc
+                ON smt.cluster_id = sc.cluster_id
+        """)
+
     async def _create_indexes(self, conn: asyncpg.Connection) -> None:
         # IVFFlat on phrase embeddings (cosine) — same pattern as RAG store
         await conn.execute(f"""

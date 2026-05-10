@@ -539,7 +539,8 @@ persists to Postgres. Cluster count and labels may differ slightly between runs
 **Load all three takes in one shot:**
 
 ```bash
-python basics/iprep/meeting-analytics/setup_all_tables.py
+python basics/iprep/meeting-analytics/final_version/load_raw_jsons_to_db.py --reset
+python basics/iprep/meeting-analytics/final_version/load_output_csvs_to_db.py --reset
 ```
 
 Uses fast-path loaders for Takes B and C (no Ollama required), and re-runs Take A
@@ -623,7 +624,8 @@ semantic_meeting_themes (516)   — meetings belong to clusters
 meetings (100)
 ```
 
-**To reload all 3 tables:** `python basics/iprep/meeting-analytics/setup_all_tables.py`
+**To reload all 3 tables:** `python basics/iprep/meeting-analytics/final_version/load_raw_jsons_to_db.py --reset
+python basics/iprep/meeting-analytics/final_version/load_output_csvs_to_db.py --reset`
 (always use this, never `generate_rule_based_taxonomy.py --reset` alone — that wipes
 the schema and only reloads Take A).
 

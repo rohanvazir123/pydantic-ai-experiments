@@ -72,6 +72,11 @@ _SPOT_CHECKS: list[tuple[str, str, int]] = [
         f"SELECT count(*) FROM {SCHEMA}.semantic_meeting_themes WHERE is_primary = true",
         100,
     ),
+    (
+        "action_items_by_theme view (action items with theme)",
+        f"SELECT count(*) FROM {SCHEMA}.action_items_by_theme",
+        397,
+    ),
 ]
 
 
