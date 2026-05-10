@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-10 (session 13)
+Last updated: 2026-05-10 (session 14)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -15,16 +15,27 @@ Transcript Intelligence take-home assignment — see `req.md` for the full brief
 
 ---
 
+## Machines
+
+| Machine | User | OS | Role |
+|---------|------|----|------|
+| Rohan's PC | `rohan` | Windows | Original dev machine (conda env, PowerShell) |
+| Pramada's Mac | `ppotnis` | macOS (Darwin 25.4) | Current machine — all session 14 work done here |
+
+**Session 14 was entirely on Pramada's Mac.** The Windows conda paths in earlier sessions no longer apply.
+
+---
+
 ## Postgres — single source of truth
 **Connection:** `localhost:5434` / database `rag_db` / user `rag_user` / password `rag_pass`
 **Schema:** `meeting_analytics`
 **Credentials file:** `basics/iprep/meeting-analytics/.env`
 
-> Port 5432 = local Windows Postgres — not used for this project.
+> Port 5432 = local system Postgres — not used for this project.
 > Port 5433 = Apache AGE Docker (separate, unrelated).
 > Port 5434 = Docker pgvector — canonical DB for this project.
 
-**WARNING:** MCP postgresql tool connects to port 5432, not 5434. Never use it — always use DBeaver or psql at port 5434.
+**WARNING:** MCP postgresql tool connects to port 5432, not 5434. Never use it — always use pgcli or DBeaver at port 5434.
 
 ### Tables — verified row counts
 
@@ -63,6 +74,22 @@ docker compose down -v            # WIPES data
 
 ---
 
+## Environment — Pramada's Mac
+
+**Python:** 3.14.2
+**Venv:** `pydantic-ai` venv at `/Users/ppotnis/Documents/rovaz/pydantic-ai-experiments/pydantic-ai/`
+- This venv is shared with the main RAG project — do NOT install packages that downgrade or conflict with existing ones
+- Check `pip list` before installing anything new
+
+**Packages installed for meeting-analytics (in addition to RAG project packages):**
+- `asyncpg`, `pgvector`, `pandas`, `numpy`, `matplotlib`, `seaborn`, `nest-asyncio`
+- `pgcli`, `psycopg-binary` (psycopg-binary bundles libpq — required on Mac without admin rights)
+- `openai`, `rapidfuzz`, `pydantic`, `python-dotenv`
+
+**No admin rights on this machine** — cannot run `sudo`. Xcode license not accepted, so `brew install` is blocked.
+
+---
+
 ## Chart pipeline — COMPLETE
 
 ```
@@ -72,10 +99,9 @@ DB (localhost:5434)
        └─ final_version/outputs/charts/       10 PNGs
 ```
 
-**Run (use full conda path — `conda activate` doesn't work in PS without init):**
-```powershell
-& "C:\Users\rohan\anaconda3\envs\pydantic_ai_agents\python.exe" final_version/generate_charts.py
-& "C:\Users\rohan\anaconda3\envs\pydantic_ai_agents\python.exe" final_version/generate_charts.py --no-export
+**Run from `basics/iprep/meeting-analytics/`:**
+```bash
+python final_version/generate_charts.py
 ```
 
 **Charts produced:**
@@ -93,20 +119,41 @@ DB (localhost:5434)
 | `08_feature_gaps_by_product.png` | P1 — Feature gaps × sentiment bucket | Product (CPO) |
 | `09_action_item_owners.png` | S3 — Action items by theme + by dept × product | Operations · Engineering · CS · Sales |
 
-**Stakeholder pills design:** each chart has a `For:` label followed by one colored pill per department (top-left of figure). Colors: Engineering=dark blue, Product=dark green, Sales=orange, CS=purple, Marketing=teal, Operations=brown, Leadership=charcoal. Font size 11, bold white text.
+---
 
-**Known gotchas in generate_charts.py:**
-- Print statements use ASCII only (`-` not `─`, `->` not `→`) — Windows cp1252 can't encode box-drawing chars
-- `matplotlib.use("Agg")` only when `"ipykernel" not in sys.modules`
-- `pivot_table(fill_value=0)` returns float dtype → `.astype(int)` required before `fmt="d"` in seaborn heatmap
+## Database browsers
+
+### pgcli
+**Connect (use explicit flags — URL form has a parsing bug in pgcli 4.x):**
+```bash
+PGPASSWORD=rag_pass pgcli -h localhost -p 5434 -U rag_user -d rag_db
+```
+
+### DBeaver
+- Installed at: `~/Applications/DBeaver.app` (no admin rights — dragged from DMG)
+- JDBC driver: `~/Downloads/postgresql-jdbc.jar` (downloaded manually — Maven blocked on corporate network)
+- Class name set manually: `org.postgresql.Driver` (Find Class doesn't work)
+- Connection: host `localhost`, port `5434`, database `rag_db`, user `rag_user`, password `rag_pass`
 
 ---
 
-## Notebook — `meeting_analytics.ipynb`
+## Git
 
-**Location:** `basics/iprep/meeting-analytics/meeting_analytics.ipynb`
-**Kernel:** `pydantic_ai_agents` conda env
+**Remote:** `https://github.com/rohanvazir123/pydantic-ai-experiments.git`
+**Push access:** via Rohan's PAT embedded in remote URL
+```bash
+git remote set-url origin https://rohanvazir123:<token>@github.com/rohanvazir123/pydantic-ai-experiments.git
+git push origin main
+```
+- Token is tied to Rohan's GitHub account (not this machine)
+- `ppotnis_paypal` does not have direct push access — must use Rohan's PAT
+
+---
+
+## Notebook — `final_version/meeting_analytics.ipynb`
+
 **Status: NOT YET RUN this session — needs a full top-to-bottom run before video.**
+**Kernel:** registered as "Python (meeting-analytics)" pointing to the pydantic-ai venv
 
 ### Sections
 
@@ -132,11 +179,12 @@ DB (localhost:5434)
 | `d13fdd8c` | Export header | Markdown |
 | `5c69f112` | Export cell | subprocess `generate_charts.py` |
 
-### Key implementation notes
-- `matplotlib.use("Agg")` guard: `if "ipykernel" not in sys.modules`
-- Heatmap cell: `.astype(int)` required before `fmt="d"` in sns.heatmap
-- S3 queries: `action_items_by_theme` (theme_title, audience, action_items) + `action_items_by_dept_product` (department, product, action_items) — no owner names
-- Export cell uses `sys.executable` so it picks up conda env Python automatically
+### Launch Jupyter
+```bash
+cd basics/iprep/meeting-analytics
+jupyter notebook final_version/meeting_analytics.ipynb
+# Select kernel: Python (meeting-analytics)
+```
 
 ---
 
@@ -153,7 +201,7 @@ DB (localhost:5434)
 
 ## Immediate next steps
 
-1. **Run notebook top to bottom** — kernel: `pydantic_ai_agents`; fix any errors before recording
+1. **Run notebook top to bottom** — kernel: Python (meeting-analytics); fix any errors before recording
 2. **Record video** — 5–10 min screen recording, narrate the "so what" for each chart
 3. **Build slides** — 9-slide structure from `INSIGHTS_GUIDE.md`; pull screenshots from notebook
 
@@ -165,16 +213,7 @@ DB (localhost:5434)
 - UMAP 10-dim before HDBSCAN; separate 2-dim for viz only
 - Final Version is fully self-contained
 - LLM is translation not intelligence — HDBSCAN clusters; LLM only names
-- Human inspection required after schema/data changes — verify via DBeaver @ port 5434, not MCP tool
-
----
-
-## Environment
-- Python 3.13, conda env: `pydantic_ai_agents`
-- **Full path in PowerShell:** `C:\Users\rohan\anaconda3\envs\pydantic_ai_agents\python.exe`
-- **VS Code interpreter:** set to above path in `settings.json`
-- Ollama: `http://localhost:11434/v1` · LLM: `llama3.1:8b` · embeddings: `nomic-embed-text:latest` (768 dims)
-- Postgres: `meeting_analytics` schema · `rag_db` Docker container · port 5434
+- Human inspection required after schema/data changes — verify via pgcli or DBeaver @ port 5434, not MCP tool
 
 ---
 
@@ -184,28 +223,28 @@ DB (localhost:5434)
 meeting-analytics/
 ├── SESSION_CONTEXT.md
 ├── INSIGHTS_GUIDE.md            insight catalogue, SQL, 9-slide deck structure
+├── README.md                    full setup instructions (Mac/Linux + Windows)
 ├── req.md / req.pdf             source of truth for deliverables
-├── .env                         PG credentials
-├── meeting_analytics.ipynb      MAIN NOTEBOOK — ready to run
+├── .env                         PG credentials (PG_* vars + DATABASE_URL)
+├── .env.example                 template
+├── requirements.txt             pinned Python dependencies (includes pgcli)
 ├── dataset/                     100 meeting folders
 ├── sql/
 │   ├── 01_verify_tables.sql
 │   ├── 02_insight_queries.sql
 │   └── 03_stakeholder_questions.sql
 └── final_version/
+    ├── meeting_analytics.ipynb   MAIN NOTEBOOK — run this for the video
     ├── generate_charts.py        DB->CSV->PNG pipeline (17 CSVs, 10 PNGs)
-    ├── export_chart_data.py      superseded; logic folded into generate_charts.py
     ├── load_raw_jsons_to_db.py   raw JSON -> 6 base tables
     ├── load_output_csvs_to_db.py outputs/ CSVs -> 3 semantic tables + view
     ├── verify.py                 checks all 9 tables
-    ├── nl_questions.md           20 stakeholder questions
-    ├── faq.md                    FAQ incl. feature gap / growing-positive explanation
-    ├── design.md                 design doc
+    ├── INSIGHTS_GUIDE.md
     └── outputs/
         ├── chart_data/           17 CSVs
         ├── charts/               10 PNGs (with colored dept pills)
-        ├── viz_coords.csv        UMAP 2D coords
-        ├── meeting_themes.csv    clustering output
-        ├── phrase_clusters.csv   phrase->cluster assignments
-        └── semantic_clusters.json
+        ├── viz_coords.csv        UMAP 2D coords (DO NOT DELETE — source data)
+        ├── meeting_themes.csv    clustering output (DO NOT DELETE — source data)
+        ├── phrase_clusters.csv   phrase->cluster assignments (DO NOT DELETE — source data)
+        └── semantic_clusters.json (DO NOT DELETE — source data)
 ```

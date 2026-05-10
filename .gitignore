@@ -21,11 +21,13 @@ C:/hf/
 !notebook/ingestion_pipeline.ipynb
 !basics/misc/ML/two_tower_NN.ipynb
 !basics/misc/ML/minerU_2.5.ipynb
+!basics/iprep/meeting-analytics/final_version/meeting_analytics.ipynb
+basics/iprep/meeting-analytics/venv/
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 **/.env
 delta_lake/output/
-**/.claude/settings.local.json
+**/.claude/
 venv/
 .git
 \__pycache__/
