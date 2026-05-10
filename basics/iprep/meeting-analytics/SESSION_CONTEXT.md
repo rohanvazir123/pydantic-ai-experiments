@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-09 (session 8 — end)
+Last updated: 2026-05-09 (session 9)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -11,7 +11,7 @@ Transcript Intelligence take-home assignment — see `req.md` for the full brief
 100 meeting folders in `dataset/`. Three approaches to theme classification:
   - **Take A**: rule-based keyword taxonomy → DONE
   - **Take B**: TF-IDF + KMeans clustering → DONE
-  - **Take C**: semantic embedding + HDBSCAN + LLM labeling → DONE
+  - **Final Version**: semantic embedding + HDBSCAN + LLM labeling → DONE
 
 ---
 
@@ -28,22 +28,51 @@ Transcript Intelligence take-home assignment — see `req.md` for the full brief
 **WARNING:** MCP postgresql tool connects to port 5432, not 5434. Never use it to verify
 schema changes — always use DBeaver or `psql` pointed at port 5434.
 
-### All 16 tables + 1 view — verified row counts
+### Schema overview
 
-**Take A (10 tables) — from raw dataset JSON via `generate_rule_based_taxonomy.py`**
+All tables live in the `meeting_analytics` schema. `final_version` is **self-contained**: its `load_raw_jsons_to_db.py` creates 6 base tables from raw JSON and `load_output_csvs_to_db.py` creates 3 semantic tables (standalone, idempotent) — no dependency on Take A or B. Take A and Take B add their own tables on top; the 6 base tables overlap (same names, same schema) so row counts don't double.
+
+**Total when all three takes are loaded:** 16 tables + 1 view (Take A 10 + view, Take B 3, Final Version 9 — 6 base tables shared).
+
+---
+
+### All tables — verified row counts
+
+**Final Version base tables (6) — created by `final_version/load_raw_jsons_to_db.py`**
 
 | Table | Rows | What it holds |
 |-------|------|---------------|
-| `meetings` | 100 | meeting_id, title, organizer_email, duration_minutes |
-| `meeting_participants` | 622 | meeting_id, email, participant_role |
-| `meeting_summaries` | 100 | summary text, overall_sentiment, sentiment_score |
-| `summary_topics` | 600 | one row per meeting × topic tag |
-| `action_items` | 397 | owner, action_item text |
-| `key_moments` | 402 | moment_type (8 types: churn_signal / concern / technical_issue / feature_gap / praise / pricing_offer / positive_pivot / action_item), text |
-| `transcript_lines` | 4313 | speaker, sentiment_type, sentence |
+| `meetings` | 100 | meeting_id, title, organizer_email, duration_minutes, start_time |
+| `meeting_participants` | 622 | meeting_id, email |
+| `meeting_summaries` | 100 | summary_text, overall_sentiment, sentiment_score, **topics TEXT[]** |
+| `key_moments` | 402 | moment_type (churn_signal / concern / technical_issue / feature_gap / praise / pricing_offer / positive_pivot / action_item), text, speaker, time_seconds |
+| `action_items` | 397 | meeting_id, owner, text |
+| `transcript_lines` | 4313 | speaker, sentence, sentiment_type, time_seconds |
+
+> These 6 tables overlap with Take A's base tables (same names). `meeting_summaries` adds `topics TEXT[]` (used by clustering Step 1). If Take A is loaded first, `load_raw_jsons_to_db` inserts with `ON CONFLICT DO NOTHING` — no duplicates.
+
+**Final Version semantic tables (3) — created by `final_version/load_output_csvs_to_db.py`**
+
+| Table | Rows | What it holds |
+|-------|------|---------------|
+| `semantic_clusters` | 26 | theme_title (LLM), audience (LLM), rationale (LLM), phrase_count |
+| `semantic_phrases` | 343 | canonical phrase, cluster_id, embedding=NULL (CSV path), tsvector GIN |
+| `semantic_meeting_themes` | 516 | meeting_id, cluster_id, is_primary, call_type (LLM), sentiment |
+
+Final Version: 26 clusters from 343 deduplicated topic phrases. 22 noise phrases (6.4%) reassigned to nearest centroid.
+
+---
+
+**Take A additional tables (4 + 1 view) — rule-based taxonomy via `generate_rule_based_taxonomy.py`**
+
+> Take A also creates the 6 base tables above (same names). The 4 tables below are Take A-only and are not created by `load_raw_jsons_to_db.py`.
+
+| Table | Rows | What it holds |
+|-------|------|---------------|
+| `summary_topics` | 600 | one row per meeting × topic tag (normalised rows, separate from `meeting_summaries.topics[]`) |
 | `meeting_themes` | 466 | theme, evidence_count, is_primary — rule-based, 8 themes |
 | `call_types` | 100 | call_type (5 values), confidence — rule-based |
-| `sentiment_features` | 100 | net_sentiment, positive/negative ratio, all 8 signal counts (incl. positive_pivot_count, pricing_offer_count added session 8) |
+| `sentiment_features` | 100 | net_sentiment, positive/negative ratio, all 8 signal counts (incl. positive_pivot_count, pricing_offer_count) |
 
 **Take A view (auto-created by setup)**
 
@@ -71,25 +100,17 @@ Take B clusters (k=8, silhouette=0.0376):
 7  backup / hybrid / recovery / onboarding           ( 6 meetings)
 ```
 
-**Take C (3 tables) — from `take_c/outputs/` via `take_c/load_outputs_to_pg.py`**
-
-| Table | Rows | What it holds |
-|-------|------|---------------|
-| `semantic_clusters` | 26 | cluster_id, theme_title (LLM), audience (LLM), rationale (LLM), phrase_count |
-| `semantic_phrases` | 343 | canonical phrase, cluster_id, embedding=NULL (CSV path), tsvector GIN |
-| `semantic_meeting_themes` | 516 | meeting_id, cluster_id, is_primary, call_type (LLM), sentiment |
-
-Take C: 26 clusters from 343 deduplicated topic phrases. 22 noise phrases (6.4%) reassigned to nearest centroid.
-
 ### Setup scripts
 
 | Script | What it does |
 |--------|-------------|
-| `setup_all_tables.py` | One-shot: Take A --reset + Take B loader + Take C loader → 16 tables + view. **Always use this.** |
-| `take_a/generate_rule_based_taxonomy.py --reset` | Drop + recreate schema, load 10 Take A tables + view. WARNING: wipes Take B and C tables too. |
-| `take_b/load_outputs_to_pg.py` | Load 3 Take B tables from outputs/ CSVs — no re-clustering needed |
-| `take_c/load_outputs_to_pg.py` | Load 3 Take C tables from outputs/ JSON+CSVs — no re-embedding needed |
-| `export_all_to_csv.py` | Snapshot all 16 tables to `outputs/csv/` — run after any pipeline change |
+| `final_version/semantic_clustering.py` | **Full self-contained pipeline.** Step 0 calls `load_raw_jsons_to_db.py` to create 6 base tables; steps 1–9 create 3 semantic tables. Use `--skip-base-load` if DB is already populated, `--reset-db` to wipe and rebuild from scratch. |
+| `final_version/load_raw_jsons_to_db.py` | Standalone: creates 6 base tables from raw JSON only. Called by `semantic_clustering.py` Step 0; can also be run directly. |
+| `setup_all_tables.py` | One-shot: Take A --reset + Take B loader + Final Version loader → all tables + view. |
+| `take_a/generate_rule_based_taxonomy.py --reset` | Drop + recreate schema, load Take A tables + view. WARNING: wipes all tables in the schema including base tables and semantic tables. |
+| `take_b/load_outputs_to_pg.py` | Load 3 Take B tables from outputs/ CSVs — no re-clustering needed. |
+| `final_version/semantic_clustering.py --from-outputs --skip-base-load` | Reload only the 3 semantic tables from pre-computed outputs/ files. No re-embedding. Delegates to `load_output_csvs_to_db.py`'s `load_from_outputs()` method internally. |
+| `export_all_to_csv.py` | Snapshot all tables to `outputs/csv/` — run after any pipeline change. |
 
 ### Docker — persistent volume
 pgvector container (`rag_pgvector`) now runs with a named volume `pydantic-ai-experiments_pgvector_data`.
@@ -101,7 +122,7 @@ Always start via `docker compose up -d pgvector` from the repo root — not from
 ## Call type — NOT being fixed
 Two inconsistent taxonomies exist:
 - **Take A**: 5 types (`support_escalation`, `sales_or_renewal`, `internal_incident`, `internal_planning`, `external_customer`)
-- **Take C**: 3 types (`support`, `external`, `internal`) — LLM-generated
+- **Final Version**: 3 types (`support`, `external`, `internal`) — LLM-generated
 
 Decision: not fixing this. For notebook queries, use Take A's `call_types` table (5 types) or collapse to 3 in Python before charting:
 - `support_escalation` → `support`
@@ -112,7 +133,7 @@ Decision: not fixing this. For notebook queries, use Take A's `call_types` table
 
 ## Open design question (lower priority)
 
-### LLM-generated cluster labels in Take C — scalability
+### LLM-generated cluster labels in Final Version — scalability
 `semantic_clusters.theme_title`, `audience`, `rationale` are generated by llama3.1:8b (26 calls, once per clustering run). Labels change between runs (stochastic).
 
 Centroid-proximity sort now implemented (`_sort_phrases_by_centroid_proximity()`) — LLM receives the 20 phrases closest to each cluster centroid, not an arbitrary positional slice. Takes effect on next full pipeline re-run. Current DB labels unaffected.
@@ -138,7 +159,7 @@ All 10 SQL queries in `sql/02_insight_queries.sql`. All verified against rag_db 
 | 7 | High-risk meeting watchlist | CSMs, AEs | Meetings with churn_signal ≥ 1 AND negative sentiment — named accounts, actionable |
 | 8 | Reliability-to-commercial bleed | Revenue leadership | Outage meetings routinely span into renewal discussions |
 | 9 | Feature gap prioritisation | Product managers | Reliability gaps raised under duress (net_sentiment −0.20) vs Compliance gaps constructively (+0.57) |
-| 10 | Take C theme co-occurrence | Product + Engineering | "Compliance + Product Expansion" co-occur in 33 meetings |
+| 10 | Final Version theme co-occurrence | Product + Engineering | "Compliance + Product Expansion" co-occur in 33 meetings |
 
 ---
 
@@ -160,10 +181,10 @@ All 10 SQL queries in `sql/02_insight_queries.sql`. All verified against rag_db 
 | P1 | Feature gap text samples — verbatim customer asks | Product |
 | P2 | Top summary topic tags — product area frequency | Product |
 | P3 | Praise signal concentration — where are we winning? | Product |
-| P4 | Take C cluster size + dominant call type + avg sentiment | Product, Engineering |
+| P4 | Final Version cluster size + dominant call type + avg sentiment | Product, Engineering |
 | O1 | Participant count vs meeting outcome — larger meetings → worse sentiment? | Ops |
 | O2 | Action item ownership — which owners are overloaded? | Ops |
-| O3 | Take B vs Take C cross-tab pivot for all 100 meetings | All |
+| O3 | Take B vs Final Version cross-tab pivot for all 100 meetings | All |
 
 ---
 
@@ -178,15 +199,15 @@ Connect DBeaver to: `localhost:5434` / `rag_db` / `rag_user` / `rag_pass`
 
 ---
 
-## Take B vs Take C cross-validation — COMPLETE
+## Take B vs Final Version cross-validation — COMPLETE
 Script: `compare_b_vs_c.py` (run from repo root)
 All 100 meetings matched. Agreement proxy 37% — reflects resolution difference (8 B clusters vs 26 C clusters), not disagreement.
 
 Key findings:
 - B-2 billing and B-5 backup confirmed as real cohesive topics by both methods
-- B-1 outage/incident: Take C correctly splits into Outage Prevention (C-09) vs Incident Response (C-08)
-- B-4 compliance: Take C separates HIPAA, Audit Readiness, and Compliance Governance
-- B-3 planning: Take C splits product launch from engineering sprint meetings
+- B-1 outage/incident: Final Version correctly splits into Outage Prevention (C-09) vs Incident Response (C-08)
+- B-4 compliance: Final Version separates HIPAA, Audit Readiness, and Compliance Governance
+- B-3 planning: Final Version splits product launch from engineering sprint meetings
 
 ---
 
@@ -195,13 +216,13 @@ Key findings:
 ### Deliverables (from req.md — all three required):
 
 **a) Jupyter notebook** — START HERE
-- **Take C only** — keep it simple and demo-able
+- **Final Version only** — keep it simple and demo-able
 - Connect to `rag_db @ localhost:5434` for all queries
 - Kernel: `pydantic_ai_agents` conda env
 - Sections:
   1. DB connection + schema overview
-  2. Take C clusters — theme titles, sizes, audience breakdown
-  3. UMAP 2-dim scatter (`take_c/outputs/viz_coords.csv` — confirmed present)
+  2. Final Version clusters — theme titles, sizes, audience breakdown
+  3. UMAP 2-dim scatter (`final_version/outputs/viz_coords.csv` — confirmed present)
   4. Key insight charts from `sql/02_insight_queries.sql` and `sql/03_stakeholder_questions.sql`
   5. High-risk meeting watchlist (I7) — most actionable output for leadership
 
@@ -215,14 +236,14 @@ Key findings:
 ---
 
 ## Key design decisions (don't revisit without good reason)
-- Embed topic phrases (not full meetings) in Take C — finer cluster resolution
-- HDBSCAN not KMeans in Take C — no fixed K, density-adaptive, found 26 naturally
+- Embed topic phrases (not full meetings) in Final Version — finer cluster resolution
+- HDBSCAN not KMeans in Final Version — no fixed K, density-adaptive, found 26 naturally
 - UMAP 10-dim before HDBSCAN, separate 2-dim for viz only
 - nomic-embed-text via Ollama (768 dims) — local, free, sufficient
-- Extend Take A's schema — don't create duplicate tables
+- Final Version is self-contained: `load_raw_jsons_to_db.py` creates 6 base tables from raw JSON; `load_output_csvs_to_db.py` creates 3 semantic tables. Single `meeting_analytics` schema, no Take A dependency
 - CSV outputs exist for all three takes — always run `export_all_to_csv.py` after any pipeline change
-- LLM in Take C is translation, not intelligence — embeddings + HDBSCAN do the clustering; LLM just names the result. LLM has zero DB interaction — schema extension happens at step 9 (persist), not step 6 (label)
-- Take C centroid-proximity sort implemented — LLM now receives 20 phrases closest to centroid, not first 20 in cluster order
+- LLM in Final Version is translation, not intelligence — embeddings + HDBSCAN do the clustering; LLM just names the result. LLM has zero DB interaction — schema extension happens at step 9 (persist), not step 6 (label)
+- Final Version centroid-proximity sort implemented — LLM now receives 20 phrases closest to centroid, not first 20 in cluster order
 - Human inspection required after every schema/data change — verify in DBeaver @ port 5434, not via MCP tool
 
 ---
@@ -233,7 +254,6 @@ Key findings:
 meeting-analytics/
 ├── SESSION_CONTEXT.md
 ├── req.md / req.pdf           source of truth for deliverables
-├── compare_b_vs_c.py          Take B vs Take C cross-validation script
 ├── setup_all_tables.py        One-shot: reload all 16 tables + view
 ├── export_all_to_csv.py       Snapshot all 16 Postgres tables to outputs/csv/
 ├── .env                       PG credentials (rag_db @ localhost:5434)
@@ -258,15 +278,16 @@ meeting-analytics/
 │   └── outputs/                          meeting_clusters.csv, cluster_summary.json,
 │                                         cluster_terms.csv, cluster_metrics.json,
 │                                         cluster_scores.csv, take_b_run.log
-├── take_c/
-│   ├── take_c_semantic_clustering.py     main Take C pipeline (9 steps)
-│   ├── take_c_pg_store.py                Postgres store (SemanticClusterStore)
-│   ├── load_outputs_to_pg.py             Load Take C outputs → 3 Postgres tables
-│   ├── take_c_design.md                  design doc v0.4
-│   ├── take_c_faq.md                     FAQ — 18 entries
+├── final_version/
+│   ├── semantic_clustering.py            main pipeline (steps 0–9); self-contained
+│   ├── load_raw_jsons_to_db.py                    Step 0: raw JSON → 6 base Postgres tables
+│   ├── load_output_csvs_to_db.py             Standalone: outputs/ CSVs/JSON → 3 semantic tables; SemanticClusterStore + 8 insight queries
+│   │   (--from-outputs --skip-base-load reloads semantic tables from outputs/ CSVs)
+│   ├── design.md                         design doc v0.5
+│   ├── faq.md                            FAQ — 18 entries
 │   └── outputs/                          meeting_themes.csv, phrase_clusters.csv,
 │                                         semantic_clusters.json, cluster_metrics.json,
-│                                         viz_coords.csv, take_c_run.log
+│                                         viz_coords.csv, run.log
 └── outputs/
     └── csv/                              Flat-file backup of all 16 Postgres tables
 ```

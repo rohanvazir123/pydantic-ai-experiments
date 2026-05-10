@@ -1,22 +1,26 @@
 """
-PostgreSQL persistence for Take C semantic clustering.
+Load pre-computed semantic clustering outputs (CSV/JSON) into Postgres.
 
-
-Tables added to meeting_analytics schema:
+Self-contained — reads from outputs/ only, no other local modules needed.
+Writes three tables to the meeting_analytics schema:
   semantic_clusters        cluster_id, theme_title, audience, rationale, phrase_count
   semantic_phrases         canonical text + vector(768) embedding + tsvector index
   semantic_meeting_themes  meeting_id, cluster_id, is_primary, call_type, sentiment
 
-Hybrid search (pgvector + tsvector + RRF):
-  semantic_search_phrases()      cosine similarity on phrase embeddings (IVFFlat)
-  text_search_phrases()          tsvector plainto_tsquery on canonical text (GIN)
-  hybrid_search_phrases()        RRF merge of both signals (k=60, same as RAG store)
+All writes are idempotent (ON CONFLICT DO UPDATE). Use --reset to drop and
+recreate the three semantic tables before loading.
 
-Insight queries (for dashboard / slide deck):
-  insight_theme_sentiment()        avg sentiment score by theme
-  insight_churn_by_theme()         churn_signal count per theme (joins key_moments)
-  insight_call_type_theme_matrix() call_type x theme meeting counts
-  insight_feature_gap_themes()     feature_gap signal count per theme
+Insight queries join the base tables (key_moments, meeting_summaries, etc.)
+that are loaded by load_raw_jsons_to_db.py — all in the same schema, no cross-schema joins.
+
+Hybrid search (pgvector + tsvector + RRF):
+  SemanticClusterStore.semantic_search_phrases()   cosine similarity via IVFFlat
+  SemanticClusterStore.text_search_phrases()       tsvector plainto_tsquery via GIN
+  SemanticClusterStore.hybrid_search_phrases()     RRF merge of both signals (k=60)
+
+Usage (from repo root):
+  python basics/iprep/meeting-analytics/final_version/load_output_csvs_to_db.py
+  python basics/iprep/meeting-analytics/final_version/load_output_csvs_to_db.py --reset
 
 Connection: PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE (local .env only).
 """
@@ -24,6 +28,7 @@ Connection: PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE (local .env 
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import logging
 import os
@@ -37,11 +42,13 @@ from pgvector.asyncpg import register_vector
 logger = logging.getLogger(__name__)
 
 SCHEMA = "meeting_analytics"
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "outputs"
 
 # IVFFlat lists: sqrt(~343 phrases) ≈ 18.  Kept small; same index type as RAG store.
 _IVFFLAT_LISTS = 15
 
-# Embedding dimension — must match the model used in take_c_semantic_clustering.py
+# Embedding dimension — must match the model used in semantic_clustering.py
 EMBEDDING_DIMENSION = 768
 
 
@@ -97,7 +104,7 @@ class PhraseSearchResult:
 
 class SemanticClusterStore:
     """
-    Hybrid pgvector + tsvector store for Take C semantic phrases.
+    Hybrid pgvector + tsvector store for semantic phrases from the Final Version pipeline.
 
     Follows the same pool + register_vector + IVFFlat/GIN + RRF pattern
     as rag/storage/vector_store/postgres.py.
@@ -215,12 +222,18 @@ class SemanticClusterStore:
         """)
 
     async def reset_semantic_tables(self) -> None:
-        """Drop and recreate the three semantic tables (leaves Take A tables intact)."""
+        """Drop and recreate the three semantic tables (leaves base tables intact)."""
         await self.initialize()
         async with self.pool.acquire() as conn:
-            await conn.execute(f"DROP TABLE IF EXISTS {SCHEMA}.semantic_meeting_themes CASCADE")
-            await conn.execute(f"DROP TABLE IF EXISTS {SCHEMA}.semantic_phrases CASCADE")
-            await conn.execute(f"DROP TABLE IF EXISTS {SCHEMA}.semantic_clusters CASCADE")
+            await conn.execute(
+                f"DROP TABLE IF EXISTS {SCHEMA}.semantic_meeting_themes CASCADE"
+            )
+            await conn.execute(
+                f"DROP TABLE IF EXISTS {SCHEMA}.semantic_phrases CASCADE"
+            )
+            await conn.execute(
+                f"DROP TABLE IF EXISTS {SCHEMA}.semantic_clusters CASCADE"
+            )
             await self._create_tables(conn)
             await self._create_indexes(conn)
         logger.info("Semantic tables reset")
@@ -233,7 +246,7 @@ class SemanticClusterStore:
 
     # ------------------------------------------------------------------
     # Write helpers  (imported data models are passed as plain dicts to
-    # avoid coupling this file to take_c_semantic_clustering's Pydantic models)
+    # avoid coupling this file to semantic_clustering's Pydantic models)
     # ------------------------------------------------------------------
 
     async def save_cluster_labels(self, labels: list[dict[str, Any]]) -> None:
@@ -290,7 +303,9 @@ class SemanticClusterStore:
                         p["canonical"],
                         p.get("aliases", []),
                         p["cluster_id"],
-                        p["embedding"],  # list[float] — register_vector handles encoding
+                        p[
+                            "embedding"
+                        ],  # list[float] — register_vector handles encoding
                     )
                     for p in phrases
                 ],
@@ -308,15 +323,17 @@ class SemanticClusterStore:
         rows: list[tuple[Any, ...]] = []
         for a in assignments:
             for cid in a["theme_ids"]:
-                rows.append((
-                    a["meeting_id"],
-                    cid,
-                    cid == a["primary_theme_id"],
-                    a.get("inferred_call_type", "unknown"),
-                    a.get("call_confidence", "low"),
-                    a.get("sentiment_score"),
-                    a.get("overall_sentiment"),
-                ))
+                rows.append(
+                    (
+                        a["meeting_id"],
+                        cid,
+                        cid == a["primary_theme_id"],
+                        a.get("inferred_call_type", "unknown"),
+                        a.get("call_confidence", "low"),
+                        a.get("sentiment_score"),
+                        a.get("overall_sentiment"),
+                    )
+                )
 
         async with self.pool.acquire() as conn:
             await conn.executemany(
@@ -334,7 +351,9 @@ class SemanticClusterStore:
                 """,
                 rows,
             )
-        logger.info("Saved %d meeting-theme rows for %d meetings", len(rows), len(assignments))
+        logger.info(
+            "Saved %d meeting-theme rows for %d meetings", len(rows), len(assignments)
+        )
 
     # ------------------------------------------------------------------
     # Hybrid search  (pgvector + tsvector + RRF)
@@ -486,7 +505,7 @@ class SemanticClusterStore:
 
     async def insight_churn_by_theme(self) -> list[dict[str, Any]]:
         """
-        Churn signal count per theme, joining with Take A key_moments table.
+        Churn signal count per theme, joining key_moments (loaded by load_raw_jsons_to_db).
         Answers: which themes carry the highest churn / financial risk?
         Gracefully returns empty list if key_moments table does not exist.
         """
@@ -515,7 +534,7 @@ class SemanticClusterStore:
                 """)
             return [dict(r) for r in rows]
         except Exception as exc:
-            logger.warning("insight_churn_by_theme: %s (Take A tables may not exist)", exc)
+            logger.warning("insight_churn_by_theme: %s (key_moments not loaded yet)", exc)
             return []
 
     async def insight_call_type_theme_matrix(self) -> list[dict[str, Any]]:
@@ -541,7 +560,7 @@ class SemanticClusterStore:
 
     async def insight_feature_gap_themes(self) -> list[dict[str, Any]]:
         """
-        Feature gap signal count per theme, joining with Take A key_moments.
+        Feature gap signal count per theme, joining key_moments (loaded by load_raw_jsons_to_db).
         Answers: which themes have the most unmet product needs?
         Gracefully returns empty list if key_moments table does not exist.
         """
@@ -565,7 +584,7 @@ class SemanticClusterStore:
                 """)
             return [dict(r) for r in rows]
         except Exception as exc:
-            logger.warning("insight_feature_gap_themes: %s (Take A tables may not exist)", exc)
+            logger.warning("insight_feature_gap_themes: %s (key_moments not loaded yet)", exc)
             return []
 
     async def insight_sentiment_distribution_by_theme(self) -> list[dict[str, Any]]:
@@ -597,7 +616,7 @@ class SemanticClusterStore:
         All key-moment signal type counts pivoted per theme (primary assignments).
         Answers: for each theme, how many churn signals / concerns / feature gaps /
                  praise moments / pricing offers / technical issues?
-        Requires Take A key_moments table. Returns empty list if not available.
+        Requires key_moments table (loaded by load_raw_jsons_to_db). Returns empty list if not available.
         """
         await self.initialize()
         try:
@@ -622,7 +641,7 @@ class SemanticClusterStore:
                 """)
             return [dict(r) for r in rows]
         except Exception as exc:
-            logger.warning("insight_signal_counts_by_theme: %s (Take A tables may not exist)", exc)
+            logger.warning("insight_signal_counts_by_theme: %s (key_moments not loaded yet)", exc)
             return []
 
     async def insight_theme_cooccurrence(self, top_n: int = 15) -> list[dict[str, Any]]:
@@ -633,7 +652,8 @@ class SemanticClusterStore:
         """
         await self.initialize()
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(f"""
+            rows = await conn.fetch(
+                f"""
                 SELECT
                     sc1.theme_title  AS theme_a,
                     sc2.theme_title  AS theme_b,
@@ -647,19 +667,24 @@ class SemanticClusterStore:
                 GROUP BY sc1.theme_title, sc2.theme_title
                 ORDER BY co_occurrence_count DESC
                 LIMIT $1
-            """, top_n)
+            """,
+                top_n,
+            )
         return [dict(r) for r in rows]
 
-    async def insight_high_risk_meetings(self, sentiment_threshold: float = 3.0) -> list[dict[str, Any]]:
+    async def insight_high_risk_meetings(
+        self, sentiment_threshold: float = 3.0
+    ) -> list[dict[str, Any]]:
         """
         Meetings with churn signals AND low sentiment — the highest financial risk.
         Answers: which specific meetings should leadership follow up on immediately?
-        Requires Take A key_moments table. Returns empty list if not available.
+        Requires key_moments table (loaded by load_raw_jsons_to_db). Returns empty list if not available.
         """
         await self.initialize()
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(f"""
+                rows = await conn.fetch(
+                    f"""
                     SELECT
                         smt.meeting_id,
                         sc.theme_title,
@@ -677,14 +702,16 @@ class SemanticClusterStore:
                     GROUP BY smt.meeting_id, sc.theme_title, smt.call_type,
                              smt.sentiment_score, smt.overall_sentiment
                     ORDER BY churn_signals DESC, smt.sentiment_score ASC
-                """, sentiment_threshold)
+                """,
+                    sentiment_threshold,
+                )
             return [dict(r) for r in rows]
         except Exception as exc:
-            logger.warning("insight_high_risk_meetings: %s (Take A tables may not exist)", exc)
+            logger.warning("insight_high_risk_meetings: %s (key_moments not loaded yet)", exc)
             return []
 
     async def has_key_moments(self) -> bool:
-        """Return True if the Take A key_moments table exists in this schema."""
+        """Return True if the key_moments table exists in this schema."""
         await self.initialize()
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -701,7 +728,134 @@ class SemanticClusterStore:
         await self.initialize()
         async with self.pool.acquire() as conn:
             counts: dict[str, int] = {}
-            for table in ("semantic_clusters", "semantic_phrases", "semantic_meeting_themes"):
+            for table in (
+                "semantic_clusters",
+                "semantic_phrases",
+                "semantic_meeting_themes",
+            ):
                 row = await conn.fetchrow(f"SELECT COUNT(*) AS n FROM {SCHEMA}.{table}")
                 counts[table] = int(row["n"])
         return counts
+
+    async def load_from_outputs(
+        self, output_dir: Path, reset: bool = False
+    ) -> dict[str, int]:
+        """
+        Reload semantic tables from pre-computed output files without re-embedding.
+
+        Reads:
+          <output_dir>/semantic_clusters.json  → semantic_clusters
+          <output_dir>/phrase_clusters.csv     → semantic_phrases  (embedding=NULL)
+          <output_dir>/meeting_themes.csv      → semantic_meeting_themes
+
+        Reuses save_cluster_labels / save_phrases / save_meeting_themes so upsert
+        logic is identical to a live pipeline run.
+        """
+        if reset:
+            await self.reset_semantic_tables()
+
+        clusters_data = json.loads(
+            (output_dir / "semantic_clusters.json").read_text(encoding="utf-8")
+        )
+        labels = [
+            {
+                "cluster_id": c["cluster_id"],
+                "theme_title": c["theme_title"],
+                "audience": c["audience"],
+                "rationale": c.get("rationale", ""),
+                "phrase_count": c.get("phrase_count", 0),
+            }
+            for c in clusters_data
+        ]
+        await self.save_cluster_labels(labels)
+
+        phrases: list[dict[str, Any]] = []
+        with open(output_dir / "phrase_clusters.csv", encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                aliases_raw = row.get("aliases", "").strip()
+                aliases = (
+                    [a.strip() for a in aliases_raw.split(";") if a.strip()]
+                    if aliases_raw
+                    else []
+                )
+                phrases.append(
+                    {
+                        "canonical": row["canonical"].strip(),
+                        "aliases": aliases,
+                        "cluster_id": int(row["cluster_id"]),
+                        "embedding": None,
+                    }
+                )
+        await self.save_phrases(phrases)
+
+        assignments: list[dict[str, Any]] = []
+        with open(output_dir / "meeting_themes.csv", encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                primary_id = int(row["primary_theme_id"])
+                all_ids_raw = row.get("all_theme_ids", "").strip()
+                all_ids = (
+                    [int(x.strip()) for x in all_ids_raw.split(";") if x.strip()]
+                    if all_ids_raw
+                    else [primary_id]
+                )
+                sentiment_raw = row.get("sentiment_score", "").strip()
+                assignments.append(
+                    {
+                        "meeting_id": row["meeting_id"].strip(),
+                        "theme_ids": all_ids,
+                        "primary_theme_id": primary_id,
+                        "inferred_call_type": row.get("call_type", "").strip() or "unknown",
+                        "call_confidence": row.get("call_confidence", "").strip() or "low",
+                        "sentiment_score": float(sentiment_raw) if sentiment_raw else None,
+                        "overall_sentiment": row.get("overall_sentiment", "").strip() or None,
+                    }
+                )
+        await self.save_meeting_themes(assignments)
+
+        return await self.row_counts()
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+
+async def _cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Load pre-computed semantic clustering outputs into Postgres."
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory containing semantic_clusters.json, phrase_clusters.csv, meeting_themes.csv.",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Drop and recreate the 3 semantic tables before loading.",
+    )
+    args = parser.parse_args()
+
+    output_dir = args.output_dir.resolve()
+    if not output_dir.exists():
+        raise SystemExit(f"Output directory not found: {output_dir}")
+
+    print(f"Loading semantic outputs from {output_dir}")
+    if args.reset:
+        print("  --reset: dropping semantic tables first")
+
+    store = SemanticClusterStore()
+    try:
+        counts = await store.load_from_outputs(output_dir, reset=args.reset)
+        for table, n in counts.items():
+            print(f"  {table:<30s}: {n}")
+    finally:
+        await store.close()
+    print("Done.")
+
+
+if __name__ == "__main__":
+    asyncio.run(_cli())

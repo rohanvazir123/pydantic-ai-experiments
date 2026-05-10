@@ -117,9 +117,9 @@ See basics\iprep\meeting-analytics\cluster_taxonomy.py
 Take C. LLM assisted semantic clustering
 See basics\iprep\llm_assisted_semantic_clustering.txt
 
-Implementation: basics\iprep\meeting-analytics\take_c_semantic_clustering.py
-Design + tradeoffs: basics\iprep\meeting-analytics\take_c_design.md
-FAQ: basics\iprep\meeting-analytics\take_c_faq.txt
+Implementation: basics\iprep\meeting-analytics\final_version\semantic_clustering.py
+Design + tradeoffs: basics\iprep\meeting-analytics\final_version\design.md
+FAQ: basics\iprep\meeting-analytics\final_version\faq.md
 
 Pipeline: Extract topics -> Dedup (exact + fuzzy) -> Embed (nomic-embed-text)
           -> UMAP (10-dim) -> HDBSCAN -> LLM label clusters -> assign meetings

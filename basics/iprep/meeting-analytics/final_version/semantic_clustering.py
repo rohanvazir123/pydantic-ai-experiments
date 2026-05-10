@@ -1,23 +1,23 @@
 """
-Take C — LLM-Assisted Semantic Clustering for Transcript Intelligence.
+Final Version — LLM-Assisted Semantic Clustering for Transcript Intelligence.
 
 Pipeline:
   Extract topics → Dedup (exact + fuzzy) → Embed (nomic-embed-text via Ollama)
   → UMAP (10-dim) → HDBSCAN → Noise reassignment → LLM label clusters
   → Assign meetings to themes → Infer call types → Write outputs
-  → Persist to Postgres (pgvector + tsvector via take_c_pg_store.SemanticClusterStore)
+  → Persist to Postgres (pgvector + tsvector via load_output_csvs_to_db.SemanticClusterStore)
 
-Why this approach over Take A/B:
+Why this approach:
   Topics are short semantic phrases; embeddings capture similarity that
   TF-IDF misses. HDBSCAN discovers cluster count from density — no manual K
   required. LLM labels run once per cluster (~10 calls), not per meeting.
 
-See take_c_design.md for full tradeoff analysis.
+See design.md for full tradeoff analysis.
 
 Usage:
-    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py
-    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py --dry-run
-    python basics/iprep/meeting-analytics/take_c_semantic_clustering.py --min-cluster-size 4 --min-samples 2
+    python basics/iprep/meeting-analytics/final_version/semantic_clustering.py
+    python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --dry-run
+    python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --min-cluster-size 4 --min-samples 2
 
 Outputs (in basics/iprep/meeting-analytics/cluster_work_c/):
     semantic_clusters.json  -- cluster definitions with LLM-generated labels
@@ -54,12 +54,16 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
-from take_c_pg_store import SemanticClusterStore
+from load_output_csvs_to_db import SemanticClusterStore
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATASET_DIR = SCRIPT_DIR.parent / "dataset"
 DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "outputs"
+
+
+def _add_dataset_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
 
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text:latest"
 DEFAULT_LLM_MODEL = "llama3.1:8b"
@@ -150,16 +154,55 @@ class MeetingThemeAssignment(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — Load meeting records (raw JSON, no Postgres dependency)
+# Step 1 — Load meeting records
 # ---------------------------------------------------------------------------
 
 
-def load_records(dataset_dir: Path) -> list[MeetingRecord]:
+async def load_records_from_db(dsn: str | None = None) -> list[MeetingRecord]:
     """
-    Read all summary.json files into memory as MeetingRecord objects.
-    Uses meetingId from summary if available; otherwise falls back to directory name. 
-    This allows flexibility in dataset structure and robustness to missing/invalid meetingId fields.
-    Outputs a list of MeetingRecord(meeting_id, summary) for downstream processing.
+    Query meetings + meeting_summaries from Postgres and return MeetingRecord list.
+    This is the primary load path — Postgres is the source of truth.
+    New meetings are added by re-running load_raw_jsons_to_db.py; re-running this pipeline
+    then picks them up automatically.
+    """
+    import asyncpg as _asyncpg
+
+    from load_raw_jsons_to_db import _build_dsn
+
+    conn = await _asyncpg.connect(dsn or _build_dsn())
+    try:
+        rows = await conn.fetch(f"""
+            SELECT
+                m.meeting_id,
+                ms.summary_text,
+                ms.overall_sentiment,
+                ms.sentiment_score,
+                ms.topics
+            FROM meeting_analytics.meetings m
+            JOIN meeting_analytics.meeting_summaries ms USING (meeting_id)
+            ORDER BY m.meeting_id
+        """)
+    finally:
+        await conn.close()
+
+    records: list[MeetingRecord] = []
+    for row in rows:
+        records.append(MeetingRecord(
+            meeting_id=row["meeting_id"],
+            summary={
+                "summary": row["summary_text"] or "",
+                "topics": list(row["topics"] or []),
+                "sentimentScore": row["sentiment_score"],
+                "overallSentiment": row["overall_sentiment"],
+            },
+        ))
+    return records
+
+
+def load_records_from_files(dataset_dir: Path) -> list[MeetingRecord]:
+    """
+    Fallback: read summary.json files directly from disk.
+    Used only for --dry-run (no Postgres needed).
     """
     records: list[MeetingRecord] = []
     for meeting_dir in sorted(p for p in dataset_dir.iterdir() if p.is_dir()):
@@ -452,7 +495,12 @@ def _sort_phrases_by_centroid_proximity(
         np.linalg.norm(phrase_vectors[i] - centroids[phrases[i].cluster_id])
         for i in range(len(phrases))
     ]
-    return [p for _, p in sorted(zip(distances, phrases), key=lambda x: (x[1].cluster_id, x[0]))]
+    return [
+        p
+        for _, p in sorted(
+            zip(distances, phrases), key=lambda x: (x[1].cluster_id, x[0])
+        )
+    ]
 
 
 async def label_clusters(phrases: list[TopicPhrase]) -> list[ClusterLabel]:
@@ -802,7 +850,7 @@ def write_run_log(
     signal_rows: list[dict[str, Any]] | None = None,
 ) -> None:
     """
-    Write cluster_work_c/take_c_run.log with three sections:
+    Write cluster_work_c/run.log with three sections:
 
       1. Per-meeting topic → cluster mapping   (like Take B's TF-IDF weights per doc)
       2. Per-cluster full detail               (phrases, meetings, signals)
@@ -810,7 +858,7 @@ def write_run_log(
     """
     import datetime
 
-    log_path = output_dir / "take_c_run.log"
+    log_path = output_dir / "run.log"
 
     label_by_id: dict[int, ClusterLabel] = {lb.cluster_id: lb for lb in labels}
     phrase_to_cluster: dict[str, int] = {}
@@ -847,7 +895,7 @@ def write_run_log(
         lines.append(s)
 
     # ---- Header ----
-    w("=== Take C Run Log ===")
+    w("=== Final Version Run Log ===")
     w(f"Date      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     w(f"Embedding : {metrics.get('embedding_model', EMBEDDING_MODEL)}")
     w(f"LLM       : {metrics.get('llm_model', LLM_MODEL)}")
@@ -995,7 +1043,7 @@ def write_run_log(
         w(f"  [{cid:2d}] {v:.3f} [{flag}]  {title}")
 
     log_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"  take_c_run.log")
+    print(f"  run.log")
 
 
 # ---------------------------------------------------------------------------
@@ -1103,7 +1151,7 @@ async def print_pg_insights(store: SemanticClusterStore) -> None:
                 f"{r['praise']:6d}  {r['pricing_offer']:7d}"
             )
     else:
-        print("  (skipped -- key_moments table not present; run Take A first)")
+        print("  (skipped -- key_moments table not present; run with --reset-db to load base data)")
 
     print("\n--- Insight: Theme Co-occurrence ----------------------------")
     rows = await store.insight_theme_cooccurrence(top_n=10)
@@ -1126,7 +1174,7 @@ async def print_pg_insights(store: SemanticClusterStore) -> None:
         else:
             print("  (no high-risk meetings found)")
     else:
-        print("  (skipped -- key_moments table not present; run Take A first)")
+        print("  (skipped -- key_moments table not present; run with --reset-db to load base data)")
 
 
 # ---------------------------------------------------------------------------
@@ -1136,9 +1184,9 @@ async def print_pg_insights(store: SemanticClusterStore) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Take C: LLM-assisted semantic clustering of meeting topics."
+        description="Final Version: LLM-assisted semantic clustering of meeting topics."
     )
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR)
+    _add_dataset_arg(parser)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument(
         "--min-cluster-size",
@@ -1172,23 +1220,71 @@ async def main() -> None:
         action="store_true",
         help="Drop and recreate semantic tables before inserting.",
     )
+    parser.add_argument(
+        "--reset-db",
+        action="store_true",
+        help="Drop and recreate the entire meeting_analytics schema from scratch.",
+    )
+    parser.add_argument(
+        "--skip-base-load",
+        action="store_true",
+        help="Skip Step 0 (base data loading). Use when Postgres is already populated.",
+    )
+    parser.add_argument(
+        "--from-outputs",
+        action="store_true",
+        help=(
+            "Skip all pipeline steps and reload the 3 semantic tables from "
+            "pre-computed output files (outputs/semantic_clusters.json, "
+            "phrase_clusters.csv, meeting_themes.csv). No re-embedding required."
+        ),
+    )
     args = parser.parse_args()
+
+    output_dir = args.output_dir.resolve()
+
+    # --from-outputs: skip all pipeline steps, reload semantic tables from CSV/JSON cache
+    if args.from_outputs:
+        print("=== Final Version: Load from outputs (no re-embedding) ===")
+        print(f"  Output dir: {output_dir}")
+        store = SemanticClusterStore()
+        try:
+            counts = await store.load_from_outputs(output_dir, reset=args.reset_pg)
+            for table, n in counts.items():
+                print(f"  {table:<30s}: {n}")
+            await print_pg_insights(store)
+        finally:
+            await store.close()
+        return
 
     dataset_dir = args.dataset.resolve()
     if not dataset_dir.exists():
         raise SystemExit(f"Dataset folder not found: {dataset_dir}")
 
     t_start = time.monotonic()
-    print("=== Take C: LLM-Assisted Semantic Clustering ===")
+    print("=== Final Version: LLM-Assisted Semantic Clustering ===")
     print(f"  Embedding model : {EMBEDDING_MODEL}  ({EMBEDDING_BASE_URL})")
     print(f"  LLM model       : {LLM_MODEL}  ({LLM_BASE_URL})")
     print(
         f"  Postgres        : {'skip' if args.skip_pg else 'enabled (meeting_analytics)'}"
     )
 
-    # Step 1
+    # Step 0 — base data loading (always runs unless skipped or dry-run)
+    if not args.dry_run and not args.skip_base_load and not args.skip_pg:
+        from load_raw_jsons_to_db import setup as base_setup
+        print("\n[0] Loading raw dataset into Postgres base tables...")
+        if args.reset_db:
+            print("  --reset-db: dropping entire schema and rebuilding from scratch")
+        counts = await base_setup(dataset_dir=dataset_dir, reset=args.reset_db)
+        for table, n in counts.items():
+            print(f"  {table:<20s}: {n}")
+
+    # Step 1 — load from Postgres (source of truth); files only for dry-run
     print("\n[1/9] Loading meeting records...")
-    records = load_records(dataset_dir)
+    if args.dry_run:
+        records = load_records_from_files(dataset_dir)
+    else:
+        records = await load_records_from_db()
     print(f"  Loaded {len(records)} meetings")
     call_type_raw_counts: Counter[str] = Counter(
         str(r.summary.get("callType", "unknown")) for r in records
@@ -1331,7 +1427,6 @@ async def main() -> None:
     metrics["meeting_count"] = len(records)
     metrics["cluster_coherence"] = {str(k): v for k, v in coherence.items()}
 
-    output_dir = args.output_dir.resolve()
     write_outputs(output_dir, phrases, labels, assignments, metrics, viz_coords)
     print_summary(labels, assignments, coherence)
 

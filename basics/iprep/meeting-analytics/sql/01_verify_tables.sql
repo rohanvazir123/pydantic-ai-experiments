@@ -55,7 +55,7 @@ FROM meeting_analytics.kmeans_meeting_clusters;
 -- Expected: 100
 
 
--- ── Spot check: every meeting has exactly one primary semantic theme (Take C) ─
+-- ── Spot check: every meeting has exactly one primary semantic theme (Final Version) ─
 SELECT count(*) AS meetings_with_primary
 FROM meeting_analytics.semantic_meeting_themes
 WHERE is_primary = true;
@@ -84,13 +84,13 @@ FROM meeting_analytics.kmeans_clusters
 ORDER BY cluster_id;
 
 
--- ── Spot check: Take C clusters ─
+-- ── Spot check: Final Version clusters ─
 SELECT cluster_id, theme_title, audience, phrase_count
 FROM meeting_analytics.semantic_clusters
 ORDER BY cluster_id;
 
 
--- ── Spot check: Take C call types (LLM-generated — 3 values) ─
+-- ── Spot check: Final Version call types (LLM-generated — 3 values) ─
 SELECT call_type, count(*) AS meetings
 FROM meeting_analytics.semantic_meeting_themes
 WHERE is_primary = true

@@ -1,15 +1,15 @@
 """
-One-shot setup: drop and reload all meeting_analytics tables for all three takes.
+One-shot setup: drop and reload all meeting_analytics tables.
 
-Target: rag_db @ localhost:5434 (rag_user:rag_pass) — pgvector required for Take C.
+Target: rag_db @ localhost:5434 (rag_user:rag_pass) — pgvector required for Final Version.
 
 Order:
   [1] Take A  — generate_rule_based_taxonomy.py --reset
-                Drops + recreates schema, loads 10 tables from raw dataset JSON.
+                Drops + recreates schema, loads base tables + Take A analytical tables.
   [2] Take B  — take_b/load_outputs_to_pg.py
-                Creates 3 new tables, loads from take_b/outputs/ CSVs.
-  [3] Take C  — take_c/load_outputs_to_pg.py
-                Creates 3 new tables, loads from take_c/outputs/ JSON + CSVs.
+                Creates 3 KMeans tables from take_b/outputs/ CSVs.
+  [3] Final   — final_version/semantic_clustering.py --from-outputs --skip-base-load
+                Loads 3 semantic tables from pre-computed outputs/ files; no re-embedding.
 
 Usage (from repo root):
   python basics/iprep/meeting-analytics/setup_all_tables.py
@@ -48,12 +48,13 @@ def main() -> None:
     )
 
     run(
-        "Take C — semantic clusters (3 tables from outputs/)",
-        BASE / "take_c" / "load_outputs_to_pg.py",
+        "Final Version — semantic clusters (3 tables from outputs/)",
+        BASE / "final_version" / "semantic_clustering.py",
+        ["--from-outputs", "--skip-base-load"],
     )
 
     print("\n" + "=" * 60)
-    print("  All done — 16 tables loaded in meeting_analytics schema")
+    print("  All done — tables loaded in meeting_analytics schema")
     print("  Run export_all_to_csv.py to snapshot to CSV.")
     print("=" * 60 + "\n")
 

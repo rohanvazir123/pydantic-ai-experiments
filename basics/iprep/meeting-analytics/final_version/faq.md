@@ -1,22 +1,22 @@
-# Take C — FAQ
+# Final Version — FAQ
 
 ## Table of Contents
 - [Does the pipeline produce themes?](#does-the-pipeline-produce-themes)
-- [Does Take C use pgvector and tsvector?](#does-take-c-use-pgvector-and-tsvector)
+- [Does Final Version use pgvector and tsvector?](#does-final-version-use-pgvector-and-tsvector)
 - [What insights/findings can be generated per theme?](#what-insightsfindings-can-be-generated-per-theme)
-- [How do we know Take C produces meaningful themes?](#how-do-we-know-take-c-produces-meaningful-themes)
-- [How do we know Take C won't club unrelated topics into a cluster?](#how-do-we-know-take-c-wont-club-unrelated-topics-into-a-cluster)
+- [How do we know Final Version produces meaningful themes?](#how-do-we-know-final-version-produces-meaningful-themes)
+- [How do we know Final Version won't club unrelated topics into a cluster?](#how-do-we-know-final-version-wont-club-unrelated-topics-into-a-cluster)
 - [Did the LLM do a good job labeling clusters? How does it know what to do?](#did-the-llm-do-a-good-job-labeling-clusters-how-does-it-know-what-to-do)
-- [How does the Take B vs Take C comparison work?](#how-does-the-take-b-vs-take-c-comparison-work)
-- [What did the Take B vs Take C comparison actually find?](#what-did-the-take-b-vs-take-c-comparison-actually-find)
-- [Should we re-run Take B with k=26 to directly compare against Take C's 26 clusters?](#should-we-re-run-take-b-with-k26-to-directly-compare-against-take-cs-26-clusters)
-- [Which Take C outputs were produced by HDBSCAN and which by the LLM?](#which-take-c-outputs-were-produced-by-hdbscan-and-which-by-the-llm)
+- [How does the Take B vs Final Version comparison work?](#how-does-the-take-b-vs-final-version-comparison-work)
+- [What did the Take B vs Final Version comparison actually find?](#what-did-the-take-b-vs-final-version-comparison-actually-find)
+- [Should we re-run Take B with k=26 to directly compare against Final Version's 26 clusters?](#should-we-re-run-take-b-with-k26-to-directly-compare-against-final-versions-26-clusters)
+- [Which Final Version outputs were produced by HDBSCAN and which by the LLM?](#which-final-version-outputs-were-produced-by-hdbscan-and-which-by-the-llm)
 - [How does UMAP work?](#how-does-umap-work)
 - [How does HDBSCAN work?](#how-does-hdbscan-work)
-- [How do I reload the Take C tables into Postgres?](#how-do-i-reload-the-take-c-tables-into-postgres)
-- [What 3 Postgres tables does Take C create, and what is in each?](#what-3-postgres-tables-does-take-c-create-and-what-is-in-each)
-- [Why does Take C extend Take A's schema instead of creating its own?](#why-does-take-c-extend-take-as-schema-instead-of-creating-its-own)
-- [Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?](#take-b-labels-clusters-by-concatenating-top-centroid-terms--why-cant-take-c-do-the-same)
+- [How do I reload the Final Version tables into Postgres?](#how-do-i-reload-the-final-version-tables-into-postgres)
+- [What 3 Postgres tables does Final Version create, and what is in each?](#what-3-postgres-tables-does-final-version-create-and-what-is-in-each)
+- [Why does Final Version extend Take A's schema instead of creating its own?](#why-does-final-version-extend-take-as-schema-instead-of-creating-its-own)
+- [Take B labels clusters by concatenating top centroid terms — why can't Final Version do the same?](#take-b-labels-clusters-by-concatenating-top-centroid-terms--why-cant-final-version-do-the-same)
 
 ---
 
@@ -61,9 +61,9 @@ inferred call type, and sentiment score.
 
 ---
 
-## Does Take C use pgvector and tsvector?
+## Does Final Version use pgvector and tsvector?
 
-Yes — added in `take_c_pg_store.py` (step 9 of the pipeline).
+Yes — added in `load_output_csvs_to_db.py` (step 9 of the pipeline).
 
 **Tables written to `meeting_analytics` schema:**
 
@@ -94,18 +94,12 @@ store.hybrid_search_phrases(query, embedding)    # RRF merge of both (k=60)
 | `insight_theme_cooccurrence()` | Which themes appear together in the same meeting |
 | `insight_high_risk_meetings()` | Meetings with churn signals + negative sentiment |
 
-> **NOTE:** churn and feature_gap insights join Take A's `key_moments` table.
-> They will be blank until Take A has been run:
-> ```
-> python basics/iprep/meeting-analytics/take_a/generate_rule_based_taxonomy.py --reset
-> ```
-
 **Run commands:**
 ```bash
-python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py              # full pipeline
-python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py --reset-pg   # drop+recreate semantic tables first
-python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py --skip-pg    # skip Postgres, CSV/JSON only
-python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py --dry-run    # no Ollama, no Postgres
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py              # full pipeline
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --reset-pg   # drop+recreate semantic tables first
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --skip-pg    # skip Postgres, CSV/JSON only
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --dry-run    # no Ollama, no Postgres
 ```
 
 ---
@@ -113,7 +107,7 @@ python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py --dry
 ## What insights/findings can be generated per theme?
 
 For any theme (e.g. "Customer Retention / Renewal / Commercial Risk"), the following
-are available via insight query methods in `take_c_pg_store.py`:
+are available via insight query methods in `load_output_csvs_to_db.py`:
 
 **1. Sentiment distribution** `[insight_sentiment_distribution_by_theme]`
 
@@ -155,7 +149,7 @@ These are the specific meetings leadership should follow up on immediately.
 
 ---
 
-## How do we know Take C produces meaningful themes?
+## How do we know Final Version produces meaningful themes?
 
 Short answer: we don't automatically — unsupervised clustering has no ground truth.
 Three practical validation checks, in order of effort:
@@ -165,7 +159,7 @@ Three practical validation checks, in order of effort:
 Take A has 8 hand-crafted themes built from expert knowledge of the topic vocabulary.
 If semantic clustering independently discovers roughly the same groupings, that is
 strong evidence. The validation question is:
-> "For each Take C cluster, what % of its phrases would Take A's `THEME_KEYWORDS` have assigned to the same theme?"
+> "For each Final Version cluster, what % of its phrases would Take A's `THEME_KEYWORDS` have assigned to the same theme?"
 
 If they agree 80%+ without sharing any rules, the clusters are meaningful.
 
@@ -186,7 +180,7 @@ If the insights are counter-intuitive, the clusters are probably wrong.
 
 ---
 
-## How do we know Take C won't club unrelated topics into a cluster?
+## How do we know Final Version won't club unrelated topics into a cluster?
 
 It can — this is the most important risk in the approach.
 
@@ -215,7 +209,7 @@ like `"Identity & Access Management"`. Vague = investigate.
 
 2. **Scan `phrase_clusters.csv`** — read 10 random phrases per cluster, ask "do these belong together?" Takes 5 minutes.
 
-3. **Compare against Take A themes** — if a Take C cluster contains phrases that Take A's `THEME_KEYWORDS` would split across 2+ themes, the cluster is probably impure.
+3. **Compare against Take A themes** — if a Final Version cluster contains phrases that Take A's `THEME_KEYWORDS` would split across 2+ themes, the cluster is probably impure.
 
 **Fix if you find impure clusters:**
 ```
@@ -280,26 +274,26 @@ would be slightly more representative for large clusters.
 
 ---
 
-## How does the Take B vs Take C comparison work?
+## How does the Take B vs Final Version comparison work?
 
 The comparison runs in three layers (see `compare_b_vs_c.py` at the root of `meeting-analytics/`).
 
 **Layer 1 — Cross-tab (8×26 matrix)**
 
-For every meeting we know its Take B cluster (0–7) and its Take C primary theme (0–25).
+For every meeting we know its Take B cluster (0–7) and its Final Version primary theme (0–25).
 Cross-tabbing gives a matrix where each cell is the count of meetings in B-cluster X
 and C-cluster Y. If the methods agree, each row is dominated by 1–2 C clusters.
 If a row is spread thin across many C clusters, those two methods disagree on that B cluster.
 
 **Layer 2 — Split analysis**
 
-The more interesting question: does Take C reveal finer structure inside a Take B cluster?
+The more interesting question: does Final Version reveal finer structure inside a Take B cluster?
 
-- B-4 `"hipaa / compliance / reporting"` — does Take C split into C-10 (HIPAA Compliance), C-11 (Compliance and Governance), and C-12 (Audit Readiness) as distinct populations?
-- B-1 `"outage / incident / failure"` — does Take C separate C-8 (Incident Response and Review) from C-9 (Outage Prevention and Recovery)?
+- B-4 `"hipaa / compliance / reporting"` — does Final Version split into C-10 (HIPAA Compliance), C-11 (Compliance and Governance), and C-12 (Audit Readiness) as distinct populations?
+- B-1 `"outage / incident / failure"` — does Final Version separate C-8 (Incident Response and Review) from C-9 (Outage Prevention and Recovery)?
 
 That would be the headline finding: two independent methods discovering the same
-underlying groups, with Take C simply having higher resolution.
+underlying groups, with Final Version simply having higher resolution.
 
 **Layer 3 — Agreement proxy**
 
@@ -310,8 +304,8 @@ If ~80%+ of meetings agree, the themes are signal not noise.
 
 **Key limitation:**
 
-Take C assigns meetings to multiple themes (primary + secondaries); Take B assigns
-exactly one. The comparison is only on the C primary theme. A meeting that Take C
+Final Version assigns meetings to multiple themes (primary + secondaries); Take B assigns
+exactly one. The comparison is only on the C primary theme. A meeting that Final Version
 calls "Billing" primary but also "Renewal" secondary will look like a disagreement
 with Take B's `"renewal / competitive"` cluster even if the information is consistent.
 The cross-tab (Layer 1) gives the true picture; the agreement proxy (Layer 3) is
@@ -319,7 +313,7 @@ a quick headline number, not a strict accuracy score.
 
 ---
 
-## What did the Take B vs Take C comparison actually find?
+## What did the Take B vs Final Version comparison actually find?
 
 Run: `python basics/iprep/meeting-analytics/compare_b_vs_c.py` (from repo root)
 
@@ -329,7 +323,7 @@ All 100 meetings matched across both outputs.
 **Why 37% is not a problem:**
 
 The agreement proxy asks "does a meeting's C primary theme match its B cluster's
-dominant C theme?" With Take C splitting every B cluster into multiple finer themes,
+dominant C theme?" With Final Version splitting every B cluster into multiple finer themes,
 the dominant C theme only captures a fraction of each B cluster by design. The low
 number reflects higher resolution, not disagreement between the methods.
 
@@ -341,10 +335,10 @@ number reflects higher resolution, not disagreement between the methods.
 | B-7 `"backup / hybrid / recovery"` | 6 | C-14 Data Backup and Recovery | 50% |
 | B-3 `"planning / sprint / launch"` | 7 | Splits cleanly 3+3 into C-18 Product Dev + C-21 IT Ops | — |
 
-B-3 is notable: Take C correctly separates product launch meetings from engineering
+B-3 is notable: Final Version correctly separates product launch meetings from engineering
 sprint meetings — B grouped them because they share planning vocabulary.
 
-**Where Take C reveals real finer structure:**
+**Where Final Version reveals real finer structure:**
 
 - **B-4** `"hipaa / compliance / reporting"` (17 meetings, 5 C-splits)
   → C-11 Compliance and Governance (7), C-18 Product Dev (6), C-10 HIPAA (2), C-12 Audit Readiness (1).
@@ -352,7 +346,7 @@ sprint meetings — B grouped them because they share planning vocabulary.
 
 - **B-1** `"outage / incident / failure"` (26 meetings, 10 C-splits)
   → C-09 Outage Prevention (7), C-08 Incident Response (5), C-06 Customer Renewal (4), plus 7 others.
-  Take C correctly separates outage prevention (engineering reliability work) from incident response (post-incident process) — two distinct workflows that TF-IDF conflated because they share "outage" vocabulary.
+  Final Version correctly separates outage prevention (engineering reliability work) from incident response (post-incident process) — two distinct workflows that TF-IDF conflated because they share "outage" vocabulary.
 
 - **B-5** `"backup / performance / support response"` (8 meetings, 4 C-splits)
   → C-14 Data Backup and Recovery (3) and C-24 System Reliability (3) split evenly.
@@ -369,12 +363,12 @@ These were B's broadest clusters. Wide C-splits reflect genuine topic breadth, n
 
 The two methods are consistent. B-2 billing and B-5 backup are confirmed as real
 cohesive topics by both approaches. The strongest finding is B-1 outage/incident:
-Take C correctly separates outage prevention from incident response — a distinction
+Final Version correctly separates outage prevention from incident response — a distinction
 that matters to engineering leadership.
 
 ---
 
-## Should we re-run Take B with k=26 to directly compare against Take C's 26 clusters?
+## Should we re-run Take B with k=26 to directly compare against Final Version's 26 clusters?
 
 **No — this comparison is not meaningful.**
 
@@ -382,18 +376,18 @@ Take B clusters **meetings** (100 documents). At k=26 you get ~4 meetings per cl
 on average. KMeans centroids built from 3–4 meetings are noisy and the labels would
 be near-meaningless. The comparison would be fragile by construction.
 
-Take C's 26 clusters come from clustering **343 topic phrases**, not 100 meetings. The
+Final Version's 26 clusters come from clustering **343 topic phrases**, not 100 meetings. The
 "26" emerged from density patterns across hundreds of short semantic phrases.
 Forcing k=26 into Take B just borrows that number — it doesn't make the two approaches
 operate at the same unit.
 
-The right comparison is k=8 (Take B) vs Take C's 26 — already done. It answers the
+The right comparison is k=8 (Take B) vs Final Version's 26 — already done. It answers the
 meaningful question: do the two methods agree on the underlying themes, just at
 different resolutions? Answer: yes (see results entry above).
 
 ---
 
-## Which Take C outputs were produced by HDBSCAN and which by the LLM?
+## Which Final Version outputs were produced by HDBSCAN and which by the LLM?
 
 The pipeline has two intelligence sources:
 
@@ -425,7 +419,7 @@ The pipeline has two intelligence sources:
 
 UMAP (Uniform Manifold Approximation and Projection) reduces 768-dim embeddings to
 10 dims before HDBSCAN. The curse of dimensionality and *why* reduction is needed is
-covered in `take_c_design.md` section 3.4. This entry covers what UMAP actually does.
+covered in `design.md` section 3.4. This entry covers what UMAP actually does.
 
 **Step 1 — Build a neighborhood graph in high-dimensional space**
 
@@ -509,23 +503,23 @@ cluster centroid as a post-processing step.
 
 ---
 
-## How do I reload the Take C tables into Postgres?
+## How do I reload the Final Version tables into Postgres?
 
-Take C has two recovery paths depending on whether you want to re-run the full pipeline
+Final Version has two recovery paths depending on whether you want to re-run the full pipeline
 or just reload from the saved outputs.
 
-**The 3 Take C tables and what feeds them:**
+**The 3 Final Version tables and what feeds them:**
 
 | Table | Source file | What it contains |
 |-------|-------------|-----------------|
-| `semantic_clusters` | `take_c/outputs/semantic_clusters.json` | 26 clusters: cluster_id, LLM-generated theme_title, audience, rationale, phrase_count |
-| `semantic_phrases` | `take_c/outputs/phrase_clusters.csv` | 343 deduplicated topic phrases with cluster assignment (embedding=NULL in CSV path) |
-| `semantic_meeting_themes` | `take_c/outputs/meeting_themes.csv` | 516 rows: one per (meeting, cluster) combination, with call_type and sentiment |
+| `semantic_clusters` | `final_version/outputs/semantic_clusters.json` | 26 clusters: cluster_id, LLM-generated theme_title, audience, rationale, phrase_count |
+| `semantic_phrases` | `final_version/outputs/phrase_clusters.csv` | 343 deduplicated topic phrases with cluster assignment (embedding=NULL in CSV path) |
+| `semantic_meeting_themes` | `final_version/outputs/meeting_themes.csv` | 516 rows: one per (meeting, cluster) combination, with call_type and sentiment |
 
 **Fast path — load from saved outputs (30 seconds, no Ollama needed):**
 
 ```bash
-python basics/iprep/meeting-analytics/take_c/load_outputs_to_pg.py
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py --from-outputs --skip-base-load
 ```
 
 Note: this leaves `semantic_phrases.embedding` as NULL. Vector search won't work,
@@ -534,7 +528,7 @@ but all analytical insight queries do — they join on cluster_id, not embedding
 **Full re-run — re-embeds + re-clusters + re-labels (2–3 minutes, requires Ollama):**
 
 ```bash
-python basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py
+python basics/iprep/meeting-analytics/final_version/semantic_clustering.py
 ```
 
 The full pipeline re-embeds all 343 phrases (nomic-embed-text), re-runs UMAP + HDBSCAN,
@@ -554,11 +548,11 @@ from `meeting-analytics/.env`.
 
 ---
 
-## What 3 Postgres tables does Take C create, and what is in each?
+## What 3 Postgres tables does Final Version create, and what is in each?
 
-Take C creates exactly 3 tables in the `meeting_analytics` schema, all loaded by
-`take_c/load_outputs_to_pg.py` from pre-computed output files. No re-embedding or
-re-clustering is needed to reload them.
+The Final Version creates exactly 3 semantic tables in the `meeting_analytics` schema.
+They can be reloaded from pre-computed output files via `--from-outputs` without
+re-embedding or re-clustering.
 
 ---
 
@@ -572,7 +566,7 @@ re-clustering is needed to reload them.
 | `rationale` | text | nullable | LLM-generated one-sentence explanation of why these phrases cluster together |
 | `phrase_count` | integer | nullable | Number of topic phrases assigned to this cluster |
 
-**Source file:** `take_c/outputs/semantic_clusters.json`
+**Source file:** `final_version/outputs/semantic_clusters.json`
 **LLM-generated columns:** `theme_title`, `audience`, `rationale` — produced once per clustering run by `llama3.1:8b`. Deterministic columns: `cluster_id`, `phrase_count`.
 
 ---
@@ -588,10 +582,10 @@ re-clustering is needed to reload them.
 | `embedding` | vector(768) | nullable | Phrase embedding — NULL when loaded from CSV (not re-embedded at load time) |
 | `content_tsv` | tsvector | nullable | GIN-indexed full-text search vector over `canonical` |
 
-**Source file:** `take_c/outputs/phrase_clusters.csv`
+**Source file:** `final_version/outputs/phrase_clusters.csv`
 **Note:** `embedding` is NULL after a CSV load. Vector search is unavailable, but all
 analytical insight queries join on `cluster_id` only — not on embeddings. To populate
-embeddings, re-run the full Take C pipeline (requires Ollama).
+embeddings, re-run the full Final Version pipeline (requires Ollama).
 
 ---
 
@@ -604,10 +598,10 @@ embeddings, re-run the full Take C pipeline (requires Ollama).
 | `is_primary` | boolean | NOT NULL | True for the single dominant theme per meeting |
 | `call_type` | text | nullable | LLM-inferred call type: `support` / `external` / `internal` |
 | `call_confidence` | text | nullable | LLM confidence string: `high` / `medium` / `low` |
-| `sentiment_score` | numeric | nullable | Passed through from raw `summary.json` (not computed by Take C) |
+| `sentiment_score` | numeric | nullable | Passed through from raw `summary.json` (not computed by Final Version) |
 | `overall_sentiment` | text | nullable | Passed through from raw `summary.json` |
 
-**Source file:** `take_c/outputs/meeting_themes.csv`
+**Source file:** `final_version/outputs/meeting_themes.csv`
 **Key constraint:** exactly one row per meeting has `is_primary = true`. Always filter
 on `is_primary = true` when aggregating per-meeting to avoid double-counting.
 **Note on `call_type`:** LLM-generated — stochastic and doesn't scale. Prefer joining
@@ -635,9 +629,9 @@ the schema and only reloads Take A).
 
 ---
 
-## Take B labels clusters by concatenating top centroid terms — why can't Take C do the same?
+## Take B labels clusters by concatenating top centroid terms — why can't Final Version do the same?
 
-Because Take C's centroids live in a different kind of space.
+Because Final Version's centroids live in a different kind of space.
 
 **Why it works in Take B:**
 
@@ -651,14 +645,14 @@ centroid dimensions → sort by weight → top 4 terms → "renewal / competitiv
 
 Fully deterministic. No LLM needed.
 
-**Why it doesn't work in Take C:**
+**Why it doesn't work in Final Version:**
 
 HDBSCAN centroids (actually cluster medoids / mean vectors) live in 768-dimensional
 embedding space. Those 768 dimensions are abstract latent features learned by
 `nomic-embed-text` — they do not correspond to words. There is no "top term" to read
 off. The centroid is just a point in a space with no human-interpretable axes.
 
-**What Take C does instead:**
+**What Final Version does instead:**
 
 1. Sort each cluster's phrases by distance to the cluster centroid (ascending) —
    closest phrases are most representative of the cluster's core meaning
@@ -673,7 +667,7 @@ HDBSCAN used), consistent with `_compute_centroids()`.
 
 **The tradeoff:**
 
-| | Take B | Take C |
+| | Take B | Final Version |
 |---|---|---|
 | Label source | Top centroid dimensions | LLM reading nearest phrases |
 | Deterministic | Yes | No — stochastic between runs |
@@ -718,18 +712,18 @@ with " / ". The cluster grouping is preserved; only the label quality drops.
 
 ---
 
-## Why does Take C extend Take A's schema instead of creating its own?
+## Why does Final Version extend Take A's schema instead of creating its own?
 
 Take A already loads all the raw data into `meeting_analytics` — `meetings`,
 `meeting_summaries`, `key_moments`, `sentiment_features`, `transcript_lines`, etc.
-Take C doesn't re-load any of that. It only adds 3 new tables for its clustering
+Final Version doesn't re-load any of that. It only adds 3 new tables for its clustering
 results (`semantic_clusters`, `semantic_phrases`, `semantic_meeting_themes`) into
 the same schema.
 
 **The benefit: cross-take JOINs work without any schema gymnastics.**
 
 ```sql
--- Take C themes × Take A sentiment — works because same schema
+-- Final Version themes × Take A sentiment — works because same schema
 SELECT sc.theme_title, round(avg(sf.net_sentiment)::numeric, 3) AS avg_sentiment
 FROM meeting_analytics.semantic_meeting_themes smt
 JOIN meeting_analytics.semantic_clusters sc      ON smt.cluster_id = sc.cluster_id
@@ -739,19 +733,19 @@ GROUP BY sc.theme_title
 ORDER BY avg_sentiment;
 ```
 
-If Take C used a separate schema, every cross-take query would need schema-qualified
+If Final Version used a separate schema, every cross-take query would need schema-qualified
 references across two schemas. One schema keeps everything flat and queryable from
 a single DBeaver connection.
 
-**What Take C does NOT duplicate:**
+**What Final Version does NOT duplicate:**
 
-| Take A table | Take C status |
+| Take A table | Final Version status |
 |---|---|
 | `meetings` | Reused via FK — `semantic_meeting_themes.meeting_id` references it |
 | `sentiment_features` | Reused via JOIN — churn counts, net_sentiment, etc. |
 | `key_moments` | Reused via JOIN — pricing_offer, churn_signal, feature_gap etc. |
-| `call_types` | Reused via JOIN — preferred over Take C's LLM call_type |
-| `meeting_themes` | Independent — Take A's rule-based themes vs Take C's semantic clusters |
+| `call_types` | Reused via JOIN — preferred over Final Version's LLM call_type |
+| `meeting_themes` | Independent — Take A's rule-based themes vs Final Version's semantic clusters |
 
 **Important: the LLM does not use Take A's schema.**
 

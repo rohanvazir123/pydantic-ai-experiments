@@ -32,7 +32,7 @@ TABLES = [
     "meeting_themes",
     "call_types",
     "sentiment_features",
-    # Take C tables
+    # Final Version semantic tables
     "semantic_clusters",
     "semantic_phrases",
     "semantic_meeting_themes",

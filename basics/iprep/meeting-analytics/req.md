@@ -1,4 +1,4 @@
-# Transcript Intelligence — Take-Home Assignment
+# Transcript Intelligence
 
 ## Background
 

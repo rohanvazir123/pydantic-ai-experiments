@@ -1,13 +1,14 @@
-# Take C — LLM-Assisted Semantic Clustering: Design Document
+# Final Version — LLM-Assisted Semantic Clustering: Design Document
 
 ## Audit Trail
 
 | Version | Date       | Author | Summary of Changes                             |
 |---------|------------|--------|------------------------------------------------|
 | v0.1    | 2026-05-08 | rohan  | Initial design — pipeline skeleton, tradeoffs, decision log |
-| v0.2    | 2026-05-08 | rohan  | Implementation complete — `take_c_semantic_clustering.py`; dry-run verified: 100 meetings loaded, 600 raw topics → 351 exact-dedup → 343 fuzzy-dedup; deps: rapidfuzz, umap-learn, hdbscan |
+| v0.2    | 2026-05-08 | rohan  | Implementation complete — `semantic_clustering.py`; dry-run verified: 100 meetings loaded, 600 raw topics → 351 exact-dedup → 343 fuzzy-dedup; deps: rapidfuzz, umap-learn, hdbscan |
 | v0.3    | 2026-05-09 | rohan  | Full pipeline run complete — 26 clusters found (not 8–15 as estimated); added coherence check step; actual Postgres schema documented; 8 insight queries implemented; open questions resolved; file path corrected after directory rename |
 | v0.4    | 2026-05-09 | rohan  | Context & Goals rewritten to use consistent Goal 1/2/3 framing matching Take A and Take B design docs |
+| v0.5    | 2026-05-09 | rohan  | Self-contained architecture: `load_raw_jsons_to_db.py` creates all 6 base tables from raw JSON; `semantic_clustering.py` reads from Postgres (not files) so re-clustering works as dataset grows; all 9 tables live in one `meeting_analytics` schema; no Take A/B dependency |
 
 ---
 
@@ -40,7 +41,7 @@ The three goals carried across all takes:
 
 **Goal 1 — Theme assignment:** Assign each meeting one or more business themes
 from a discoverable taxonomy.
-→ **Take C addresses this.** 343 deduplicated topic phrases are embedded with
+→ **Final Version addresses this.** 343 deduplicated topic phrases are embedded with
 nomic-embed-text, reduced via UMAP, and clustered with HDBSCAN into 26 semantic
 clusters. Each cluster receives an LLM-generated label (theme title, target
 audience, rationale). Meetings are assigned to themes by mapping their topics to
@@ -48,32 +49,39 @@ cluster assignments.
 
 **Goal 2 — Call type inference:** Infer the kind of conversation per meeting
 (support, external, internal).
-→ **Take C addresses this.** Step 7 sends each meeting's summary + topics to
+→ **Final Version addresses this.** Step 7 sends each meeting's summary + topics to
 llama3.1:8b and receives a structured call type label (support / external /
 internal). Stored in `semantic_meeting_themes.call_type`.
 
 **Goal 3 — Postgres persistence:** Persist raw and derived fields to a schema
 shaped for analytical queries.
-→ **Take C addresses this.** Step 9 persists to 3 tables in the `meeting_analytics`
-schema (`semantic_clusters`, `semantic_phrases`, `semantic_meeting_themes`) and
-runs 8 insight queries automatically. Extends Take A's schema — does not duplicate
-the 10 existing tables.
+→ **Final Version addresses this end-to-end.** Step 0 (`load_raw_jsons_to_db.py`) creates 6
+base tables from raw JSON (`meetings`, `meeting_participants`, `meeting_summaries`,
+`key_moments`, `action_items`, `transcript_lines`). Step 9 adds 3 semantic tables
+(`semantic_clusters`, `semantic_phrases`, `semantic_meeting_themes`). All 9 tables
+live in the single `meeting_analytics` schema. The pipeline is fully self-contained
+— no dependency on any other folder or prior run. 8 insight queries join base tables
+and semantic tables in the same schema, requiring no cross-schema joins.
 
 **Why not Take A (rule-based)?** Brittle — misses semantic equivalents (e.g. `pipeline failure` ≡ `detect pipeline failure` ≡ `ingestion pipeline`).
 
 **Why not Take B (TF-IDF + K-Means)?** Requires pre-specifying K; bag-of-words misses phrase semantics; very short phrases kill TF-IDF signal.
 
-**Why Take C?** The topic strings are short, semantically dense, and conceptually overlapping. A vector embedding captures "outage recovery" ≈ "outage remediation" ≈ "post-mortem" without hand-crafted rules. HDBSCAN finds the natural cluster count without a fixed K. LLM labels make clusters immediately legible to stakeholders without manual review.
+**Why Final Version?** The topic strings are short, semantically dense, and conceptually overlapping. A vector embedding captures "outage recovery" ≈ "outage remediation" ≈ "post-mortem" without hand-crafted rules. HDBSCAN finds the natural cluster count without a fixed K. LLM labels make clusters immediately legible to stakeholders without manual review.
 
 ---
 
 ## 2. Pipeline Overview
 
 ```
-[summary.json × N]
+[dataset/ JSON × N]
        │
        ▼
-[1] Extract & Flatten topics (+ optional: keyMoments, summary snippets)
+[0] Load raw JSON → Postgres base tables
+    (meetings, key_moments, transcripts, summaries, participants, action_items)
+       │
+       ▼
+[1] Extract & Flatten topics  (reads meeting_analytics.meeting_summaries.topics[])
        │
        ▼
 [2] Deduplicate (exact → fuzzy → semantic optional)
@@ -94,10 +102,11 @@ the 10 existing tables.
 [7] Assign meetings → themes  (each meeting's topics → majority cluster)
        │
        ▼
-[8] Persist to Postgres  (meeting_themes table, reuses Take A schema)
+[8] Persist to Postgres  (semantic_clusters, semantic_phrases, semantic_meeting_themes)
        │
        ▼
 [Output] Named themes + per-meeting theme assignment + call-type label
+         + 8 insight queries joining base tables and semantic tables
 ```
 
 ---
@@ -118,6 +127,20 @@ the 10 existing tables.
 **Decision:** Option **D** — embed each unique topic phrase independently, then re-aggregate meetings to their assigned cluster IDs.
 
 **Rationale:** Topic phrases are the atomic units of meaning. Meeting-level aggregation happens post-clustering (Step 7), not during embedding.
+
+**Why topic phrases — connection to requirements:**
+
+`req.md` asks to *"build a pipeline that processes the transcripts and categorizes them by **topic or theme**."* The word "topic" is exact — every `summary.json` already contains `topics[]`, a list of pre-extracted atomic business concepts (e.g. `api rate limiting`, `churn signal`, `hipaa compliance`). These were generated during transcript summarization and represent the clearest expression of what each call was about.
+
+Four reasons phrase-level embedding is the right choice here:
+
+1. **Semantic precision.** Each phrase is a single concept. Embedding it independently lets the model capture `outage recovery ≈ outage remediation ≈ post-mortem` without hand-crafted rules — which would be required in a rule-based approach (Take A).
+
+2. **Cluster resolution.** Embedding at phrase level (not meeting level) gives far finer cluster granularity. A meeting about HIPAA and API rate limiting maps to two distinct clusters rather than a blended meeting-level vector that lands in neither.
+
+3. **Clean aggregation path.** The phrase→cluster→theme→meeting path is explicit and auditable: we know exactly which topics pulled a meeting into each theme. This matters for stakeholder trust — an insight like "meetings about API Rate Limiting co-occur 3× more often with churn signals than meetings about Product Roadmap" is traceable to specific phrases.
+
+4. **Repeatability as dataset grows.** New meetings add new topic phrases to `meeting_analytics.meeting_summaries.topics[]` via `load_raw_jsons_to_db.py`. Re-running the pipeline reads from Postgres (Step 1 queries `topics[]`), so the clustering automatically incorporates new data without any filesystem changes.
 
 ---
 
@@ -246,7 +269,7 @@ Each meeting has a hidden call type (support / external / internal). Two sub-app
 |----------|-----|------|------|
 | **Theme-majority vote** | Map meeting → cluster IDs → look up which clusters correlate with each call type | No extra LLM call | Needs cluster→call-type mapping (manual or auto) |
 | **Direct LLM classification** | Feed `summary` text to LLM, ask for call type | Highest accuracy | One LLM call per meeting (N=100 — still cheap) |
-| **Keyword rules (Take A fallback)** | Re-use `infer_call_type()` from Take A | Zero cost, already built | Lower accuracy |
+| **Keyword rules** | Match summary keywords to call-type vocabulary | Zero cost, no LLM needed | Lower accuracy |
 
 **Decision:** Direct LLM classification on the `summary` field. One structured prompt per meeting, 3-way classification (support / external / internal). This is a separate lightweight step from theme clustering and gives clean ground truth for the sentiment analysis dashboard.
 
@@ -284,7 +307,7 @@ CREATE TABLE meeting_analytics.semantic_meeting_themes (
 );
 ```
 
-**8 insight query methods** (all run automatically after persist, implemented in `take_c_pg_store.py`):
+**8 insight query methods** (all run automatically after persist, implemented in `load_output_csvs_to_db.py`):
 
 | Method | What it shows |
 |--------|--------------|
@@ -317,7 +340,7 @@ For the slide deck / dashboard:
 | Cluster labeling LLM | llama3.1:8b via Ollama | OpenAI GPT-4o | Local, free, already configured |
 | Labeling strategy | Single-shot + structured JSON | Few-shot, iterative | Only ~10 clusters; fast iteration preferred |
 | Call-type inference | Direct LLM on summary | Theme-majority vote | Cleaner signal; summary text is explicit about context |
-| Schema | Extend Take A Postgres tables | Standalone new tables | Reuse existing schema; avoid duplication |
+| Schema | Single `meeting_analytics` schema (all 9 tables) | Separate schema per take | Self-contained; insight queries join base + semantic tables without cross-schema joins; new meetings added via `load_raw_jsons_to_db.py`, clustering re-reads from DB |
 
 ---
 
@@ -350,12 +373,12 @@ class MeetingThemeAssignment(BaseModel):
 
 ## 6. Implementation Sketch
 
-Target file: `basics/iprep/meeting-analytics/take_c/take_c_semantic_clustering.py`
+Target file: `basics/iprep/meeting-analytics/final_version/semantic_clustering.py`
 
 ```
 Functions (async throughout):
 ─────────────────────────────────────────────────────────────
-load_summary_records()         → list[MeetingRecord]          # reuse Take A loader
+load_records_from_db()         → list[MeetingRecord]          # queries meeting_analytics.meeting_summaries
 extract_topic_phrases()        → list[TopicPhrase]            # flatten + dedup
 embed_phrases()                → list[TopicPhrase]            # Ollama batch embed
 reduce_dimensions()            → np.ndarray                   # UMAP 10-dim
@@ -389,8 +412,8 @@ rapidfuzz
 3. **Should themes be hierarchical?**
    → Not needed at this scale. The 26 clusters are already specific enough (e.g. HIPAA Compliance and Reporting vs Audit Readiness vs Compliance and Governance as distinct clusters). Hierarchy deferred — would add value only in a live product with growing data.
 
-4. **Reuse Take A's Postgres records?**
-   → Take C loads from raw JSON (same as Take B) for independence. The Postgres store (`take_c_pg_store.py`) writes to new tables in the existing `meeting_analytics` schema rather than duplicating the schema.
+4. **Reuse existing Postgres records?**
+   → Yes. Step 0 (`load_raw_jsons_to_db.py`) loads raw JSON into 6 base tables on first run. Step 1 then reads from `meeting_analytics.meeting_summaries.topics[]` — not from disk. Re-running the pipeline on a growing dataset only requires re-running `load_raw_jsons_to_db.py` to insert new meetings; the clustering reads all records from the DB automatically. Use `--skip-base-load` to skip Step 0 when the DB is already populated, or `--reset-db` to rebuild from scratch.
 
 5. **Visualization output?**
    → 2-dim UMAP is computed but scatter plot rendering is deferred to the Jupyter notebook deliverable (next step).
