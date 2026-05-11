@@ -42,8 +42,9 @@ Narration doc on a separate screen or device — glance at it freely while talki
 
 **Slide 1 — Title** `~20 sec`
 
-"Hi, I analysed 100 AegisCloud customer meetings to classify themes and surface actionable insights
+"Hi, this is an analysis of 100 customer meetings transcripts to classify themes and surface actionable insights
 for different teams — engineering, product, sales, and customer success."
+My name is Vikrant Potnis, I'm presenting this for the end client Rubrik brought to me by Aziro.
 
 ---
 
