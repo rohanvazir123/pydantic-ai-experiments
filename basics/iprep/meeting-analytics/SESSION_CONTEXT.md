@@ -182,8 +182,32 @@ jupyter nbconvert --to notebook --execute final_version/meeting_analytics.ipynb 
 
 ## Immediate next steps
 
-1. **Record video** — open Jupyter, run cells one at a time with Shift+Enter, narrate from `narration.md`
-2. **Submit** — video + notebook + PPTX
+1. **Add headers/footers/watermarks to all deliverables** — see task below
+2. **Record video** — open Jupyter, run cells one at a time with Shift+Enter, narrate from `narration.md`
+3. **Zip and submit to Aziro** — video + notebook + PPTX
+
+---
+
+## Pending task — Watermarks / Headers / Footers
+
+**Context:** Final zip goes to **Aziro** (recruiter, aziro.com), not directly to the end client **Rubrik**.
+
+**Deliverables to stamp:**
+- `meeting_analytics.pptx` — footer on every slide (python-pptx)
+- `meeting_analytics.ipynb` — header markdown cell at top
+- Chart PNGs in `outputs/charts/` — subtle corner watermark (matplotlib)
+- HTML export — header/footer via nbconvert or injected cell
+
+**Still need from user before implementing:**
+- Candidate name (exact spelling)
+- Contact email
+- Any specific text (e.g. "Prepared for Aziro · May 2026", "Confidential — Do not distribute")
+
+**How to implement (once info confirmed):**
+- PPTX: `python-pptx` — add text box to slide master or each slide layout
+- Notebook: prepend a raw/markdown cell with name + date + "Transcript Intelligence Assignment"
+- PNGs: `matplotlib` `fig.text()` at bottom or corner with low alpha
+- HTML: inject via a top markdown cell that renders in nbconvert output
 
 ---
 

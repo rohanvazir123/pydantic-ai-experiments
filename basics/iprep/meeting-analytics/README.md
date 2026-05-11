@@ -29,13 +29,13 @@ Three approaches were built (all complete):
 | Chart pipeline | **Done** | 10 PNGs in `final_version/outputs/charts/` |
 | Notebook | **Ready — needs a full run** | All cells coded; run top-to-bottom before recording |
 | Video demo | **TODO** | 5–10 min screen recording; narrate findings not code |
-| Slide deck | **TODO** | 9-slide structure in `INSIGHTS_GUIDE.md`; screenshots from notebook |
+| Slide deck | **Done** | `final_version/meeting_analytics.pptx` |
 
 ### Immediate next steps
 
 1. **Run the notebook top-to-bottom** — open `final_version/meeting_analytics.ipynb`, select the venv kernel, run all cells. Fix any errors before recording.
 2. **Record the video** — 5–10 min screen recording of the notebook. Narrate the "so what" for each chart, not the code.
-3. **Build the slides** — 9-slide structure is in `INSIGHTS_GUIDE.md`. Pull screenshots from the notebook run.
+3. ~~**Build the slides**~~ — Done. `final_version/meeting_analytics.pptx`
 
 ---
 
