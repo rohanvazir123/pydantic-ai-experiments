@@ -48,3 +48,7 @@ relevant_notebooks/
 notebooks_backup/
 anaconda_projects/
 /test_openapi.py
+# meeting-analytics generated outputs
+basics/iprep/meeting-analytics/final_version/meeting_analytics.html
+basics/iprep/meeting-analytics/final_version/meeting_analytics.pptx
+basics/iprep/meeting-analytics/final_version/outputs_notebook/
