@@ -223,7 +223,7 @@ chart_slide(s, 'Accounts Needing Immediate Follow-Up', 'Sales, CS', [
     '38 meetings with negative sentiment and explicit churn signals',
     'Ranked by severity — top rows are the most urgent accounts',
     'Action list, not a trend — these accounts need a call this week',
-], CHARTS / '04b_watchlist.png')
+], BASE / 'screenshot.png')
 
 # ── Slide 11: 6.3 Which Products Are Generating the Most Risk? ────────────
 s = prs.slides.add_slide(BLANK)
@@ -276,7 +276,7 @@ items = [
     ('2', 'Call the 38 high-risk accounts this week',
           'They have negative sentiment and explicit churn signals'),
     ('3', 'Lead with Comply v2 for at-risk Detect accounts',
-          'It is the strongest counter-narrative in the data'),
+          'Give them a reason to stay, not just an apology'),
 ]
 for i, (num, heading, sub) in enumerate(items):
     top = 1.4 + i * 1.7

@@ -211,7 +211,9 @@ The right panel adds the products array from meeting_summaries to show the produ
 **Slide 16 — Three Things to Act On** `~40 sec`
 
 "One: fix Detect reliability before the next QBR — it is the number one churn driver across the dataset.
-Two: call the 38 high-risk accounts this week — negative sentiment, explicit churn signals.
-Three: lead with Comply v2 for at-risk Detect accounts — it is the strongest counter-narrative in the data.
+
+Two: call the 38 high-risk accounts this week — these meetings have negative sentiment and explicit churn signals. The list is already ranked by urgency.
+
+Three: lead with Comply v2 for at-risk Detect accounts. Here is what this means in practice — when a customer is upset about the Detect outage, do not walk into that renewal call with only an apology and a recovery plan. Open the conversation with the Comply v2 story. Give them a forward-looking reason to stay before you address what went wrong. The data shows Comply has the highest customer satisfaction of any product. Customers asking about Comply are in growth mode. Pair the bad news with good news.
 
 Everything on these slides came directly from the transcripts — no manual tagging, no survey data."
