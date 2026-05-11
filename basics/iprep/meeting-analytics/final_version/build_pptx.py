@@ -4,6 +4,16 @@ from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pathlib import Path
+from PIL import Image
+import io
+
+def clean_img(path):
+    """Strip metadata and convert to clean RGB PNG in memory."""
+    img = Image.open(path).convert('RGB')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 BASE        = Path(__file__).parent
@@ -99,7 +109,7 @@ def chart_slide(slide, title, audience, bullets, img_path):
     # Chart image
     if img_path and Path(img_path).exists():
         slide.shapes.add_picture(
-            str(img_path), Inches(6.2), Inches(0.2), Inches(6.9), Inches(7.0)
+            clean_img(img_path), Inches(6.2), Inches(0.2), Inches(6.9), Inches(7.0)
         )
 
 def bullets_only_slide(slide, title, audience, bullets):
@@ -123,15 +133,22 @@ def bullets_only_slide(slide, title, audience, bullets):
         txbox(slide, f'• {b}', 0.5, 1.55 + i * 0.8, 12.3, 0.7, size=17, color=MID)
 
 # ── Slide 1: Title ─────────────────────────────────────────────────────────
+NAVY = RGBColor(0x1B, 0x2A, 0x4A)
+LIGHT_GRAY = RGBColor(0xF2, 0xF2, 0xF2)
 s = prs.slides.add_slide(BLANK)
-bg(s, RGBColor(0x22, 0x22, 0x22))
-txbox(s, 'Transcript Intelligence', 0.8, 1.8, 11.7, 1.1,
-      size=44, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
-txbox(s, 'AegisCloud Meeting Analytics', 0.8, 2.9, 11.7, 0.7,
-      size=24, color=RGBColor(0xCC, 0xCC, 0xCC), align=PP_ALIGN.CENTER)
+bg(s, LIGHT_GRAY)
+# Red accent bar
+bar = s.shapes.add_shape(1, Inches(0.8), Inches(2.65), Inches(11.7), Inches(0.07))
+bar.fill.solid()
+bar.fill.fore_color.rgb = ACCENT
+bar.line.fill.background()
+txbox(s, 'Transcript Intelligence', 0.8, 1.3, 11.7, 1.1,
+      size=46, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
+txbox(s, 'AegisCloud Meeting Analytics', 0.8, 2.8, 11.7, 0.7,
+      size=24, bold=True, color=NAVY, align=PP_ALIGN.CENTER)
 txbox(s, 'Theme classification and actionable insights from 100 customer meetings',
-      0.8, 3.65, 11.7, 0.55, size=16,
-      color=RGBColor(0xAA, 0xAA, 0xAA), align=PP_ALIGN.CENTER)
+      0.8, 3.6, 11.7, 0.55, size=16,
+      color=RGBColor(0x66, 0x66, 0x66), align=PP_ALIGN.CENTER)
 
 # ── Slide 2: Approach 1 — Rule-Based ───────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
@@ -162,7 +179,7 @@ s = prs.slides.add_slide(BLANK)
 bg(s)
 txbox(s, 'Database Schema', 0.5, 0.25, 12.3, 0.7, size=28, bold=True, color=DARK)
 if SCHEMA_IMG.exists():
-    s.shapes.add_picture(str(SCHEMA_IMG), Inches(0.4), Inches(1.0), Inches(7.5), Inches(5.8))
+    s.shapes.add_picture(clean_img(SCHEMA_IMG), Inches(0.4), Inches(1.0), Inches(7.5), Inches(5.8))
 txbox(s, '• 6 base tables loaded from raw JSON — meetings, summaries, key moments, action items, participants, transcripts',
       8.1, 1.5, 4.9, 1.2, size=13, color=MID)
 txbox(s, '• 3 semantic tables loaded from clustering — all insight queries join both layers in one schema with no cross-database joins',
@@ -202,11 +219,11 @@ chart_slide(s, 'Churn Signals by Product', 'Sales, CS', [
 
 # ── Slide 10: 6.2 Accounts Needing Immediate Follow-Up ────────────────────
 s = prs.slides.add_slide(BLANK)
-bullets_only_slide(s, 'Accounts Needing Immediate Follow-Up', 'Sales, CS', [
-    '38 meetings identified with both negative sentiment and explicit churn signals',
-    'Ranked by severity — the top rows are the most urgent accounts',
-    'This is an action list, not a trend — these accounts need a call this week',
-])
+chart_slide(s, 'Accounts Needing Immediate Follow-Up', 'Sales, CS', [
+    '38 meetings with negative sentiment and explicit churn signals',
+    'Ranked by severity — top rows are the most urgent accounts',
+    'Action list, not a trend — these accounts need a call this week',
+], CHARTS / '04b_watchlist.png')
 
 # ── Slide 11: 6.3 Which Products Are Generating the Most Risk? ────────────
 s = prs.slides.add_slide(BLANK)
@@ -250,7 +267,7 @@ chart_slide(s, 'Who Owns the Follow-Up Work?', 'Operations, Engineering, CS, Sal
 
 # ── Slide 16: Three Things to Act On ──────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
-bg(s, RGBColor(0x22, 0x22, 0x22))
+bg(s, NAVY)
 txbox(s, 'Three Things to Act On', 0.5, 0.3, 12.3, 0.8,
       size=30, bold=True, color=WHITE)
 items = [
