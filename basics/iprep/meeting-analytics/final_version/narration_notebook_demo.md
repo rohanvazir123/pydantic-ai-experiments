@@ -20,6 +20,58 @@ Target length: **7–10 minutes**. Follow the notebook top to bottom, Shift+Ente
 - OBS Audio Mixer: levels **-12 to -6 dB**. Never red. Mute Desktop Audio.
 - Do a 10-second test recording before starting for real
 
+### Step 1 — Add the Yeti as an audio source
+
+1. In the **Audio Mixer** panel (bottom of OBS), click the gear icon next to **Mic/Aux** → **Properties**
+2. Set **Device** to **Blue Yeti** (or "Yeti Stereo Microphone")
+3. Click OK
+
+> If you don't see Mic/Aux: go to **Settings → Audio** → set **Mic/Auxiliary Audio** to Blue Yeti there instead.
+
+### Step 2 — Set correct levels while speaking
+
+1. In the **Audio Mixer**, watch the green bar next to your Yeti channel
+2. Speak at your normal presentation voice, 6–8 inches from the front face, Yeti dial set to Cardioid
+3. While speaking, the bar should peak in the **-12 to -6 dB** range (yellow-ish, never red)
+
+**To adjust:** turn the **gain knob** on the bottom of the Yeti itself — that's your primary volume control. The OBS volume fader is a secondary trim.
+
+- Bar peaks in red → turn Yeti gain knob **down**
+- Bar barely moves → turn Yeti gain knob **up**
+
+### Step 3 — Mute Desktop Audio
+
+In the Audio Mixer, find **Desktop Audio** → click the **speaker icon** to mute it.
+
+### Step 4 — Test recording (do this before the real take)
+
+1. **Start Recording** → speak 10 seconds → **Stop Recording**
+2. Play it back — listen for:
+   - Clipping/distortion → lower gain
+   - Too quiet → raise gain
+   - Background hum → check Yeti is in Cardioid, not Omnidirectional
+
+### Step 5 — OBS Output settings (one-time)
+
+**Settings → Output → Recording:**
+- Format: `mp4` or `mkv`
+- Encoder: `x264` or hardware (NVENC/AMF if available)
+- Quality: CRF 18–23
+
+**Settings → Audio:**
+- Sample rate: `48 kHz`
+- Channels: `Stereo`
+
+### Pre-record checklist
+
+- [ ] Yeti dial = Cardioid (circle)
+- [ ] Meter peaks -12 to -6 dB during test speech
+- [ ] Desktop Audio muted
+- [ ] Jupyter full-screened in browser
+- [ ] OBS source = Window Capture → browser window
+- [ ] This narration file open on second monitor or phone
+- [ ] Test recording played back and sounding clean
+
 ---
 
 ## Walkthrough
@@ -63,6 +115,24 @@ action items, participants, transcripts.
 Three semantic tables generated after the clustering runs — the 26 clusters, the 343 topic phrases,
 and the meeting-to-theme assignments.
 Two separate layers means you can reload raw data without touching clustering, and vice versa."
+
+**On why the schema is structured this way:**
+"The key design question was granularity in the meeting-to-theme table.
+The naive approach is one row per cluster, with an array of meeting IDs attached to it.
+That breaks the moment you need to group by sentiment or call type — you'd need to unnest the array
+and join back to meetings on every aggregation.
+
+Instead, the schema uses one row per meeting-theme pair — a junction table.
+Sentiment and call type are denormalized into that row.
+The reason: is_primary is a junction attribute. A meeting has many themes; a cluster touches
+many meetings. Neither side can own it. By putting sentiment and call type on the same row,
+every heatmap and cross-tab query becomes a simple GROUP BY — no second join required.
+
+The phrase table is also separate from the cluster table.
+One row per canonical topic phrase, with a cluster_id foreign key.
+That gives you the full phrase → cluster → meeting → insight chain — fully auditable.
+If a stakeholder asks why a meeting landed in the 'API Rate Limiting' theme,
+you can trace it back to the exact phrases from that meeting's summary."
 
 ---
 
@@ -223,7 +293,11 @@ The pie chart counts churn signal key moments within the Detect-tagged group."
 
 *Run the cell.*
 
-"The same feature request carries completely different urgency depending on the account situation.
+"Each product is on the x-axis. The y-axis is the raw count of feature gap moments —
+how many times customers in those meetings explicitly called out a missing capability.
+Three bars per product: Blocked in red, Neutral in grey, Growing in green.
+
+The same feature request carries completely different urgency depending on the account situation.
 Blocked in red — at-risk customer, treat as P0, act immediately.
 Growing in green — healthy account asking for more, add it to the roadmap.
 
@@ -237,13 +311,17 @@ Same feature, completely different priority."
 
 *Run the cell.*
 
-"Left panel shows which themes generate the most follow-up actions.
-Engineering carries the heaviest Detect load — if reliability slips, Comply v2 delivery slips with it.
-This identifies where bottlenecks sit before they become a problem.
+"Two horizontal bar charts. On both, the y-axis is a category label and the x-axis is a count of action items.
 
-This uses a view that joins action items to meeting themes on the primary theme,
-then to the clusters table for the label. The right panel adds the products column
-to show ownership broken down by product."
+Left panel: y-axis is theme names — the 26 discovered clusters. Each bar is the total number
+of action items generated across all meetings in that theme.
+Engineering carries the heaviest Detect load — if reliability slips, Comply v2 delivery slips with it.
+
+Right panel: y-axis is department names, extracted from the owner field in each action item —
+Engineering, Sales, CS, and so on. Bars are stacked by product, so you can see
+which product is driving the workload for each department.
+
+This identifies where bottlenecks sit before they become a problem."
 
 ---
 
