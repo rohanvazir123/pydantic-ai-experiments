@@ -32,27 +32,29 @@ Keep it brief. One sentence per bullet, then move on.
 
 **Slide 1 — Title** `~20 sec`
 
-"
-Hi, my name is XYZ <spell it out> this work is to analyze meeting transcripts 
-classify themes and surface actionable insights for different teams."
+"Hi, I analysed 100 AegisCloud customer meetings to classify themes and surface actionable insights
+for different teams — engineering, product, sales, and customer success."
 
 ---
 
 **Slide 2 — Approach 1: Rule-Based Keyword Matching** `~30 sec`
-I evaluated 3 approaches.
 
-"First approach — hand-crafted rules. Every theme has to be created manually.
-No LLM involved.
+"First approach — hand-crafted rules. Every theme is defined manually using keywords and regex matching.
 
+Simple to understand and fully deterministic — same input always gives the same output, no models required.
 
-TODO: List  the pros and the cons clearly in simple words
+But it is not scalable. Every new theme, product, or shift in customer language needs a manual update.
+And it breaks silently — a misclassified meeting produces no error, just wrong output.
+The same concept expressed differently — 'pipeline failure' versus 'ingestion outage' — gets treated as completely different."
+
 ---
 
 **Slide 3 — Approach 2: TF-IDF + KMeans** `~30 sec`
 
-"Second approach — use K-means clustering but you still have to guess the number of clusters upfront.
-Bag-of-words misses meaning — 'outage remediation' and 'post-mortem' look unrelated.
-Theme names come out as mechanical word lists."
+"Second approach — use KMeans clustering on TF-IDF vectors. More systematic, but you still have to guess
+the number of clusters upfront. The wrong K forces unrelated topics together.
+Bag-of-words misses meaning — 'outage remediation' and 'post-mortem' look completely unrelated.
+And theme names come out as mechanical word lists like 'renewal / competitive / pricing / outage'."
 
 ---
 
@@ -60,18 +62,28 @@ Theme names come out as mechanical word lists."
 
 "Final approach — embed each topic phrase as a vector, let HDBSCAN find the clusters from the data.
 26 themes emerged naturally. No K required, density-adaptive.
-The LLM names the clusters — it does not form them. The heavy lifting is done by HDBSCAN."
+The LLM names the clusters — it does not form them. The heavy lifting is done by HDBSCAN.
+This is why a small local model produces clean, readable labels."
 
 ---
 
-**Slide 5 — Database Schema** `~30 sec`
+**Slide 5 — Database Schema** `~40 sec`
 
-"Two-layer design. Six base tables loaded from raw JSON.
-Three semantic tables loaded from clustering.
-All insight queries join both layers in one schema — no cross-database joins."
+"Two-layer design, nine tables total.
 
-TODO: explain the schema, what are the basic tables, what tables are generated after HDBSCAN + LLM
-Why did we choose the schema (see faq and design md files under basics\iprep\meeting-analytics\final_version )
+The six base tables are loaded directly from the raw meeting JSON — meetings, participants, summaries,
+key moments, action items, and transcript lines. These capture everything in the transcripts:
+sentiment scores, signal moments like churn or praise, and the topic phrases extracted during summarisation.
+
+The three semantic tables are generated after HDBSCAN and the LLM run:
+semantic_clusters holds the 26 discovered themes with their LLM-generated title and audience.
+semantic_phrases maps each of the 343 topic phrases to its cluster.
+semantic_meeting_themes maps each meeting to its themes, with call type and sentiment.
+
+The reason for two separate layers: base tables can be reloaded from raw JSON at any time
+without touching the clustering. Semantic tables can be rebuilt from the clustering outputs without
+re-running the full pipeline. And all insight queries join both layers in a single schema —
+no cross-database joins needed."
 
 ---
 
@@ -79,10 +91,11 @@ Why did we choose the schema (see faq and design md files under basics\iprep\mee
 
 "100 meetings — roughly half support, a quarter renewals, a quarter internal.
 Detect and Comply appear in the most meetings across the dataset.
-This sets the scale before any analysis begins."
+This sets the scale before any analysis begins.
 
-
-TODO: explain which tables these insights are generated from and why it is important
+This comes from two tables: semantic_meeting_themes for the call type split,
+and meeting_summaries for the product mentions — the products array is extracted
+at load time by scanning each summary for known product names."
 
 ---
 
@@ -90,7 +103,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "Each dot is a topic phrase from meeting summaries, coloured by cluster.
 26 themes emerged naturally — no K was specified.
-Detect phrases cluster tightly together. Comply sits as a separate island."
+Detect phrases cluster tightly together. Comply sits as a separate island.
+
+The coordinates come from a pre-computed UMAP run — a separate 2D reduction done for
+visualisation only. The actual clustering ran on a 10-dimensional UMAP to avoid the
+curse of dimensionality."
 
 ---
 
@@ -98,9 +115,11 @@ Detect phrases cluster tightly together. Comply sits as a separate island."
 
 "Sorted most negative at the top, most positive at the bottom.
 Detect-related themes dominate the red zone. Comply dominates the green zone.
-One product is in crisis — the other is the strongest asset in the portfolio."
+One product is in crisis — the other is the strongest asset in the portfolio.
 
-TODO: explain which tables these insights are generated from and why it is important
+This joins semantic_meeting_themes with semantic_clusters to get the overall_sentiment
+for each meeting's primary theme. It is the single most important chart in the deck —
+it shows the full picture in one view."
 
 ---
 
@@ -108,9 +127,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "Churn signals are moments where customers explicitly expressed risk of leaving.
 Detect generates far more than any other product.
-Direct input for account prioritisation and recovery planning."
+Direct input for account prioritisation and recovery planning.
 
-TODO: explain which tables these insights are generated from and why it is important
+This joins the meeting_summaries products array with key_moments filtered to
+moment_type equals churn_signal. The products array was extracted at load time —
+so we know which product each meeting is about."
 
 ---
 
@@ -118,21 +139,22 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "38 meetings with negative sentiment and explicit churn signals.
 Ranked by severity — top rows are the most urgent accounts.
-This is an action list, not a trend. These accounts need a call this week."
+This is an action list, not a trend. These accounts need a call this week.
 
-
-TODO: explain which tables these insights are generated from and why it is important
+This joins meetings, semantic_meeting_themes, semantic_clusters, and key_moments.
+The filter is: primary theme with negative sentiment AND at least one churn_signal key moment.
+The churn signal count is what ranks the list."
 
 ---
 
 **Slide 11 — Which Products Are Generating the Most Risk?** `~30 sec`
 
 "Three signals per product: total meetings, technical issues, and churn signals.
-Detect leads on both technical issues and churn — the outage created a long tail.
-This shows which product needs reliability investment first."
+Detect leads on both technical issues and churn — the March outage created a long tail.
+This shows which product needs reliability investment first.
 
-
-TODO: explain which tables these insights are generated from and why it is important
+The source is meeting_summaries for product attribution and key_moments for the two signal types —
+technical_issue and churn_signal — each counted separately per product."
 
 ---
 
@@ -140,9 +162,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "Comply has the highest praise density of any product.
 Comply renewal conversations are the most positive in the dataset.
-Comply v2 is the good news story to pair with the Detect recovery message."
+Comply v2 is the good news story to pair with the Detect recovery message.
 
-TODO: explain which tables these insights are generated from and why it is important
+Left chart: key_moments filtered to moment_type equals praise, grouped by product.
+Right chart: semantic_meeting_themes filtered to Comply in the products array,
+external call type only — these are the renewal and account conversations."
 
 ---
 
@@ -150,9 +174,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "Renewal meetings mentioning Detect are significantly more negative than those that do not.
 Over half of Detect renewal meetings carry an explicit churn signal.
-Outage conversations are bleeding into commercial calls that should be about growth."
+Outage conversations are bleeding into commercial calls that should be about growth.
 
-TODO: explain which tables these insights are generated from and why it is important
+This filters semantic_meeting_themes to external call type only, then splits by whether Detect
+appears in the products array. The pie chart queries key_moments for churn_signal
+in that Detect-tagged external cohort."
 
 ---
 
@@ -160,9 +186,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "The same feature request carries completely different urgency depending on the account situation.
 Blocked in red — at-risk customer, treat as P0, act immediately.
-Growing in green — healthy account asking for more, add it to the roadmap."
+Growing in green — healthy account asking for more, add it to the roadmap.
 
-TODO: explain which tables these insights are generated from and why it is important
+This joins the meeting_summaries products array with key_moments filtered to feature_gap,
+then groups by the overall_sentiment of that meeting. The sentiment of the meeting — not the request —
+is what determines urgency. Same feature, completely different priority."
 
 ---
 
@@ -170,9 +198,11 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "Left panel shows which themes generate the most follow-up actions across all meetings.
 Engineering carries the heaviest Detect load — reliability slips delay Comply v2.
-This identifies where capacity bottlenecks sit before they become a problem."
+This identifies where capacity bottlenecks sit before they become a problem.
 
-TODO: explain which tables these insights are generated from and why it is important
+This uses the action_items_by_theme view, which joins action_items to semantic_meeting_themes
+on is_primary equals true, then to semantic_clusters for the theme label.
+The right panel adds the products array from meeting_summaries to show the product breakdown per department."
 
 ---
 
@@ -180,7 +210,6 @@ TODO: explain which tables these insights are generated from and why it is impor
 
 "One: fix Detect reliability before the next QBR — it is the number one churn driver across the dataset.
 Two: call the 38 high-risk accounts this week — negative sentiment, explicit churn signals.
-Three: lead with Comply v2 for at-risk Detect accounts — it is the strongest counter-narrative in the data."
+Three: lead with Comply v2 for at-risk Detect accounts — it is the strongest counter-narrative in the data.
 
-TODO: explain which tables these insights are generated from and why it is important
-
+Everything on these slides came directly from the transcripts — no manual tagging, no survey data."
