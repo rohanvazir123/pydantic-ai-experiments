@@ -51,10 +51,12 @@ The same concept expressed differently — 'pipeline failure' versus 'ingestion 
 
 **Slide 3 — Approach 2: TF-IDF + KMeans** `~30 sec`
 
-"Second approach — use KMeans clustering on TF-IDF vectors. More systematic, but you still have to guess
-the number of clusters upfront. The wrong K forces unrelated topics together.
-Bag-of-words misses meaning — 'outage remediation' and 'post-mortem' look completely unrelated.
-And theme names come out as mechanical word lists like 'renewal / competitive / pricing / outage'."
+"Second approach — represent each meeting as a bag of words and cluster with KMeans. More systematic than rules.
+
+Three problems.
+First: you have to decide upfront how many themes there are — say 8. But what if there are actually 26?
+Second: it treats words literally. 'Outage remediation' and 'post-mortem' mean the same thing to a human — the algorithm sees no connection because they share no words.
+Third: theme names are just the top words from each cluster — you get labels like 'renewal / competitive / pricing / outage' which tell you nothing useful."
 
 ---
 
