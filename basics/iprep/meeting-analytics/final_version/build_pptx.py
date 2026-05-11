@@ -18,7 +18,7 @@ def clean_img(path):
 # ── Paths ──────────────────────────────────────────────────────────────────
 BASE        = Path(__file__).parent
 CHARTS      = BASE / 'outputs_notebook'
-SCHEMA_IMG  = Path.home() / 'Documents' / 'meeting_analytics.png'
+SCHEMA_IMG  = BASE / 'data_model.png'
 OUT         = BASE / 'meeting_analytics.pptx'
 
 # ── Colours ────────────────────────────────────────────────────────────────
@@ -294,6 +294,17 @@ for i, (num, heading, sub) in enumerate(items):
     cr.font.color.rgb = WHITE
     txbox(s, heading, 1.25, top - 0.04, 11.5, 0.45, size=18, bold=True, color=WHITE)
     txbox(s, sub,     1.25, top + 0.42, 11.5, 0.38, size=14, color=RGBColor(0xCC, 0xCC, 0xCC))
+
+FOOTER = 'Vikrant Potnis  |  vikrant.potnis@gmail.com  |  Prepared for Aziro (client Rubrik)  |  May 11, 2026'
+for slide in prs.slides:
+    tb = slide.shapes.add_textbox(Inches(0.3), Inches(7.18), Inches(12.7), Inches(0.25))
+    tf = tb.text_frame
+    p  = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    run = p.add_run()
+    run.text = FOOTER
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
 
 prs.save(OUT)
 print(f'Saved: {OUT}')
