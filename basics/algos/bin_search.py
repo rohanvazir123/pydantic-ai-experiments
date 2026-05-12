@@ -12,9 +12,8 @@ def bin_search(A: list[int], num :int) -> int:
             right = mid-1
         else:
             left = mid+1
-            
     return result
-            
+
 # Binary search with repeated elements in the Aay
 # Return index of the first element found, otherwise return -1
 def bin_search_first_hit(A: list[int], num :int) -> int:
@@ -28,7 +27,6 @@ def bin_search_first_hit(A: list[int], num :int) -> int:
             right = mid-1
         else:
             left = mid+1
-            
     return result
 
 # Binary search with repeated elements in the Aay
@@ -45,7 +43,6 @@ def bin_search_greater(A: list[int], num :int) -> int:
             right = mid-1
         else:
             left = mid+1
-    
     result += 1
     if result >= len(A): return -1
     # TODO get rid of this redundant check
@@ -56,7 +53,7 @@ def bin_search_greater(A: list[int], num :int) -> int:
 def bin_search_rotated(A: list[int], num :int) -> int:
     left, right, result = 0, len(A) - 1, -1
     while (left <= right):
-        mid = left + (right-left) // 2 # note this can overflow, it should be left + (right-left) // 2
+        mid = left + (right-left) // 2
         # print(A[left], A[mid], A[right])
         if A[mid] == num:
             result = mid
@@ -79,63 +76,64 @@ def bin_search_rotated(A: list[int], num :int) -> int:
 # 17	-4	0	3	27	118	225	250	704	760 
 
 def test_bin_search():
-  print("test_bin_search")
-  A = [1, 2, 5, 8, 10, 24, 44, 55]
+    print("test_bin_search")
+    A = [1, 2, 5, 8, 10, 24, 44, 55]
 
-  index = bin_search_first_hit(A, 44)
-  print(f"44, {index}, {A[index] if index !=-1 else None}")
-  
+    index = bin_search_first_hit(A, 44)
+    print(f"44, {index}, {A[index] if index !=-1 else None}")
+
 def test_bin_search_first_hit():
-  print("test_bin_search_first_hit")
-  A = [1, 2, 5, 8, 10, 24, 34, 34, 44, 44, 55]
-  
-  index = bin_search_first_hit(A, 44)
-  print(f"44, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_first_hit(A, 34)
-  print(f"34, {index},  {A[index] if index !=-1 else None}")
-  
-  
+    print("test_bin_search_first_hit")
+
+    A = [1, 2, 5, 8, 10, 24, 34, 34, 44, 44, 55]
+
+    index = bin_search_first_hit(A, 44)
+    print(f"44, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_first_hit(A, 34)
+    print(f"34, {index},  {A[index] if index !=-1 else None}")
+
+
 def test_bin_search_greater():
-  print("test_bin_search_greater")
-  A = [1, 2, 5, 8, 10, 24, 34, 34, 44, 44, 55]
-  
-  index = bin_search_greater(A, 8)
-  print(f"8, {index}, {A[index] if index !=-1 else None}")
-  
-  index = bin_search_greater(A, 34)
-  print(f"34, {index}, {A[index] if index !=-1 else None}")
-  
-  index = bin_search_greater(A, 55)
-  print(f"55, {index},  {A[index] if index !=-1 else None}")
-  
+    print("test_bin_search_greater")
+    A = [1, 2, 5, 8, 10, 24, 34, 34, 44, 44, 55]
+
+    index = bin_search_greater(A, 8)
+    print(f"8, {index}, {A[index] if index !=-1 else None}")
+
+    index = bin_search_greater(A, 34)
+    print(f"34, {index}, {A[index] if index !=-1 else None}")
+
+    index = bin_search_greater(A, 55)
+    print(f"55, {index},  {A[index] if index !=-1 else None}")
+
 def test_bin_search_rotated():
-  print("test_bin_search_rotated")
-  A = [15, 24, 34, 44, 49, 56, 1, 2, 3, 4]
-  
-  index = bin_search_rotated(A, 15)
-  print(f"15, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 44)
-  print(f"44, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 34)
-  print(f"34, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 3)
-  print(f"3, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 24)
-  print(f"24, {index},  {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 43)
-  print(f"43, {index}, {A[index] if index !=-1 else None}")
-  
-  index = bin_search_rotated(A, 1)
-  print(f"1, {index},  {A[index] if index !=-1 else None}")
-  
-if __name__ == '__main__':
-  test_bin_search()
-  test_bin_search_first_hit()
-  test_bin_search_greater() # first greater
-  test_bin_search_rotated()
+    print("test_bin_search_rotated")
+    A = [15, 24, 34, 44, 49, 56, 1, 2, 3, 4]
+
+    index = bin_search_rotated(A, 15)
+    print(f"15, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 44)
+    print(f"44, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 34)
+    print(f"34, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 3)
+    print(f"3, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 24)
+    print(f"24, {index},  {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 43)
+    print(f"43, {index}, {A[index] if index !=-1 else None}")
+
+    index = bin_search_rotated(A, 1)
+    print(f"1, {index},  {A[index] if index !=-1 else None}")
+
+    if __name__ == '__main__':
+        test_bin_search()
+        test_bin_search_first_hit()
+        test_bin_search_greater() # first greater
+        test_bin_search_rotated()

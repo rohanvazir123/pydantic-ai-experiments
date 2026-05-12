@@ -1,5 +1,5 @@
 class DoubleListNode:
-  def __init__(self, key:int=None):
+  def __init__(self, key: int | None = None):
     self.key, self.next, self.prev = key, None, None
     
 class DoubleLinkedList:

@@ -1,5 +1,5 @@
 # Session Context — Meeting Analytics
-Last updated: 2026-05-10 (session 14)
+Last updated: 2026-05-12 (session 15)
 
 ## How to reload this session
 Tell Claude: "Read basics/iprep/meeting-analytics/SESSION_CONTEXT.md and pick up where we left off."
@@ -176,38 +176,25 @@ jupyter nbconvert --to notebook --execute final_version/meeting_analytics.ipynb 
 | PPTX slide deck | **DONE** | `final_version/meeting_analytics.pptx` (local only, gitignored) |
 | HTML export | **DONE** | `final_version/meeting_analytics.html` (local only, gitignored) |
 | Narration guide | **DONE** | `final_version/narration.md` |
-| Video demo | **TODO** | Record screen walkthrough of notebook using narration.md |
+| Watermarks/stamps | **DONE** | Applied to PPTX, notebook, PNGs, HTML |
+| Video demo | **DONE** | Submitted to Aziro |
+| Submission | **DONE** | Zipped and submitted to Aziro — 2026-05-12 |
 
 ---
 
 ## Immediate next steps
 
-1. **Add headers/footers/watermarks to all deliverables** — see task below
-2. **Record video** — open Jupyter, run cells one at a time with Shift+Enter, narrate from `narration.md`
-3. **Zip and submit to Aziro** — video + notebook + PPTX
+**All deliverables submitted to Aziro. Project complete.**
 
 ---
 
-## Pending task — Watermarks / Headers / Footers
+## Watermarks / Headers / Footers — DONE
 
-**Context:** Final zip goes to **Aziro** (recruiter, aziro.com), not directly to the end client **Rubrik**.
-
-**Deliverables to stamp:**
-- `meeting_analytics.pptx` — footer on every slide (python-pptx)
+Stamps applied to all four deliverables:
+- `meeting_analytics.pptx` — footer on every slide
 - `meeting_analytics.ipynb` — header markdown cell at top
-- Chart PNGs in `outputs/charts/` — subtle corner watermark (matplotlib)
-- HTML export — header/footer via nbconvert or injected cell
-
-**Still need from user before implementing:**
-- Candidate name (exact spelling)
-- Contact email
-- Any specific text (e.g. "Prepared for Aziro · May 2026", "Confidential — Do not distribute")
-
-**How to implement (once info confirmed):**
-- PPTX: `python-pptx` — add text box to slide master or each slide layout
-- Notebook: prepend a raw/markdown cell with name + date + "Transcript Intelligence Assignment"
-- PNGs: `matplotlib` `fig.text()` at bottom or corner with low alpha
-- HTML: inject via a top markdown cell that renders in nbconvert output
+- Chart PNGs in `outputs/charts/` — subtle corner watermark
+- HTML export — header injected via top markdown cell
 
 ---
 

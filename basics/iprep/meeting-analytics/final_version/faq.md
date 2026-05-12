@@ -15,6 +15,7 @@
 - [Why can't we label clusters by concatenating top centroid terms?](#why-cant-we-label-clusters-by-concatenating-top-centroid-terms)
 - [Why does semantic_meeting_themes store one row per meeting × cluster instead of a list of meeting_ids per cluster?](#why-does-semantic_meeting_themes-store-one-row-per-meeting--cluster-instead-of-a-list-of-meeting_ids-per-cluster)
 - [What are feature gap moments labelled "growing/positive"?](#what-are-feature-gap-moments-labelled-growingpositive)
+- [Why aren't phrase embeddings saved to disk for reuse?](#why-arent-phrase-embeddings-saved-to-disk-for-reuse)
 
 ---
 
@@ -639,3 +640,59 @@ WHERE km.moment_type = 'feature_gap'
 WHERE km.moment_type = 'feature_gap'
   AND ms.overall_sentiment IN ('positive', 'very-positive', 'mixed-positive')
 ```
+
+---
+
+## Why aren't phrase embeddings saved to disk for reuse?
+
+**Short answer:** once HDBSCAN finishes, the embeddings have served their purpose for this pipeline — all downstream work (labeling, insight queries, charts) uses `cluster_id` joins, not vectors. We didn't save them. We should have.
+
+**What happens today:**
+
+The full pipeline (`semantic_clustering.py`) correctly writes embeddings to `semantic_phrases.embedding` in Postgres. But the intermediate output files — `phrase_clusters.csv`, `semantic_clusters.json`, `meeting_themes.csv` — contain no embedding data. When you reload from those files via `--from-outputs` or `load_output_csvs_to_db.py --reset`, `semantic_phrases.embedding` ends up NULL for all 343 rows.
+
+The analytical queries don't care — they join on `cluster_id`. But `SemanticClusterStore.semantic_search_phrases()` and `hybrid_search_phrases()` are dead until the full pipeline is re-run.
+
+**What we should add if this becomes a live search feature:**
+
+Save embeddings to a numpy binary file during the pipeline run, alongside the CSVs:
+
+```python
+# In write_outputs() — add after phrase_clusters.csv
+import numpy as np
+emb_matrix = np.array([p.embedding for p in phrases])  # shape (343, 768)
+np.save(output_dir / "phrase_embeddings.npy", emb_matrix)
+
+# Also save an index so load_from_outputs knows which row = which phrase
+phrase_index = [p.canonical for p in phrases]
+(output_dir / "phrase_index.json").write_text(json.dumps(phrase_index), encoding="utf-8")
+```
+
+Then in `load_from_outputs()`:
+
+```python
+emb_path = output_dir / "phrase_embeddings.npy"
+index_path = output_dir / "phrase_index.json"
+if emb_path.exists() and index_path.exists():
+    emb_matrix = np.load(emb_path)
+    phrase_index = json.loads(index_path.read_text())
+    emb_by_canonical = {canonical: emb_matrix[i].tolist() for i, canonical in enumerate(phrase_index)}
+else:
+    emb_by_canonical = {}
+
+# then when building phrases list:
+"embedding": emb_by_canonical.get(row["canonical"].strip()),  # None if not found
+```
+
+**Why it wasn't done:**
+
+The pipeline was built around a specific deliverable (analytics for a take-home assignment). Hybrid search was included as a technical showcase, not because any chart or insight required it. The fast-reload path (`--from-outputs`) was designed for DB resets without re-running Ollama — losing embeddings was an acceptable trade-off at the time.
+
+**Files to add if you implement this:**
+
+| File | Size (approx) | Contents |
+|------|--------------|----------|
+| `outputs/phrase_embeddings.npy` | ~1 MB | 343 × 768 float32 matrix |
+| `outputs/phrase_index.json` | ~10 KB | Ordered list of canonical phrase strings (row → phrase mapping) |
+
+Add both to `.gitignore` if you don't want to track large binary files in git.
