@@ -60,7 +60,7 @@ class HybridKGRetriever:
     retriever:
         Existing Retriever instance — handles vector + BM25 + RRF.
     kg_store:
-        AgeGraphStore or PgGraphStore — provides search_entities,
+        AgeGraphStore — provides search_entities,
         get_related_entities, search_as_context.
     classifier:
         IntentClassifier override (default: IntentClassifier()).

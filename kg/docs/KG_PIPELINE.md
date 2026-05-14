@@ -9,12 +9,16 @@ Apache AGE and Ollama (`llama3.1:8b`).
 
 ```
 CUAD contracts
-    │
+    │  (already ingested by Docling into the chunks table)
     ▼
 ┌─────────────────────────────────────────────────┐
 │  PREPROCESSING                                  │
-│  Split text into small chunks (~1 500 chars,    │
-│  roughly 1-3 clauses per chunk)                 │
+│  Read semantic chunks from the chunks table     │
+│  (Docling HybridChunker — respects sentence     │
+│  and paragraph boundaries).                     │
+│  Fallback: character-stride split at            │
+│  KG_EXTRACTION_CHUNK_SIZE (1 500 chars) if a    │
+│  document has no pre-computed chunks.           │
 └──────────────────────┬──────────────────────────┘
                        │  chunk_text × N
                        ▼
@@ -38,7 +42,10 @@ CUAD contracts
 │  Immutable.  One row per (contract, chunk).     │
 │  Stores validated relationships only (post      │
 │  pass 5).  Replayable: Silver/Gold can be       │
-│  rebuilt at any time without re-running LLM.    │
+│  rebuilt at any time without re-running LLM.   │
+│                                                 │
+│  Also written to disk:                          │
+│  entity_relationships/jsons/<title>_<id>.json  │
 └──────────────────────┬──────────────────────────┘
                        │
                        ▼
@@ -358,14 +365,14 @@ Benefits: cleaner Cypher traversals, label-specific indexes, idiomatic graph mod
 
 ```bash
 # Full pipeline for one contract (Bronze + Silver + Gold)
-python -m rag.knowledge_graph.extraction_pipeline --contract-id <uuid>
+python -m kg.extraction_pipeline --contract-id <uuid>
 
 # Full pipeline for all contracts
-python -m rag.knowledge_graph.extraction_pipeline --all [--limit N]
+python -m kg.extraction_pipeline --all [--limit N]
 
 # Silver + Gold only (replay from Bronze, no LLM calls)
-python -m rag.knowledge_graph.extraction_pipeline --project --contract-id <uuid>
-python -m rag.knowledge_graph.extraction_pipeline --project --all
+python -m kg.extraction_pipeline --project --contract-id <uuid>
+python -m kg.extraction_pipeline --project --all
 ```
 
 ---
@@ -447,7 +454,9 @@ PostgreSQL tsvector BM25, merges with RRF (k=60), optionally reranks.
 
 `HybridKGRetriever._structured_retrieve()` in `rag/retrieval/hybrid_kg_retriever.py`:
 
-1. `kg_store.search_entities(query, limit=10)` — name substring match in AGE.
+1. `kg_store.search_entities(query, limit=10)` — RRF hybrid search via `EntityIndex`
+   (tsvector GIN + pgvector IVFFlat in main DB). Falls back to O(n) AGE CONTAINS scan
+   if the shadow index is not available.
 2. For each matched entity (cap 5): `kg_store.get_related_entities(id, limit=5)`.
 3. Returns `list[dict]` with entity and relationship facts.
 
@@ -500,3 +509,12 @@ pytest rag/tests/test_hybrid_kg_retrieval.py -m integration --record-answers -v
 - All LLM calls use `llama3.1:8b` via Ollama (`localhost:11434`). No external API.
 - Confidence threshold for Silver → Gold promotion: 0.7 (configurable via
   `KG_CONFIDENCE_THRESHOLD` in `.env`).
+- **Entity search** uses `kg/entity_index.py` (`EntityIndex`) — a shadow table
+  `kg_entity_index` in the main PostgreSQL DB with tsvector GIN + pgvector IVFFlat.
+  Each `upsert_entity()` call in AGE also mirrors the row into `EntityIndex`.
+  `AgeGraphStore.search_entities()` uses RRF (k=60) over both indexes; falls back
+  to the O(n) AGE CONTAINS scan if the index is unreachable.
+- **Chunk source**: the Bronze loop reads from the `chunks` table (Docling semantic
+  chunks) rather than re-splitting `documents.content` at a fixed character offset.
+  This ensures KG chunk boundaries match RAG chunk boundaries exactly, enabling
+  future KG→chunk boosting in the RRF pipeline.

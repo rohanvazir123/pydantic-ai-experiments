@@ -4,17 +4,15 @@ Apache AGE knowledge graph store.
 Module: kg.age_graph_store
 ============================================
 
-Implements the same interface as PgGraphStore using Apache AGE — a PostgreSQL
-extension that adds native openCypher graph queries.  Requires a running AGE
-instance (see docker-compose.yml) and KG_BACKEND=age in .env.
+Apache AGE is a PostgreSQL extension that adds native openCypher graph queries.
+Requires a running AGE instance (see docker-compose.yml).
 
 How AGE works with asyncpg
 --------------------------
 AGE exposes Cypher through a SQL wrapper function::
 
     SELECT * FROM ag_catalog.cypher('graph_name', $$
-        MATCH (e:Entity {entity_type: 'Party'})
-        RETURN e.uuid, e.name
+        MATCH (e:Party) RETURN e.uuid, e.name
     $$) AS (uuid agtype, name agtype)
 
 The ``agtype`` columns are returned as strings by asyncpg.  They look like
@@ -26,24 +24,6 @@ Every connection must run two setup statements before issuing Cypher::
     SET search_path = ag_catalog, "$user", public;
 
 We register this as an ``init`` callback on the asyncpg pool.
-
-Vertex / edge model
--------------------
-All vertices share the label ``Entity`` and carry ``entity_type`` as a property
-(Party, Jurisdiction, LicenseClause, …).  This avoids the need to dynamically
-compose Cypher with variable labels and makes full-graph queries simple.
-
-Edge labels match relationship_type (PARTY_TO, GOVERNED_BY_LAW, …).
-
-Switching from PgGraphStore
-----------------------------
-Change one line in .env::
-
-    KG_BACKEND=age
-    AGE_DATABASE_URL=postgresql://age_user:age_pass@localhost:5433/legal_graph
-
-The factory function ``create_kg_store()`` in __init__.py returns the right
-implementation automatically.
 
 Usage
 -----
@@ -71,7 +51,12 @@ import asyncpg
 from rag.config.settings import load_settings
 from kg.constants import VALID_LABELS as _VALID_LABELS
 from kg.constants import VALID_REL_TYPES as _VALID_REL_TYPES
-from kg.pg_graph_store import _normalize
+from kg.entity_index import EntityIndex
+
+
+def _normalize(name: str) -> str:
+    """Lowercase + collapse whitespace for deduplication."""
+    return re.sub(r"\s+", " ", name.strip().lower())
 
 
 def _safe_label(entity_type: str) -> str:
@@ -152,16 +137,12 @@ async def _age_init(conn: asyncpg.Connection) -> None:
 
 
 class AgeGraphStore:
-    """
-    Apache AGE knowledge graph store.
-
-    Implements the same public interface as PgGraphStore so the two are
-    interchangeable via the ``create_kg_store()`` factory.
-    """
+    """Apache AGE knowledge graph store."""
 
     def __init__(self) -> None:
         self.settings = load_settings()
         self.pool: asyncpg.Pool | None = None
+        self._entity_index: EntityIndex | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
 
@@ -220,10 +201,26 @@ class AgeGraphStore:
                 # Constraint creation syntax varies by AGE version — skip if unsupported
                 pass
 
+        # Spin up the entity shadow index (tsvector + pgvector in main DB).
+        # Graceful degradation: if DATABASE_URL is absent or the main DB is
+        # unreachable we fall back to the O(n) AGE CONTAINS scan.
+        try:
+            self._entity_index = EntityIndex()
+            await self._entity_index.initialize()
+        except Exception as exc:
+            logger.warning(
+                "EntityIndex init failed (%s) — search_entities will use CONTAINS scan",
+                exc,
+            )
+            self._entity_index = None
+
         self._initialized = True
         logger.info(f"AgeGraphStore initialized (graph='{self._graph}')")
 
     async def close(self) -> None:
+        if self._entity_index:
+            await self._entity_index.close()
+            self._entity_index = None
         if self.pool:
             await self.pool.close()
             self.pool = None
@@ -293,9 +290,17 @@ class AgeGraphStore:
                 self._cypher(cypher) + " AS (uuid agtype)"
             )
 
-        if rows:
-            return _unquote_agtype(rows[0]["uuid"])
-        return entity_uuid
+        result_uuid = _unquote_agtype(rows[0]["uuid"]) if rows else entity_uuid
+
+        if self._entity_index:
+            try:
+                await self._entity_index.upsert(
+                    result_uuid, name, label, doc_id_str
+                )
+            except Exception as exc:
+                logger.debug("EntityIndex.upsert failed for %r: %s", name, exc)
+
+        return result_uuid
 
     async def add_relationship(
         self,
@@ -346,6 +351,8 @@ class AgeGraphStore:
         )
         async with self._conn() as conn:
             await conn.execute(self._cypher(cypher) + " AS (r agtype)")
+        if self._entity_index:
+            await self._entity_index.delete_for_document(document_id)
 
     # ------------------------------------------------------------------
     # Read
@@ -357,8 +364,24 @@ class AgeGraphStore:
         entity_type: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """Case-insensitive substring search over entity names."""
+        """Hybrid tsvector + vector search via EntityIndex; falls back to CONTAINS scan."""
         assert self.pool, "Call initialize() first"
+
+        if self._entity_index and self._entity_index._initialized:
+            label_filter = _safe_label(entity_type) if entity_type else None
+            rows = await self._entity_index.hybrid_search(query, label=label_filter, limit=limit)
+            return [
+                {
+                    "id": r["age_uuid"],
+                    "name": r["name"],
+                    "entity_type": r["label"],
+                    "document_id": r["document_id"] or None,
+                    "document_title": None,
+                }
+                for r in rows
+            ]
+
+        # --- fallback: O(n) CONTAINS scan in AGE ---
         query_esc = query.lower().replace("\\", "\\\\").replace('"', '\\"')
 
         if entity_type:

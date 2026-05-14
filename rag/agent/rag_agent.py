@@ -125,7 +125,6 @@ from rag.agent.prompts import MAIN_SYSTEM_PROMPT
 from rag.config.settings import load_settings
 from kg import create_kg_store
 from kg.age_graph_store import AgeGraphStore
-from kg.pg_graph_store import PgGraphStore  # kept for type reference
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
@@ -196,7 +195,7 @@ class RAGState(BaseModel):
     _store: PostgresHybridStore | None = PrivateAttr(default=None)
     _retriever: Retriever | None = PrivateAttr(default=None)
     _mem0: Mem0Store | None = PrivateAttr(default=None)
-    _kg_store: AgeGraphStore | PgGraphStore | None = PrivateAttr(default=None)
+    _kg_store: AgeGraphStore | None = PrivateAttr(default=None)
     _initialized: bool = PrivateAttr(default=False)
     _init_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
@@ -214,7 +213,7 @@ class RAGState(BaseModel):
                 )
         return self._retriever
 
-    async def get_kg_store(self) -> AgeGraphStore | PgGraphStore:
+    async def get_kg_store(self) -> AgeGraphStore:
         """Get or create the knowledge graph store (lazy init, backend from settings)."""
         if self._kg_store is None:
             self._kg_store = create_kg_store()
@@ -374,7 +373,7 @@ async def search_knowledge_graph(
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
 
-    local_kg: AgeGraphStore | PgGraphStore | None = None
+    local_kg: AgeGraphStore | None = None
     try:
         if state is not None and isinstance(state, RAGState):
             kg = await state.get_kg_store()
@@ -539,7 +538,7 @@ async def run_graph_query(
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
 
-    local_kg: AgeGraphStore | PgGraphStore | None = None
+    local_kg: AgeGraphStore | None = None
     try:
         if state is not None and isinstance(state, RAGState):
             kg = await state.get_kg_store()
@@ -598,7 +597,7 @@ async def nl_graph_query(
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
 
-    local_kg: AgeGraphStore | PgGraphStore | None = None
+    local_kg: AgeGraphStore | None = None
     try:
         if state is not None and isinstance(state, RAGState):
             kg = await state.get_kg_store()

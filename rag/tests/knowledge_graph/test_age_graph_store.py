@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kg.age_graph_store import AgeGraphStore, _unquote_agtype
-from kg import create_kg_store, PgGraphStore
+from kg import create_kg_store
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +54,7 @@ def _make_age_store_with_pool(mock_pool) -> AgeGraphStore:
     store._age_url = "postgresql://age_user:age_pass@localhost:5433/legal_graph"
     store._graph = "legal_graph"
     store.pool = mock_pool
+    store._entity_index = None  # unit tests don't test the shadow index
     store._initialized = True
     store._init_lock = asyncio.Lock()
     return store
@@ -278,28 +279,9 @@ class TestAgeGraphStoreGetStats:
 
 
 class TestCreateKgStore:
-    # load_settings is imported at module level in rag/knowledge_graph/__init__.py,
-    # so the patch target is the package namespace (no __init__ suffix).
-
-    def test_returns_pg_store_by_default(self):
-        with patch("kg.load_settings") as mock_ls:
-            mock_ls.return_value.kg_backend = "postgres"
-            store = create_kg_store()
-        assert isinstance(store, PgGraphStore)
-
-    def test_returns_age_store_when_configured(self):
-        mock_age_instance = MagicMock(spec=AgeGraphStore)
-        with patch("kg.load_settings") as mock_ls, \
-             patch("kg.AgeGraphStore", return_value=mock_age_instance):
-            mock_ls.return_value.kg_backend = "age"
-            store = create_kg_store()
-        assert store is mock_age_instance
-
-    def test_unknown_backend_defaults_to_postgres(self):
-        with patch("kg.load_settings") as mock_ls:
-            mock_ls.return_value.kg_backend = "something_unknown"
-            store = create_kg_store()
-        assert isinstance(store, PgGraphStore)
+    def test_returns_age_store(self):
+        store = create_kg_store()
+        assert isinstance(store, AgeGraphStore)
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +308,7 @@ class TestAgeGraphStoreIntegration:
             store._age_url = age_url
             store._graph = "test_legal_graph"
             store.pool = None
+            store._entity_index = None
             store._initialized = False
             store._init_lock = asyncio.Lock()
 

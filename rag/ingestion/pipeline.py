@@ -171,7 +171,6 @@ class DocumentIngestionPipeline:
 
         self._initialized = False
         self._doc_converter = None  # Cached DocumentConverter (expensive to init)
-        self._extractor = None      # LegalEntityExtractor — created lazily if kg_extraction_enabled
 
     def _get_converter(self):
         """Get or create the cached DocumentConverter (loads ML models once)."""
@@ -191,21 +190,8 @@ class DocumentIngestionPipeline:
         self._initialized = True
         logger.info("Ingestion pipeline initialized")
 
-    async def _get_extractor(self):
-        """Return a lazily-initialized LegalEntityExtractor (only when kg_extraction_enabled)."""
-        if self._extractor is None:
-            from kg import create_kg_store
-            from kg.legal_extractor import LegalEntityExtractor
-            store = create_kg_store()
-            await store.initialize()
-            self._extractor = LegalEntityExtractor(store)
-        return self._extractor
-
     async def close(self) -> None:
         """Close PostgreSQL connection."""
-        if self._extractor is not None:
-            await self._extractor.graph_store.close()
-            self._extractor = None
         if self._initialized:
             await self.store.close()
             self._initialized = False
@@ -479,24 +465,6 @@ class DocumentIngestionPipeline:
 
         # Save chunks
         await self.store.add(embedded_chunks, document_id)
-
-        # Knowledge graph entity/relationship extraction (opt-in)
-        if self.settings.kg_extraction_enabled:
-            try:
-                extractor = await self._get_extractor()
-                kg_stats = await extractor.extract_and_store(
-                    document_id=document_id,
-                    document_title=document_title,
-                    content=document_content,
-                )
-                logger.info(
-                    "KG extraction for %r: %d entities, %d relationships",
-                    document_title,
-                    kg_stats["entities"],
-                    kg_stats["relationships"],
-                )
-            except Exception as exc:
-                logger.warning("KG extraction failed for %r: %s", document_title, exc)
 
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
 

@@ -28,6 +28,7 @@ import logging
 import re
 import uuid as _uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -40,7 +41,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from rag.config.settings import load_settings
-from kg.pg_graph_store import _normalize
+from kg.age_graph_store import _normalize
 from kg.risk_graph_builder import RiskGraphBuilder
 
 logger = logging.getLogger(__name__)
@@ -663,11 +664,11 @@ class GoldProjector:
             rel_rows = await conn.fetch(
                 """
                 SELECT r.relationship_type, r.confidence,
-                       r.evidence_texts,
-                       s.id::text AS src_pg_id, s.canonical_name AS src_name,
-                       s.label   AS src_label,
-                       t.id::text AS tgt_pg_id, t.canonical_name AS tgt_name,
-                       t.label   AS tgt_label
+                    r.evidence_texts,
+                    s.id::text AS src_pg_id, s.canonical_name AS src_name,
+                    s.label   AS src_label,
+                    t.id::text AS tgt_pg_id, t.canonical_name AS tgt_name,
+                    t.label   AS tgt_label
                 FROM kg_canonical_relationships r
                 JOIN kg_canonical_entities s ON s.id = r.source_entity_id
                 JOIN kg_canonical_entities t ON t.id = r.target_entity_id
@@ -722,11 +723,9 @@ class ExtractionPipeline:
         self,
         pool: asyncpg.Pool,
         age_store: Any,
-        chunk_size: int = 1500,
         confidence_threshold: float = 0.7,
     ) -> None:
         self._pool = pool
-        self._chunk_size = chunk_size
         self._threshold = confidence_threshold
         settings = load_settings()
         self._model_version = settings.kg_llm_model or settings.llm_model
@@ -745,12 +744,6 @@ class ExtractionPipeline:
     async def initialize(self) -> None:
         await self.bronze.initialize()
         await self.silver.initialize()
-
-    def _chunk(self, text: str) -> list[str]:
-        chunks = []
-        for i in range(0, len(text), self._chunk_size):
-            chunks.append(text[i : i + self._chunk_size])
-        return chunks
 
     # ---- per-chunk passes ----
 
@@ -863,14 +856,43 @@ class ExtractionPipeline:
 
     # ---- public API ----
 
+    _JSON_DIR = Path("entity_relationships/jsons")
+
+    def _save_json(self, contract_id: str, title: str, artifacts: list[BronzeArtifact]) -> None:
+        """Persist Bronze extraction results as a JSON file for audit/debug."""
+        self._JSON_DIR.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^\w\-.]", "_", title)[:60]
+        path = self._JSON_DIR / f"{safe}_{contract_id[:8]}.json"
+        payload = {
+            "contract_id": contract_id,
+            "title": title,
+            "model_version": self._model_version,
+            "chunks": [
+                {
+                    "chunk_index": a.chunk_index,
+                    "entities": [e.model_dump() for e in a.entities],
+                    "relationships": [r.model_dump() for r in a.valid_relationships],
+                    "hierarchy_nodes": [n.model_dump() for n in a.hierarchy_nodes],
+                    "cross_refs": [c.model_dump() for c in a.cross_refs],
+                }
+                for a in artifacts
+            ],
+        }
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info("Saved extraction JSON → %s", path)
+
     async def process_contract(
         self,
         contract_id: str,
         title: str,
-        text: str,
+        chunks: list[str],
     ) -> dict[str, Any]:
-        """Full pipeline: extract → bronze → silver → gold."""
-        chunks    = self._chunk(text)
+        """Full pipeline: extract → bronze → silver → gold.
+
+        ``chunks`` should be the Docling semantic chunks from the ``chunks``
+        table.  ``_fetch_contracts`` supplies these; the fallback is a
+        character-stride split of ``documents.content``.
+        """
         artifacts: list[BronzeArtifact] = []
 
         with Progress(
@@ -887,6 +909,8 @@ class ExtractionPipeline:
                 await self.bronze.save(artifact)
                 artifacts.append(artifact)
                 progress.advance(task)
+
+        self._save_json(contract_id, title, artifacts)
 
         silver_stats = await self.silver.normalize(contract_id, artifacts)
         gold_stats   = await self.gold.project(contract_id)
@@ -923,30 +947,52 @@ class ExtractionPipeline:
 async def _fetch_contracts(
     limit: int | None = None,
     contract_id: str | None = None,
+    fallback_chunk_size: int = 1500,
 ) -> list[dict[str, Any]]:
+    """Return contracts with pre-computed Docling chunks.
+
+    Reads semantic chunks from the ``chunks`` table (created by the ingestion
+    pipeline's Docling HybridChunker).  Falls back to a character-stride split
+    of ``documents.content`` for any document that has no rows in ``chunks``.
+    """
     settings = load_settings()
     conn = await asyncpg.connect(settings.database_url)
     try:
         if contract_id:
-            rows = await conn.fetch(
-                "SELECT id::text, title, content FROM documents"
-                " WHERE id = $1::uuid AND content IS NOT NULL AND content <> ''",
+            doc_rows = await conn.fetch(
+                "SELECT id::text, title, content FROM documents WHERE id = $1::uuid",
                 contract_id,
             )
         elif limit:
-            rows = await conn.fetch(
+            doc_rows = await conn.fetch(
                 "SELECT id::text, title, content FROM documents"
                 " WHERE content IS NOT NULL AND content <> ''"
                 " ORDER BY created_at LIMIT $1",
                 limit,
             )
         else:
-            rows = await conn.fetch(
+            doc_rows = await conn.fetch(
                 "SELECT id::text, title, content FROM documents"
                 " WHERE content IS NOT NULL AND content <> ''"
                 " ORDER BY created_at",
             )
-        return [{"id": r["id"], "title": r["title"], "content": r["content"]} for r in rows]
+
+        result = []
+        for doc in doc_rows:
+            chunk_rows = await conn.fetch(
+                "SELECT content FROM chunks WHERE document_id = $1::uuid"
+                " ORDER BY chunk_index",
+                doc["id"],
+            )
+            if chunk_rows:
+                chunks = [r["content"] for r in chunk_rows]
+            else:
+                # No Docling chunks — fall back to character-stride split.
+                text = doc["content"] or ""
+                cs = fallback_chunk_size
+                chunks = [text[i : i + cs] for i in range(0, len(text), cs)] or [""]
+            result.append({"id": doc["id"], "title": doc["title"], "chunks": chunks})
+        return result
     finally:
         await conn.close()
 
@@ -982,7 +1028,6 @@ async def main() -> None:
     pipeline = ExtractionPipeline(
         pool=pool,
         age_store=age_store,
-        chunk_size=settings.kg_extraction_chunk_size,
         confidence_threshold=settings.kg_confidence_threshold,
     )
     await pipeline.initialize()
@@ -990,7 +1035,9 @@ async def main() -> None:
     try:
         if args.project:
             contracts = await _fetch_contracts(
-                limit=args.limit, contract_id=args.contract_id
+                limit=args.limit,
+                contract_id=args.contract_id,
+                fallback_chunk_size=settings.kg_extraction_chunk_size,
             )
             console.print(f"[cyan]Replaying Silver+Gold for {len(contracts)} contract(s)…[/]")
             total = {"canonical_entities": 0, "canonical_relationships": 0,
@@ -1002,7 +1049,9 @@ async def main() -> None:
                     total[k] += stats.get(k, 0)
         else:
             contracts = await _fetch_contracts(
-                limit=args.limit, contract_id=args.contract_id
+                limit=args.limit,
+                contract_id=args.contract_id,
+                fallback_chunk_size=settings.kg_extraction_chunk_size,
             )
             console.print(f"[cyan]Processing {len(contracts)} contract(s)…[/]")
             console.print(
@@ -1016,7 +1065,7 @@ async def main() -> None:
                      "age_entities": 0, "age_relationships": 0,
                      "risks": 0, "risk_edges": 0}
             for c in contracts:
-                stats = await pipeline.process_contract(c["id"], c["title"], c["content"] or "")
+                stats = await pipeline.process_contract(c["id"], c["title"], c["chunks"])
                 for k in total:
                     total[k] += stats.get(k, 0)
 

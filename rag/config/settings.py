@@ -284,16 +284,6 @@ class Settings(BaseSettings):
         description="Base URL for KG extraction LLM (defaults to llm_base_url when None)",
     )
 
-    # Knowledge Graph extraction during ingestion
-    kg_extraction_enabled: bool = Field(
-        default=False,
-        description=(
-            "Enable LLM-based entity/relationship extraction into the knowledge graph "
-            "for every document ingested. Requires a running KG backend. "
-            "Set to true in .env: KG_EXTRACTION_ENABLED=true"
-        ),
-    )
-
     image_description_detail: str = Field(
         default="high",
         description="Detail level for image descriptions (low, high, auto)",

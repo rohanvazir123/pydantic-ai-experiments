@@ -7,43 +7,36 @@ See `kg/docs/KG_PIPELINE.md` for the full design reference.
 
 ## Architecture decisions
 
-### Why Apache AGE over the original kg_entities / kg_relationships tables?
+### Why Apache AGE for the knowledge graph?
 
-**Short answer: multi-hop traversal, LLM-driven ad-hoc Cypher queries, and native graph semantics.**
+**Short answer: multi-hop traversal, LLM-driven ad-hoc Cypher, and native graph semantics at CUAD scale.**
 
-#### What the table approach gave us
+#### What AGE gives us
 
-`PgGraphStore` stored the graph in two plain PostgreSQL tables: `kg_entities` and `kg_relationships`.  Writes were simple `INSERT … ON CONFLICT DO UPDATE`.  Reads used SQL JOINs and `to_tsvector` full-text search.  No extra infrastructure needed.
+**Multi-hop traversal in a single query.**  Legal analysis regularly requires following relationship chains: "find all contracts that reference a document that was amended by a contract governed by Delaware law."  In Cypher this is one `MATCH` pattern.  SQL cannot express variable-depth graph traversal without recursive CTEs that become unreadable past two hops.
 
-#### What broke down
+**The agent can ask ad-hoc questions.**  `run_cypher_query` (in `AgeGraphStore`) accepts whatever Cypher the LLM generates and executes it at query time.  There is no equivalent in a relational model — you cannot "run whatever JOIN chain the LLM just wrote" over plain tables.
 
-**Multi-hop traversal requires recursive CTEs.**  A single-hop "give me entities connected to X" is one JOIN.  Two hops is three JOINs.  Variable-depth paths (`*1..3`) need a `WITH RECURSIVE` block that is hard to write, hard to read, and not what the LLM produces via nl2cypher.
+**Entity type as a schema concept, not a string value.**  `:Party` is a vertex label with its own storage in AGE.  `MATCH (e:Party)` touches only Party nodes, not the full entity set.  At CUAD scale (510 contracts, thousands of entities) that distinction matters for query performance.
 
-**`run_cypher_query` cannot be implemented.**  The LLM-to-graph pipeline (`nl2cypher` → `run_graph_query` tool → AGE) lets the agent write arbitrary read-only Cypher at query time.  `PgGraphStore.run_cypher_query` returns a hardcoded error — there is no equivalent without a graph engine.
+| Capability | AgeGraphStore |
+|---|---|
+| 1-hop neighbour | `MATCH (s)-[r]-(t)` |
+| 2-hop path | `MATCH (a)-[*1..2]->(b)` |
+| Variable-depth | `MATCH (a)-[*1..N]->(b)` |
+| LLM ad-hoc Cypher | `run_cypher_query` executes Cypher |
+| Type-filtered scan | `MATCH (e:Party)` — label-pruned |
+| Pattern matching | `MATCH (p:Party)-[:INDEMNIFIES]->(q:Party)-[:SIGNED_BY]->(c:Contract)` |
 
-**Type filtering is a column value, not schema.**  In PgGraphStore, `entity_type = 'Party'` is a `WHERE` filter on a shared 
-table.  In AGE, `:Party` is an indexed vertex label — the planner prunes non-Party vertex tables before touching properties.
+#### The one trade-off: no tsvector inside AGE
 
-#### Concrete wins in AgeGraphStore
+AGE does not expose PostgreSQL's `tsvector` / GIN index.  Entity name search inside Cypher would be an O(n) CONTAINS scan.
 
-| Capability | PgGraphStore | AgeGraphStore |
-|---|---|---|
-| 1-hop neighbour query | 1 JOIN | `MATCH (s)-[r]-(t)` |
-| 2-hop path | 3 JOINs | `MATCH (a)-[*1..2]->(b)` |
-| Variable-depth path | Recursive CTE | `MATCH (a)-[*1..N]->(b)` |
-| LLM ad-hoc queries | Not possible (`run_cypher_query` returns error) | `run_cypher_query` executes Cypher |
-| Type-filtered scan | `WHERE entity_type = ?` on full table | `MATCH (e:Party)` — label-pruned |
-| Graph pattern matching | Multi-table JOIN chain | `MATCH (p:Party)-[:PARTY_TO]->(c:Contract)-[:GOVERNED_BY_LAW]->(j:Jurisdiction)` |
+**This is resolved by `EntityIndex` (`kg/entity_index.py`)** — a shadow table `kg_entity_index` in the main PostgreSQL DB that mirrors every entity written to AGE.  It carries a `tsvector GENERATED` column (GIN index) and a `vector(N)` column (pgvector IVFFlat).  `AgeGraphStore.search_entities()` uses RRF (k=60) over both; the CONTAINS fallback only fires if the index is unreachable.
 
-#### What we gave up
+#### Infrastructure cost
 
-- **Full-text search** — `to_tsvector` / GIN index is unavailable in AGE.  We fell back to `toLower() CONTAINS` substring scan (`search_entities`, `search_as_context`).
-- **Simpler connection management** — every connection needs `LOAD 'age'` and `SET search_path = ag_catalog` (handled by the `_conn()` context manager and pool `init=_age_init`).
-- **A separate Docker container** — AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main pgvector DB.
-
-#### Why PgGraphStore still exists
-
-`PgGraphStore` is kept as the `doc_store` in `CuadKgBuilder` because it needs to JOIN against the `documents` table which lives in the main PostgreSQL DB (port 5434).  AGE runs on a separate Docker instance (port 5433) and cannot cross-database JOIN.  All graph traversal and LLM query work goes through `AgeGraphStore`.
+AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main pgvector DB.  Every connection must run `LOAD 'age'` and `SET search_path = ag_catalog` — handled automatically by the `_conn()` context manager and pool `init=_age_init` callback.
 
 ---
 
@@ -62,13 +55,12 @@ age_graph_name: str = Field(default="legal_graph", ...)
 
 `AgeGraphStore.initialize()` calls `SELECT create_graph('legal_graph')` once (idempotent — no-ops if it already exists). There is no code that creates a second graph or switches the name per pipeline.
 
-The four pipelines that all write to the **same** `legal_graph`:
+The three pipelines that all write to the **same** `legal_graph`:
 
 | Pipeline | File | What it writes |
 |---|---|---|
 | CUAD annotation ingest | `kg/cuad_kg_ingest.py` | Entities + relationships from `cuad_eval.json` CUAD annotations |
 | LLM extraction (Bronze→Silver→Gold) | `kg/extraction_pipeline.py` (`GoldProjector`) | Entities + relationships from LLM extraction of contract text |
-| Legal entity extractor | `kg/legal_extractor.py` | Named entities from legal text via LLM |
 | RAG agent KG tools | `kg/age_graph_store.py` (called by `rag_agent.py`) | Runtime entity/relationship lookups (read-only at query time) |
 
 The PostgreSQL *database* in `docker-compose.yml` is also named `legal_graph` (`POSTGRES_DB: legal_graph`) — this is the PostgreSQL database that AGE stores its internal graph metadata in. The AGE *graph object* inside it is also called `legal_graph`. They share a name but are distinct things (the database is the container; the graph is an object inside it).
@@ -130,65 +122,42 @@ For extended queries and filter examples see **[GRAPH_VIEWER.md](GRAPH_VIEWER.md
 
 ---
 
-### Is KG chunking semantic/clause-aware or fixed-size?
+### How are contracts chunked for KG extraction?
 
-**Short answer: fixed-size, no overlap. Completely separate from the RAG chunker.**
+**Short answer: Docling semantic chunks from the `chunks` table, with a character-stride fallback.**
 
-There are two chunking pipelines in this codebase. They are independent and should not be confused:
+The KG extraction pipeline reads pre-built semantic chunks from the PostgreSQL `chunks` table — the same chunks produced by the Docling `HybridChunker` during ingestion — rather than re-splitting the raw document text.
 
-#### RAG chunker — structure-aware (used for the vector store)
+#### How it works
 
-`rag/ingestion/chunkers/docling.py` wraps Docling's `HybridChunker`:
+`_fetch_contracts()` (`kg/extraction_pipeline.py`) runs:
 
-- **Structure-aware**: respects heading hierarchy, paragraph boundaries, tables, code blocks — it follows the document's logical sections, not character counts.
-- **Token-bounded**: controlled by `max_tokens` (default 512) using a HuggingFace tokenizer (`sentence-transformers/all-MiniLM-L6-v2`). A chunk will never exceed the embedding model's context window.
-- **Contextualized**: each chunk is prefixed with its heading ancestry so a retrieved chunk is self-contained ("Section 3 > Non-Compete Restrictions > …").
-- **Fallback**: when no `DoclingDocument` is available (plain text input), it uses a sliding window with sentence-boundary snapping and configurable overlap.
-
-These chunks land in the `chunks` PostgreSQL table and are indexed for vector + BM25 search.
-
-#### KG extraction chunker — dumb fixed-size (used for entity/relationship extraction)
-
-`kg/extraction_pipeline.py`, method `_chunk()`, line ~747:
-
-```python
-def _chunk(self, text: str) -> list[str]:
-    chunks = []
-    for i in range(0, len(text), self._chunk_size):
-        chunks.append(text[i : i + self._chunk_size])
-    return chunks
+```sql
+SELECT content FROM chunks WHERE document_id = $1::uuid ORDER BY chunk_index
 ```
 
-- **Fixed 1500-character slices.** Pure Python string slicing — `text[0:1500]`, `text[1500:3000]`, etc.
-- **No overlap.** A clause that straddles a boundary is split between two chunks.
-- **No sentence/paragraph awareness.** The cut can land mid-sentence.
-- Default `chunk_size=1500` is set in `ExtractionPipeline.__init__`.
+If a document has no rows in `chunks` (e.g., ingested by a path that doesn't go through Docling), it falls back to a fixed character-stride split at `KG_EXTRACTION_CHUNK_SIZE` (default 1500 chars).
 
-Each slice is sent to a separate LLM extraction call (entity pass → relationship pass → hierarchy pass → validation pass). The LLM sees only the text within one slice; it cannot see entities from adjacent slices.
+#### What Docling chunks give us
 
-#### Why two different chunkers
+| Property | Docling HybridChunker |
+|---|---|
+| Boundary logic | Document structure — headings, paragraphs, tables |
+| Token limit | `max_tokens` (default 512 tokens) — stays within embedding model window |
+| Context prefix | Each chunk carries heading ancestry — self-contained for the LLM |
+| Overlap | Configurable (default 100 chars) with sentence-boundary snapping |
 
-| | RAG chunker | KG extraction chunker |
-|---|---|---|
-| Purpose | Embedding for semantic similarity search | LLM context window for entity extraction |
-| Boundary logic | Document structure (headings, paragraphs) | Hard character count |
-| Overlap | Configurable (default 100 chars) | None |
-| Output destination | `chunks` table → pgvector index | Bronze artifacts → Silver dedup → AGE graph |
-| Tokenizer | HuggingFace (token-accurate) | None (character estimate) |
+This means KG chunk boundaries now match RAG chunk boundaries exactly. A future improvement can exploit this: KG entity hit → `chunk_index` → retrieve the exact matching chunk for context boosting in the RRF pipeline.
 
-The KG chunker is simpler because LLM extraction is forgiving about cut boundaries — the entity extraction prompt tells the model to extract "only entities from the provided text", and missed entities at boundaries are partially recovered by Silver deduplication (which merges matching `(label, normalized_name)` pairs across all chunks of a contract). A relationship whose source and target entity fall in different slices will be missed entirely, however.
+#### Known limitation: cross-chunk relationships
 
-#### Known consequence: split-boundary relationship loss
+Each chunk is sent through 5 LLM passes independently.  The LLM sees only the text within that chunk; it cannot see entities from adjacent chunks.  A relationship whose source and target entity fall in different chunks will be missed.
 
-If an indemnification clause spans characters 1490–1550 and the slice boundary falls at 1500:
+- Chunk N ends: "…Party A shall indemnify"
+- Chunk N+1 starts: "Party B from all claims…"
+- The relationship `Party A –INDEMNIFIES→ Party B` is never extracted.
 
-- Chunk N sees "…Party A shall indemnify" — no target entity yet
-- Chunk N+1 sees "Party B from all claims…" — no source entity in this chunk
-- The relationship `Party A –INDEMNIFIES→ Party B` is never extracted
-
-The `source_chunk_indices` column added to `kg_canonical_entities` (Silver) records which chunks each entity appeared in, enabling future cross-chunk relationship re-extraction. This is not yet wired up.
-
-**Practical impact on the CUAD corpus:** Most party/jurisdiction/date entities appear multiple times across a contract and are extracted in at least one chunk. Clause-level relationships (e.g. `Contract –HAS_CLAUSE→ TerminationClause`) are less affected because the clause label and its governing entity typically co-occur well within 1500 chars.
+Silver deduplication partially mitigates this for entities (matching `(label, normalized_name)` across all chunks of a contract), but relationships that span a chunk boundary are lost.  The `source_chunk_indices` column in `kg_canonical_entities` records which chunks each entity appeared in — foundation for a future cross-chunk relationship re-extraction pass.
 
 ---
 
@@ -355,16 +324,70 @@ LLM extraction at ~15 min/contract = ~5 days for 522 contracts.  CUAD ingest = m
 2. **Run LLM extraction selectively** — use `--limit N` or `--contract-id` to enrich specific high-value contracts with lineage and relationship data not covered by CUAD annotations.
 3. **Run `RiskGraphBuilder`** — rule-based risk inference runs on top of whatever Silver data exists (CUAD or LLM), no LLM needed.
 
-```powershell
+```bash
 # Step 1: Fast graph from CUAD annotations (minutes)
 python -m kg.cuad_kg_ingest
 
 # Step 2: Optional — LLM enrichment for a handful of contracts
+# JSON artifacts written to entity_relationships/jsons/ automatically
 python -m kg.extraction_pipeline --limit 20
 
-# Step 3: Risk graph over whatever Silver data exists
-# (automatically called by ExtractionPipeline — or call standalone)
+# Step 3: Risk graph — called automatically by ExtractionPipeline,
+# or replay Silver+Gold from existing Bronze without re-running LLM:
+python -m kg.extraction_pipeline --project --all
 ```
+
+---
+
+### Where does Ollama do the heavy lifting — and where can it ruin the graph?
+
+Ollama (`llama3.1:8b`) runs five sequential passes per chunk during Bronze extraction.  Each pass is an independent LLM call.  Here is exactly where it is responsible, and where things can go wrong.
+
+#### Where Ollama is doing the work
+
+| Pass | What it produces | Why it can't be rule-based |
+|---|---|---|
+| 1 — Entity extraction | `list[ExtractedEntity]` — canonical names, labels, confidence | The model must read legal prose and decide "Acme Corporation" is a Party and "Section 12.1" is a Clause. No regex can do this reliably across 510 contracts with varied formatting. |
+| 2 — Relationship extraction | `list[ExtractedRelationship]` — typed edges with evidence text | Deciding that "Acme shall indemnify Beta" is an `INDEMNIFIES` edge requires semantic understanding, not keyword matching. |
+| 3 — Document hierarchy | `list[HierarchyNode]`, `list[HierarchyEdge]` | Reconstructing Section → Clause → Chunk structure from varying document layouts. |
+| 4 — Cross-contract references | `list[CrossContractRef]` — AMENDS / SUPERCEDES / REFERENCES | Spotting "this Agreement amends the Master Services Agreement dated …" and extracting the referenced document name exactly. |
+| 5 — Validation | Filtered `list[ExtractedRelationship]` | Second-opinion pass: the model re-reads the text and removes relationships it deems unsupported. |
+
+#### Where hallucinations actually damage the graph
+
+**Pass 2 is the highest risk.** The model receives the entity list from Pass 1 and must only create relationships between those entity IDs. In practice:
+
+- It invents entity IDs that don't exist in the Pass 1 output — relationships point to ghost nodes.
+- It creates edges that sound plausible but have no evidence in the text ("Party A shall not disclose" does not imply `DISCLOSES_TO`).
+- It uses the wrong relationship type — `REFERENCES` when the text says "in accordance with", not "pursuant to the Agreement".
+
+**Pass 1 also hallucinates entities**, but less dangerously:
+
+- Extracts generic nouns as entities ("the Agreement", "the parties") that the ontology doesn't model.
+- Splits one entity into two slightly different canonical names ("Acme Corp" + "Acme Corporation").
+
+**Pass 3 and 4 are lower risk** because the outputs are more structural and the model has less room to invent:
+
+- Hierarchy extraction can invent Section numbering that doesn't match the actual document.
+- Cross-contract references can invent document names that don't exist — these ghost references land in Bronze and Silver but fail Silver's name-resolution step when the `documents` table has no matching row.
+
+**Pass 5 (validation) is the last guardrail** — but it can fail to catch what Pass 2 invented, particularly for relationships with plausible-sounding evidence text.
+
+#### How we contain the damage
+
+1. **Ontology whitelist** — `VALID_LABELS` and `VALID_REL_TYPES` block anything outside the known schema before it reaches AGE.
+2. **Confidence threshold** — entities and relationships below 0.7 are dropped at Silver staging.
+3. **Silver deduplication** — duplicate entities with slightly different names are merged on `(label, normalized_name)`, collapsing "Acme Corp" / "Acme Corporation" into one canonical node.
+4. **Pass 5 validation** — second LLM opinion specifically tasked with removing unsupported edges.
+5. **Bronze as the safety net** — if Silver produces garbage, drop the Silver + Gold tables and replay from Bronze. Bronze is immutable and never re-processed.
+
+#### What is NOT protected against
+
+- A hallucinated relationship that passes validation and has a confidence of 0.85 will make it into the graph. There is no automated ground-truth check.
+- A relationship with two valid entity IDs but wrong direction (`INDEMNIFIES` reversed) passes all filters.
+- Pass 5 can itself hallucinate — it may "validate" a relationship by fabricating evidence text that wasn't in the original chunk.
+
+**Bottom line:** treat everything in the `kg_canonical_relationships` table as "model opinion, confidence ≥ 0.7, second-opinion validated" — not as ground truth.  The CUAD fast ingest path (human annotations) is the high-precision baseline; LLM extraction enriches it with lineage and risk data that the annotations don't cover.
 
 ---
 
@@ -400,13 +423,6 @@ Benefits:
 
 Trade-off: `MATCH (n)` (no label) scans all vertex tables.  Mitigated by always
 using the `e.label` property for cross-type queries.
-
-### Why keep PgGraphStore if AGE is the active backend?
-
-`PgGraphStore` is still used in `CuadKgBuilder` as a `doc_store` — it looks up
-the `documents` table which lives in the main PostgreSQL DB (port 5434), not in
-the AGE Docker instance (port 5433).  AGE can't cross-database JOIN.  Everything
-else goes through `AgeGraphStore`.
 
 ### Why 5 separate LLM passes instead of one combined prompt?
 
@@ -536,13 +552,54 @@ Full CUAD at this rate is not feasible on a single machine.  See scaling options
 
 ### Architectural
 
-- [ ] **Protocol / ABC for graph stores** — `AgeGraphStore | PgGraphStore` union
-  type appears in many signatures; replace with a `KGStore` protocol
+- [ ] **Protocol / ABC for graph store** — replace `AgeGraphStore` direct type references with a `KGStore` protocol for easier testing
 - [ ] **Chunk overlap** — entity references at chunk boundaries get missed; add
   ~200 char overlap between consecutive chunks
 - [ ] **Graph-aware RAG retrieval** — after vector retrieval, expand context
   using AGE: `MATCH (matched_entity)-[*1..2]->(neighbour)` to pull in related
   clauses that vector search missed
+
+---
+
+## Guardrails
+
+### Extraction path — what exists
+
+| Guardrail | Where | What it does |
+|---|---|---|
+| Label whitelist | `ExtractedEntity.safe_label()` | Validates label against `VALID_LABELS`; falls back to `"Clause"` |
+| Relationship whitelist | `ExtractedRelationship.safe_rel_type()` | Returns `None` for unknown types; filtered out before Bronze write |
+| Confidence threshold | Silver staging + `_pass_*` methods | Drops entities / relationships below 0.7 (configurable via `KG_CONFIDENCE_THRESHOLD`) |
+| JSON repair | `_parse_json` / `_clean_json` | Handles 4 llama3 failure modes; returns `{}` on total failure — chunk skipped gracefully |
+| Pass 5 validation | `_pass_validate()` | Second LLM opinion — filters hallucinated / unsupported relationships |
+| Bronze dedup | `UNIQUE (contract_id, chunk_index, model_version)` | Idempotent re-runs; re-processing a contract doesn't duplicate Bronze rows |
+| Silver dedup | `DISTINCT ON (label, normalized_name)` | Merges duplicate entities across chunks; keeps highest confidence |
+| Pydantic validation | Try/except in all `_pass_*` methods | Silently drops malformed LLM output rows |
+
+### Extraction path — gaps
+
+| Gap | Risk | Fix |
+|---|---|---|
+| **Context overflow** | Ollama defaults `num_ctx=2048`; dense passes (validation) can hit it; output silently garbled | Set `num_ctx=4096` via `KG_LLM_NUM_CTX` + pre-call `_truncate_to_budget()` guard |
+| **Duplicate ontology** | `VALID_LABELS` / `VALID_REL_TYPES` defined in both `extraction_pipeline.py` and `kg/constants.py` — drift risk if one is updated without the other | Import from `kg.constants` only; remove the local copies |
+| **No output size cap** | Abnormally large LLM response could cause memory pressure on long contracts | Add `num_predict=1024` to `ChatOllama` to cap output tokens |
+| **Prompt injection** | Contract text goes into LLM prompts unsanitized | Low practical risk (source is legal text, not user input), but worth noting |
+
+### Retrieval path — what exists
+
+| Guardrail | Where | What it does |
+|---|---|---|
+| Label whitelist | `AgeGraphStore._safe_label()` | Validates against `VALID_LABELS` before Cypher string interpolation; falls back to `"Clause"` |
+| Relationship whitelist | `AgeGraphStore._safe_rel_type()` | Returns `None` for unknown types; write is skipped |
+| Read-only Cypher guard | `AgeGraphStore.run_cypher_query()` | Regex blocks `CREATE / MERGE / SET / DELETE / REMOVE / DROP / DETACH` before query is executed |
+
+### Retrieval path — gaps
+
+| Gap | Risk | Fix |
+|---|---|---|
+| **Entity name in Cypher** | `normalized_name` / `name` are interpolated into Cypher via f-string — a malicious party name like `}) DETACH DELETE (` would break the query | Escape or parameterize name values in `upsert_entity` and `add_relationship` |
+| **No query result size cap** | `run_cypher_query` has no `LIMIT` enforcement; an unfiltered `MATCH` returns the entire graph | Inject `LIMIT 500` if the query contains no `LIMIT` clause |
+| **Substring search escaping** | `search_entities` / `search_as_context` interpolate the search term into `CONTAINS` — verify apostrophes and backslashes are escaped | Confirm `_escape_for_cypher()` covers all special characters |
 
 ---
 
