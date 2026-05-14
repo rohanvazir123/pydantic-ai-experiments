@@ -22,7 +22,7 @@ from rag.retrieval.retriever import Retriever
 from rag.storage.vector_store.postgres import PostgresHybridStore
 
 # Reuse pure metric helpers from the existing retrieval metrics test module
-from rag.tests.test_retrieval_metrics import (
+from rag.tests.retrieval.test_retrieval_metrics import (
     build_relevance_list,
     compute_all_metrics,
     hit_rate,

@@ -3,7 +3,7 @@ import collections
 class LRUCache:
   def __init__(self, capacity:int):
     self.capacity = capacity
-    self.cache = collections.OrderedDict()
+    self.cache :collections.OrderedDict[int, str] = collections.OrderedDict()
     
   def lookup(self, key:int):
     if key not in self.cache:

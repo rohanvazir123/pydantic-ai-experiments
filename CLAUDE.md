@@ -91,17 +91,31 @@ rag/
 │   └── __init__.py               # Legal document ingestion and evaluation utilities
 ├── documents/                    # Sample documents for ingestion
 │   └── legal/                    # CUAD contract Markdown files (git-ignored)
-├── tests/                        # Test suite
-│   ├── test_config.py            # Configuration tests (13, no deps)
-│   ├── test_ingestion.py         # Ingestion model tests (14, no deps)
-│   ├── test_postgres_store.py    # PostgreSQL connection & index tests (18)
-│   ├── test_rag_agent.py         # RAG agent integration tests (25+)
-│   ├── test_api.py               # FastAPI REST API tests (14, all mocked)
-│   ├── test_mcp_server.py        # MCP server tests (21, all mocked)
-│   ├── test_cuad_ingestion.py    # CUAD ingestion unit tests (34, all mocked)
-│   ├── test_pg_graph_store.py    # PgGraphStore unit tests (40, no external deps)
-│   ├── test_age_graph_store.py   # AgeGraphStore unit + 1 integration test (24 total)
-│   └── test_legal_retrieval.py   # Legal retrieval tests (16; 4 integration)
+├── tests/                        # Test suite (see retrieval/RETRIEVAL_FAQ.md for retrieval tests)
+│   ├── core/                     # Fast unit tests — no external deps
+│   │   ├── test_config.py        # Settings loading, credential masking (13 tests)
+│   │   └── test_ingestion.py     # Data models, chunking config (14 tests)
+│   ├── storage/                  # DB-layer tests
+│   │   ├── test_postgres_store.py # PostgreSQL connection & index tests (18 tests)
+│   │   └── test_mem0_store.py    # Mem0Store CRUD tests
+│   ├── ingestion/                # Ingestion pipeline tests
+│   │   └── test_cuad_ingestion.py # CUAD ingestion unit tests (34, all mocked)
+│   ├── retrieval/                # Retrieval quality + IR metrics
+│   │   ├── test_retrieval_metrics.py # Gold dataset + Hit Rate/MRR/NDCG/Precision/Recall
+│   │   └── test_legal_retrieval.py   # Legal corpus quality + corpus isolation tests
+│   ├── agent/                    # Agent + API surface tests
+│   │   ├── test_rag_agent.py     # RAG agent integration tests (25+, needs PostgreSQL + Ollama)
+│   │   ├── test_agent_flow.py    # Pydantic AI event stream debugging
+│   │   ├── test_api.py           # FastAPI REST API tests (14, all mocked)
+│   │   └── test_mcp_server.py    # MCP server tests (21, all mocked)
+│   ├── knowledge_graph/          # KG + NL→Cypher tests
+│   │   ├── test_pg_graph_store.py     # PgGraphStore unit tests (40, no external deps)
+│   │   ├── test_age_graph_store.py    # AgeGraphStore unit + 1 integration test (24 total)
+│   │   ├── test_hybrid_kg_retrieval.py # HybridKGRetriever unit + integration
+│   │   └── test_nl_query.py           # NL→Cypher intent parsing + query builder
+│   └── experimental/             # Third-party integrations
+│       ├── test_raganything.py   # RAG-Anything modal processors
+│       └── test_pdf_question_generator.py # PDFQuestionStore
 └── main.py                       # CLI entry point
 
 docker-compose.yml                # Apache AGE container (apache/age:latest, port 5433)
@@ -191,34 +205,46 @@ python -m pytest rag/tests/ -v
 ### Run Specific Test Categories
 
 ```bash
-# Configuration tests (fast, no external deps)
-python -m pytest rag/tests/test_config.py -v
+# Fast unit tests only (no external deps)
+python -m pytest rag/tests/core/ rag/tests/ingestion/ -v
 
-# Ingestion model tests (fast, no external deps)
-python -m pytest rag/tests/test_ingestion.py -v
+# DB-layer tests (requires PostgreSQL)
+python -m pytest rag/tests/storage/ -v
 
-# PostgreSQL connection & index tests (requires PostgreSQL)
-python -m pytest rag/tests/test_postgres_store.py -v
+# Retrieval quality tests (requires PostgreSQL + Ollama)
+python -m pytest rag/tests/retrieval/ -v --log-cli-level=INFO --tb=short
 
-# RAG agent integration tests (requires PostgreSQL + Ollama)
-python -m pytest rag/tests/test_rag_agent.py -v
-python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
+# Agent integration tests (requires PostgreSQL + Ollama)
+python -m pytest rag/tests/agent/test_rag_agent.py -v
+
+# Knowledge graph tests
+python -m pytest rag/tests/knowledge_graph/ -v
+
+# Skip all integration tests (runs only unit + mocked tests)
+python -m pytest rag/tests/ -m "not integration" -v
 ```
 
 ### Test Categories
 
-| Test File | What It Tests | Requirements |
-|-----------|--------------|--------------|
-| `test_config.py` | Settings loading, credential masking | None |
-| `test_ingestion.py` | Data models, chunking config validation | None |
-| `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL |
-| `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
-| `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
-| `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
-| `test_cuad_ingestion.py` | CUAD parsing, file extraction, eval pairs, pipeline | None (mocked) |
-| `test_pg_graph_store.py` | PgGraphStore entity/relationship CRUD, search | None (all unit) |
-| `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
-| `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus | PostgreSQL + Ollama (4 integration) |
+| Subfolder | Test File | What It Tests | Requirements |
+|-----------|-----------|--------------|--------------|
+| `core/` | `test_config.py` | Settings loading, credential masking | None |
+| `core/` | `test_ingestion.py` | Data models, chunking config validation | None |
+| `storage/` | `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL |
+| `storage/` | `test_mem0_store.py` | Mem0Store CRUD with pgvector backend | PostgreSQL |
+| `ingestion/` | `test_cuad_ingestion.py` | CUAD parsing, file extraction, eval pairs, pipeline | None (mocked) |
+| `retrieval/` | `test_retrieval_metrics.py` | Hit Rate/MRR/NDCG/Precision/Recall on NeuralFlow gold dataset | PostgreSQL + Ollama |
+| `retrieval/` | `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus + corpus isolation | PostgreSQL + Ollama |
+| `agent/` | `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
+| `agent/` | `test_agent_flow.py` | Pydantic AI event stream debugging | PostgreSQL + Ollama |
+| `agent/` | `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
+| `agent/` | `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
+| `knowledge_graph/` | `test_pg_graph_store.py` | PgGraphStore entity/relationship CRUD, search | None (all unit) |
+| `knowledge_graph/` | `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
+| `knowledge_graph/` | `test_hybrid_kg_retrieval.py` | HybridKGRetriever unit + integration | Mocked / PostgreSQL + AGE + Ollama |
+| `knowledge_graph/` | `test_nl_query.py` | NL→Cypher intent parsing + query builder | None / AGE (integration) |
+| `experimental/` | `test_raganything.py` | RAG-Anything modal processors | None (mocked) |
+| `experimental/` | `test_pdf_question_generator.py` | PDFQuestionStore search + storage | PostgreSQL |
 
 ### Sample Test Queries (from test_rag_agent.py)
 
