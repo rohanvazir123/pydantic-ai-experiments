@@ -12,6 +12,10 @@
 - [Docling Chunking Failures](#docling-chunking-failures)
   - [Which documents demonstrate bad chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
   - [Failure Scenarios and Fixes](#failure-scenarios-and-fixes)
+  - [Scripts and Results](#scripts-and-results)
+- [Docling Output Format](#docling-output-format)
+  - [Chunk JSON structure](#chunk-json-structure)
+  - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
 
 ---
 
@@ -313,6 +317,12 @@ options.table_structure_options.mode = TableFormerMode.ACCURATE
 options.table_structure_options.do_cell_matching = False
 ```
 
+**Fix 3 — `repeat_table_header=True` in HybridChunker:** Injects the table header row into every chunk that contains a table continuation, preserving column context even when rows are split.
+
+```python
+chunker = HybridChunker(repeat_table_header=True)
+```
+
 #### Scenario B — Multi-Level Hierarchy Header Collapse
 
 **Root cause:** When Docling exports to Markdown, hierarchical table headers (nested row keys) flatten to a single header row, losing the relationship between parent and child rows.
@@ -332,3 +342,134 @@ options.table_structure_options.do_cell_matching = False
 **Fix 3 — Structural heuristic parameters:**
 - `do_cell_matching=False` — prevents multi-line cell content from leaking into neighbouring blocks
 - `correct_overlapping_cells=True` — resolves overlap bounding errors in dense financial rows
+
+---
+
+### Scripts and Results
+
+#### Scripts
+
+| Script | Purpose |
+|---|---|
+| `download_demo_documents.py` | Downloads 3 PDFs that demonstrate failure modes |
+| `produce_bad_chunks.py` | Runs default Docling settings, flags anomalous chunks |
+| `produce_good_chunks.py` | Applies fixes per failure type, saves improved chunks |
+
+#### Documents Downloaded
+
+| File | Failure demonstrated |
+|---|---|
+| `attention_is_all_you_need.pdf` | Two-column column mixing (NeurIPS 2017) |
+| `bert_paper.pdf` | Two-column column mixing (NAACL 2019) |
+| `nist_sp800_53.pdf` | Header/footer contamination (NIST SP 800-53 Rev 5) |
+| `q4_financial_report.pdf` | Table splitting (internal Q4 business review) |
+
+#### Results (bad chunks run)
+
+| Document | Total chunks | Flagged anomalies | Failure type |
+|---|---|---|---|
+| `attention_is_all_you_need.pdf` | 67 | 2 | two_column_mixing |
+| `bert_paper.pdf` | 97 | 1 | two_column_mixing |
+| `nist_sp800_53.pdf` | 1998 | **135** | header_footer_contamination |
+| `q4_financial_report.pdf` | 25 | 0 | table_splitting |
+
+#### What worked / what didn't
+
+| Fix | Status | Notes |
+|---|---|---|
+| `TableFormerMode.ACCURATE` | **Works** | Better layout analysis; BERT paper produced 3 extra chunks showing finer boundary detection |
+| `repeat_table_header=True` | **Works** | Table header rows are injected into every continuation chunk |
+| `strip_headers_footers()` via doc tree mutation | **Did not work** | `doc.body.children` manipulation does not remove items from the document in Docling 2.x — the internal ref structure is more complex |
+| Post-hoc chunk filtering for headers/footers | **TODO — revisit** | Simpler and more reliable: filter chunks by short length + all-caps or page-number patterns after chunking, without touching the document tree |
+
+#### Output locations
+
+```
+output/docling/bad_chunks/   — default chunking, anomaly-flagged JSON per document + summary.json
+output/docling/good_chunks/  — fixed chunking JSON per document + summary.json
+```
+
+---
+
+## Docling Output Format
+
+### Chunk JSON structure
+
+Each chunk produced by `HybridChunker` is serialised to JSON with the following structure:
+
+```json
+{
+  "index": 0,
+  "text": "The plain text content of the chunk.",
+  "char_count": 173,
+  "meta": {
+    "schema_name": "docling_core.transforms.chunker.DocMeta",
+    "version": "1.0.0",
+    "doc_items": [...],
+    "headings": ["Section heading this chunk falls under"],
+    "origin": {
+      "mimetype": "application/pdf",
+      "binary_hash": 1234567890,
+      "filename": "document.pdf"
+    }
+  }
+}
+```
+
+#### Key fields
+
+| Field | Description |
+|---|---|
+| `text` | Plain text content of the chunk — this is what gets embedded and retrieved |
+| `char_count` | Character length |
+| `meta.headings` | Section heading(s) this chunk belongs to — useful for prepending context to the chunk before embedding |
+| `meta.origin` | Source filename, mime type, and binary hash of the original document |
+| `meta.doc_items` | List of `DoclingDocument` tree elements that make up this chunk (see below) |
+
+#### `doc_items` — the structural backbone
+
+Each entry in `doc_items` corresponds to one element from the `DoclingDocument` tree:
+
+```json
+{
+  "self_ref": "#/texts/1",
+  "label": "text",
+  "prov": [
+    {
+      "page_no": 1,
+      "bbox": {
+        "l": 124.3, "t": 717.8, "r": 487.9, "b": 679.7,
+        "coord_origin": "BOTTOMLEFT"
+      },
+      "charspan": [0, 173]
+    }
+  ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `self_ref` | Pointer into the `DoclingDocument` tree (e.g. `#/texts/1`, `#/tables/0`) |
+| `label` | Element type: `text`, `table`, `section_header`, `list_item`, `picture`, `page_header`, `page_footer`, etc. |
+| `prov[].page_no` | Page the element appears on |
+| `prov[].bbox` | Bounding box in PDF coordinates (bottom-left origin). `l`=left, `t`=top, `r`=right, `b`=bottom |
+| `prov[].charspan` | Character range within `text` that this bounding box covers |
+
+### How to spot column mixing in the output
+
+Column mixing is visible in `doc_items[].prov`. A clean single-column chunk has one `prov` entry per `doc_item`. A mixed chunk has **multiple `prov` entries with non-overlapping `bbox` x-ranges** on the same page — text fragments from physically separate columns stitched together.
+
+Example from `attention_is_all_you_need.pdf` (flagged chunk):
+
+```
+doc_item has 5 prov entries on page 1:
+  bbox l=116  → r=216   (left column, row 1)
+  bbox l=230  → r=309   (right column, row 1)
+  bbox l=126  → r=210   (left column, row 2)
+  bbox l=323  → r=407   (right column, row 2)
+  bbox l=422  → r=497   (right column, row 2 continued)
+```
+
+The alternating `l` (left) values — 116, 230, 126, 323, 422 — jumping between ~120 and ~320 confirm text from two separate columns is merged into one chunk.
+
+**Practical use:** When debugging retrieval quality, inspect `meta.doc_items[].prov` to diagnose whether a bad chunk is caused by column mixing (non-contiguous bounding boxes), table splitting (label=`table` with very few rows), or header contamination (label=`page_header` or `page_footer`).
