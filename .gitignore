@@ -27,7 +27,6 @@ basics/iprep/meeting-analytics/venv/
 **/.ipynb_checkpoints/
 **/.env
 delta_lake/output/
-**/.claude/
 venv/
 .git
 \__pycache__/
