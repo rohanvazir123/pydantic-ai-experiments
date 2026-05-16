@@ -248,7 +248,8 @@ def _make_agent(system_prompt: str) -> Agent:
     base_url = settings.kg_llm_base_url or settings.llm_base_url
     provider = OpenAIProvider(base_url=base_url, api_key=api_key)
     model    = OpenAIChatModel(model_id, provider=provider)
-    return Agent(model, system_prompt=system_prompt)
+    ms: dict = {"extra_body": {"num_ctx": settings.llm_num_ctx}} if settings.llm_provider == "ollama" else {}
+    return Agent(model, system_prompt=system_prompt, model_settings=ms)
 
 
 def _clean_json(s: str) -> str:

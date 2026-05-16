@@ -70,6 +70,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from rag.config.settings import load_settings
 
+_settings = load_settings()
+_ms: dict = {"extra_body": {"num_ctx": _settings.llm_num_ctx}} if _settings.llm_provider == "ollama" else {}
+
 # Load environment variables
 load_dotenv(override=True)
 
@@ -289,6 +292,7 @@ cypher_agent = Agent(
     system_prompt=CYPHER_SYSTEM_PROMPT,
     output_type=CypherQuery,
     retries=3,
+    model_settings=_ms,
 )
 
 
@@ -329,6 +333,7 @@ graph_transformer_agent = Agent(
     system_prompt=TRANSFORMER_SYSTEM_PROMPT,
     output_type=GraphDocument,
     retries=3,
+    model_settings=_ms,
 )
 
 
@@ -393,6 +398,7 @@ qa_agent = Agent(
     get_llm_model(),
     system_prompt=QA_SYSTEM_PROMPT,
     deps_type=QADeps,
+    model_settings=_ms,
 )
 
 
@@ -401,6 +407,7 @@ cypher_qa_agent = Agent(
     get_llm_model(),
     output_type=CypherQuery,
     retries=3,
+    model_settings=_ms,
 )
 
 
@@ -487,7 +494,7 @@ async def extract_graph_document(text: str) -> GraphDocument:
         print(f"Structured output failed: {e}")
         print("Trying fallback extraction...")
 
-        fallback_agent = Agent(get_llm_model())
+        fallback_agent = Agent(get_llm_model(), model_settings=_ms)
         fallback_prompt = f"""Extract entities and relationships from this text as JSON.
 
 Text: {text}
@@ -642,7 +649,7 @@ async def main():
 
         # Test LLM
         print("\n--- Testing LLM ---")
-        test_agent = Agent(get_llm_model())
+        test_agent = Agent(get_llm_model(), model_settings=_ms)
         result = await test_agent.run("What is Neo4j? Answer in one sentence.")
         print(f"LLM Response: {result.output}")
 

@@ -238,7 +238,9 @@ class RAGState(BaseModel):
 
 
 # Create the RAG agent
-agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+_settings = load_settings()
+_ms: dict = {"extra_body": {"num_ctx": _settings.llm_num_ctx}} if _settings.llm_provider == "ollama" else {}
+agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT, model_settings=_ms)
 
 
 @agent.tool

@@ -268,6 +268,14 @@ class Settings(BaseSettings):
         description="Enable multimodal content processing (images, tables, etc.)",
     )
 
+    # Context window for local LLMs (Ollama only — ignored for cloud providers).
+    # Default 131072 = 128K tokens. Controls num_ctx passed via extra_body.
+    llm_num_ctx: int = Field(
+        default=131072,
+        description="Context window size (num_ctx) for Ollama LLMs. "
+                    "Passed via extra_body; ignored for non-Ollama providers.",
+    )
+
     # KG extraction LLM — dedicated model for one-time entity extraction.
     # Defaults to the main LLM settings when not set.
     # Set KG_LLM_MODEL=llama3.1:8b in .env for best local extraction quality.
