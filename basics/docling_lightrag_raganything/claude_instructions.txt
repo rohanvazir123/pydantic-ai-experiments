@@ -21,6 +21,7 @@ Run the docling chunker to produce good chunks and save them to basics\docling_l
 See 1 above, also documents the fixes that we can apply to the failure scenarios.
 
 
+
 B. Docling + LightRAG
 
 1. Let's start by making a clear, concise, easy-to-understand document that describes its architecture/internals.
@@ -32,16 +33,18 @@ B. Docling + LightRAG
 NOTE: all our backend store uses postgres extensions: pgvector + tsvector + pg apache age - postgres is all we need.
 7. Document everything in basics\docling_lightrag_raganything\faq.md in a different section and update TOC
 8. Make a python script that clearly shows where it works and where it fails. Save its output. Write tests.
+9. Implement a solid evaluation pipeline to make sure the generated graph triples match up with the ground truth
 
 
 C. Docling + RAG Anything:
 
-Steps 1 to 7 from Docling + LightRAG
+Steps 1 to 9 from Docling + LightRAG
 
 
 D. NL2SQL:
 1. Make a clear, concise system design document based on basics\docling_lightrag_raganything\nl2sql_overall_system_design.md which is messy
 2. Add faqs to basics\docling_lightrag_raganything\nls2sql_faq.md
+3. Implement a solid evaluation pipeline to make sure the generated sql queries match up with the ground truth
 
 
 
