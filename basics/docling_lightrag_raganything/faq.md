@@ -16,6 +16,7 @@
 - [Docling Output Format](#docling-output-format)
   - [Chunk JSON structure](#chunk-json-structure)
   - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
+- [Does Docling work with research papers?](#does-docling-work-with-research-papers)
 
 ---
 
@@ -473,3 +474,40 @@ doc_item has 5 prov entries on page 1:
 The alternating `l` (left) values — 116, 230, 126, 323, 422 — jumping between ~120 and ~320 confirm text from two separate columns is merged into one chunk.
 
 **Practical use:** When debugging retrieval quality, inspect `meta.doc_items[].prov` to diagnose whether a bad chunk is caused by column mixing (non-contiguous bounding boxes), table splitting (label=`table` with very few rows), or header contamination (label=`page_header` or `page_footer`).
+
+---
+
+## Does Docling work with research papers?
+
+Yes — but with caveats depending on paper type.
+
+### What Docling gets right
+
+- Section headers, abstract, conclusion, references — cleanly extracted
+- Single-column sections (most of the body in standard ML/NLP/CS papers) work correctly
+- Figure captions are detected and attached to their `FigureItem`
+- Tables contained within a single page are handled well
+
+### What it struggles with
+
+- **Author blocks** — the author name grid on page 1 is typically two-column and gets interleaved. This is what was flagged in the "Attention Is All You Need" run. It is noise, not content, so it rarely affects retrieval quality.
+- **Figures** — image content is not described unless you wire a VLM. The caption is captured but the chart/diagram data is lost.
+- **Multi-column tables** — dense tables that span columns (more common in medical and clinical papers than ML papers) get mixed.
+- **Equations across columns** — mathematical notation that spans column boundaries can produce garbled text.
+
+### Practical reality from our test run
+
+"Attention Is All You Need" produced **67 chunks with only 2 flagged** — both were the author block and a fragment of the reference list, not the core content. Introduction, method, experiments, and results all chunked correctly.
+
+### When it genuinely fails
+
+| Paper type | Risk |
+|---|---|
+| Standard ML/NLP/CS papers | Low — mostly fine for RAG |
+| Biomedical / clinical trial papers | Medium — complex multi-column result tables |
+| Papers with heavy mathematical notation spanning columns | Medium — equations can get garbled |
+| Papers with many figures carrying quantitative data | High — figure data is lost without a VLM |
+
+### Recommendation
+
+For standard ML/NLP research paper RAG: Docling is good enough. Use `TableFormerMode.ACCURATE` and expect minor noise in author blocks and reference lists. For biomedical or equation-heavy papers, add a post-hoc filter to drop very short chunks and inspect `prov` bounding boxes to catch column mixing.
