@@ -49,8 +49,8 @@ from typing import Any
 import asyncpg
 
 from rag.config.settings import load_settings
-from kg.constants import VALID_LABELS as _VALID_LABELS
-from kg.constants import VALID_REL_TYPES as _VALID_REL_TYPES
+from kg.legal.cuad_ontology import VALID_LABELS as _VALID_LABELS
+from kg.legal.cuad_ontology import VALID_REL_TYPES as _VALID_REL_TYPES
 from kg.entity_index import EntityIndex
 
 

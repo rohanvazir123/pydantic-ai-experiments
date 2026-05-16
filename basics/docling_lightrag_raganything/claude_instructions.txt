@@ -1,0 +1,46 @@
+This is the task list.
+
+Install pip packages that need to be installed without asking for permissions
+Do the tasks sequentially, A, B & C - do not jump across tasks or run them in parallel unless it is small
+Feel free to run steps for a single task in parallel
+Save the progress in session context, so that if we need to restart, we can start from where we left off.
+
+
+A. Docling:
+
+0. Add TOC to basics\docling_lightrag_raganything\faq.md
+Add section to basics\docling_lightrag_raganything\faq.md which describes docling internal workflow/architecture in simple and clear words 
+The explanation how we can customize/tune docling to adapt itself to different document types and complexities (see 2  below)
+Can it handles images? Which local VLMs can I use?
+1. Download documents which will demonstrate that docling produces bad chunks - refer basics\docling_lightrag_raganything\docling_failures.md
+2. Write a python script which will run docling to produce bad chunks for the above documents and save them to basics\docling_lightrag_raganything\output\docling\bad_chunks  folder
+3. Ref basics\docling_lightrag_raganything\faq.md,  write another python script or add more functions which will fix the above issues as best as possible.
+Run the docling chunker to produce good chunks and save them to basics\docling_lightrag_raganything\output\docling\good_chunks folder
+4. Document all the failure scenarios from basics\docling_lightrag_raganything\docling_failures.md to basics\docling_lightrag_raganything\faq.md
+See 1 above, also documents the fixes that we can apply to the failure scenarios.
+
+
+B. Docling + LightRAG
+
+1. Let's start by making a clear, concise, easy-to-understand document that describes its architecture/internals.
+2. What are the key internal architectural pieces - what kind of basic graph ontology does it use? 
+3. How does it generate a knowledge graph from docling chunks using local LLM? Clearly document the LLM prompt it uses.
+4. Which local LLM should we use and what are the LLM configurables? How do we make sure we remain within the context window tokens limit?
+5. What are the limitations (like it cannot handle images) and most importantly where will the architecture fail? Will it scale?
+6. How does it store the knowledge graph in postgres apache age tables?
+NOTE: all our backend store uses postgres extensions: pgvector + tsvector + pg apache age - postgres is all we need.
+7. Document everything in basics\docling_lightrag_raganything\faq.md in a different section and update TOC
+8. Make a python script that clearly shows where it works and where it fails. Save its output 
+
+
+C. Docling + RAG Anything:
+
+Steps 1 to 7 from Docling + LightRAG
+
+
+D. NL2SQL:
+1. Make a clear, concise system design document based on basics\docling_lightrag_raganything\nl2sql_overall_system_design.md which is messy
+2. Add faqs to basics\docling_lightrag_raganything\nls2sql_faq.md
+
+
+

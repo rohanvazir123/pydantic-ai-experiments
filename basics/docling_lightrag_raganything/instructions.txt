@@ -1,6 +1,0 @@
-The goal is to evaluate
-
-
-docling + lightrag 
-
-docling + rag anything

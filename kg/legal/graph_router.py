@@ -12,7 +12,7 @@ Why rule-based (not LLM):
   IntentClassifier in rag/retrieval/intent_classifier.py.
 
 Usage:
-    from kg.graph_router import GraphRouter, GraphType
+    from kg.legal.graph_router import GraphRouter, GraphType
 
     router = GraphRouter()
     types  = router.route("Which parties indemnify each other?")
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-from kg.schemas import GraphType
+from kg.legal.schemas import GraphType
 
 
 # ---------------------------------------------------------------------------

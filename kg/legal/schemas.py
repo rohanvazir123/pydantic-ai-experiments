@@ -8,7 +8,7 @@ by vertex labels and relationship types, not by separate AGE graph objects.
 Source of truth: docs/kg/KG_PIPELINE.md
 
 Usage:
-    from kg.schemas import GraphType, get_schema
+    from kg.legal.schemas import GraphType, get_schema
 
     schema = get_schema([GraphType.ENTITY, GraphType.LINEAGE])
     cypher = await converter.convert(question, schema)

@@ -1,7 +1,7 @@
 """
 Multi-pass legal knowledge graph extraction pipeline.
 
-Module: kg.extraction_pipeline
+Module: kg.legal.extraction_pipeline
 ===============================================
 
 Bronze / Silver / Gold medallion architecture.  See docs/KG_PIPELINE.md.
@@ -9,14 +9,14 @@ Bronze / Silver / Gold medallion architecture.  See docs/KG_PIPELINE.md.
 CLI
 ---
     # Full pipeline (Bronze + Silver + Gold) for one contract
-    python -m kg.extraction_pipeline --contract-id <uuid>
+    python -m kg.legal.extraction_pipeline --contract-id <uuid>
 
     # Full pipeline for all contracts
-    python -m kg.extraction_pipeline --all [--limit N]
+    python -m kg.legal.extraction_pipeline --all [--limit N]
 
     # Replay Silver + Gold from existing Bronze (no LLM calls)
-    python -m kg.extraction_pipeline --project --contract-id <uuid>
-    python -m kg.extraction_pipeline --project --all
+    python -m kg.legal.extraction_pipeline --project --contract-id <uuid>
+    python -m kg.legal.extraction_pipeline --project --all
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from rich.table import Table
 
 from rag.config.settings import load_settings
 from kg.age_graph_store import _normalize
-from kg.risk_graph_builder import RiskGraphBuilder
+from kg.legal.risk_graph_builder import RiskGraphBuilder
 
 logger = logging.getLogger(__name__)
 console = Console()

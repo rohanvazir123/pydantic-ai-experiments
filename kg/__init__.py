@@ -58,9 +58,9 @@ Usage:
 """
 
 from kg.age_graph_store import AgeGraphStore
-from kg.cuad_kg_ingest import build_cuad_kg
-from kg.extraction_pipeline import ExtractionPipeline
-from kg.constants import (
+from kg.legal.cuad_kg_ingest import build_cuad_kg
+from kg.legal.extraction_pipeline import ExtractionPipeline
+from kg.legal.cuad_ontology import (
     VALID_LABELS,
     VALID_REL_TYPES,
     ENTITY_TYPE_MAP,
@@ -68,12 +68,12 @@ from kg.constants import (
     entity_type_for,
     relationship_type_for,
 )
-from kg.schemas import GraphType, get_schema
-from kg.graph_router import GraphRouter
-from kg.intent_parser import IntentParser, IntentMatch
-from kg.query_builder import QUERY_CAPABILITIES
-from kg.nl2cypher import NL2CypherConverter
-from kg.risk_graph_builder import RiskGraphBuilder
+from kg.legal.schemas import GraphType, get_schema
+from kg.legal.graph_router import GraphRouter
+from kg.legal.intent_parser import IntentParser, IntentMatch
+from kg.legal.query_builder import QUERY_CAPABILITIES
+from kg.legal.nl2cypher import NL2CypherConverter
+from kg.legal.risk_graph_builder import RiskGraphBuilder
 
 
 def create_kg_store() -> AgeGraphStore:

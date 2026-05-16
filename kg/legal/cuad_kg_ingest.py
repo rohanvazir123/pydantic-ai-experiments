@@ -1,7 +1,7 @@
 """
 Build an Apache AGE knowledge graph from CUAD evaluation annotations.
 
-Module: kg.cuad_kg_ingest
+Module: kg.legal.cuad_kg_ingest
 ==========================================
 
 Reads ``rag/legal/cuad_eval.json`` and writes entities + relationships
@@ -9,12 +9,12 @@ directly to AgeGraphStore. Document ID lookups use a plain asyncpg pool
 against the main PostgreSQL DB (the one that holds the ``documents`` table).
 
 All clause-type → entity-type and entity-type → relationship-type mappings
-come from constants.py — the single source of truth for KG ontology.
+come from cuad_ontology.py — the single source of truth for KG ontology.
 
 CLI
 ---
-    python -m kg.cuad_kg_ingest
-    python -m kg.cuad_kg_ingest --eval-path rag/legal/cuad_eval.json --limit 100
+    python -m kg.legal.cuad_kg_ingest
+    python -m kg.legal.cuad_kg_ingest --eval-path rag/legal/cuad_eval.json --limit 100
 """
 
 import argparse
@@ -30,7 +30,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from kg.age_graph_store import AgeGraphStore
-from kg.constants import entity_type_for, relationship_type_for
+from kg.legal.cuad_ontology import entity_type_for, relationship_type_for
 
 logger = logging.getLogger(__name__)
 console = Console()

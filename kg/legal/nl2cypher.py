@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 
-from kg.intent_parser import IntentMatch, IntentParser
-from kg.query_builder import QUERY_CAPABILITIES
+from kg.legal.intent_parser import IntentMatch, IntentParser
+from kg.legal.query_builder import QUERY_CAPABILITIES
 
 logger = logging.getLogger(__name__)
 

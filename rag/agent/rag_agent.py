@@ -592,9 +592,9 @@ async def nl_graph_query(
     Returns:
         Pipe-separated table of results, or an error message.
     """
-    from kg.graph_router import GraphRouter
-    from kg.schemas import get_schema
-    from kg.nl2cypher import NL2CypherConverter
+    from kg.legal.graph_router import GraphRouter
+    from kg.legal.schemas import get_schema
+    from kg.legal.nl2cypher import NL2CypherConverter
 
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
