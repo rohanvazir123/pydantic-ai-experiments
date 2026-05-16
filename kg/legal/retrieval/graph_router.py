@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-from kg.legal.schemas import GraphType
+from kg.legal.retrieval.schemas import GraphType
 
 
 # ---------------------------------------------------------------------------

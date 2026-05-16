@@ -34,9 +34,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from kg.age_graph_store import AgeGraphStore
-from kg.legal.graph_router import GraphRouter
-from kg.legal.nl2cypher import NL2CypherConverter
-from kg.legal.schemas import GraphType, get_schema
+from kg.legal.retrieval.graph_router import GraphRouter
+from kg.legal.retrieval.nl2cypher import NL2CypherConverter
+from kg.legal.retrieval.schemas import GraphType, get_schema
 
 logger = logging.getLogger(__name__)
 

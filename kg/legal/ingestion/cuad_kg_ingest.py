@@ -30,7 +30,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from kg.age_graph_store import AgeGraphStore
-from kg.legal.cuad_ontology import entity_type_for, relationship_type_for
+from kg.legal.common.cuad_ontology import entity_type_for, relationship_type_for
 
 logger = logging.getLogger(__name__)
 console = Console()

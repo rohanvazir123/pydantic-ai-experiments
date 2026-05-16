@@ -23,7 +23,7 @@ EXTRACTION  (populates the graph — uses LLM)
     AgeGraphStore      — Apache AGE Cypher graph
     build_cuad_kg()    — fast ingest from cuad_eval.json CUAD annotations
     ExtractionPipeline — Bronze → Silver → Gold medallion pipeline
-                         Bronze: immutable JSONB per chunk + JSON to entity_relationships/jsons/
+                         Bronze: immutable JSONB per chunk + JSON to kg/evals/jsons/
                          Silver: deduplicated canonical tables in PostgreSQL
                          Gold:   distinct vertex labels projected into AGE
     RiskGraphBuilder   — rule-based risk inference (no LLM); runs after Gold
@@ -58,9 +58,10 @@ Usage:
 """
 
 from kg.age_graph_store import AgeGraphStore
-from kg.legal.cuad_kg_ingest import build_cuad_kg
-from kg.legal.extraction_pipeline import ExtractionPipeline
-from kg.legal.cuad_ontology import (
+from kg.legal.ingestion.cuad_kg_ingest import build_cuad_kg
+from kg.legal.ingestion.extraction_pipeline import ExtractionPipeline
+from kg.legal.ingestion.risk_graph_builder import RiskGraphBuilder
+from kg.legal.common.cuad_ontology import (
     VALID_LABELS,
     VALID_REL_TYPES,
     ENTITY_TYPE_MAP,
@@ -68,12 +69,11 @@ from kg.legal.cuad_ontology import (
     entity_type_for,
     relationship_type_for,
 )
-from kg.legal.schemas import GraphType, get_schema
-from kg.legal.graph_router import GraphRouter
-from kg.legal.intent_parser import IntentParser, IntentMatch
-from kg.legal.query_builder import QUERY_CAPABILITIES
-from kg.legal.nl2cypher import NL2CypherConverter
-from kg.legal.risk_graph_builder import RiskGraphBuilder
+from kg.legal.retrieval.schemas import GraphType, get_schema
+from kg.legal.retrieval.graph_router import GraphRouter
+from kg.legal.retrieval.intent_parser import IntentParser, IntentMatch
+from kg.legal.retrieval.query_builder import QUERY_CAPABILITIES
+from kg.legal.retrieval.nl2cypher import NL2CypherConverter
 
 
 def create_kg_store() -> AgeGraphStore:

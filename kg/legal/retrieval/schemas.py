@@ -5,7 +5,7 @@ Each schema describes one logical subgraph of the physical Apache AGE graph
 (legal_graph).  All four schemas share the same graph; they are distinguished
 by vertex labels and relationship types, not by separate AGE graph objects.
 
-Source of truth: docs/kg/KG_PIPELINE.md
+Source of truth: kg/docs/KG_INGESTION_PIPELINE.md
 
 Usage:
     from kg.legal.schemas import GraphType, get_schema

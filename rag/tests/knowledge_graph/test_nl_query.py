@@ -31,9 +31,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from kg.legal.intent_parser import IntentParser, IntentMatch
-from kg.legal.nl2cypher import NL2CypherConverter
-from kg.legal.query_builder import QUERY_CAPABILITIES
+from kg.legal.retrieval.intent_parser import IntentParser, IntentMatch
+from kg.legal.retrieval.nl2cypher import NL2CypherConverter
+from kg.legal.retrieval.query_builder import QUERY_CAPABILITIES
 
 
 # ---------------------------------------------------------------------------

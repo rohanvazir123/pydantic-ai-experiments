@@ -1,22 +1,22 @@
 """
 Multi-pass legal knowledge graph extraction pipeline.
 
-Module: kg.legal.extraction_pipeline
+Module: kg.legal.ingestion.extraction_pipeline
 ===============================================
 
-Bronze / Silver / Gold medallion architecture.  See docs/KG_PIPELINE.md.
+Bronze / Silver / Gold medallion architecture.  See kg/docs/KG_INGESTION_PIPELINE.md.
 
 CLI
 ---
     # Full pipeline (Bronze + Silver + Gold) for one contract
-    python -m kg.legal.extraction_pipeline --contract-id <uuid>
+    python -m kg.legal.ingestion.extraction_pipeline --contract-id <uuid>
 
     # Full pipeline for all contracts
-    python -m kg.legal.extraction_pipeline --all [--limit N]
+    python -m kg.legal.ingestion.extraction_pipeline --all [--limit N]
 
     # Replay Silver + Gold from existing Bronze (no LLM calls)
-    python -m kg.legal.extraction_pipeline --project --contract-id <uuid>
-    python -m kg.legal.extraction_pipeline --project --all
+    python -m kg.legal.ingestion.extraction_pipeline --project --contract-id <uuid>
+    python -m kg.legal.ingestion.extraction_pipeline --project --all
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from rich.table import Table
 
 from rag.config.settings import load_settings
 from kg.age_graph_store import _normalize
-from kg.legal.risk_graph_builder import RiskGraphBuilder
+from kg.legal.ingestion.risk_graph_builder import RiskGraphBuilder
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -248,7 +248,8 @@ def _make_agent(system_prompt: str) -> Agent:
     base_url = settings.kg_llm_base_url or settings.llm_base_url
     provider = OpenAIProvider(base_url=base_url, api_key=api_key)
     model    = OpenAIChatModel(model_id, provider=provider)
-    ms: dict = {"extra_body": {"num_ctx": settings.llm_num_ctx}} if settings.llm_provider == "ollama" else {}
+    num_ctx = settings.kg_llm_num_ctx or settings.llm_num_ctx
+    ms: dict = {"extra_body": {"num_ctx": num_ctx}} if settings.llm_provider == "ollama" else {}
     return Agent(model, system_prompt=system_prompt, model_settings=ms)
 
 
@@ -857,7 +858,7 @@ class ExtractionPipeline:
 
     # ---- public API ----
 
-    _JSON_DIR = Path("entity_relationships/jsons")
+    _JSON_DIR = Path("kg/evals/jsons")
 
     def _save_json(self, contract_id: str, title: str, artifacts: list[BronzeArtifact]) -> None:
         """Persist Bronze extraction results as a JSON file for audit/debug."""

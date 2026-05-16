@@ -1,0 +1,53 @@
+{
+  "contract_id": "e2e00000-0000-0000-0000-000000000001",
+  "title": "E2E Test — Acme + Beta LLC",
+  "model_version": "qwen2.5:14b",
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "entities": [
+        {
+          "entity_id": "ent-e2e-0001",
+          "label": "Party",
+          "canonical_name": "Acme Corp",
+          "text_span": "Acme Corp",
+          "confidence": 0.95
+        },
+        {
+          "entity_id": "ent-e2e-0002",
+          "label": "Party",
+          "canonical_name": "Beta LLC",
+          "text_span": "Beta LLC",
+          "confidence": 0.95
+        },
+        {
+          "entity_id": "ent-e2e-0003",
+          "label": "Jurisdiction",
+          "canonical_name": "Delaware",
+          "text_span": "Delaware",
+          "confidence": 0.95
+        }
+      ],
+      "relationships": [
+        {
+          "relationship_id": "rel-e2e-0001",
+          "source_entity_id": "ent-e2e-0001",
+          "target_entity_id": "ent-e2e-0003",
+          "relationship_type": "GOVERNED_BY",
+          "evidence_text": "governed by the laws of Delaware",
+          "confidence": 0.9
+        },
+        {
+          "relationship_id": "rel-e2e-0002",
+          "source_entity_id": "ent-e2e-0001",
+          "target_entity_id": "ent-e2e-0002",
+          "relationship_type": "INDEMNIFIES",
+          "evidence_text": "Acme Corp shall indemnify Beta LLC",
+          "confidence": 0.9
+        }
+      ],
+      "hierarchy_nodes": [],
+      "cross_refs": []
+    }
+  ]
+}

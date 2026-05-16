@@ -1,0 +1,11 @@
+Practical Recommendations
+
+Based on 2000 extraction runs across 4 models and 3 strategies, here’s what I’d recommend for production Graph RAG systems:
+
+If reliability is your top priority (e.g., automated pipelines with no human review): Use Mistral 7B v0.3 + few-shot. It’s the only configuration that achieves 100% schema conformance while still getting reasonable extraction quality (0.564 Triple F1). It’s also the fastest model, averaging 14s per extraction.
+
+If extraction quality matters most (e.g., building a curated knowledge base with human validation): Use Gemma 2 9B + few-shot. At 0.653 Triple F1 with 65% schema conformance, you’ll need to handle failures, but the successful extractions are meaningfully better. The 9B parameter count gives it an edge on complex passages.
+
+If you need both and can afford retries: Use Llama 3.1 8B + few-shot with a fallback strategy. Try a few-shot first (0.732 Triple F1 when it works), and if the output fails schema validation, retry with schema-in-prompt (95% conformance). This gives you the best of both worlds at the cost of ~2x latency on failures.
+
+For all models: Schema-in-prompt is the safe default. It provides the best reliability-to-quality ratio across every model tested.

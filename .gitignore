@@ -43,6 +43,7 @@ coverage/
 htmlcov/
 .venv
 *.out.txt
+kg/evals/*.json
 relevant_notebooks/
 notebooks_backup/
 anaconda_projects/

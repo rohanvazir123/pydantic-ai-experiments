@@ -291,6 +291,16 @@ class Settings(BaseSettings):
         default=None,
         description="Base URL for KG extraction LLM (defaults to llm_base_url when None)",
     )
+    kg_llm_num_ctx: int = Field(
+        default=4096,
+        description=(
+            "Context window (num_ctx) for the KG extraction LLM (Ollama only). "
+            "Extraction prompts are ~2000-3000 tokens max (1500-char chunk + system prompt "
+            "+ entity/relationship JSON for passes 2-5). 4096 is sufficient. "
+            "8GB VRAM budget: Mistral 7B 4-bit ~4.5 GB model + ~512 MB KV at 4096 ctx = ~5 GB total. "
+            "Raise to 8192 only if validation pass truncates on long contracts."
+        ),
+    )
 
     image_description_detail: str = Field(
         default="high",

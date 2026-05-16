@@ -36,6 +36,9 @@ _SINGLE_PROPER = re.compile(
     r"|\s+(?:contract|agreement|corp|corporation|inc|ltd|llc|company)))",
 )
 
+# Interrogative words that should never be treated as entity names.
+_INTERROGATIVES = frozenset({"Which", "What", "Who", "Whose", "Whom", "How", "When", "Where"})
+
 
 def _extract_name(query: str) -> str | None:
     """Extract an entity name — quoted > multi-word title-case > single proper noun."""
@@ -44,10 +47,15 @@ def _extract_name(query: str) -> str | None:
         return (m.group(1) or m.group(2)).strip()
     m = _TITLED.search(query)
     if m:
-        return m.group(1).strip()
+        words = m.group(1).split()
+        while words and words[0] in _INTERROGATIVES:
+            words.pop(0)
+        name = " ".join(words).strip()
+        return name or None
     m = _SINGLE_PROPER.search(query)
     if m:
-        return m.group(1).strip()
+        name = m.group(1).strip()
+        return None if name in _INTERROGATIVES else name
     return None
 
 

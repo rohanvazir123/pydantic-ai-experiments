@@ -104,9 +104,9 @@ python -m kg.extraction_pipeline --project --all  # replay Silver+Gold from exis
 
 ```
 rag/docs/ARCHITECTURE_SUMMARY.md      — full system overview (start here)
-kg/docs/KG_PIPELINE.md                — extraction pipeline design
+kg/docs/KG_INGESTION_PIPELINE.md      — extraction pipeline design
 kg/docs/KG_FAQ.md                     — decisions, findings, run log
-kg/docs/RETRIEVAL_ARCHITECTURE.md     — NL→Cypher retrieval pipeline
+kg/docs/KG_RETRIEVAL_PIPELINE.md      — NL→Cypher retrieval pipeline
 kg/docs/GRAPH_VIEWER.md               — AGE Viewer setup and Cypher queries
 rag/docs/RAG.md                       — RAG techniques deep dive
 rag/docs/CALL_GRAPH.md                — method-level call graphs

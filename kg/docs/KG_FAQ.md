@@ -1,42 +1,89 @@
 # Knowledge Graph Pipeline — FAQ & Findings
 
 Living document. Updated as we run experiments and make architectural changes.
-See `kg/docs/KG_PIPELINE.md` for the full design reference.
+See `kg/docs/KG_INGESTION_PIPELINE.md` for the ingestion design reference.
+
+---
+
+## Table of Contents
+
+**Practical / operational (start here)**
+
+1. [How are contracts chunked for KG extraction?](#how-are-contracts-chunked-for-kg-extraction)
+2. [How many AGE graphs are created? Can I view them with Apache AGE Viewer?](#how-many-age-graphs-are-created-can-i-view-them-with-apache-age-viewer)
+3. [Hybrid retrieval strategy](#hybrid-retrieval-strategy-rrf-across-modalities-vs-route--execute--synthesize)
+4. [How does intent classification work, and why is it rule-based?](#how-does-intent-classification-work-and-why-is-it-rule-based-instead-of-llm-based)
+5. [Ingestion pipeline CLI](#ingestion-pipeline-cli)
+6. [Retrieval pipeline CLI](#retrieval-pipeline-cli)
+
+**Evaluation**
+
+7. [Evaluation overview](#evaluation-overview)
+8. [What are the Bronze JSON audit files written by `_save_json()`?](#what-are-the-bronze-json-audit-files-written-by-_save_json)
+9. [Ingestion eval — how to run and what it measures](#ingestion-eval--how-to-run-and-what-it-measures)
+10. [Ingestion eval — latest results (2026-05-16, 14 contracts)](#ingestion-eval--latest-results-2026-05-16-14-contracts)
+11. [Retrieval eval — how to run and what it measures](#retrieval-eval--how-to-run-and-what-it-measures)
+12. [Retrieval eval — latest results (2026-05-16, 34 questions)](#retrieval-eval--latest-results-2026-05-16-34-questions)
+13. [Known issues found by evals](#known-issues-found-by-evals)
+
+**Issues, performance & improvements**
+
+14. [JSON parsing failures from llama3.1:8b](#json-parsing-failures-from-llama318b)
+15. [Performance & timing](#performance--timing)
+16. [Planned improvements](#planned-improvements)
+17. [Guardrails](#guardrails)
+18. [Observed issues & fixes](#observed-issues--fixes)
+19. [Run log](#run-log)
+
+**Design rationale (read if you want the "why")**
+
+20. [What is the CUAD fast ingest and why is it so much faster than LLM extraction?](#what-is-the-cuad-fast-ingest-and-why-is-it-so-much-faster-than-llm-extraction)
+21. [Why Bronze / Silver / Gold?](#why-bronze--silver--gold-instead-of-writing-directly-to-age)
+22. [Why 5 separate LLM passes?](#why-5-separate-llm-passes-instead-of-one-combined-prompt)
+23. [Why distinct vertex labels?](#why-distinct-vertex-labels-party-contract-instead-of-flat-entity)
+24. [Where does Ollama do the heavy lifting — and where can it ruin the graph?](#where-does-ollama-do-the-heavy-lifting--and-where-can-it-ruin-the-graph)
+25. [Why Apache AGE?](#why-apache-age-for-the-knowledge-graph)
 
 ---
 
 ## Architecture decisions
 
-### Why Apache AGE for the knowledge graph?
+### How are contracts chunked for KG extraction?
 
-**Short answer: multi-hop traversal, LLM-driven ad-hoc Cypher, and native graph semantics at CUAD scale.**
+**Short answer: Docling semantic chunks from the `chunks` table, with a character-stride fallback.**
 
-#### What AGE gives us
+The KG extraction pipeline reads pre-built semantic chunks from the PostgreSQL `chunks` table — the same chunks produced by the Docling `HybridChunker` during ingestion — rather than re-splitting the raw document text.
 
-**Multi-hop traversal in a single query.**  Legal analysis regularly requires following relationship chains: "find all contracts that reference a document that was amended by a contract governed by Delaware law."  In Cypher this is one `MATCH` pattern.  SQL cannot express variable-depth graph traversal without recursive CTEs that become unreadable past two hops.
+#### How it works
 
-**The agent can ask ad-hoc questions.**  `run_cypher_query` (in `AgeGraphStore`) accepts whatever Cypher the LLM generates and executes it at query time.  There is no equivalent in a relational model — you cannot "run whatever JOIN chain the LLM just wrote" over plain tables.
+`_fetch_contracts()` (`kg/legal/ingestion/extraction_pipeline.py:948`) runs:
 
-**Entity type as a schema concept, not a string value.**  `:Party` is a vertex label with its own storage in AGE.  `MATCH (e:Party)` touches only Party nodes, not the full entity set.  At CUAD scale (510 contracts, thousands of entities) that distinction matters for query performance.
+```sql
+SELECT content FROM chunks WHERE document_id = $1::uuid ORDER BY chunk_index
+```
 
-| Capability | AgeGraphStore |
+If a document has no rows in `chunks` (e.g., ingested by a path that doesn't go through Docling), it falls back to a fixed character-stride split at `KG_EXTRACTION_CHUNK_SIZE` (default 1500 chars).
+
+#### What Docling chunks give us
+
+| Property | Docling HybridChunker |
 |---|---|
-| 1-hop neighbour | `MATCH (s)-[r]-(t)` |
-| 2-hop path | `MATCH (a)-[*1..2]->(b)` |
-| Variable-depth | `MATCH (a)-[*1..N]->(b)` |
-| LLM ad-hoc Cypher | `run_cypher_query` executes Cypher |
-| Type-filtered scan | `MATCH (e:Party)` — label-pruned |
-| Pattern matching | `MATCH (p:Party)-[:INDEMNIFIES]->(q:Party)-[:SIGNED_BY]->(c:Contract)` |
+| Boundary logic | Document structure — headings, paragraphs, tables |
+| Token limit | `max_tokens` (default 512 tokens) — stays within embedding model window |
+| Context prefix | Each chunk carries heading ancestry — self-contained for the LLM |
+| Overlap | Configurable (default 100 chars) with sentence-boundary snapping |
 
-#### The one trade-off: no tsvector inside AGE
+This means KG chunk boundaries now match RAG chunk boundaries exactly. A future improvement can exploit this: KG entity hit → `chunk_index` → retrieve the exact matching chunk for context boosting in the RRF pipeline.
 
-AGE does not expose PostgreSQL's `tsvector` / GIN index.  Entity name search inside Cypher would be an O(n) CONTAINS scan.
+#### Known limitation: cross-chunk relationships
 
-**This is resolved by `EntityIndex` (`kg/entity_index.py`)** — a shadow table `kg_entity_index` in the main PostgreSQL DB that mirrors every entity written to AGE.  It carries a `tsvector GENERATED` column (GIN index) and a `vector(N)` column (pgvector IVFFlat).  `AgeGraphStore.search_entities()` uses RRF (k=60) over both; the CONTAINS fallback only fires if the index is unreachable.
+Each chunk is sent through 5 LLM passes independently.  The LLM sees only the text within that chunk; it cannot see entities from adjacent chunks.  A relationship whose source and target entity fall in different chunks will be missed.
 
-#### Infrastructure cost
+- Chunk N ends: "…Party A shall indemnify"
+- Chunk N+1 starts: "Party B from all claims…"
+- The relationship `Party A –INDEMNIFIES→ Party B` is never extracted.
 
-AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main pgvector DB.  Every connection must run `LOAD 'age'` and `SET search_path = ag_catalog` — handled automatically by the `_conn()` context manager and pool `init=_age_init` callback.
+Silver deduplication partially mitigates this for entities (matching `(label, normalized_name)` across all chunks of a contract), but relationships that span a chunk boundary are lost.  The `source_chunk_indices` column in `kg_canonical_entities` records which chunks each entity appeared in — foundation for a future cross-chunk relationship re-extraction pass.
 
 ---
 
@@ -59,8 +106,8 @@ The three pipelines that all write to the **same** `legal_graph`:
 
 | Pipeline | File | What it writes |
 |---|---|---|
-| CUAD annotation ingest | `kg/cuad_kg_ingest.py` | Entities + relationships from `cuad_eval.json` CUAD annotations |
-| LLM extraction (Bronze→Silver→Gold) | `kg/extraction_pipeline.py` (`GoldProjector`) | Entities + relationships from LLM extraction of contract text |
+| CUAD annotation ingest | `kg/legal/ingestion/cuad_kg_ingest.py` | Entities + relationships from `cuad_eval.json` CUAD annotations |
+| LLM extraction (Bronze→Silver→Gold) | `kg/legal/ingestion/extraction_pipeline.py` (`GoldProjector`) | Entities + relationships from LLM extraction of contract text |
 | RAG agent KG tools | `kg/age_graph_store.py` (called by `rag_agent.py`) | Runtime entity/relationship lookups (read-only at query time) |
 
 The PostgreSQL *database* in `docker-compose.yml` is also named `legal_graph` (`POSTGRES_DB: legal_graph`) — this is the PostgreSQL database that AGE stores its internal graph metadata in. The AGE *graph object* inside it is also called `legal_graph`. They share a name but are distinct things (the database is the container; the graph is an object inside it).
@@ -119,45 +166,6 @@ LIMIT 60
 ```
 
 For extended queries and filter examples see **[GRAPH_VIEWER.md](GRAPH_VIEWER.md)**.
-
----
-
-### How are contracts chunked for KG extraction?
-
-**Short answer: Docling semantic chunks from the `chunks` table, with a character-stride fallback.**
-
-The KG extraction pipeline reads pre-built semantic chunks from the PostgreSQL `chunks` table — the same chunks produced by the Docling `HybridChunker` during ingestion — rather than re-splitting the raw document text.
-
-#### How it works
-
-`_fetch_contracts()` (`kg/extraction_pipeline.py`) runs:
-
-```sql
-SELECT content FROM chunks WHERE document_id = $1::uuid ORDER BY chunk_index
-```
-
-If a document has no rows in `chunks` (e.g., ingested by a path that doesn't go through Docling), it falls back to a fixed character-stride split at `KG_EXTRACTION_CHUNK_SIZE` (default 1500 chars).
-
-#### What Docling chunks give us
-
-| Property | Docling HybridChunker |
-|---|---|
-| Boundary logic | Document structure — headings, paragraphs, tables |
-| Token limit | `max_tokens` (default 512 tokens) — stays within embedding model window |
-| Context prefix | Each chunk carries heading ancestry — self-contained for the LLM |
-| Overlap | Configurable (default 100 chars) with sentence-boundary snapping |
-
-This means KG chunk boundaries now match RAG chunk boundaries exactly. A future improvement can exploit this: KG entity hit → `chunk_index` → retrieve the exact matching chunk for context boosting in the RRF pipeline.
-
-#### Known limitation: cross-chunk relationships
-
-Each chunk is sent through 5 LLM passes independently.  The LLM sees only the text within that chunk; it cannot see entities from adjacent chunks.  A relationship whose source and target entity fall in different chunks will be missed.
-
-- Chunk N ends: "…Party A shall indemnify"
-- Chunk N+1 starts: "Party B from all claims…"
-- The relationship `Party A –INDEMNIFIES→ Party B` is never extracted.
-
-Silver deduplication partially mitigates this for entities (matching `(label, normalized_name)` across all chunks of a contract), but relationships that span a chunk boundary are lost.  The `source_chunk_indices` column in `kg_canonical_entities` records which chunks each entity appeared in — foundation for a future cross-chunk relationship re-extraction pass.
 
 ---
 
@@ -282,6 +290,348 @@ The same principle applies to the read-only guardrail in `run_graph_query`: `age
 
 ---
 
+### Ingestion pipeline CLI
+
+The ingestion module has two entry points — CUAD fast ingest and LLM extraction — plus an eval pipeline that reads the tables they populate.
+
+#### CUAD fast ingest (no LLM)
+
+```powershell
+# Populate graph from CUAD human annotations — 510 contracts, minutes, no LLM
+python -m kg.legal.ingestion.cuad_kg_ingest
+```
+
+Calls `build_cuad_kg()` (`kg/legal/ingestion/cuad_kg_ingest.py:61`) and writes directly to AGE.  No Bronze or Silver tables, no LLM calls.  Run this first to get a high-quality baseline graph before LLM enrichment.
+
+#### LLM extraction pipeline (Bronze → Silver → Gold → Risk)
+
+```powershell
+# All contracts in the database (~5 days local on CPU)
+python -m kg.legal.ingestion.extraction_pipeline --all
+
+# Small batch for testing
+python -m kg.legal.ingestion.extraction_pipeline --limit 20
+
+# Single contract by UUID
+python -m kg.legal.ingestion.extraction_pipeline --contract-id <uuid>
+
+# Replay Silver + Gold from existing Bronze — no LLM, fast
+python -m kg.legal.ingestion.extraction_pipeline --project --all
+```
+
+Key entry points in `kg/legal/ingestion/extraction_pipeline.py`:
+
+| Method | Line | Purpose |
+|---|---|---|
+| `process_contract()` | L885 | Full pipeline per contract |
+| `project_contract()` | L933 | Silver + Gold replay, no LLM |
+| `_fetch_contracts()` | L948 | Loads contracts from the `chunks` table |
+| `_save_json()` | L862 | Writes Bronze JSON audit files to `kg/evals/jsons/` |
+
+#### Ingestion eval
+
+```powershell
+# Print summary table to stdout
+python -m kg.legal.ingestion.eval_pipeline
+
+# Also write JSON to file
+python -m kg.legal.ingestion.eval_pipeline --output kg/evals/ingest_eval_latest.json
+```
+
+---
+
+### Retrieval pipeline CLI
+
+The retrieval CLI (`kg/legal/retrieval/cli.py`) queries the live AGE graph.  Requires the AGE container: `docker compose up -d age`.
+
+#### Interactive REPL
+
+```powershell
+python -m kg.legal.retrieval.cli
+```
+
+Type a question at the `>` prompt.  Results render as a Rich table.  `exit` or Ctrl-C to quit.
+
+#### Single question
+
+```powershell
+python -m kg.legal.retrieval.cli --question "Which parties indemnify each other?"
+
+# Show the generated Cypher alongside results
+python -m kg.legal.retrieval.cli --question "What is the governing law?" --show-cypher
+```
+
+#### Stdin mode (for piping / batch)
+
+```powershell
+echo "Who are the parties?" | python -m kg.legal.retrieval.cli --stdin
+
+# Batch from file
+Get-Content questions.txt | python -m kg.legal.retrieval.cli --stdin
+```
+
+#### Retrieval eval
+
+```powershell
+# Dry-run — tests IntentParser only, no AGE connection needed
+python -m kg.legal.retrieval.eval_pipeline --dry-run
+
+# Full eval against live AGE
+python -m kg.legal.retrieval.eval_pipeline --output kg/evals/retrieval_eval_latest.json
+```
+
+---
+
+## Evaluation
+
+### Evaluation overview
+
+The pipeline produces three categories of evaluation artifacts, all written to `kg/evals/` (gitignored):
+
+| Artifact | Where | What it contains | Requires live AGE? |
+|---|---|---|---|
+| Bronze JSON audit files | `kg/evals/jsons/<title>_<id[:8]>.json` | Per-contract extraction output: entities, validated relationships, hierarchy nodes, cross-refs — one file per `process_contract()` call | No — written during extraction |
+| Ingestion eval report | `kg/evals/ingest_eval_latest.json` | Aggregated Bronze/Silver/Gold metrics across all processed contracts | No — reads PostgreSQL tables |
+| Retrieval eval report | `kg/evals/retrieval_eval_latest.json` | Intent match rate, Cypher validity, result hit rate, latency for 34 predefined questions | Yes — executes Cypher against AGE |
+
+#### Eval pipeline reports
+
+Both eval pipelines summarise the tables, not re-run extraction:
+
+```powershell
+# Ingestion metrics (no AGE needed)
+python -m kg.legal.ingestion.eval_pipeline --output kg/evals/ingest_eval_latest.json
+
+# Retrieval quality (needs live AGE)
+python -m kg.legal.retrieval.eval_pipeline --output kg/evals/retrieval_eval_latest.json
+```
+
+#### End-to-end integration test
+
+`kg/tests/test_extraction_pipeline_e2e.py` runs the full Bronze → Silver → Gold → Risk → NL2Cypher stack with mocked LLM calls against real PostgreSQL + AGE:
+
+```powershell
+pytest kg/tests/test_extraction_pipeline_e2e.py -m integration -v
+```
+
+Skips automatically if PostgreSQL or AGE is unreachable.  Does not call Ollama.
+
+---
+
+### What are the Bronze JSON audit files written by `_save_json()`?
+
+**Short answer: per-contract snapshots of raw LLM extraction output, written automatically after every `process_contract()` call — the primary audit trail for debugging Silver/Gold data.**
+
+Written by `_save_json()` (`kg/legal/ingestion/extraction_pipeline.py:862`) at the end of every `process_contract()` call.  File name: `<title_slug>_<contract_id[:8]>.json`.  Stored in `kg/evals/jsons/` (tracked by git).
+
+**Contents per chunk** (example from `kg/evals/jsons/E2E_Test___Acme___Beta_LLC_e2e00000.json`):
+
+```json
+{
+  "contract_id": "e2e00000-0000-0000-0000-000000000001",
+  "title": "E2E Test — Acme + Beta LLC",
+  "model_version": "qwen2.5:14b",
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "entities": [
+        {"entity_id": "ent-e2e-0001", "label": "Party",        "canonical_name": "Acme Corp", "text_span": "Acme Corp", "confidence": 0.95},
+        {"entity_id": "ent-e2e-0002", "label": "Party",        "canonical_name": "Beta LLC",  "text_span": "Beta LLC",  "confidence": 0.95},
+        {"entity_id": "ent-e2e-0003", "label": "Jurisdiction", "canonical_name": "Delaware",  "text_span": "Delaware",  "confidence": 0.95}
+      ],
+      "relationships": [
+        {"relationship_id": "rel-e2e-0001", "source_entity_id": "ent-e2e-0001", "target_entity_id": "ent-e2e-0003", "relationship_type": "GOVERNED_BY",  "evidence_text": "governed by the laws of Delaware",    "confidence": 0.9},
+        {"relationship_id": "rel-e2e-0002", "source_entity_id": "ent-e2e-0001", "target_entity_id": "ent-e2e-0002", "relationship_type": "INDEMNIFIES",  "evidence_text": "Acme Corp shall indemnify Beta LLC", "confidence": 0.9}
+      ],
+      "hierarchy_nodes": [],
+      "cross_refs": []
+    }
+  ]
+}
+```
+
+Fields:
+- `entities` — Pass 1 output, filtered to confidence ≥ threshold
+- `relationships` — Pass 5 output (post-validation); **Pass 2 raw relationships are not saved**
+- `hierarchy_nodes` — Pass 3 output (Section/Clause structure)
+- `cross_refs` — Pass 4 output (AMENDS / REFERENCES / INCORPORATES_BY_REFERENCE)
+
+**What is NOT saved:** the raw relationships from Pass 2 before Pass 5 (validation) filters them.  If you need to audit what validation dropped, add a `raw_relationships` field to `BronzeArtifact` (tracked in Planned improvements).
+
+These files are the primary audit trail for LLM extraction.  If Silver or Gold data looks wrong, read the JSON to see exactly what the LLM returned per chunk.
+
+---
+
+### Ingestion eval — how to run and what it measures
+
+```powershell
+python -m kg.legal.ingestion.eval_pipeline
+python -m kg.legal.ingestion.eval_pipeline --output kg/evals/ingest_eval_latest.json
+```
+
+Reads `kg_raw_extractions` (Bronze JSONB), `kg_canonical_entities`, and `kg_canonical_relationships` (Silver).
+
+**Metrics:**
+
+| Metric | What it tells you |
+|---|---|
+| `contracts_evaluated` | How many contracts have Bronze data |
+| `total_chunks` | Total Bronze rows processed |
+| `total_entities` / `total_relationships` | Raw Bronze counts before confidence filter |
+| `mean_entities_per_chunk` | LLM extraction density |
+| `mean_confidence` | Average confidence across all extracted entities |
+| `label_distribution` | Which entity labels the LLM produced |
+| `rel_type_distribution` | Which relationship types the LLM produced |
+| `silver_gold.raw_entities` | Entities written to Silver staging (after confidence ≥ 0.7) |
+| `silver_gold.canonical_entities` | After Silver deduplication |
+| `silver_gold.canonical_relationships` | After Silver deduplication |
+
+**What to watch:** off-ontology labels (anything not in `VALID_LABELS`) signal prompt leakage; high dedup rates (> 50%) mean the LLM is duplicating entities across chunks; low confidence means uncertainty.
+
+---
+
+### Ingestion eval — latest results (2026-05-16, 14 contracts)
+
+Source: `kg/evals/ingest_eval_latest.json`.
+
+**Summary:**
+
+| Metric | Value |
+|---|---|
+| Contracts evaluated | 14 |
+| Chunks processed | 199 |
+| Raw entities (Bronze) | 777 |
+| Staged entities (Silver pre-dedup) | 587 |
+| Canonical entities (Silver) | 436 (25.7% dedup) |
+| Raw relationships (Bronze) | 423 |
+| Staged relationships (Silver pre-dedup) | 320 |
+| Canonical relationships (Silver) | 248 (22.5% dedup) |
+| Mean entities per chunk | 3.9 |
+| Mean relationships per chunk | 2.1 |
+| Mean confidence | 96.4% |
+
+**Label distribution (top 10):**
+
+| Label | Count | In ontology? |
+|---|---|---|
+| Party | 324 | Yes |
+| Clause | 136 | Yes |
+| Contract | 61 | Yes |
+| Obligation | 39 | Yes |
+| Jurisdiction | 38 | Yes |
+| EffectiveDate | 35 | Yes |
+| Section | 29 | Yes |
+| RenewalTerm | 18 | Yes |
+| LiabilityClause | 18 | Yes |
+| Risk | 12 | Yes |
+
+**Off-ontology labels detected:** `Role (Reviewer)`, `Person (Reviewer)`, `Person (Author)`, `Person`, `Company`, `Location`, `Government Authority`, `Law`, `Product`, `Product/Service`, `Address`, `Term`, `Renewal Term`, `EffectiveDate/ExpirationDate`. Blocked by `safe_label()` before Silver write; inflate Bronze counts but never reach AGE.
+
+**Relationship type distribution (top 10):**
+
+| Rel type | Count |
+|---|---|
+| GOVERNED_BY | 96 |
+| REFERENCES | 92 |
+| OBLIGATES | 64 |
+| DISCLOSES_TO | 34 |
+| HAS_TERMINATION | 28 |
+| HAS_CLAUSE | 27 |
+| SUPERCEDES | 22 |
+| LIMITS_LIABILITY | 22 |
+| HAS_PAYMENT_TERM | 12 |
+| INDEMNIFIES | 11 |
+
+---
+
+### Retrieval eval — how to run and what it measures
+
+```powershell
+# Dry-run: tests IntentParser + Cypher generation only, no AGE connection
+python -m kg.legal.retrieval.eval_pipeline --dry-run
+
+# Full eval against live AGE
+python -m kg.legal.retrieval.eval_pipeline --output kg/evals/retrieval_eval_latest.json
+```
+
+34 predefined questions covering all 17 intent categories (2 per intent: one generic, one filtered by name param).
+
+**Metrics:**
+
+| Metric | What it tells you |
+|---|---|
+| `intent_match_rate` | Fraction where `IntentParser.parse()` returned the expected intent |
+| `cypher_valid_rate` | Fraction of queries that executed without AGE syntax error |
+| `result_hit_rate` | Fraction of queries that returned ≥ 1 row |
+| `mean_latency_ms` | Average end-to-end time (IntentParser + Cypher execute) |
+| `p95_latency_ms` | 95th-percentile latency |
+
+`intent_match_rate` and `cypher_valid_rate` test the NL→Cypher pipeline itself — should be 100%.  `result_hit_rate` depends on graph population.
+
+---
+
+### Retrieval eval — latest results (2026-05-16, 34 questions)
+
+Source: `kg/evals/retrieval_eval_latest.json`.  Graph state: 52 contracts (CUAD fast ingest) + 14 contracts (LLM extraction).
+
+**Summary:**
+
+| Metric | Value |
+|---|---|
+| Total questions | 34 |
+| Intent match rate | 100% (34/34) |
+| Cypher valid rate | 100% (34/34) |
+| Result hit rate | 26.5% (9/34) |
+| Mean latency | 220.6 ms |
+| p95 latency | 228.9 ms |
+
+**Intents with results:**
+
+| Intent | Example question | Rows returned |
+|---|---|---|
+| `find_indemnification` | Which parties indemnify each other? | 5 |
+| `find_jurisdictions` | What is the governing law? | 3 |
+| `find_disclosures` | What disclosures are made between parties? | 9 |
+| `find_references` | What documents are referenced? | 3 |
+| `find_all_risks` | What are the compliance risks? | 52 |
+| `find_risk_chains` | What risk factors cause other risks? | 12 |
+| `find_missing_indemnity` | Which contracts lack an indemnity clause? | 52 |
+| `find_missing_termination` | Which contracts are missing a termination clause? | 52 |
+| `list_contracts` | List all contracts. | 52 |
+
+**Intents with 0 results:** `find_parties`, `find_termination_clauses`, `find_confidentiality_clauses`, `find_payment_terms`, `find_obligations`, `find_liability_clauses`, `find_effective_dates`, `find_expiration_dates`, `find_renewal_terms`, `find_sections`, `find_superseded_contracts`, `find_amendments`, `find_incorporated_documents`, `find_attachments`, `find_replacements`.
+
+The 26.5% hit rate reflects graph sparsity, not NL→Cypher accuracy.  Risk queries and absence queries (`find_missing_*`) hit because `RiskGraphBuilder` populates Risk nodes for all 52 CUAD contracts rule-based; most other edge types require LLM extraction.
+
+---
+
+### Known issues found by evals
+
+**1. "Which" extracted as name param**
+
+Questions like "Which contracts supersede others?" cause IntentParser to extract "Which" as the name filter, producing Cypher with `WHERE c.name CONTAINS 'Which'` — always 0 rows.  Affected intents: `find_superseded_contracts`, `find_amendments`, `find_replacements`, `find_missing_indemnity`, `find_missing_termination`.
+
+Fix: add a guard in `IntentParser.parse()` (`kg/legal/retrieval/intent_parser.py:113`) to drop name params that match interrogative words: `{"Which", "What", "Who", "How", "When", "Where"}`.
+
+**2. HAS_TERMINATION / HAS_PAYMENT_TERM discrepancy**
+
+Ingestion eval shows 28 HAS_TERMINATION and 12 HAS_PAYMENT_TERM relationships in Bronze.  Retrieval eval returns 0 rows for `find_termination_clauses` and `find_payment_terms`.  Silver dedup should not reduce 28 to 0.
+
+Likely cause: Gold projection writes the relationship but the target node uses the generic `Clause` label (LLM fallback) rather than `TerminationClause`.  The Cypher `MATCH (c)-[:HAS_TERMINATION]->(t:TerminationClause)` then matches nothing.
+
+Fix: add a Gold projection validation step — count HAS_TERMINATION / HAS_PAYMENT_TERM edges in AGE and compare to Silver canonical counts.
+
+**3. Off-ontology label inflation**
+
+14 off-ontology label types detected (latest run).  They never reach AGE but inflate Bronze counts and skew the `label_distribution` metrics.  Improve entity extraction prompt examples for `Person`, `Company`, and date-hybrid types.
+
+**4. 52-contract baseline from CUAD**
+
+`list_contracts` returns 52 rows, not 14.  This is correct — the CUAD fast ingest populated 52 Contract nodes before LLM extraction ran.  Retrieval eval results for relationship-level queries reflect only LLM extraction yield (14 contracts), while risk and absence queries reflect the full 52-contract CUAD baseline.
+
+---
+
+## Design rationale
 
 ### What is the CUAD fast ingest and why is it so much faster than LLM extraction?
 
@@ -326,15 +676,15 @@ LLM extraction at ~15 min/contract = ~5 days for 522 contracts.  CUAD ingest = m
 
 ```bash
 # Step 1: Fast graph from CUAD annotations (minutes)
-python -m kg.cuad_kg_ingest
+python -m kg.legal.ingestion.cuad_kg_ingest
 
 # Step 2: Optional — LLM enrichment for a handful of contracts
-# JSON artifacts written to entity_relationships/jsons/ automatically
-python -m kg.extraction_pipeline --limit 20
+# JSON artifacts written to kg/evals/jsons/ automatically
+python -m kg.legal.ingestion.extraction_pipeline --limit 20
 
 # Step 3: Risk graph — called automatically by ExtractionPipeline,
 # or replay Silver+Gold from existing Bronze without re-running LLM:
-python -m kg.extraction_pipeline --project --all
+python -m kg.legal.ingestion.extraction_pipeline --project --all
 ```
 
 ---
@@ -435,6 +785,39 @@ One combined prompt asking for entities + relationships + hierarchy + cross-refs
 Separate focused passes with `temperature=0` and small chunks (1–3 clauses)
 produce cleaner, more consistent JSON per call.  The extra LLM calls are the
 cost — see timing section below.
+
+---
+
+### Why Apache AGE for the knowledge graph?
+
+**Short answer: multi-hop traversal, LLM-driven ad-hoc Cypher, and native graph semantics at CUAD scale.**
+
+#### What AGE gives us
+
+**Multi-hop traversal in a single query.**  Legal analysis regularly requires following relationship chains: "find all contracts that reference a document that was amended by a contract governed by Delaware law."  In Cypher this is one `MATCH` pattern.  SQL cannot express variable-depth graph traversal without recursive CTEs that become unreadable past two hops.
+
+**The agent can ask ad-hoc questions.**  `run_cypher_query` (in `AgeGraphStore`) accepts whatever Cypher the LLM generates and executes it at query time.  There is no equivalent in a relational model — you cannot "run whatever JOIN chain the LLM just wrote" over plain tables.
+
+**Entity type as a schema concept, not a string value.**  `:Party` is a vertex label with its own storage in AGE.  `MATCH (e:Party)` touches only Party nodes, not the full entity set.  At CUAD scale (510 contracts, thousands of entities) that distinction matters for query performance.
+
+| Capability | AgeGraphStore |
+|---|---|
+| 1-hop neighbour | `MATCH (s)-[r]-(t)` |
+| 2-hop path | `MATCH (a)-[*1..2]->(b)` |
+| Variable-depth | `MATCH (a)-[*1..N]->(b)` |
+| LLM ad-hoc Cypher | `run_cypher_query` executes Cypher |
+| Type-filtered scan | `MATCH (e:Party)` — label-pruned |
+| Pattern matching | `MATCH (p:Party)-[:INDEMNIFIES]->(q:Party)-[:SIGNED_BY]->(c:Contract)` |
+
+#### The one trade-off: no tsvector inside AGE
+
+AGE does not expose PostgreSQL's `tsvector` / GIN index.  Entity name search inside Cypher would be an O(n) CONTAINS scan.
+
+**Resolved by `EntityIndex` (`kg/entity_index.py`)** — a shadow table `kg_entity_index` in the main PostgreSQL DB that mirrors every entity written to AGE.  It carries a `tsvector GENERATED` column (GIN index) and a `vector(N)` column (pgvector IVFFlat).  `AgeGraphStore.search_entities()` uses RRF (k=60) over both; the CONTAINS fallback only fires if the index is unreachable.
+
+#### Infrastructure cost
+
+AGE requires a patched PostgreSQL 15/16 image (`apache/age:latest`, port 5433), separate from the main pgvector DB.  Every connection must run `LOAD 'age'` and `SET search_path = ag_catalog` — handled automatically by the `_conn()` context manager and pool `init=_age_init` callback.
 
 ---
 
