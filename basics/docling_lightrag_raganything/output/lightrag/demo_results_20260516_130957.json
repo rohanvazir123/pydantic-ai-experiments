@@ -1,0 +1,57 @@
+[
+  {
+    "id": "works_clean_prose",
+    "label": "WORKS — Clean prose with clear entities",
+    "expected": "pass",
+    "failure_reason": null,
+    "text_length": 651,
+    "query": "What is the relationship between the Transformer and BERT?",
+    "query_mode": "hybrid",
+    "ingested": true,
+    "answer": "The relationship between the Transformer and BERT is one of foundational development and enhancement. The **Transformer** architecture, introduced by Ashish Vaswani and colleagues at Google Brain in 2017 through their paper \"Attention Is All You Need,\" fundamentally changed natural language processing (NLP) tasks by replacing recurrent layers with multi-head self-attention mechanisms, which allows for parallel computation across sequence positions. The Transformer achieved state-of-the-art results on machine translation tasks, specifically English-to-German and English-to-French benchmarks.\n\nGoogle AI Language built upon the innovations presented in the Transformer model to develop **BERT** in 2018. BERT extends the capabilities of the Transformer by incorporating bidirectional pre-training on large text corpora. This enhancement allows BERT to excel at a wide range of NLP tasks including question answering, sentiment analysis, and named entity recognition.\n\nIn essence, BERT enhances and expands upon the original ideas presented in the Transformer architecture, leveraging its advancements to further improve performance across various natural language processing applications.\n\n### References\n\n- [1] \"Attention Is All You Need\" by Ashish Vaswani et al.\n- [2] Introduction of BERT (Document Title Not Provided)"
+  },
+  {
+    "id": "works_relationships",
+    "label": "WORKS — Multi-hop entity relationships",
+    "expected": "pass",
+    "failure_reason": null,
+    "text_length": 563,
+    "query": "How does LightRAG use PostgreSQL?",
+    "query_mode": "local",
+    "ingested": true,
+    "answer": "LightRAG utilizes PostgreSQL as its foundational database technology combined with specific extensions to achieve advanced data querying and retrieval capabilities. Specifically, LightRAG leverages both `pgvector` and `Apache AGE` extensions for PostgreSQL:\n\n- **Pgvector**: This extension adds vector similarity search functions to PostgreSQL, allowing it to store and query high-dimensional embeddings efficiently.\n  \n- **Apache AGE**: This PostgreSQL extension introduces the capability for graph querying using openCypher syntax directly within PostgreSQL. It allows for seamless knowledge graph traversal operations.\n\nBy integrating these extensions with PostgreSQL, LightRAG enables embedding-based retrieval and knowledge graph traversals without requiring additional infrastructure components beyond PostgreSQL itself.\n\n### References\n\n- [1] The Transformer architecture was introduced by Ashish Vaswani and colleagues at Google Brain in 2017, in the paper \"Attention Is All You Need\". The model replaces recurrent layers entirely with multi-head self-attention mechanisms, allowing parallel computation across sequence positions. The Transformer achieved state-of-the-art results on English-to-German and English-to-French machine translation benchmarks. BERT, developed by Google AI Language in 2018, extended the Transformer by using bidirectional pre-training on large text corpora, enabling strong performance on question answering, sentiment analysis, and named entity recognition tasks.\n- [2] PostgreSQL is an open-source relational database system developed by the PostgreSQL Global Development Group. The pgvector extension adds vector similarity search to PostgreSQL, enabling storage and querying of high-dimensional embeddings. Apache AGE is another PostgreSQL extension that adds openCypher graph query support, allowing graph traversal using Cypher syntax directly inside PostgreSQL. LightRAG uses both pgvector for embedding-based retrieval and Apache AGE for knowledge graph traversal, making PostgreSQL the only required infrastructure component."
+  },
+  {
+    "id": "fails_figure_placeholder",
+    "label": "FAILS — Figure placeholder (image content lost by Docling)",
+    "expected": "fail",
+    "failure_reason": "Docling extracts the caption but not the diagram. LightRAG sees only the caption text and placeholder markers. Extracted entities will be 'Figure 3', 'queries Q', 'keys K', 'values V' — descriptive labels, not structural relationships. A query asking HOW it works mechanically cannot be answered from caption text alone.",
+    "text_length": 278,
+    "query": "How does multi-head attention work mechanically?",
+    "query_mode": "local",
+    "ingested": true,
+    "answer": "The multi-head attention mechanism is a critical component of the Transformer architecture, designed to process sequences of data through multiple parallel self-attention heads. Here’s how it works mechanistically:\n\n1. **Queries (Q), Keys (K), and Values (V)**: Queries Q are vectors input into the multi-head attention mechanism. These queries seek information from other vectors known as keys K and values V. Each query is compared with keys to find relevant matches for information retrieval during computation, while values are combined with projected queries to compute the final outputs.\n\n2. **Projection**: The mechanism projects the input data (queries Q, keys K, and values V) into h parallel attention heads. For each head, these vectors go through scaled dot-product attention calculations. This process is essential for finding appropriate matches to project and integrate them further with other vector types.\n\n3. **Scaled Dot-Product Attention**: Within each of the h heads, scaled dot-product attention is computed between queries Q, keys K, and values V using a specific formula that scales down the dot product results before applying softmax normalization, ensuring the resulting attention scores are well-distributed across different query-key pairings.\n\n4. **Parallel Processing**: Multi-head self-attention mechanisms allow for parallel computation across sequence positions, significantly speeding up processing. Each of these heads can process different aspects or features of the same input data in parallel, which enhances the model's ability to capture diverse relationships within a sequence.\n\n5. **Integration of Results**: After computations in each head are complete, their results are concatenated together and optionally passed through another linear transformation layer to generate the final output for that step.\n\nThis mechanism enables efficient handling of large sequences and helps transformers understand longer context dependencies better than models relying on traditional recurrence or convolution operations.\n\n### References\n\n- [2] Attention Is All You Need\n- [3] PostgreSQL"
+  },
+  {
+    "id": "fails_markdown_table",
+    "label": "FAILS — Markdown table (structure lost as prose)",
+    "expected": "fail",
+    "failure_reason": "The LLM sees the markdown table as prose. It extracts entities like 'Transformer', 'ByteNet', 'MoE' but treats numeric values (BLEU scores) as entity descriptions, not structured data. Comparative queries ('which model has the BEST score') require the LLM to reason over all rows simultaneously, which the graph cannot support — each entity is stored independently with no 'ranked above' relationship.",
+    "text_length": 300,
+    "query": "Which model has the best BLEU score on English to French translation?",
+    "query_mode": "local",
+    "ingested": true,
+    "answer": "The model with the highest BLEU score for translating from English to French is Deep-Att + PosUnk, which achieves a score of 39.2. While the Transformer (big) also performs well with a BLEU score of 41.0 in this task, Deep-Att + PosUnk surpasses it specifically for English-to-French translations.\n\n### References\n\n- [2] Document Title One\n- [3] Document Title Two"
+  },
+  {
+    "id": "fails_column_mixed",
+    "label": "FAILS — Column-mixed chunk from bad Docling extraction",
+    "expected": "fail",
+    "failure_reason": "This is the actual column-mixed author block from attention_is_all_you_need.pdf (from bad_chunks output). The LLM sees interleaved author names and emails from two columns. It may extract authors correctly but relationships between authors and their institutions will be garbled — email addresses and affiliation markers (the asterisk symbol) appear as entity names.",
+    "text_length": 351,
+    "query": "Who are the authors from Google Brain?",
+    "query_mode": "local",
+    "ingested": true,
+    "answer": "The authors from Google Brain involved in the development of the Transformer model include Ashish Vaswani, Noam Shazeer, Łukasz Kaiser, and Aidan N. Gomez (who is affiliated with both Google Brain and the University of Toronto). Other contributors include individuals like Jakob Uszkoreit who is associated with Google Research but may have collaborated on related research projects.\n\n### References\n\n- [1] The Transformer architecture was introduced by Ashish Vaswani and colleagues at Google Brain in 2017, in the paper \"Attention Is All You Need\".\n- [2] Ashish Vaswani ∗ Google Brain avaswani@google.com Noam Shazeer ∗ Google Brain noam@google.com Łukasz Kaiser ∗ Google Brain lukaszkaiser@google.com"
+  }
+]

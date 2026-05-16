@@ -48,19 +48,38 @@ Rule: A → B → C → D sequentially. One task at a time. Run tests after each
 
 ---
 
-## Task B — Docling + LightRAG: NOT STARTED
+## Task B — Docling + LightRAG: COMPLETE (2026-05-16)
 
-Steps to do (from `claude_instructions.txt`):
-1. Clear concise architecture/internals document
-2. Key internal pieces + graph ontology
-3. KG generation from docling chunks — document the LLM prompt it uses
-4. Which local LLM + configurables + context window management
-5. Limitations and failure points, scalability
-6. How it stores KG in postgres apache age tables
-7. Document everything in `faq.md` (new section + update TOC)
-8. Python script showing where it works and where it fails + tests
+### B.1-7 — faq.md LightRAG section ✅
+Documented in `faq.md` under "LightRAG Architecture and Internals":
+- Internal pipeline (ASCII diagram: chunking → LLM extraction → graph + vector storage → query)
+- Graph ontology: flat open-ended property graph, 11 default entity types, binary undirected relationships
+- Full LLM prompts: entity extraction system/user prompt, gleaning pass, description summarisation, keyword extraction
+- Local LLM recommendations: qwen2.5:14b (best), qwen2.5:7b, llama3.1:8b, mistral:7b
+- All configurables: chunk_token_size, max_gleaning, max_async, ENTITY_TYPES, etc.
+- Context window management: minimum 4096 tokens, formula for chunk_token_size limit, what happens on overflow
+- PostgreSQL schema: all 11 LIGHTRAG_* tables with key DDL
+- Apache AGE usage: nodes=entities, edges=relationships, pgvector for entry points, AGE for traversal
+- Query modes: naive / local / global / hybrid
+- Limitations: images lost, table quality poor, format drift on small models, hallucinated relations
+- Scalability: ~50K chunks safe, 100K+ bottlenecks on AGE traversal + entity merging
 
-**NOTE:** All backend storage uses postgres only: pgvector + tsvector + pg apache age.
+### B.8 — Python script + tests ✅
+- Script: `lightrag_demo.py`
+- Tests: `test_lightrag_demo.py` (12 unit tests pass; 5 integration tests require live services)
+- Backend: pgvector + AGE co-installed on PG16 (port 5433, legal_graph)
+  - NOTE: pgvector was not on the AGE container — installed manually via apt on the container
+- Output: `output/lightrag/demo_results_*.json`
+
+**Demo results (qwen2.5:14b via Ollama):**
+
+| Case | Expected | What happened |
+|---|---|---|
+| Clean prose | works | Transformer→BERT relationship correctly retrieved ✅ |
+| Multi-hop relationships | works | LightRAG→PostgreSQL dependencies correctly traversed ✅ |
+| Figure placeholder | fails | LLM answered from parametric knowledge, not document — hallucinated ✅ |
+| Markdown table | fails | Wrong answer: said Deep-Att+PosUnk (39.2) best EN-FR; correct is Transformer big (41.0) ✅ |
+| Column-mixed chunk | fails | Wrong affiliation: attributed Aidan Gomez to Google Brain (he's Univ of Toronto) ✅ |
 
 ---
 

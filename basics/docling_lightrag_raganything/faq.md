@@ -20,6 +20,18 @@
   - [Will a VLM fix the remaining issues?](#will-a-vlm-fix-the-remaining-issues)
   - [Do we need a specialist model like Nougat for equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
 - [Will RAG-Anything do better than Docling on research papers?](#will-rag-anything-do-better-than-docling-on-research-papers)
+- [LightRAG Architecture and Internals](#lightrag-architecture-and-internals)
+  - [What is LightRAG?](#what-is-lightrag)
+  - [Internal Pipeline](#internal-pipeline)
+  - [Graph Ontology](#graph-ontology)
+  - [LLM Prompts](#llm-prompts)
+  - [Local LLM and Configurables](#local-llm-and-configurables)
+  - [Context Window Management](#context-window-management)
+  - [PostgreSQL Storage Schema](#postgresql-storage-schema)
+  - [How Apache AGE is Used](#how-apache-age-is-used)
+  - [Query Modes](#query-modes)
+  - [Limitations and Where It Will Fail](#limitations-and-where-it-will-fail)
+  - [Will It Scale?](#will-it-scale)
 
 ---
 
@@ -588,3 +600,312 @@ Partially — it depends on the failure type.
 | Multi-modal coherence | Poor | Moderate | Good |
 
 **The honest caveat:** Task C is specifically about evaluating RAG-Anything empirically. The real question is which PDF backend it uses and whether its table processor actually outperforms TableFormer on the same documents we already tested. We will find out rather than rely on claims.
+
+---
+
+## LightRAG Architecture and Internals
+
+### What is LightRAG?
+
+LightRAG is a graph-augmented RAG framework. Unlike plain vector RAG (which retrieves chunks by embedding similarity), LightRAG first builds a **knowledge graph** from the document corpus using an LLM, then at query time retrieves both graph entities/relationships and raw text chunks, combining them into a richer context for the answer LLM.
+
+The key idea: entities and their relationships are stored as first-class objects alongside the text, enabling queries that require multi-hop reasoning ("what is the relationship between X and Y?") that pure vector search cannot answer.
+
+### Internal Pipeline
+
+```
+Documents (text / markdown / chunks from Docling)
+        │
+        ▼
+┌──────────────────────────────────────┐
+│   Chunking                           │  Token-based splitting (default 1200
+│   (chunking_by_token_size)           │  tokens, 100-token overlap). Each chunk
+│                                      │  gets a hash ID. Stored in
+│                                      │  LIGHTRAG_DOC_CHUNKS.
+└──────────────────────────────────────┘
+        │
+        ▼  (for each chunk, in parallel up to max_async=4)
+┌──────────────────────────────────────┐
+│   Entity & Relationship Extraction   │  LLM called with entity_extraction
+│   (operate.py)                       │  system prompt. Outputs structured
+│                                      │  tuples: entity and relation lines
+│                                      │  delimited by <|#|>.
+│                                      │  On partial output → gleaning pass
+│                                      │  (up to max_gleaning=1 by default).
+└──────────────────────────────────────┘
+        │
+        ├──► Entities → deduplicated, descriptions merged via LLM summariser
+        │             → embedded → LIGHTRAG_VDB_ENTITY (pgvector)
+        │             → stored as graph nodes in AGE
+        │
+        └──► Relations → deduplicated, keywords + description merged
+                       → embedded → LIGHTRAG_VDB_RELATION (pgvector)
+                       → stored as graph edges in AGE
+        │
+        ▼
+┌──────────────────────────────────────┐
+│   Query                              │  Keywords extracted from query (high-
+│                                      │  level + low-level). Vector search on
+│                                      │  entities + relations. Graph traversal
+│                                      │  from matched nodes. Chunk retrieval.
+│                                      │  Combined context → answer LLM.
+└──────────────────────────────────────┘
+```
+
+### Graph Ontology
+
+LightRAG uses a **flat, open-ended ontology** — it does not enforce a fixed schema. The entity types and relationship types are whatever the LLM extracts from the text.
+
+**Default entity types** (configurable via `ENTITY_TYPES` env var):
+
+```
+Person, Creature, Organization, Location, Event,
+Concept, Method, Content, Data, Artifact, NaturalObject
+```
+
+Any entity that doesn't fit is classified as `Other`.
+
+**Relationship structure:** All relationships are binary (two entities) and treated as **undirected** unless the text explicitly states direction. Each relationship has:
+- `source_entity` and `target_entity` (entity names, title-cased)
+- `relationship_keywords` — comma-separated high-level themes (e.g. `power dynamics, observation`)
+- `relationship_description` — a sentence explaining the connection
+
+**N-ary decomposition:** If a statement involves 3+ entities (e.g. "Alice, Bob, and Carol collaborated on Project X"), the LLM decomposes it into binary pairs automatically.
+
+This is a **property graph**, not an RDF triple store or fixed ontology. Entity and relationship descriptions accumulate as the same entity appears in multiple chunks, then get LLM-summarised when a merge threshold is hit (default: 8 descriptions trigger a summary).
+
+### LLM Prompts
+
+#### Entity extraction (the core prompt)
+
+Called once per chunk. The system prompt instructs the LLM to output one line per entity and one line per relationship, delimited by `<|#|>`, ending with `<|COMPLETE|>`.
+
+**System prompt structure:**
+```
+---Role---
+You are a Knowledge Graph Specialist...
+
+---Instructions---
+1. Entity Extraction: output lines like:
+   entity<|#|>entity_name<|#|>entity_type<|#|>entity_description
+
+2. Relationship Extraction: output lines like:
+   relation<|#|>source_entity<|#|>target_entity<|#|>keywords<|#|>description
+
+3. Delimiter usage: <|#|> is a field separator, never filled with content.
+4. N-ary decomposition into binary pairs.
+5. Undirected relationships (no duplicates for A→B and B→A).
+6. Output all entities first, then all relationships.
+7. End with <|COMPLETE|>.
+```
+
+**User prompt:**
+```
+Extract entities and relationships from:
+
+<Entity_types>
+[Person, Organization, Location, ...]
+
+<Input Text>
+```{chunk_text}```
+```
+
+#### Gleaning pass (catch misses)
+
+If the LLM output is truncated or misses entities, a follow-up user prompt asks it to re-output only the **missed or incorrectly formatted** ones — not the already-correct ones. Run once by default (`max_gleaning=1`).
+
+#### Entity description summarisation
+
+When an entity accumulates ≥8 descriptions from different chunks, an LLM call merges them:
+```
+Synthesize a list of descriptions of a given entity into a single
+comprehensive summary. Max {summary_length} tokens. Third-person, objective.
+```
+
+#### Keyword extraction (at query time)
+
+Before searching, the query is analysed to extract two keyword types:
+- `high_level_keywords` — overarching themes/concepts
+- `low_level_keywords` — specific entities, proper nouns, technical terms
+
+Output is a JSON object used to drive both vector search (low-level) and graph traversal (high-level).
+
+### Local LLM and Configurables
+
+**Recommended local models:**
+
+| Model | VRAM | Suitability |
+|---|---|---|
+| `qwen2.5:14b` | ~8GB | Best — follows structured JSON/delimiter output reliably |
+| `qwen2.5:7b` | ~5GB | Good — reasonable JSON adherence |
+| `llama3.1:8b` | ~5.5GB | Acceptable — occasional format drift, needs gleaning |
+| `mistral:7b` | ~4.5GB | Borderline — frequent format failures on complex chunks |
+
+**Key configurables (set in `.env` or passed to `LightRAG()`):**
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `chunk_token_size` | 1200 | Tokens per chunk sent to LLM for extraction |
+| `chunk_overlap_token_size` | 100 | Overlap between adjacent chunks |
+| `max_gleaning` | 1 | Extra extraction passes to catch missed entities |
+| `entity_extract_max_gleaning` | 1 | Same, specifically for entity extraction |
+| `max_async` | 4 | Parallel LLM calls during ingestion |
+| `ENTITY_TYPES` | (11 types) | Override entity type list via env var |
+| `summary_language` | `English` | Language for entity/relation descriptions |
+| `llm_model_max_token_size` | model-dependent | Hard cap on tokens sent to LLM |
+
+### Context Window Management
+
+Each chunk sent for extraction consumes:
+- `chunk_token_size` tokens of input (default 1200)
+- System prompt: ~600 tokens
+- Examples in prompt: ~800 tokens
+- **Total input per chunk: ~2600 tokens minimum**
+
+The extraction output (entities + relations) can be another 500–1500 tokens depending on document density.
+
+**Minimum safe context window: 4096 tokens.** Recommended: 8192+.
+
+For `ollama`, set `num_ctx` to avoid silent truncation:
+```python
+# In lightrag_utils.py — already wired for this project
+extra_body={"num_ctx": 131072}
+```
+
+**What happens when the context window is too small:**
+- The LLM truncates its output mid-entity or mid-relation line
+- The `<|COMPLETE|>` delimiter is never emitted
+- LightRAG detects the incomplete output and fires the gleaning pass
+- If gleaning also truncates, entities from that chunk are silently lost — no error is raised
+
+**Rule of thumb:** Set `chunk_token_size` ≤ 20% of your model's context window. For `llama3.1:8b` at 8K context: max `chunk_token_size` = 1600. For `qwen2.5:14b` at 128K context: no practical limit.
+
+### PostgreSQL Storage Schema
+
+LightRAG creates 11 tables (all prefixed `LIGHTRAG_`). All tables have a `workspace` column for multi-tenancy.
+
+| Table | Purpose |
+|---|---|
+| `LIGHTRAG_DOC_FULL` | Raw full document content + metadata |
+| `LIGHTRAG_DOC_CHUNKS` | Text chunks with order index and token count |
+| `LIGHTRAG_VDB_CHUNKS` | Chunks + embedding vector (pgvector) for chunk retrieval |
+| `LIGHTRAG_VDB_ENTITY` | Entity name + description embedding (pgvector) |
+| `LIGHTRAG_VDB_RELATION` | Relation description embedding (pgvector) |
+| `LIGHTRAG_LLM_CACHE` | Cache of LLM prompt → response pairs (avoids re-extraction) |
+| `LIGHTRAG_DOC_STATUS` | Ingestion status per document (pending/processing/done/failed) |
+| `LIGHTRAG_FULL_ENTITIES` | All entity names grouped by document |
+| `LIGHTRAG_FULL_RELATIONS` | All relation pairs grouped by document |
+| `LIGHTRAG_ENTITY_CHUNKS` | Entity → chunk_ids mapping |
+| `LIGHTRAG_RELATION_CHUNKS` | Relation → chunk_ids mapping |
+
+**Vector indexes:** HNSW (default), IVFFLAT, HNSW_HALFVEC, or VChordrq — set via `POSTGRES_VECTOR_INDEX_TYPE`.
+
+**Key DDL examples:**
+
+```sql
+-- Chunk text + vector
+CREATE TABLE LIGHTRAG_VDB_CHUNKS (
+    id VARCHAR(255),
+    workspace VARCHAR(255),
+    full_doc_id VARCHAR(256),
+    tokens INTEGER,
+    content TEXT,
+    content_vector VECTOR(768),   -- dimension = EMBEDDING_DIMENSION
+    file_path TEXT,
+    CONSTRAINT LIGHTRAG_VDB_CHUNKS_PK PRIMARY KEY (workspace, id)
+);
+
+-- Entity name + description vector
+CREATE TABLE LIGHTRAG_VDB_ENTITY (
+    id VARCHAR(255),
+    workspace VARCHAR(255),
+    entity_name VARCHAR(512),
+    content TEXT,                  -- merged description text
+    content_vector VECTOR(768),
+    chunk_ids VARCHAR(255)[],      -- source chunk IDs
+    file_path TEXT,
+    CONSTRAINT LIGHTRAG_VDB_ENTITY_PK PRIMARY KEY (workspace, id)
+);
+
+-- Relation source→target + description vector
+CREATE TABLE LIGHTRAG_VDB_RELATION (
+    id VARCHAR(255),
+    workspace VARCHAR(255),
+    source_id VARCHAR(512),        -- source entity name
+    target_id VARCHAR(512),        -- target entity name
+    content TEXT,                  -- keywords + description
+    content_vector VECTOR(768),
+    chunk_ids VARCHAR(255)[],
+    file_path TEXT,
+    CONSTRAINT LIGHTRAG_VDB_RELATION_PK PRIMARY KEY (workspace, id)
+);
+```
+
+### How Apache AGE is Used
+
+LightRAG uses Apache AGE for the **graph traversal** part of retrieval — finding connected entities and multi-hop paths between nodes.
+
+**Setup:** LightRAG calls `CREATE EXTENSION IF NOT EXISTS AGE CASCADE` and `create_graph('{graph_name}')` at initialisation. The `search_path` is set to include `ag_catalog` on each connection that uses AGE.
+
+**What's stored in AGE:**
+- **Nodes** = entities (entity_name as the node label/property)
+- **Edges** = relationships (source_entity → target_entity, with keywords and description as edge properties)
+
+**What's stored in pgvector (not AGE):**
+- Entity and relation embeddings (`LIGHTRAG_VDB_ENTITY`, `LIGHTRAG_VDB_RELATION`)
+- Chunk embeddings (`LIGHTRAG_VDB_CHUNKS`)
+
+**Query flow:**
+1. Vector search on `LIGHTRAG_VDB_ENTITY` → matched entity names
+2. AGE Cypher traversal from those entity nodes → neighbouring nodes and edges
+3. Vector search on `LIGHTRAG_VDB_RELATION` → matched relationships
+4. `LIGHTRAG_ENTITY_CHUNKS` + `LIGHTRAG_RELATION_CHUNKS` → chunk IDs
+5. Chunks retrieved from `LIGHTRAG_VDB_CHUNKS`
+6. All combined into context for the answer LLM
+
+**In short:** pgvector finds the entry points into the graph; AGE traverses the graph from those entry points.
+
+### Query Modes
+
+LightRAG supports 4 query modes, selectable per query:
+
+| Mode | What it searches | Best for |
+|---|---|---|
+| `naive` | Raw chunk vector search only (no graph) | Simple factual lookups |
+| `local` | Entity + relation vector search → linked chunks | Specific entity questions |
+| `global` | High-level keyword search across the full graph | Thematic / summary questions |
+| `hybrid` | `local` + `global` combined | General use — recommended default |
+
+### Limitations and Where It Will Fail
+
+**Structural failures:**
+
+- **Images and figures** — LightRAG ingests text only. If you feed it Docling's markdown output, figure content is lost (same as Docling without VLM). There is no built-in VLM modal processor — that's RAG-Anything's addition.
+- **Tables** — if Docling exports tables as markdown grid text, LightRAG ingests the raw markdown. Cell relationships are treated as prose and often extracted as vague entities. Complex financial or multi-level tables produce poor graph nodes.
+- **Column-mixed chunks** — if Docling produces bad chunks (column mixing), LightRAG ingests the garbled text and extracts garbled entities. Garbage in, garbage out.
+
+**LLM extraction failures:**
+
+- **Format drift** — smaller models (`mistral:7b`, `llama3.1:8b`) frequently deviate from the `entity<|#|>...` format, especially on long or complex chunks. The result is silently dropped tuples.
+- **Overly generic entities** — on dense technical text, the LLM extracts vague entities (`The System`, `This Method`, `The Model`) that have low retrieval value.
+- **Hallucinated relationships** — the LLM sometimes invents relationships not stated in the text, especially on ambiguous pronouns. The third-person/no-pronoun instruction in the prompt reduces but doesn't eliminate this.
+- **Context overflow** — chunks that exceed the model's context window produce truncated extraction with no error. See [Context Window Management](#context-window-management).
+
+**Scalability limitations:**
+
+- **Ingestion is slow** — every chunk requires at least one LLM call. At 1200 tokens/chunk and a local 8B model doing ~20 tokens/s, a 100-page document (~300 chunks) takes ~30–60 minutes.
+- **Entity merging is O(n) per new document** — as the graph grows, deduplication and description merging become increasingly expensive.
+- **AGE graph traversal does not scale past ~100K nodes** on a single Postgres instance without query optimisation. For large corpora, graph traversal becomes the bottleneck.
+- **`max_async=4`** limits parallel LLM calls. Increasing this helps throughput but requires more VRAM if models are loaded concurrently.
+
+### Will It Scale?
+
+For a **single-domain corpus up to ~50K chunks**: yes, with a properly indexed Postgres instance.
+
+For **100K+ chunks or multi-domain corpora**: graph traversal and entity merging become bottlenecks. The practical ceiling depends on the quality of entity deduplication — if the LLM produces many near-duplicate entity names, the graph grows faster than the content warrants.
+
+**Mitigation strategies:**
+- Increase `chunk_token_size` to reduce chunk count (trade: less granular retrieval)
+- Use `qwen2.5:14b` for cleaner entity naming (reduces near-duplicates)
+- Partition by domain using the `workspace` field (separate graphs per domain)
+- Add an entity normalisation post-processor to canonicalise names before insertion
