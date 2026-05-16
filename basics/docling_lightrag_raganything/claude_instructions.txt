@@ -4,6 +4,7 @@ Install pip packages that need to be installed without asking for permissions
 Do the tasks sequentially, A, B & C - do not jump across tasks or run them in parallel unless it is small
 Feel free to run steps for a single task in parallel
 Save the progress in session context, so that if we need to restart, we can start from where we left off.
+After each task make sure nothing is broken by running tests.
 
 
 A. Docling:
@@ -30,7 +31,7 @@ B. Docling + LightRAG
 6. How does it store the knowledge graph in postgres apache age tables?
 NOTE: all our backend store uses postgres extensions: pgvector + tsvector + pg apache age - postgres is all we need.
 7. Document everything in basics\docling_lightrag_raganything\faq.md in a different section and update TOC
-8. Make a python script that clearly shows where it works and where it fails. Save its output 
+8. Make a python script that clearly shows where it works and where it fails. Save its output. Write tests.
 
 
 C. Docling + RAG Anything:
