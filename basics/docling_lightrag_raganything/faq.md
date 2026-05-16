@@ -18,6 +18,8 @@
   - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
 - [Does Docling work with research papers?](#does-docling-work-with-research-papers)
   - [Will a VLM fix the remaining issues?](#will-a-vlm-fix-the-remaining-issues)
+  - [Do we need a specialist model like Nougat for equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
+- [Will RAG-Anything do better than Docling on research papers?](#will-rag-anything-do-better-than-docling-on-research-papers)
 
 ---
 
@@ -540,3 +542,49 @@ Partially — it depends on the failure type.
 #### Bottom line
 
 For a research paper RAG system, wiring a VLM gets you figure descriptions but does not solve the fundamental layout analysis failures. The remaining gaps (column mixing, equation accuracy) require either a specialist model (`Nougat` for equations) or accepting the noise and relying on the surrounding chunks for retrieval quality.
+
+### Do we need a specialist model like Nougat for equations?
+
+Not necessarily — it depends on what you need from the equations.
+
+**If you just need equations to be retrievable:** a VLM description like "scaled dot-product attention formula with queries, keys and values" is usually enough. The chunk will match semantic queries even without LaTeX. Most RAG use cases fall here.
+
+**If you need LaTeX-accurate equations** (math/physics papers where the actual formula matters for downstream computation or rendering), then yes — reach for a specialist model:
+
+| Model | Type | Strength | Notes |
+|---|---|---|---|
+| **Nougat** (Meta) | Local | Best accuracy, full PDF end-to-end, outputs clean Markdown + LaTeX | Slow; can hallucinate on non-equation content |
+| **GOT-OCR** | Local | Newer, faster, handles equations + tables + charts in one model | Competitive with Nougat |
+| **Pix2Tex** | Local | Lightweight LaTeX OCR, equation-only | Fast; good if Docling already isolated equations as `FigureItem` images |
+| **MathPix** | Commercial | Most accurate | Not local |
+
+**Practical recommendation:** Use VLM descriptions for general research paper RAG. Only add Nougat or GOT-OCR if your queries are themselves mathematical or if you need to render or compute with the extracted equations.
+
+---
+
+## Will RAG-Anything do better than Docling on research papers?
+
+Partially — it depends on the failure type.
+
+**Where RAG-Anything does better:**
+
+- **Figures** — dedicated modal processors per content type. Figures go through a VLM pipeline by design, not as an optional add-on wired manually.
+- **Tables** — dedicated table processor that exports to structured formats before chunking, rather than relying on TableFormer's coordinate-based cell matching. Better at complex multi-column table layouts.
+- **Multi-modal coherence** — text, tables, figures, and audio are processed in separate pipelines then recombined. A bad table parse does not corrupt the surrounding text chunks.
+
+**Where it won't help:**
+
+- **Column mixing** — RAG-Anything still depends on an underlying PDF text extractor (Docling, PyMuPDF, or PDFMiner). If the extractor mis-orders columns, RAG-Anything inherits that problem. It does not fix layout analysis.
+- **Equations** — same situation as Docling + VLM unless a specialist math processor (Nougat, GOT-OCR) is explicitly configured.
+
+**Summary:**
+
+| Problem | Docling alone | Docling + VLM | RAG-Anything |
+|---|---|---|---|
+| Column mixing | Partial (ACCURATE mode) | No improvement | No improvement |
+| Figures / charts | Lost | Fixed | Fixed (built-in) |
+| Complex tables | Partial | No improvement | Better |
+| Equations | Garbled | Description only | Description only |
+| Multi-modal coherence | Poor | Moderate | Good |
+
+**The honest caveat:** Task C is specifically about evaluating RAG-Anything empirically. The real question is which PDF backend it uses and whether its table processor actually outperforms TableFormer on the same documents we already tested. We will find out rather than rely on claims.
