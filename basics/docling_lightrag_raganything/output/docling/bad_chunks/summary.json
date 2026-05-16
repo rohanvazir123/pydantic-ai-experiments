@@ -1,0 +1,30 @@
+[
+  {
+    "document": "attention_is_all_you_need.pdf",
+    "failure_type": "two_column_mixing",
+    "total_chunks": 67,
+    "flagged_anomalies": 2,
+    "output_file": "attention_is_all_you_need_bad_chunks.json"
+  },
+  {
+    "document": "bert_paper.pdf",
+    "failure_type": "two_column_mixing",
+    "total_chunks": 97,
+    "flagged_anomalies": 1,
+    "output_file": "bert_paper_bad_chunks.json"
+  },
+  {
+    "document": "nist_sp800_53.pdf",
+    "failure_type": "header_footer_contamination",
+    "total_chunks": 1998,
+    "flagged_anomalies": 135,
+    "output_file": "nist_sp800_53_bad_chunks.json"
+  },
+  {
+    "document": "q4_financial_report.pdf",
+    "failure_type": "table_splitting",
+    "total_chunks": 25,
+    "flagged_anomalies": 0,
+    "output_file": "q4_financial_report_bad_chunks.json"
+  }
+]

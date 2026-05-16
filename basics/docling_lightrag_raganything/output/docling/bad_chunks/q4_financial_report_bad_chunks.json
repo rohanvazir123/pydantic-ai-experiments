@@ -1,0 +1,1899 @@
+{
+  "document": "q4_financial_report.pdf",
+  "failure_type": "table_splitting",
+  "description": "Q4 business review with financial tables. Tables that span multiple pages are split into disconnected fragments, losing row context.",
+  "total_chunks": 25,
+  "flagged_chunks": 0,
+  "all_chunks": [
+    {
+      "index": 0,
+      "text": "Period: October 1 - December 31, 2024\nNeuralFlow AI - Confidential",
+      "char_count": 66,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/1",
+            "parent": {
+              "$ref": "#/groups/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 747.3810683334511,
+                  "r": 263.9313609822021,
+                  "b": 742.4060321773284,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  37
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/2",
+            "parent": {
+              "$ref": "#/groups/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 717.2377619894223,
+                  "r": 196.40441742066707,
+                  "b": 712.2627258332996,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  28
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Q4 2024 Business Review"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 1,
+      "text": "Q4 2024 marked a transformative quarter for NeuralFlow AI, with record-breaking revenue growth and successful expansion into new market segments. Our strategic focus on enterprise clients and productized solutions yielded exceptional results, positioning us strongly for 2025.",
+      "char_count": 276,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/4",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 590.9229544525394,
+                  "r": 551.0819398568589,
+                  "b": 530.6851899990305,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  276
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Executive Summary"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 2,
+      "text": "- Revenue grew 47% QoQ to $2.8M\n- Signed 14 new enterprise clients including Fortune 500 accounts\n- Launched DocFlow AI to overwhelming positive response\n- Team expanded from 39 to 47 members\n- Achieved 96% customer retention rate",
+      "char_count": 230,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/6",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 458.8665647548893,
+                  "r": 278.17852092155425,
+                  "b": 453.89152859876657,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  29
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/7",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 440.9241205024912,
+                  "r": 454.37717519463996,
+                  "b": 435.9490843463684,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  63
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/8",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 422.26397847999715,
+                  "r": 409.3946960095843,
+                  "b": 417.2889423238744,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  53
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/9",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 403.6038364575031,
+                  "r": 313.8664516581768,
+                  "b": 398.62880030138035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  35
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/10",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 385.66139220510496,
+                  "r": 304.739975798282,
+                  "b": 380.6863560489822,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  36
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Key Highlights:"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 3,
+      "text": "Our financial performance exceeded targets across all key metrics. The emphasis on larger enterprise deals and recurring revenue models drove substantial growth in both top-line revenue and profitability.",
+      "char_count": 204,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/12",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 280.8775177711,
+                  "r": 560.3540858458292,
+                  "b": 239.29989534008496,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  204
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Financial Performance"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 4,
+      "text": "Service Category, 1 = Q4 Revenue. Service Category, 2 = %of Total. Service Category, 3 = QoQ Growth. Custom AI Solutions, 1 = $1,280,000. Custom AI Solutions, 2 = 45.7%. Custom AI Solutions, 3 = +32%. Document Processing, 1 = $840,000. Document Processing, 2 = 30.0%. Document Processing, 3 = +78%. Conversational AI, 1 = $448,000. Conversational AI, 2 = 16.0%. Conversational AI, 3 = +41%. Analytics & ML, 1 = $232,000. Analytics & ML, 2 = 8.3%. Analytics & ML, 3 = +15%",
+      "char_count": 471,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/0",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 32.61662292480469,
+                  "t": 592.4682464599609,
+                  "r": 561.0856323242188,
+                  "b": 421.36029052734375,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Revenue Breakdown by Service Line"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 5,
+      "text": "New Clients, Q3 2024 = 8. New Clients, Q4 2024 = 14. New Clients, Change = +75%. Average Contract Value, Q3 2024 = $68,400. Average Contract Value, Q4 2024 = $82,300. Average Contract Value, Change = +20%. Sales Cycle (days), Q3 2024 = 47. Sales Cycle (days), Q4 2024 = 39. Sales Cycle (days), Change = -17%. Win Rate, Q3 2024 = 34%. Win Rate, Q4 2024 = 42%. Win Rate, Change = +8pp. Pipeline Value, Q3 2024 = $4.2M. Pipeline Value, Q4 2024 = $7.8M. Pipeline Value, Change = +86%",
+      "char_count": 479,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 32.93596649169922,
+                  "t": 373.75311279296875,
+                  "r": 561.4995727539062,
+                  "b": 168.10943603515625,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Client Acquisition Metrics"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 6,
+      "text": "Our product team delivered significant achievements this quarter, most notably the successful launch of DocFlow AI, our intelligent document processing platform. The product received enthusiastic market reception with  47 pilot customers  signed within the first 30 days.",
+      "char_count": 271,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/29",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 99.30000665682985,
+                  "r": 515.8590186591451,
+                  "b": 75.66482847821328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  165
+                ]
+              },
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 804.0792636910265,
+                  "r": 557.4351811172098,
+                  "b": 780.44408551241,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  166,
+                  271
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Product Development Milestones"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 7,
+      "text": "- Development Timeline: 6 months from concept to production\n- Pilot Customers: 47 companies across 8 industries\n- Processing Accuracy: 94.7% average across document types\n- Time Savings: 73% reduction in manual document processing time\n- Customer Satisfaction: 4.6/5.0 average rating\n- Early Revenue: $340K in first quarter (recurring)",
+      "char_count": 335,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/34",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 691.4007137859663,
+                  "r": 449.189261004087,
+                  "b": 686.4256776298438,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  57
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/35",
+            "parent": {
+              "$ref": "#/groups/4"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 672.7405717634723,
+                  "r": 383.9873520998524,
+                  "b": 667.7655356073498,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  49
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/36",
+            "parent": {
+              "$ref": "#/groups/5"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 654.7981275110741,
+                  "r": 447.4524864161379,
+                  "b": 649.8230913549515,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  56
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/37",
+            "parent": {
+              "$ref": "#/groups/6"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 636.1379854885801,
+                  "r": 477.73399979087225,
+                  "b": 631.1629493324575,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  62
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/38",
+            "parent": {
+              "$ref": "#/groups/7"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 617.477843466086,
+                  "r": 362.1768163441357,
+                  "b": 612.5028073099635,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  45
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/39",
+            "parent": {
+              "$ref": "#/groups/8"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 81.14976905075947,
+                  "t": 599.535399213688,
+                  "r": 373.4042316016884,
+                  "b": 594.5603630575653,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  49
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "DocFlow AI Launch Metrics"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 8,
+      "text": "Our engineering team implemented several critical infrastructure improvements to support scale and reliability:\nEnhancement, 1 = Impact. Enhancement, 2 = Status. Multi-region deployment, 1 = 99.98% uptime achieved. Multi-region deployment, 2 = Complete. Vector database optimization, 1 = 3x faster query response. Vector database optimization, 2 = Complete. Model monitoring dashboard, 1 = Real-time performance tracking. Model monitoring dashboard, 2 = Complete. Automated testing pipeline, 1 = 87% code coverage. Automated testing pipeline, 2 = Complete. API rate limiting, 1 = Improved security & stability. API rate limiting, 2 = Complete",
+      "char_count": 642,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/41",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 506.23468910121767,
+                  "r": 559.2952062786286,
+                  "b": 482.5995109226011,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  111
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 32.92584228515625,
+                  "t": 465.1108093261719,
+                  "r": 561.2710571289062,
+                  "b": 260.98870849609375,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Technology Stack Enhancements"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 9,
+      "text": "Q4 saw several landmark implementations that showcase the transformative impact of our solutions:",
+      "char_count": 97,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/43",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 191.88306579920243,
+                  "r": 559.2167772612709,
+                  "b": 168.24788762058586,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  97
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Client Success Stories"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 10,
+      "text": "Challenge: Manual processing of 15,000+ loan applications monthly, taking 3-5 days per application with high error rates.\nSolution: Deployed custom document processing AI with automated data extraction, validation, and risk scoring.",
+      "char_count": 232,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/45",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 105.75933338769153,
+                  "r": 554.3033776543714,
+                  "b": 82.12415520907496,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  121
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/49",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 804.0792864910253,
+                  "r": 529.0529059496482,
+                  "b": 780.4441083124087,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  110
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Case Study: GlobalFinance Corp"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 11,
+      "text": "- Processing time reduced from 3-5 days to 4 hours (94% improvement)\n- Error rate decreased from 8.3% to 0.7%\n- Annual cost savings of $2.4M\n- Customer satisfaction improved 37%\n- Staff redeployed to higher-value advisory roles",
+      "char_count": 227,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/51",
+            "parent": {
+              "$ref": "#/groups/9"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 725.8502295505695,
+                  "r": 475.03919862614623,
+                  "b": 720.8751933944471,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  66
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/52",
+            "parent": {
+              "$ref": "#/groups/9"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 707.9077852981717,
+                  "r": 298.58282905388546,
+                  "b": 702.9327491420489,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  38
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/53",
+            "parent": {
+              "$ref": "#/groups/9"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 689.2476432756774,
+                  "r": 232.29403856228822,
+                  "b": 684.2726071195547,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  28
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/54",
+            "parent": {
+              "$ref": "#/groups/9"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 670.5875012531832,
+                  "r": 277.1084447572181,
+                  "b": 665.6124650970609,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  34
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/55",
+            "parent": {
+              "$ref": "#/groups/9"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 652.6450570007854,
+                  "r": 334.3211822268201,
+                  "b": 647.6700208446626,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  47
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Results:"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 12,
+      "text": "Challenge: Medical records analysis requiring 20+ hours per patient case, limiting patient capacity.\nSolution: Implemented AI-powered medical document analysis with HIPAA-compliant infrastructure.",
+      "char_count": 196,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/57",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 585.1814666117683,
+                  "r": 558.7069453917605,
+                  "b": 561.5462884331517,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  100
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/58",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 536.3780182452455,
+                  "r": 533.3052098776474,
+                  "b": 513.4605378367245,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  95
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Case Study: HealthTech Solutions"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 13,
+      "text": "- Analysis time reduced from 20 hours to 45 minutes (98% improvement)\n- Patient capacity increased 12x\n- Revenue increase of $1.8M in first quarter\n- Zero HIPAA compliance issues",
+      "char_count": 178,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/60",
+            "parent": {
+              "$ref": "#/groups/10"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 458.86665907488566,
+                  "r": 482.5017298137075,
+                  "b": 453.8916229187629,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  67
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/61",
+            "parent": {
+              "$ref": "#/groups/10"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 440.2065170523914,
+                  "r": 238.78173472379913,
+                  "b": 435.23148089626864,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  30
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/62",
+            "parent": {
+              "$ref": "#/groups/10"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 421.5463750298976,
+                  "r": 306.8241076215532,
+                  "b": 416.57133887377483,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  42
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/63",
+            "parent": {
+              "$ref": "#/groups/10"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 403.6039307774994,
+                  "r": 237.01134406916302,
+                  "b": 398.6288946213766,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  28
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Results:"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 14,
+      "text": "Financial Services (36%)\nHealthcare (30%)\nLegal (20%)\nOther (14%)",
+      "char_count": 65,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/69",
+            "parent": {
+              "$ref": "#/groups/11"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 113.76752924143608,
+                  "t": 761.0174670852674,
+                  "r": 257.8190321652899,
+                  "b": 756.0424309291451,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  24
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/70",
+            "parent": {
+              "$ref": "#/groups/11"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 292.2408012286501,
+                  "t": 761.0174670852674,
+                  "r": 395.5117002632177,
+                  "b": 756.0424309291451,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  16
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/71",
+            "parent": {
+              "$ref": "#/groups/11"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 429.93906455587154,
+                  "t": 761.0174670852674,
+                  "r": 501.74071621161426,
+                  "b": 756.0424309291451,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  11
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/72",
+            "parent": {
+              "$ref": "#/groups/11"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 270.7832192283654,
+                  "t": 728.0033696608551,
+                  "r": 344.71942365208156,
+                  "b": 723.0283335047328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  11
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Market Expansion"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 15,
+      "text": "Our team expanded strategically to support growth while maintaining our highperformance culture. We hired 8 new team members in Q4, focusing on engineering and client success roles.",
+      "char_count": 181,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/78",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 633.2672640081927,
+                  "r": 547.0481413376093,
+                  "b": 591.6896415771783,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  181
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Team Growth & Development"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 16,
+      "text": "Department, 1 = Headcount. Department, 2 = New Hires Q4. Department, 3 = Planned Q1 2025. Engineering, 1 = 27. Engineering, 2 = 5. Engineering, 3 = 6. Client Services, 1 = 15. Client Services, 2 = 2. Client Services, 3 = 4. Operations, 1 = 5. Operations, 2 = 1. Operations, 3 = 2",
+      "char_count": 279,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 32.779991149902344,
+                  "t": 538.8352966308594,
+                  "r": 561.5363159179688,
+                  "b": 400.5226745605469,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Team Composition by Department"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 17,
+      "text": "- eNPS Score: 68 (Industry average: 32)\n- Retention Rate: 96% annual\n- Internal Promotions: 6 team members promoted\n- Learning Hours: 2,847 hours invested in professional development",
+      "char_count": 182,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/81",
+            "parent": {
+              "$ref": "#/groups/13"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 343.3173648894393,
+                  "r": 297.2830485888798,
+                  "b": 338.342328733317,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  37
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/82",
+            "parent": {
+              "$ref": "#/groups/14"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 324.65722286694506,
+                  "r": 237.7844891204866,
+                  "b": 319.68218671082275,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  26
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/83",
+            "parent": {
+              "$ref": "#/groups/15"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 305.99708084445126,
+                  "r": 361.0114999737698,
+                  "b": 301.02204468832895,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  44
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/84",
+            "parent": {
+              "$ref": "#/groups/16"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 63.221766197759635,
+                  "t": 288.05463659205304,
+                  "r": 458.9432193159906,
+                  "b": 283.07960043593073,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  64
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Employee Satisfaction Metrics"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 18,
+      "text": "While Q4 was highly successful, we encountered several challenges that provide valuable insights:",
+      "char_count": 97,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/86",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 209.10788188150116,
+                  "r": 549.9894595119719,
+                  "b": 185.47270370288504,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  97
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Challenges & Learnings"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 19,
+      "text": "Rapid client growth strained our support capacity. Response times increased from 2 hours to 6 hours average. We've hired 3 additional support engineers and",
+      "char_count": 155,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/88",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 52.46496448595972,
+                  "t": 102.17091413720834,
+                  "r": 535.5798235759029,
+                  "b": 78.53573595859223,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  155
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Challenge 1: Scaling Customer Support"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 20,
+      "text": "Discovered edge cases where model accuracy dropped below acceptable thresholds. Implemented enhanced monitoring and automated retraining pipelines to address proactively.",
+      "char_count": 170,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/94",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 52.46496448595972,
+                  "t": 689.96541064577,
+                  "r": 538.8796984512029,
+                  "b": 648.3877882147557,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  170
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Challenge 2: Model Performance Variability"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 21,
+      "text": "Pipeline growth outpaced our ability to effectively manage opportunities. Adding 2 solutions architects and 1 sales engineer in Q1 to support deal velocity.",
+      "char_count": 156,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/96",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 52.46496448595972,
+                  "t": 538.5311811555301,
+                  "r": 527.5234290722939,
+                  "b": 515.6137007470096,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  156
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Challenge 3: Sales Capacity Constraints"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 22,
+      "text": "1. ConversePro Launch: Complete development and launch enterprise conversational AI platform (targeting March 2025)\n2. Scale Customer Success: Double customer success team and implement proactive engagement model\n3. Geographic Expansion: Establish New York office and hire East Coast sales team\n4. Partner Program: Launch formal partner program with 3 pilot system integrators\n5. SOC 2 Certification: Complete audit process and achieve certification",
+      "char_count": 449,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/98",
+            "parent": {
+              "$ref": "#/groups/17"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 47.71404372991476,
+                  "t": 415.80486246912676,
+                  "r": 553.7095160020423,
+                  "b": 392.16968429051065,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  115
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/99",
+            "parent": {
+              "$ref": "#/groups/17"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 47.71404372991476,
+                  "t": 379.20227619423474,
+                  "r": 553.7151221889313,
+                  "b": 355.5670980156186,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  96
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/100",
+            "parent": {
+              "$ref": "#/groups/17"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 47.71404372991476,
+                  "t": 341.88199214924623,
+                  "r": 542.123546080173,
+                  "b": 336.90695599312437,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  81
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/101",
+            "parent": {
+              "$ref": "#/groups/17"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 47.71404372991476,
+                  "t": 323.93954789684847,
+                  "r": 542.2468027348214,
+                  "b": 318.9645117407266,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  81
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/102",
+            "parent": {
+              "$ref": "#/groups/17"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 47.71404372991476,
+                  "t": 305.2794058743542,
+                  "r": 473.05031243033295,
+                  "b": 300.30436971823235,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  72
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Q1 2025 Priorities"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 23,
+      "text": "Metric, 1 = Q4 2024 Actual. Metric, 2 = Q1 2025 Target. Metric, 3 = Growth. Revenue, 1 = $2.8M. Revenue, 2 = $3.4M. Revenue, 3 = +21%. New Clients, 1 = 14. New Clients, 2 = 16. New Clients, 3 = +14%. MRR, 1 = $890K. MRR, 2 = $1.15M. MRR, 3 = +29%. Gross Margin, 1 = 68%. Gross Margin, 2 = 70%. Gross Margin, 3 = +2pp",
+      "char_count": 316,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/4",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 33.0014533996582,
+                  "t": 234.5673828125,
+                  "r": 561.6856689453125,
+                  "b": 62.999267578125,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Financial Targets Q1 2025"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    },
+    {
+      "index": 24,
+      "text": "Q4 2024 exceeded our expectations across virtually every dimension. The combination of product innovation, exceptional client delivery, and strategic team growth positions NeuralFlow AI for continued success in 2025. Our focus remains on sustainable growth, client success, and building AI solutions that drive measurable business impact.\nAs we enter 2025, we're energized by the opportunities ahead and grateful for the dedication of our team and the trust our clients place in us.",
+      "char_count": 482,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/108",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 765.3237473058401,
+                  "r": 551.7150275204734,
+                  "b": 705.085982852332,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  338
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/109",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 34.53696163295987,
+                  "t": 679.9177126644248,
+                  "r": 511.5282836771672,
+                  "b": 657.0002322559043,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  143
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Conclusion"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 16102303935095953589,
+          "filename": "q4_financial_report.pdf"
+        }
+      }
+    }
+  ],
+  "flagged_anomalies": []
+}

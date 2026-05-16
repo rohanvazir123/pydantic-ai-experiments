@@ -1,0 +1,42 @@
+[
+  {
+    "document": "attention_is_all_you_need.pdf",
+    "failure_type": "two_column_mixing",
+    "fix_applied": "ACCURATE pipeline + do_cell_matching=False",
+    "bad_total_chunks": 67,
+    "bad_flagged_anomalies": 2,
+    "good_total_chunks": 67,
+    "headers_footers_removed": 0,
+    "output_file": "attention_is_all_you_need_good_chunks.json"
+  },
+  {
+    "document": "bert_paper.pdf",
+    "failure_type": "two_column_mixing",
+    "fix_applied": "ACCURATE pipeline + do_cell_matching=False",
+    "bad_total_chunks": 97,
+    "bad_flagged_anomalies": 1,
+    "good_total_chunks": 100,
+    "headers_footers_removed": 0,
+    "output_file": "bert_paper_good_chunks.json"
+  },
+  {
+    "document": "nist_sp800_53.pdf",
+    "failure_type": "header_footer_contamination",
+    "fix_applied": "Strip PAGE_HEADER/PAGE_FOOTER elements before chunking",
+    "bad_total_chunks": 1998,
+    "bad_flagged_anomalies": 135,
+    "good_total_chunks": 2024,
+    "headers_footers_removed": 0,
+    "output_file": "nist_sp800_53_good_chunks.json"
+  },
+  {
+    "document": "q4_financial_report.pdf",
+    "failure_type": "table_splitting",
+    "fix_applied": "ACCURATE pipeline + repeat_table_header=True",
+    "bad_total_chunks": 25,
+    "bad_flagged_anomalies": 0,
+    "good_total_chunks": 25,
+    "headers_footers_removed": 0,
+    "output_file": "q4_financial_report_good_chunks.json"
+  }
+]

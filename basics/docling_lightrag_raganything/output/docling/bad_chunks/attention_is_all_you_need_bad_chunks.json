@@ -1,0 +1,5535 @@
+{
+  "document": "attention_is_all_you_need.pdf",
+  "failure_type": "two_column_mixing",
+  "description": "Two-column NeurIPS paper. Chunks near column boundaries mix sentences from the left and right columns, producing incoherent text.",
+  "total_chunks": 67,
+  "flagged_chunks": 2,
+  "all_chunks": [
+    {
+      "index": 0,
+      "text": "Provided proper attribution is provided, Google hereby grants permission to reproduce the tables and figures in this paper solely for use in journalistic or scholarly works.",
+      "char_count": 173,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 124.313,
+                  "t": 717.8198352,
+                  "r": 487.89454240000015,
+                  "b": 679.662512679646,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  173
+                ]
+              }
+            ]
+          }
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 1,
+      "text": "Ashish Vaswani ∗ Google Brain avaswani@google.com Noam Shazeer ∗ Google Brain noam@google.com\nLlion Jones ∗ Google Research llion@google.com Niki Parmar ∗ Google Research nikip@google.com Aidan N. Gomez ∗ † University of Toronto aidan@cs.toronto.edu Jakob Uszkoreit ∗ Google Research usz@google.com Łukasz Kaiser ∗ Google Brain lukaszkaiser@google.com\n∗ ‡\nIllia Polosukhin\nillia.polosukhin@gmail.com",
+      "char_count": 399,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 116.68099999999998,
+                  "t": 557.6831053999999,
+                  "r": 216.0390060600002,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  49
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 230.69199999999998,
+                  "t": 557.6831053999999,
+                  "r": 309.1325310999999,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  50,
+                  93
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/4",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 126.88199999999998,
+                  "t": 507.6861054,
+                  "r": 210.55189984000017,
+                  "b": 475.2773028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  46
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 323.787,
+                  "t": 557.6831053999999,
+                  "r": 407.4568998399997,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  47,
+                  93
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 235.40699999999995,
+                  "t": 507.6861054,
+                  "r": 339.9943747999997,
+                  "b": 475.2773028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  94,
+                  155
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 422.11199999999997,
+                  "t": 557.6831053999999,
+                  "r": 497.21276514,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  156,
+                  204
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 364.84899999999993,
+                  "t": 507.6861054,
+                  "r": 485.11451841999957,
+                  "b": 475.2783028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  205,
+                  257
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/5",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 335.8839999999999,
+                  "t": 457.6891054,
+                  "r": 346.8475109799999,
+                  "b": 451.69394340319997,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  3
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/6",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 268.8069999999999,
+                  "t": 456.184194,
+                  "r": 335.88518579999965,
+                  "b": 447.2278166,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  16
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/7",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 238.0219999999999,
+                  "t": 444.4881486,
+                  "r": 373.9756246399996,
+                  "b": 436.1893028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  26
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Attention Is All You Need"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 2,
+      "text": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 Englishto-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+      "char_count": 1138,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/9",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 143.557,
+                  "t": 377.5206526,
+                  "r": 469.7870791959994,
+                  "b": 216.24177439292032,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  1138
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Abstract"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 3,
+      "text": "∗ Equal contribution. Listing order is random. Jakob proposed replacing RNNs with self-attention and started the effort to evaluate this idea. Ashish, with Illia, designed and implemented the first Transformer models and has been crucially involved in every aspect of this work. Noam proposed scaled dot-product attention, multi-head attention and the parameter-free position representation and became the other person involved in nearly every detail. Niki designed, implemented, tuned and evaluated countless model variants in our original codebase and tensor2tensor. Llion also experimented with novel model variants, was responsible for our initial codebase, and efficient inference and visualizations. Lukasz and Aidan spent countless long days designing various parts of and implementing tensor2tensor, replacing our earlier codebase, greatly improving results and massively accelerating our research.\n† Work performed while at Google Brain.\n‡ Work performed while at Google Research.",
+      "char_count": 989,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/10",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "footnote",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 194.03670080000006,
+                  "r": 504.31406405760026,
+                  "b": 104.58438450973449,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  906
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/11",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "footnote",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 120.21000000000001,
+                  "t": 103.38670079999997,
+                  "r": 267.3513408000002,
+                  "b": 93.63538450973454,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  39
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/12",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "footnote",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 120.21000000000001,
+                  "t": 92.43770080000002,
+                  "r": 280.2898560000001,
+                  "b": 82.68638450973458,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  42
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Abstract"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 4,
+      "text": "Recurrent neural networks, long short-term memory [13] and gated recurrent [7] neural networks in particular, have been firmly established as state of the art approaches in sequence modeling and transduction problems such as language modeling and machine translation [35, 2, 5]. Numerous efforts have since continued to push the boundaries of recurrent language models and encoder-decoder architectures [38, 24, 15].\nRecurrent models typically factor computation along the symbol positions of the input and output sequences. Aligning the positions to steps in computation time, they generate a sequence of hidden states h t , as a function of the previous hidden state h t -1 and the input for position t . This inherently sequential nature precludes parallelization within training examples, which becomes critical at longer sequence lengths, as memory constraints limit batching across examples. Recent work has achieved significant improvements in computational efficiency through factorization tricks [21] and conditional computation [32], while also improving model performance in case of the latter. The fundamental constraint of sequential computation, however, remains.",
+      "char_count": 1177,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/15",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 691.8396526,
+                  "r": 504.16737179599943,
+                  "b": 639.6517743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  416
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/16",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 631.8146525999999,
+                  "r": 504.35091412599996,
+                  "b": 546.8997743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  760
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "1 Introduction"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 5,
+      "text": "Attention mechanisms have become an integral part of compelling sequence modeling and transduction models in various tasks, allowing modeling of dependencies without regard to their distance in the input or output sequences [2, 19]. In all but a few cases [27], however, such attention mechanisms are used in conjunction with a recurrent network.\nIn this work we propose the Transformer, a model architecture eschewing recurrence and instead relying entirely on an attention mechanism to draw global dependencies between input and output. The Transformer allows for significantly more parallelization and can reach a new state of the art in translation quality after being trained for as little as twelve hours on eight P100 GPUs.",
+      "char_count": 730,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/17",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 539.0626526,
+                  "r": 505.6553182847997,
+                  "b": 497.78377439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  346
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/18",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 489.9466526,
+                  "r": 505.73895202079996,
+                  "b": 448.6677743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  383
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "1 Introduction"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 6,
+      "text": "The goal of reducing sequential computation also forms the foundation of the Extended Neural GPU [16], ByteNet [18] and ConvS2S [9], all of which use convolutional neural networks as basic building block, computing hidden representations in parallel for all input and output positions. In these models, the number of operations required to relate signals from two arbitrary input or output positions grows in the distance between positions, linearly for ConvS2S and logarithmically for ByteNet. This makes it more difficult to learn dependencies between distant positions [12]. In the Transformer this is reduced to a constant number of operations, albeit at the cost of reduced effective resolution due to averaging attention-weighted positions, an effect we counteract with Multi-Head Attention as described in section 3.2.\nSelf-attention, sometimes called intra-attention is an attention mechanism relating different positions of a single sequence in order to compute a representation of the sequence. Self-attention has been used successfully in a variety of tasks including reading comprehension, abstractive summarization, textual entailment and learning task-independent sentence representations [4, 27, 28, 22].",
+      "char_count": 1219,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/20",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 401.5266526,
+                  "r": 505.2413400759999,
+                  "b": 305.7017743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  825
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/21",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 297.8646526,
+                  "r": 505.24956918359976,
+                  "b": 256.58577439292026,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  393
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "2 Background"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 7,
+      "text": "End-to-end memory networks are based on a recurrent attention mechanism instead of sequencealigned recurrence and have been shown to perform well on simple-language question answering and language modeling tasks [34].\nTo the best of our knowledge, however, the Transformer is the first transduction model relying entirely on self-attention to compute representations of its input and output without using sequencealigned RNNs or convolution. In the following sections, we will describe the Transformer, motivate self-attention and discuss its advantages over models such as [17, 18] and [9].",
+      "char_count": 591,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/22",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 248.7496526,
+                  "r": 505.6535924639992,
+                  "b": 218.37877439292038,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  217
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/23",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 210.5426526,
+                  "r": 505.65717899999925,
+                  "b": 169.26377439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  373
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "2 Background"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 8,
+      "text": "Most competitive neural sequence transduction models have an encoder-decoder structure [5, 2, 35]. Here, the encoder maps an input sequence of symbol representations ( x 1 , ..., x n ) to a sequence of continuous representations z = ( z 1 , ..., z n ) . Given z , the decoder then generates an output sequence ( y 1 , ..., y m ) of symbols one element at a time. At each step the model is auto-regressive [10], consuming the previously generated symbols as additional input when generating the next.\nFigure 1: The Transformer - model architecture.\nThe Transformer follows this overall architecture using stacked self-attention and point-wise, fully connected layers for both the encoder and decoder, shown in the left and right halves of Figure 1, respectively.",
+      "char_count": 761,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/25",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 2,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 122.12165259999995,
+                  "r": 505.743154821,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  499
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/27",
+            "parent": {
+              "$ref": "#/pictures/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 210.011,
+                  "t": 386.1846526,
+                  "r": 401.99030199999993,
+                  "b": 377.63277439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  47
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/62",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 354.1326526,
+                  "r": 505.24711838399935,
+                  "b": 323.76277439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  213
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3 Model Architecture"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 9,
+      "text": "Encoder: The encoder is composed of a stack of N = 6 identical layers. Each layer has two sub-layers. The first is a multi-head self-attention mechanism, and the second is a simple, positionwise fully connected feed-forward network. We employ a residual connection [11] around each of the two sub-layers, followed by layer normalization [1]. That is, the output of each sub-layer is LayerNorm( x +Sublayer( x )) , where Sublayer( x ) is the function implemented by the sub-layer itself. To facilitate these residual connections, all sub-layers in the model, as well as the embedding layers, produce outputs of dimension d model = 512 .",
+      "char_count": 635,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/64",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 288.258194,
+                  "r": 505.65748784060014,
+                  "b": 212.9886462230088,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  635
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.1 Encoder and Decoder Stacks"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 10,
+      "text": "Decoder: The decoder is also composed of a stack of N = 6 identical layers. In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack. Similar to the encoder, we employ residual connections around each of the sub-layers, followed by layer normalization. We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions. This masking, combined with fact that the output embeddings are offset by one position, ensures that the predictions for position i can depend only on the known outputs at positions less than i .",
+      "char_count": 686,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/65",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 199.68219399999998,
+                  "r": 504.0013948799996,
+                  "b": 125.28777439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  686
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.1 Encoder and Decoder Stacks"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 11,
+      "text": "An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors. The output is computed as a weighted sum",
+      "char_count": 200,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/67",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 3,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 89.39465259999997,
+                  "r": 505.24856525199976,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  200
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2 Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 12,
+      "text": "Figure 2: (left) Scaled Dot-Product Attention. (right) Multi-Head Attention consists of several attention layers running in parallel.\nof the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key.",
+      "char_count": 269,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/76",
+            "parent": {
+              "$ref": "#/pictures/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 516.4666526,
+                  "r": 503.99721058799923,
+                  "b": 497.00577439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  133
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/85",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 473.7516526,
+                  "r": 503.99499889079976,
+                  "b": 454.29077439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  135
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Scaled Dot-Product Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 13,
+      "text": "We call our particular attention \"Scaled Dot-Product Attention\" (Figure 2). The input consists of queries and keys of dimension d k , and values of dimension d v . We compute the dot products of the query with all keys, divide each by √ d k , and apply a softmax function to obtain the weights on the values.\nIn practice, we compute the attention function on a set of queries simultaneously, packed together into a matrix Q . The keys and values are also packed together into matrices K and V . We compute the matrix of outputs as:\n<!-- formula-not-decoded -->\nThe two most commonly used attention functions are additive attention [2], and dot-product (multiplicative) attention. Dot-product attention is identical to our algorithm, except for the scaling factor of 1 √ d k . Additive attention computes the compatibility function using a feed-forward network with a single hidden layer. While the two are similar in theoretical complexity, dot-product attention is much faster and more space-efficient in practice, since it can be implemented using highly optimized matrix multiplication code.",
+      "char_count": 1094,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/87",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 421.15265259999995,
+                  "r": 504.0002506364003,
+                  "b": 379.8737743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  308
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/88",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 372.03665259999997,
+                  "r": 504.169962071999,
+                  "b": 341.66677439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  222
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/89",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "formula",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 219.97,
+                  "t": 326.34610539999994,
+                  "r": 504.6673916,
+                  "b": 300.9575267325648,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  48
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/90",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 291.41165259999997,
+                  "r": 505.65278638200004,
+                  "b": 226.05377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  533
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.1 Scaled Dot-Product Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 14,
+      "text": "While for small values of d k the two mechanisms perform similarly, additive attention outperforms dot product attention without scaling for larger values of d k [3]. We suspect that for large values of d k , the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients 4 . To counteract this effect, we scale the dot products by 1 √ d k .",
+      "char_count": 401,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/91",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 218.53545580000002,
+                  "r": 503.99988768900005,
+                  "b": 172.78894493861674,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  401
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.1 Scaled Dot-Product Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 15,
+      "text": "Instead of performing a single attention function with d model-dimensional keys, values and queries, we found it beneficial to linearly project the queries, keys and values h times with different, learned linear projections to d k , d k and d v dimensions, respectively. On each of these projected versions of queries, keys and values we then perform the attention function in parallel, yielding d v -dimensional output values. These are concatenated and once again projected, resulting in the final values, as depicted in Figure 2.\n4 To illustrate why the dot products get large, assume that the components of q and k are independent random variables with mean 0 and variance 1 . Then their dot product, q · k = ∑ d k i =1 q i k i , has mean 0 and variance d k .\nMulti-head attention allows the model to jointly attend to information from different representation subspaces at different positions. With a single attention head, averaging inhibits this.\n<!-- formula-not-decoded -->",
+      "char_count": 982,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/93",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 141.7474558,
+                  "r": 505.241375547,
+                  "b": 99.38952673256483,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  412
+                ]
+              },
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 716.5226526,
+                  "r": 503.9972105879991,
+                  "b": 697.0617743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  413,
+                  532
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/94",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "footnote",
+            "prov": [
+              {
+                "page_no": 4,
+                "bbox": {
+                  "l": 107.776,
+                  "t": 91.05041759999995,
+                  "r": 504.00192159999983,
+                  "b": 68.11872628933713,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  230
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/96",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 689.2256526,
+                  "r": 503.99701133599984,
+                  "b": 669.7647743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  189
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/97",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "formula",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 186.94,
+                  "t": 645.4941054000001,
+                  "r": 425.0604551399999,
+                  "b": 615.698526732565,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  108
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.2 Multi-Head Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 16,
+      "text": "Where the projections are parameter matrices W Q i ∈ R d model × d k , W i K ∈ R d model × d k , W V i ∈ R d model × d v and W O ∈ R hd v × d model .\nIn this work we employ h = 8 parallel attention layers, or heads. For each of these we use d k = d v = d model /h = 64 . Due to the reduced dimension of each head, the total computational cost is similar to that of single-head attention with full dimensionality.",
+      "char_count": 412,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/98",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 588.2421054,
+                  "r": 502.82449486,
+                  "b": 564.3937743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  149
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/99",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 556.8764558,
+                  "r": 504.00182671199906,
+                  "b": 526.1867743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  262
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.2 Multi-Head Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 17,
+      "text": "The Transformer uses multi-head attention in three different ways:\n- In \"encoder-decoder attention\" layers, the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder. This allows every position in the decoder to attend over all positions in the input sequence. This mimics the typical encoder-decoder attention mechanisms in sequence-to-sequence models such as [38, 2, 9].\n- The encoder contains self-attention layers. In a self-attention layer all of the keys, values and queries come from the same place, in this case, the output of the previous layer in the encoder. Each position in the encoder can attend to all positions in the previous layer of the encoder.",
+      "char_count": 723,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/101",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 491.5126526,
+                  "r": 372.6064965999998,
+                  "b": 482.96077439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  66
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/102",
+            "parent": {
+              "$ref": "#/groups/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 135.397,
+                  "t": 470.66865260000003,
+                  "r": 505.24178082399914,
+                  "b": 418.4797743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  364
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/103",
+            "parent": {
+              "$ref": "#/groups/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 135.39700000000002,
+                  "t": 411.19565259999996,
+                  "r": 504.0034196814003,
+                  "b": 369.91677439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  291
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.3 Applications of Attention in our Model"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 18,
+      "text": "- Similarly, self-attention layers in the decoder allow each position in the decoder to attend to all positions in the decoder up to and including that position. We need to prevent leftward information flow in the decoder to preserve the auto-regressive property. We implement this inside of scaled dot-product attention by masking out (setting to -∞ ) all values in the input of the softmax which correspond to illegal connections. See Figure 2.",
+      "char_count": 446,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/104",
+            "parent": {
+              "$ref": "#/groups/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 135.39700000000002,
+                  "t": 362.6326526,
+                  "r": 504.00313076600025,
+                  "b": 310.44477439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  446
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.2.3 Applications of Attention in our Model"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 19,
+      "text": "In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically. This consists of two linear transformations with a ReLU activation in between.\n<!-- formula-not-decoded -->\nWhile the linear transformations are the same across different positions, they use different parameters from layer to layer. Another way of describing this is as two convolutions with kernel size 1. The dimensionality of input and output is d model = 512 , and the inner-layer has dimensionality d ff = 2048 .",
+      "char_count": 611,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/106",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 273.0796525999999,
+                  "r": 504.342713555999,
+                  "b": 242.7097743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  272
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/107",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "formula",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 226.901,
+                  "t": 222.87045579999995,
+                  "r": 504.6673916000001,
+                  "b": 213.24052673256483,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  45
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/108",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 200.76565260000007,
+                  "r": 505.745049131999,
+                  "b": 158.72652673256482,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  309
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.3 Position-wise Feed-Forward Networks"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 20,
+      "text": "Similarly to other sequence transduction models, we use learned embeddings to convert the input tokens and output tokens to vectors of dimension d model. We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities. In our model, we share the same weight matrix between the two embedding layers and the pre-softmax linear transformation, similar to [30]. In the embedding layers, we multiply those weights by √ d model.",
+      "char_count": 499,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/110",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 5,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 122.12165259999995,
+                  "r": 505.743837,
+                  "b": 69.05964622300883,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  499
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.4 Embeddings and Softmax"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 21,
+      "text": "Table 1: Maximum path lengths, per-layer complexity and minimum number of sequential operations for different layer types. n is the sequence length, d is the representation dimension, k is the kernel size of convolutions and r the size of the neighborhood in restricted self-attention.\n\nSelf-Attention, Complexity per Layer = O ( n 2 · d ). Self-Attention, Sequential Operations = O (1). Self-Attention, Maximum Path Length = O (1). Recurrent, Complexity per Layer = O ( n · d 2 ). Recurrent, Sequential Operations = O ( n ). Recurrent, Maximum Path Length = O ( n ). Convolutional, Complexity per Layer = O ( k · n · d 2 ). Convolutional, Sequential Operations = O (1). Convolutional, Maximum Path Length = O ( log k ( n )). Self-Attention (restricted), Complexity per Layer = O ( r · n · d ). Self-Attention (restricted), Sequential Operations = O (1). Self-Attention (restricted), Maximum Path Length = O ( n/r )",
+      "char_count": 915,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/112",
+            "parent": {
+              "$ref": "#/tables/0"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 719.7306526,
+                  "r": 504.00352578800005,
+                  "b": 689.3607743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  285
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/tables/0",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/112"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 117.44009399414062,
+                  "t": 680.2390594482422,
+                  "r": 494.4222106933594,
+                  "b": 604.6222991943359,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.4 Embeddings and Softmax"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 22,
+      "text": "Since our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence. To this end, we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks. The positional encodings have the same dimension d model as the embeddings, so that the two can be summed. There are many choices of positional encodings, learned and fixed [9].\nIn this work, we use sine and cosine functions of different frequencies:\n<!-- formula-not-decoded -->\nwhere pos is the position and i is the dimension. That is, each dimension of the positional encoding corresponds to a sinusoid. The wavelengths form a geometric progression from 2 π to 10000 · 2 π . We chose this function because we hypothesized it would allow the model to easily learn to attend by relative positions, since for any fixed offset k , PE pos + k can be represented as a linear function of PE pos .",
+      "char_count": 1037,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/114",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 557.0736526,
+                  "r": 505.24786557900006,
+                  "b": 493.97677439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  521
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/115",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 486.1396526,
+                  "r": 389.8618791999997,
+                  "b": 477.5877743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  72
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/116",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "formula",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 225.69400000000002,
+                  "t": 455.1461054,
+                  "r": 386.3064551400001,
+                  "b": 426.26852673256485,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  99
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/117",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 413.72745580000003,
+                  "r": 504.34271355599935,
+                  "b": 360.4615267325648,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  413
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.5 Positional Encoding"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 23,
+      "text": "We also experimented with using learned positional embeddings [9] instead, and found that the two versions produced nearly identical results (see Table 3 row (E)). We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.",
+      "char_count": 311,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/118",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 353.3836526,
+                  "r": 504.00225688799924,
+                  "b": 312.1047743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  311
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "3.5 Positional Encoding"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 24,
+      "text": "In this section we compare various aspects of self-attention layers to the recurrent and convolutional layers commonly used for mapping one variable-length sequence of symbol representations ( x 1 , ..., x n ) to another sequence of equal length ( z 1 , ..., z n ) , with x i , z i ∈ R d , such as a hidden layer in a typical sequence transduction encoder or decoder. Motivating our use of self-attention we consider three desiderata.\nOne is the total computational complexity per layer. Another is the amount of computation that can be parallelized, as measured by the minimum number of sequential operations required.",
+      "char_count": 619,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/120",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 106.834,
+                  "t": 269.4696526,
+                  "r": 505.6535924639992,
+                  "b": 217.28077439292042,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  434
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/121",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 209.44465260000004,
+                  "r": 504.0004882833993,
+                  "b": 189.9837743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  184
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "4 Why Self-Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 25,
+      "text": "The third is the path length between long-range dependencies in the network. Learning long-range dependencies is a key challenge in many sequence transduction tasks. One key factor affecting the ability to learn such dependencies is the length of the paths forward and backward signals have to traverse in the network. The shorter these paths between any combination of positions in the input and output sequences, the easier it is to learn long-range dependencies [12]. Hence we also compare the maximum path length between any two input and output positions in networks composed of the different layer types.",
+      "char_count": 610,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/122",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 182.14665260000004,
+                  "r": 504.00140484420035,
+                  "b": 108.14077439292032,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  610
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "4 Why Self-Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 26,
+      "text": "As noted in Table 1, a self-attention layer connects all positions with a constant number of sequentially executed operations, whereas a recurrent layer requires O ( n ) sequential operations. In terms of computational complexity, self-attention layers are faster than recurrent layers when the sequence length n is smaller than the representation dimensionality d , which is most often the case with sentence representations used by state-of-the-art models in machine translations, such as word-piece [38] and byte-pair [31] representations. To improve computational performance for tasks involving very long sequences, self-attention could be restricted to considering only a neighborhood of size r in the input sequence centered around the respective output position. This would increase the maximum path length to O ( n/r ) . We plan to investigate this approach further in future work.",
+      "char_count": 890,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/123",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 6,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 100.30365259999996,
+                  "r": 504.34535593599963,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  303
+                ]
+              },
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.751,
+                  "t": 716.8414558000001,
+                  "r": 504.00358807199956,
+                  "b": 653.4257743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  304,
+                  890
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "4 Why Self-Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 27,
+      "text": "A single convolutional layer with kernel width k < n does not connect all pairs of input and output positions. Doing so requires a stack of O ( n/k ) convolutional layers in the case of contiguous kernels, or O ( log k ( n )) in the case of dilated convolutions [18], increasing the length of the longest paths between any two positions in the network. Convolutional layers are generally more expensive than recurrent layers, by a factor of k . Separable convolutions [6], however, decrease the complexity considerably, to O ( k · n · d + n · d 2 ) . Even with k = n , however, the complexity of a separable convolution is equal to the combination of a self-attention layer and a point-wise feed-forward layer, the approach we take in our model.\nAs side benefit, self-attention could yield more interpretable models. We inspect attention distributions from our models and present and discuss examples in the appendix. Not only do individual attention heads clearly learn to perform different tasks, many appear to exhibit behavior related to the syntactic and semantic structure of the sentences.",
+      "char_count": 1096,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/125",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 645.9074558,
+                  "r": 505.24786557900006,
+                  "b": 560.6737743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  745
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/126",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 552.8366526,
+                  "r": 504.003638756,
+                  "b": 511.55777439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  350
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "4 Why Self-Attention"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 28,
+      "text": "This section describes the training regime for our models.",
+      "char_count": 58,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/128",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 464.8906526,
+                  "r": 337.478369,
+                  "b": 456.33877439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  58
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5 Training"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 29,
+      "text": "We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million sentence pairs. Sentences were encoded using byte-pair encoding [3], which has a shared sourcetarget vocabulary of about 37000 tokens. For English-French, we used the significantly larger WMT 2014 English-French dataset consisting of 36M sentences and split tokens into a 32000 word-piece vocabulary [38]. Sentence pairs were batched together by approximate sequence length. Each training batch contained a set of sentence pairs containing approximately 25000 source tokens and 25000 target tokens.",
+      "char_count": 589,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/130",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 417.2086526,
+                  "r": 505.6543158079996,
+                  "b": 343.2017743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  589
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.1 Training Data and Batching"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 30,
+      "text": "We trained our models on one machine with 8 NVIDIA P100 GPUs. For our base models using the hyperparameters described throughout the paper, each training step took about 0.4 seconds. We trained the base models for a total of 100,000 steps or 12 hours. For our big models,(described on the bottom line of table 3), step time was 1.0 seconds. The big models were trained for 300,000 steps (3.5 days).",
+      "char_count": 398,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/132",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 304.0716526,
+                  "r": 504.00139487999945,
+                  "b": 251.88377439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  398
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.2 Hardware and Schedule"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 31,
+      "text": "We used the Adam optimizer [20] with β 1 = 0 . 9 , β 2 = 0 . 98 and ϵ = 10 -9 . We varied the learning rate over the course of training, according to the formula:\n<!-- formula-not-decoded -->\nThis corresponds to increasing the learning rate linearly for the first warmup _ steps training steps, and decreasing it thereafter proportionally to the inverse square root of the step number. We used warmup _ steps = 4000 .",
+      "char_count": 417,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/134",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 214.6461054,
+                  "r": 504.00292131679987,
+                  "b": 193.29277439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  162
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/135",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "formula",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 162.892,
+                  "t": 173.9921054,
+                  "r": 504.6673916,
+                  "b": 160.63064622300885,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  90
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/136",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 148.30445580000003,
+                  "r": 505.2438336688001,
+                  "b": 117.61577439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  225
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.3 Optimizer"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 32,
+      "text": "We employ three types of regularization during training:\n",
+      "char_count": 57,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/138",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 7,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 78.48565259999998,
+                  "r": 331.98937799999976,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  56
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/140",
+            "parent": {
+              "$ref": "#/tables/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 719.7306526,
+                  "r": 504.0032279999996,
+                  "b": 700.2697743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  192
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 33,
+      "text": "Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the English-to-German and English-to-French newstest2014 tests at a fraction of the training cost.\nByteNet [18], BLEU.EN-DE = 23.75. ByteNet [18], BLEU.EN-FR = . ByteNet [18], Training Cost (FLOPs).EN-DE = . ByteNet [18], Training Cost (FLOPs).EN-FR = . Deep-Att + PosUnk [39], BLEU.EN-DE = . Deep-Att + PosUnk [39], BLEU.EN-FR = 39.2. Deep-Att + PosUnk [39], Training Cost (FLOPs).EN-DE = . Deep-Att + PosUnk [39], Training Cost (FLOPs).EN-FR = 1 . 0 · 10 20. GNMT + RL [38], BLEU.EN-DE = 24.6. GNMT + RL [38], BLEU.EN-FR",
+      "char_count": 616,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/140"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 129.54798889160156,
+                  "t": 696.7067337036133,
+                  "r": 481.9996337890625,
+                  "b": 547.6737823486328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 34,
+      "text": "\n = 39.92. GNMT + RL [38], Training Cost (FLOPs).EN-DE = 2 . 3 · 10 19. GNMT + RL [38], Training Cost (FLOPs).EN-FR = 1 . 4 · 10 20. ConvS2S [9], BLEU.EN-DE = 25.16. ConvS2S [9], BLEU.EN-FR = 40.46. ConvS2S [9], Training Cost (FLOPs).EN-DE = 9 . 6 · 10 18. ConvS2S [9], Training Cost (FLOPs).EN-FR = 1 . 5 · 10 20. MoE [32], BLEU.EN-DE = 26.03. MoE [32], BLEU.EN-FR = 40.56. MoE [32], Training Cost (FLOPs).EN-DE = 2 . 0 · 10 19. MoE [32], Training Cost (FLOPs).EN-FR = 1 . 2 · 10 20. Deep-Att + PosUnk Ensemble [39], BLEU.EN-DE = .",
+      "char_count": 532,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/140"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 129.54798889160156,
+                  "t": 696.7067337036133,
+                  "r": 481.9996337890625,
+                  "b": 547.6737823486328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 35,
+      "text": "\n Deep-Att + PosUnk Ensemble [39], BLEU.EN-FR = 40.4. Deep-Att + PosUnk Ensemble [39], Training Cost (FLOPs).EN-DE = . Deep-Att + PosUnk Ensemble [39], Training Cost (FLOPs).EN-FR = 8 . 0 · 10 20. GNMT + RL Ensemble [38], BLEU.EN-DE = 26.30. GNMT + RL Ensemble [38], BLEU.EN-FR = 41.16. GNMT + RL Ensemble [38], Training Cost (FLOPs).EN-DE = 1 . 8 · 10 20. GNMT + RL Ensemble [38], Training Cost (FLOPs).EN-FR = 1 . 1 · 10 21. ConvS2S Ensemble [9], BLEU.EN-DE = 26.36. ConvS2S Ensemble [9], BLEU.EN-FR = 41.29. ConvS2S Ensemble [9], Training Cost (FLOPs).EN-DE = 7 . 7 · 10 19.",
+      "char_count": 577,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/140"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 129.54798889160156,
+                  "t": 696.7067337036133,
+                  "r": 481.9996337890625,
+                  "b": 547.6737823486328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 36,
+      "text": " ConvS2S Ensemble [9], Training Cost (FLOPs).EN-FR = 1 . 2 · 10 21. Transformer (base model), BLEU.EN-DE = 27.3. Transformer (base model), BLEU.EN-FR = 38.1. Transformer (base model), Training Cost (FLOPs).EN-DE = 3 . 3 · 10 18. Transformer (base model), Training Cost (FLOPs).EN-FR = 3 . 3 · 10 18. Transformer (big), BLEU.EN-DE = 28.4. Transformer (big), BLEU.EN-FR = 41.8. Transformer (big), Training Cost (FLOPs).EN-DE = 2 . 3 · 10 19. Transformer (big), Training Cost (FLOPs).EN-FR = 2 . 3 · 10 19",
+      "char_count": 502,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/1",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/140"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 129.54798889160156,
+                  "t": 696.7067337036133,
+                  "r": 481.9996337890625,
+                  "b": 547.6737823486328,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 37,
+      "text": "Residual Dropout We apply dropout [33] to the output of each sub-layer, before it is added to the sub-layer input and normalized. In addition, we apply dropout to the sums of the embeddings and the positional encodings in both the encoder and decoder stacks. For the base model, we use a rate of P drop = 0 . 1 .\nLabel Smoothing During training, we employed label smoothing of value ϵ ls = 0 . 1 [36]. This hurts perplexity, as the model learns to be more unsure, but improves accuracy and BLEU score.",
+      "char_count": 501,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/141",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 518.017194,
+                  "r": 504.00139487999957,
+                  "b": 475.5905267325648,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  312
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/142",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 459.946194,
+                  "r": 503.99579818399997,
+                  "b": 440.09677439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  188
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "5.4 Regularization"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 38,
+      "text": "On the WMT 2014 English-to-German translation task, the big transformer model (Transformer (big) in Table 2) outperforms the best previously reported models (including ensembles) by more than 2 . 0 BLEU, establishing a new state-of-the-art BLEU score of 28 . 4 . The configuration of this model is listed in the bottom line of Table 3. Training took 3 . 5 days on 8 P100 GPUs. Even our base model surpasses all previously published models and ensembles, at a fraction of the training cost of any of the competitive models.\nOn the WMT 2014 English-to-French translation task, our big model achieves a BLEU score of 41 . 0 , outperforming all of the previously published single models, at less than 1 / 4 the training cost of the previous state-of-the-art model. The Transformer (big) model trained for English-to-French used dropout rate P drop = 0 . 1 , instead of 0 . 3 .",
+      "char_count": 872,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/145",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 372.7046526,
+                  "r": 504.6653025439997,
+                  "b": 309.60677439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  522
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/146",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 302.08945580000005,
+                  "r": 505.24532765000004,
+                  "b": 259.7315267325648,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  349
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.1 Machine Translation"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 39,
+      "text": "For the base models, we used a single model obtained by averaging the last 5 checkpoints, which were written at 10-minute intervals. For the big models, we averaged the last 20 checkpoints. We used beam search with a beam size of 4 and length penalty α = 0 . 6 [38]. These hyperparameters were chosen after experimentation on the development set. We set the maximum output length during inference to input length + 50 , but terminate early when possible [38].\nTable 2 summarizes our results and compares our translation quality and training costs to other model architectures from the literature. We estimate the number of floating point operations used to train a model by multiplying the training time, the number of GPUs used, and an estimate of the sustained single-precision floating-point capacity of each GPU 5 .",
+      "char_count": 819,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/147",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 107.641,
+                  "t": 252.65465259999996,
+                  "r": 504.0040372599991,
+                  "b": 200.46677439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  459
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/148",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 192.6296526,
+                  "r": 503.99736998959975,
+                  "b": 151.35077439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  359
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.1 Machine Translation"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 40,
+      "text": "To evaluate the importance of different components of the Transformer, we varied our base model in different ways, measuring the change in performance on English-to-German translation on the development set, newstest2013. We used beam search as described in the previous section, but no checkpoint averaging. We present these results in Table 3.\n5 We used values of 2.8, 3.7, 6.0 and 9.5 TFLOPS for K80, K40, M40 and P100, respectively.\n",
+      "char_count": 437,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/150",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 112.3456526,
+                  "r": 504.0004583971998,
+                  "b": 92.88477439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  190
+                ]
+              },
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 377.1796526,
+                  "r": 503.9972105879992,
+                  "b": 357.71877439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  191,
+                  345
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/151",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "footnote",
+            "prov": [
+              {
+                "page_no": 8,
+                "bbox": {
+                  "l": 120.653,
+                  "t": 79.70041760000004,
+                  "r": 453.5559904000002,
+                  "b": 70.14038450973453,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  90
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/153",
+            "parent": {
+              "$ref": "#/tables/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 719.7306526,
+                  "r": 504.0033873999995,
+                  "b": 678.4517743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  323
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 41,
+      "text": "Table 3: Variations on the Transformer architecture. Unlisted values are identical to those of the base model. All metrics are on the English-to-German translation development set, newstest2013. Listed perplexities are per-wordpiece, according to our byte-pair encoding, and should not be compared to per-word perplexities.\nbase, N = 6. base, d model = 512. base, d ff = 2048. base, h = 8. base, d k = 64. base, d v = 64. base, P drop = 0.1. base, ϵ ls = 0.1. base, train steps = 100K. base, PPL (dev) = 4.92. base, BLEU (dev) = 25.8. base, params × 10 6 = 65. , N = . , d model = . , d ff = . , h = 1. , d k = 512. , d v = 512. , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.29. , BLEU (dev) = 24.9. , params × 10 6 = . ,",
+      "char_count": 733,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 42,
+      "text": "\n N = . , d model = . , d ff = . , h = 4. , d k = 128. , d v = 128. , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.00. , BLEU (dev) = 25.5. , params × 10 6 = . (A), N = . (A), d model = . (A), d ff = . (A), h = 16. (A), d k = 32. (A), d v = 32. (A), P drop = . (A), ϵ ls = . (A), train steps = . (A), PPL (dev) = 4.91. (A), BLEU (dev) = 25.8. (A), params × 10 6 = . , N = . , d model = . , d ff = . , h = 32. , d k = 16. , d v = 16. , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.01. , BLEU (dev)",
+      "char_count": 518,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 43,
+      "text": "\n = 25.4. , params × 10 6 = . , N = . , d model = . , d ff = . , h = . , d k = 16. , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.16. , BLEU (dev) = 25.1. , params × 10 6 = 58. (B), N = . (B), d model = . (B), d ff = . (B), h = . (B), d k = 32. (B), d v = . (B), P drop = . (B), ϵ ls = . (B), train steps = . (B), PPL (dev) = 5.01. (B), BLEU (dev) = 25.4. (B), params × 10 6 = 60. , N = 2. , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) =",
+      "char_count": 519,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 44,
+      "text": "\n 6.11. , BLEU (dev) = 23.7. , params × 10 6 = 36. , N = 4. , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.19. , BLEU (dev) = 25.3. , params × 10 6 = 50. , N = 8. , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 4.88. , BLEU (dev) = 25.5. , params × 10 6 = 80. (C), N = . (C), d model = 256. (C), d ff = . (C), h = . (C), d k = 32. (C), d v = 32. (C), P drop = . (C), ϵ ls = . (C), train steps = .",
+      "char_count": 521,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 45,
+      "text": "\n (C), PPL (dev) = 5.75. (C), BLEU (dev) = 24.5. (C), params × 10 6 = 28. , N = . , d model = 1024. , d ff = . , h = . , d k = 128. , d v = 128. , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 4.66. , BLEU (dev) = 26.0. , params × 10 6 = 168. , N = . , d model = . , d ff = 1024. , h = . , d k = . , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) = 5.12. , BLEU (dev) = 25.4. , params × 10 6 = 53. , N = . , d model = . , d ff = 4096. , h = . , d k = . , d v = . , P drop = . , ϵ ls = . , train steps = . , PPL (dev) =",
+      "char_count": 541,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 46,
+      "text": "\n 4.75. , BLEU (dev) = 26.2. , params × 10 6 = 90. , N = . , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = 0.0. , ϵ ls = . , train steps = . , PPL (dev) = 5.77. , BLEU (dev) = 24.6. , params × 10 6 = . , N = . , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = 0.2. , ϵ ls = . , train steps = . , PPL (dev) = 4.95. , BLEU (dev) = 25.5. , params × 10 6 = . (D), N = . (D), d model = . (D), d ff = . (D), h = . (D), d k = . (D), d v = . (D), P drop = . (D), ϵ ls = 0.0. (D), train steps = .",
+      "char_count": 517,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 47,
+      "text": "\n (D), PPL (dev) = 4.67. (D), BLEU (dev) = 25.3. (D), params × 10 6 = . , N = . , d model = . , d ff = . , h = . , d k = . , d v = . , P drop = . , ϵ ls = 0.2. , train steps = . , PPL (dev) = 5.47. , BLEU (dev) = 25.7. , params × 10 6 = . (E), N = positional embedding instead of sinusoids. (E), d model = positional embedding instead of sinusoids. (E), d ff = positional embedding instead of sinusoids. (E), h = positional embedding instead of sinusoids. (E), d k = positional embedding instead of sinusoids. (E), d v = positional embedding instead of sinusoids. (E), P drop = positional embedding instead of sinusoids. (E), ϵ ls = positional embedding instead",
+      "char_count": 661,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 48,
+      "text": " of sinusoids. (E), train steps = . (E), PPL (dev) = 4.92. (E), BLEU (dev) = 25.7. (E), params × 10 6 = . big, N = 6. big, d model = 1024. big, d ff = 4096. big, h = 16. big, d k = . big, d v = . big, P drop = 0.3. big, ϵ ls = . big, train steps = 300K. big, PPL (dev) = 4.33. big, BLEU (dev) = 26.4. big, params × 10 6 = 213\nIn Table 3 rows (A), we vary the number of attention heads and the attention key and value dimensions, keeping the amount of computation constant, as described in Section 3.2.2. While single-head attention is 0.9 BLEU worse than the best setting, quality also drops off with too many heads.",
+      "char_count": 616,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/2",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/153"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.09085083007812,
+                  "t": 663.4060516357422,
+                  "r": 509.68505859375,
+                  "b": 406.6996765136719,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/154",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 349.8816526,
+                  "r": 505.2413400759995,
+                  "b": 319.5117743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  290
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 49,
+      "text": "In Table 3 rows (B), we observe that reducing the attention key size d k hurts model quality. This suggests that determining compatibility is not easy and that a more sophisticated compatibility function than dot product may be beneficial. We further observe in rows (C) and (D) that, as expected, bigger models are better, and dropout is very helpful in avoiding over-fitting. In row (E) we replace our sinusoidal positional encoding with learned positional embeddings [9], and observe nearly identical results to the base model.",
+      "char_count": 530,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/155",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 311.99345580000005,
+                  "r": 505.2413400759998,
+                  "b": 248.57777439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  530
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.2 Model Variations"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 50,
+      "text": "To evaluate if the Transformer can generalize to other tasks we performed experiments on English constituency parsing. This task presents specific challenges: the output is subject to strong structural constraints and is significantly longer than the input. Furthermore, RNN sequence-to-sequence models have not been able to attain state-of-the-art results in small-data regimes [37].\nWe trained a 4-layer transformer with d model = 1024 on the Wall Street Journal (WSJ) portion of the Penn Treebank [25], about 40K training sentences. We also trained it in a semi-supervised setting, using the larger high-confidence and BerkleyParser corpora from with approximately 17M sentences [37]. We used a vocabulary of 16K tokens for the WSJ only setting and a vocabulary of 32K tokens for the semi-supervised setting.",
+      "char_count": 811,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/157",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 209.44465260000004,
+                  "r": 504.0023811774001,
+                  "b": 168.1657743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  384
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/158",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 160.6474558,
+                  "r": 505.24372541599985,
+                  "b": 108.14077439292032,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  426
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.3 English Constituency Parsing"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 51,
+      "text": "We performed only a small number of experiments to select the dropout, both attention and residual (section 5.4), learning rates and beam size on the Section 22 development set, all other parameters remained unchanged from the English-to-German base translation model. During inference, we increased the maximum output length to input length + 300 . We used a beam size of 21 and α = 0 . 3 for both WSJ only and the semi-supervised setting.\n",
+      "char_count": 441,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/159",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 9,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 100.30365259999996,
+                  "r": 503.9979726479997,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  289
+                ]
+              },
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 529.1664558,
+                  "r": 504.24929999999995,
+                  "b": 509.3867743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  290,
+                  440
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/161",
+            "parent": {
+              "$ref": "#/tables/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 719.7306526,
+                  "r": 503.9950586679997,
+                  "b": 700.2697743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  108
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.3 English Constituency Parsing"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 52,
+      "text": "Table 4: The Transformer generalizes well to English constituency parsing (Results are on Section 23 of WSJ)\nVinyals &Kaiser el al. (2014) [37], Training = WSJ only, discriminative. Vinyals &Kaiser el al. (2014) [37], WSJ 23 F1 = 88.3. Petrov et al. (2006) [29], Training = WSJ only, discriminative. Petrov et al. (2006) [29], WSJ 23 F1 = 90.4. Zhu et al. (2013) [40], Training = WSJ only, discriminative. Zhu et al. (2013) [40], WSJ 23 F1 = 90.4. Dyer et al. (2016) [8], Training = WSJ only, discriminative. Dyer et al. (2016) [8], WSJ 23 F1 = 91.7. Transformer (4 layers), Training = WSJ only, discriminative. Transformer (4 layers), WSJ 23 F1 = 91.3. Zhu et al. (2013)",
+      "char_count": 671,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/161"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 143.83164978027344,
+                  "t": 699.1901702880859,
+                  "r": 467.7674865722656,
+                  "b": 554.5826416015625,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.3 English Constituency Parsing"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 53,
+      "text": "\n [40], Training = semi-supervised. Zhu et al. (2013) [40], WSJ 23 F1 = 91.3. Huang &Harper (2009) [14], Training = semi-supervised. Huang &Harper (2009) [14], WSJ 23 F1 = 91.3. McClosky et al. (2006) [26], Training = semi-supervised. McClosky et al. (2006) [26], WSJ 23 F1 = 92.1. Vinyals &Kaiser el al. (2014) [37], Training = semi-supervised. Vinyals &Kaiser el al. (2014) [37], WSJ 23 F1 = 92.1. Transformer (4 layers), Training = semi-supervised. Transformer (4 layers), WSJ 23 F1 = 92.7. Luong et al. (2015) [23], Training = multi-task. Luong et al. (2015) [23], WSJ 23 F1 = 93.0. Dyer et al. (2016) [8], Training = generative. Dyer et al. (2016) [8], WSJ 23",
+      "char_count": 664,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/161"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 143.83164978027344,
+                  "t": 699.1901702880859,
+                  "r": 467.7674865722656,
+                  "b": 554.5826416015625,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.3 English Constituency Parsing"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 54,
+      "text": " F1 = 93.3\nOur results in Table 4 show that despite the lack of task-specific tuning our model performs surprisingly well, yielding better results than all previously reported models with the exception of the Recurrent Neural Network Grammar [8].\nIn contrast to RNN sequence-to-sequence models [37], the Transformer outperforms the BerkeleyParser [29] even when training only on the WSJ training set of 40K sentences.",
+      "char_count": 417,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/tables/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [
+              {
+                "$ref": "#/texts/161"
+              }
+            ],
+            "content_layer": "body",
+            "label": "table",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 143.83164978027344,
+                  "t": 699.1901702880859,
+                  "r": 467.7674865722656,
+                  "b": 554.5826416015625,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/162",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 501.5496526,
+                  "r": 505.653592463999,
+                  "b": 471.1797743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  235
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/163",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 463.3426526,
+                  "r": 505.6567229572005,
+                  "b": 443.8817743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  170
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "6.3 English Constituency Parsing"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 55,
+      "text": "In this work, we presented the Transformer, the first sequence transduction model based entirely on attention, replacing the recurrent layers most commonly used in encoder-decoder architectures with multi-headed self-attention.\nFor translation tasks, the Transformer can be trained significantly faster than architectures based on recurrent or convolutional layers. On both WMT 2014 English-to-German and WMT 2014 English-to-French translation tasks, we achieve a new state of the art. In the former task our best model outperforms even all previously reported ensembles.\nWe are excited about the future of attention-based models and plan to apply them to other tasks. We plan to extend the Transformer to problems involving input and output modalities other than text and to investigate local, restricted attention mechanisms to efficiently handle large inputs and outputs such as images, audio and video. Making generation less sequential is another research goals of ours.\nThe code we used to train and evaluate our models is available at https://github.com/ tensorflow/tensor2tensor .\nAcknowledgements We are grateful to Nal Kalchbrenner and Stephan Gouws for their fruitful comments, corrections and inspiration.",
+      "char_count": 1217,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/165",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 401.8236526,
+                  "r": 503.99679215880025,
+                  "b": 371.4537743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  227
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/166",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 363.61665259999995,
+                  "r": 503.9972105879995,
+                  "b": 322.3377743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  343
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/167",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 107.532,
+                  "t": 314.5016526,
+                  "r": 505.6079239056006,
+                  "b": 273.22177439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  403
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/168",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 107.691,
+                  "t": 265.38565259999996,
+                  "r": 505.0510060599997,
+                  "b": 245.77930279999998,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  112
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/169",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 232.200194,
+                  "r": 504.00256514399933,
+                  "b": 212.35077439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  128
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "7 Conclusion"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 56,
+      "text": "- [1] Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint arXiv:1607.06450 , 2016.\n- [2] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align and translate. CoRR , abs/1409.0473, 2014.\n- [3] Denny Britz, Anna Goldie, Minh-Thang Luong, and Quoc V. Le. Massive exploration of neural machine translation architectures. CoRR , abs/1703.03906, 2017.\n- [4] Jianpeng Cheng, Li Dong, and Mirella Lapata. Long short-term memory-networks for machine reading. arXiv preprint arXiv:1601.06733 , 2016.",
+      "char_count": 582,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/171",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 112.981,
+                  "t": 175.95097940000005,
+                  "r": 504.00279762120005,
+                  "b": 156.3107743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  119
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/172",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 112.981,
+                  "t": 146.97865260000003,
+                  "r": 504.3451129799995,
+                  "b": 127.51777439292039,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  154
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/173",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 112.98100000000002,
+                  "t": 118.1866526,
+                  "r": 504.00430239659937,
+                  "b": 98.72577439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  157
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/174",
+            "parent": {
+              "$ref": "#/groups/1"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 10,
+                "bbox": {
+                  "l": 112.98100000000002,
+                  "t": 89.39465259999997,
+                  "r": 504.00235968960027,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  141
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 57,
+      "text": "- [5] Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre, Fethi Bougares, Holger Schwenk, and Yoshua Bengio. Learning phrase representations using rnn encoder-decoder for statistical machine translation. CoRR , abs/1406.1078, 2014.\n- [6] Francois Chollet. Xception: Deep learning with depthwise separable convolutions. arXiv preprint arXiv:1610.02357 , 2016.\n- [7] Junyoung Chung, Çaglar Gülçehre, Kyunghyun Cho, and Yoshua Bengio. Empirical evaluation of gated recurrent neural networks on sequence modeling. CoRR , abs/1412.3555, 2014.\n- [8] Chris Dyer, Adhiguna Kuncoro, Miguel Ballesteros, and Noah A. Smith. Recurrent neural network grammars. In Proc. of NAACL , 2016.",
+      "char_count": 675,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/176",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 112.981,
+                  "t": 716.5226526,
+                  "r": 505.24234473599915,
+                  "b": 686.1527743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  231
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/177",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 112.981,
+                  "t": 675.0829794,
+                  "r": 504.00063514399994,
+                  "b": 655.4427743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  124
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/178",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 112.981,
+                  "t": 644.1936526,
+                  "r": 504.00378434140043,
+                  "b": 624.7327743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  176
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/179",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 112.98100000000005,
+                  "t": 613.4836526,
+                  "r": 504.00259879199945,
+                  "b": 594.0227743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  133
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 58,
+      "text": "- [9] Jonas Gehring, Michael Auli, David Grangier, Denis Yarats, and Yann N. Dauphin. Convolutional sequence to sequence learning. arXiv preprint arXiv:1705.03122v2 , 2017.\n- [10] Alex Graves. Generating sequences with recurrent neural networks. arXiv preprint arXiv:1308.0850 , 2013.\n- [11] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 770-778, 2016.\n- [12] Sepp Hochreiter, Yoshua Bengio, Paolo Frasconi, and Jürgen Schmidhuber. Gradient flow in recurrent nets: the difficulty of learning long-term dependencies, 2001.\n- [13] Sepp Hochreiter and Jürgen Schmidhuber. Long short-term memory. Neural computation , 9(8):1735-1780, 1997.",
+      "char_count": 779,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/180",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 112.98100000000005,
+                  "t": 582.7736526,
+                  "r": 505.65332191119984,
+                  "b": 563.3127743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  170
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/181",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 107.99999999999994,
+                  "t": 552.2429794,
+                  "r": 503.99552236799985,
+                  "b": 532.6027743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  109
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/182",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.00000000000003,
+                  "t": 521.3536526,
+                  "r": 505.64881881599933,
+                  "b": 490.9827743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  209
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/183",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 479.73365259999997,
+                  "r": 504.0019611855996,
+                  "b": 460.2727743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  166
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/184",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 449.2029794,
+                  "r": 505.245463,
+                  "b": 429.56277439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  111
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 59,
+      "text": "- [14] Zhongqiang Huang and Mary Harper. Self-training PCFG grammars with latent annotations across languages. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing , pages 832-841. ACL, August 2009.\n- [15] Rafal Jozefowicz, Oriol Vinyals, Mike Schuster, Noam Shazeer, and Yonghui Wu. Exploring the limits of language modeling. arXiv preprint arXiv:1602.02410 , 2016.\n- [16] Łukasz Kaiser and Samy Bengio. Can active memory replace attention? In Advances in Neural Information Processing Systems, (NIPS) , 2016.\n- [17] Łukasz Kaiser and Ilya Sutskever. Neural GPUs learn algorithms. In International Conference on Learning Representations (ICLR) , 2016.\n- [18] Nal Kalchbrenner, Lasse Espeholt, Karen Simonyan, Aaron van den Oord, Alex Graves, and Koray Kavukcuoglu. Neural machine translation in linear time. arXiv preprint arXiv:1610.10099v2 , 2017.",
+      "char_count": 887,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/185",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 418.3136526,
+                  "r": 504.0025987919993,
+                  "b": 387.9437743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  233
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/186",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 376.6946526,
+                  "r": 503.9998491143998,
+                  "b": 357.23377439292034,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  165
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/187",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 107.99999999999994,
+                  "t": 346.1639794,
+                  "r": 503.9951928160002,
+                  "b": 326.5237743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  141
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/188",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 107.99999999999997,
+                  "t": 315.4539794,
+                  "r": 504.00404771840005,
+                  "b": 295.8137743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  139
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/189",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.00000000000003,
+                  "t": 284.5646526,
+                  "r": 505.65340161199947,
+                  "b": 254.1947743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  195
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 60,
+      "text": "- [19] Yoon Kim, Carl Denton, Luong Hoang, and Alexander M. Rush. Structured attention networks. In International Conference on Learning Representations , 2017.\n- [20] Diederik Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In ICLR , 2015.\n- [21] Oleksii Kuchaiev and Boris Ginsburg. Factorization tricks for LSTM networks. arXiv preprint arXiv:1703.10722 , 2017.\n- [22] Zhouhan Lin, Minwei Feng, Cicero Nogueira dos Santos, Mo Yu, Bing Xiang, Bowen Zhou, and Yoshua Bengio. A structured self-attentive sentence embedding. arXiv preprint arXiv:1703.03130 , 2017.\n- [23] Minh-Thang Luong, Quoc V. Le, Ilya Sutskever, Oriol Vinyals, and Lukasz Kaiser. Multi-task sequence to sequence learning. arXiv preprint arXiv:1511.06114 , 2015.",
+      "char_count": 749,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/190",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 242.94565260000002,
+                  "r": 505.7473290048005,
+                  "b": 223.48477439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  158
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/191",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.00000000000003,
+                  "t": 212.41397940000002,
+                  "r": 505.74534038420006,
+                  "b": 203.68277439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  94
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/192",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 192.61297939999997,
+                  "r": 504.0007056056,
+                  "b": 172.97277439292031,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  121
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/193",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 161.72365260000004,
+                  "r": 504.00259879199945,
+                  "b": 131.3537743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  196
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/194",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 120.10465260000001,
+                  "r": 504.25083689619987,
+                  "b": 100.64377439292036,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  166
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 61,
+      "text": "- [24] Minh-Thang Luong, Hieu Pham, and Christopher D Manning. Effective approaches to attentionbased neural machine translation. arXiv preprint arXiv:1508.04025 , 2015.\n- [25] Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. Building a large annotated corpus of english: The penn treebank. Computational linguistics , 19(2):313-330, 1993.\n- [26] David McClosky, Eugene Charniak, and Mark Johnson. Effective self-training for parsing. In Proceedings of the Human Language Technology Conference of the NAACL, Main Conference , pages 152-159. ACL, June 2006.\n- [27] Ankur Parikh, Oscar Täckström, Dipanjan Das, and Jakob Uszkoreit. A decomposable attention model. In Empirical Methods in Natural Language Processing , 2016.\n- [28] Romain Paulus, Caiming Xiong, and Richard Socher. A deep reinforced model for abstractive summarization. arXiv preprint arXiv:1705.04304 , 2017.",
+      "char_count": 891,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/195",
+            "parent": {
+              "$ref": "#/groups/2"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 11,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 89.39465259999997,
+                  "r": 505.65340161199947,
+                  "b": 69.93377439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  167
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/197",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 716.5226526,
+                  "r": 504.0033957999996,
+                  "b": 697.0617743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  185
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/198",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 682.1306526000001,
+                  "r": 505.24521545,
+                  "b": 651.7607743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  214
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/199",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 636.8296526,
+                  "r": 504.0033957999995,
+                  "b": 617.3687743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  162
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/200",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 602.4376526,
+                  "r": 503.99721898799964,
+                  "b": 582.9767743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  149
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 62,
+      "text": "- [29] Slav Petrov, Leon Barrett, Romain Thibaux, and Dan Klein. Learning accurate, compact, and interpretable tree annotation. In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the ACL , pages 433-440. ACL, July 2006.\n- [30] Ofir Press and Lior Wolf. Using the output embedding to improve language models. arXiv preprint arXiv:1608.05859 , 2016.\n- [31] Rico Sennrich, Barry Haddow, and Alexandra Birch. Neural machine translation of rare words with subword units. arXiv preprint arXiv:1508.07909 , 2015.\n- [32] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. arXiv preprint arXiv:1701.06538 , 2017.",
+      "char_count": 795,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/201",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 107.99999999999997,
+                  "t": 568.0456526,
+                  "r": 505.24234473599927,
+                  "b": 526.7667743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  274
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/202",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 512.0149794,
+                  "r": 504.00063514399994,
+                  "b": 492.3747743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  125
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/203",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 477.4436526,
+                  "r": 504.00251909120004,
+                  "b": 457.9827743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  155
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/204",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 443.05165259999995,
+                  "r": 505.2488005007999,
+                  "b": 412.6817743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  230
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 63,
+      "text": "- [33] Nitish Srivastava, Geoffrey E Hinton, Alex Krizhevsky, Ilya Sutskever, and Ruslan Salakhutdinov. Dropout: a simple way to prevent neural networks from overfitting. Journal of Machine Learning Research , 15(1):1929-1958, 2014.\n- [34] Sainbayar Sukhbaatar, Arthur Szlam, Jason Weston, and Rob Fergus. End-to-end memory networks. In C. Cortes, N. D. Lawrence, D. D. Lee, M. Sugiyama, and R. Garnett, editors, Advances in Neural Information Processing Systems 28 , pages 2440-2448. Curran Associates, Inc., 2015.\n- [35] Ilya Sutskever, Oriol Vinyals, and Quoc VV Le. Sequence to sequence learning with neural networks. In Advances in Neural Information Processing Systems , pages 3104-3112, 2014.",
+      "char_count": 699,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/205",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 397.75065259999997,
+                  "r": 505.6512098399999,
+                  "b": 367.38077439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  230
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/206",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 352.4496526,
+                  "r": 505.24585387899975,
+                  "b": 311.1697743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  280
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/207",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 296.23865259999997,
+                  "r": 504.00259879199933,
+                  "b": 276.77777439292026,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  181
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 64,
+      "text": "- [36] Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jonathon Shlens, and Zbigniew Wojna. Rethinking the inception architecture for computer vision. CoRR , abs/1512.00567, 2015.\n- [37] Vinyals & Kaiser, Koo, Petrov, Sutskever, and Hinton. Grammar as a foreign language. In Advances in Neural Information Processing Systems , 2015.\n- [38] Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V Le, Mohammad Norouzi, Wolfgang Macherey, Maxim Krikun, Yuan Cao, Qin Gao, Klaus Macherey, et al. Google's neural machine translation system: Bridging the gap between human and machine translation. arXiv preprint arXiv:1609.08144 , 2016.\n- [39] Jie Zhou, Ying Cao, Xuguang Wang, Peng Li, and Wei Xu. Deep recurrent models with fast-forward connections for neural machine translation. CoRR , abs/1606.04199, 2016.",
+      "char_count": 803,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/208",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 261.84665259999997,
+                  "r": 505.7402754839991,
+                  "b": 242.38577439292033,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  181
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/209",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 227.45465260000003,
+                  "r": 504.0025987919992,
+                  "b": 207.9937743929204,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  150
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/210",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 193.06265259999998,
+                  "r": 504.00339579999945,
+                  "b": 151.78377439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  289
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/211",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 136.85265260000006,
+                  "r": 504.0025987919994,
+                  "b": 117.3917743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  172
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 65,
+      "text": "- [40] Muhua Zhu, Yue Zhang, Wenliang Chen, Min Zhang, and Jingbo Zhu. Fast and accurate shift-reduce constituent parsing. In Proceedings of the 51st Annual Meeting of the ACL (Volume 1: Long Papers) , pages 434-443. ACL, August 2013.",
+      "char_count": 234,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/212",
+            "parent": {
+              "$ref": "#/groups/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "list_item",
+            "prov": [
+              {
+                "page_no": 12,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 102.4606526,
+                  "r": 504.0025987919993,
+                  "b": 72.09077439292037,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  232
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "References"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    },
+    {
+      "index": 66,
+      "text": "Figure 3: An example of the attention mechanism following long-distance dependencies in the encoder self-attention in layer 5 of 6. Many of the attention heads attend to a distant dependency of the verb 'making', completing the phrase 'making...more difficult'. Attentions here shown only for the word 'making'. Different colors represent different heads. Best viewed in color.\nInput-Input Layer5\nFigure 4: Two attention heads, also in layer 5 of 6, apparently involved in anaphora resolution. Top: Full attentions for head 5. Bottom: Isolated attentions from just the word 'its' for attention heads 5 and 6. Note that the attentions are very sharp for this word.\nInput-Input Layer5\nFigure 5: Many of the attention heads exhibit behaviour that seems related to the structure of the sentence. We give two such examples above, from two different heads from the encoder self-attention at layer 5 of 6. The heads clearly learned to perform different tasks.",
+      "char_count": 952,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/215",
+            "parent": {
+              "$ref": "#/pictures/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 13,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 478.5436526,
+                  "r": 504.171157584,
+                  "b": 437.2637743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  377
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/283",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 14,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 690.494981698544,
+                  "r": 278.684131549932,
+                  "b": 671.3102693279877,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  18
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/284",
+            "parent": {
+              "$ref": "#/pictures/4"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 14,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 176.6486526,
+                  "r": 505.3881887999995,
+                  "b": 146.27877439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  266
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/395",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 15,
+                "bbox": {
+                  "l": 106.973484208,
+                  "t": 676.2441981971681,
+                  "r": 278.108855361604,
+                  "b": 657.0087669816432,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  18
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/396",
+            "parent": {
+              "$ref": "#/pictures/5"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 15,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 188.53165260000003,
+                  "r": 504.00139487999957,
+                  "b": 158.16077439292042,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  269
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Attention Visualizations Input-Input Layer5"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      }
+    }
+  ],
+  "flagged_anomalies": [
+    {
+      "index": 1,
+      "text": "Ashish Vaswani ∗ Google Brain avaswani@google.com Noam Shazeer ∗ Google Brain noam@google.com\nLlion Jones ∗ Google Research llion@google.com Niki Parmar ∗ Google Research nikip@google.com Aidan N. Gomez ∗ † University of Toronto aidan@cs.toronto.edu Jakob Uszkoreit ∗ Google Research usz@google.com Łukasz Kaiser ∗ Google Brain lukaszkaiser@google.com\n∗ ‡\nIllia Polosukhin\nillia.polosukhin@gmail.com",
+      "char_count": 399,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/3",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 116.68099999999998,
+                  "t": 557.6831053999999,
+                  "r": 216.0390060600002,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  49
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 230.69199999999998,
+                  "t": 557.6831053999999,
+                  "r": 309.1325310999999,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  50,
+                  93
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/4",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 126.88199999999998,
+                  "t": 507.6861054,
+                  "r": 210.55189984000017,
+                  "b": 475.2773028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  46
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 323.787,
+                  "t": 557.6831053999999,
+                  "r": 407.4568998399997,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  47,
+                  93
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 235.40699999999995,
+                  "t": 507.6861054,
+                  "r": 339.9943747999997,
+                  "b": 475.2773028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  94,
+                  155
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 422.11199999999997,
+                  "t": 557.6831053999999,
+                  "r": 497.21276514,
+                  "b": 525.2753028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  156,
+                  204
+                ]
+              },
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 364.84899999999993,
+                  "t": 507.6861054,
+                  "r": 485.11451841999957,
+                  "b": 475.2783028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  205,
+                  257
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/5",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 335.8839999999999,
+                  "t": 457.6891054,
+                  "r": 346.8475109799999,
+                  "b": 451.69394340319997,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  3
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/6",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 268.8069999999999,
+                  "t": 456.184194,
+                  "r": 335.88518579999965,
+                  "b": 447.2278166,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  16
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/7",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 1,
+                "bbox": {
+                  "l": 238.0219999999999,
+                  "t": 444.4881486,
+                  "r": 373.9756246399996,
+                  "b": 436.1893028,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  26
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Attention Is All You Need"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      },
+      "anomaly_flags": [
+        "possible_column_interleave: multiple short disconnected lines"
+      ]
+    },
+    {
+      "index": 66,
+      "text": "Figure 3: An example of the attention mechanism following long-distance dependencies in the encoder self-attention in layer 5 of 6. Many of the attention heads attend to a distant dependency of the verb 'making', completing the phrase 'making...more difficult'. Attentions here shown only for the word 'making'. Different colors represent different heads. Best viewed in color.\nInput-Input Layer5\nFigure 4: Two attention heads, also in layer 5 of 6, apparently involved in anaphora resolution. Top: Full attentions for head 5. Bottom: Isolated attentions from just the word 'its' for attention heads 5 and 6. Note that the attentions are very sharp for this word.\nInput-Input Layer5\nFigure 5: Many of the attention heads exhibit behaviour that seems related to the structure of the sentence. We give two such examples above, from two different heads from the encoder self-attention at layer 5 of 6. The heads clearly learned to perform different tasks.",
+      "char_count": 952,
+      "meta": {
+        "schema_name": "docling_core.transforms.chunker.DocMeta",
+        "version": "1.0.0",
+        "doc_items": [
+          {
+            "self_ref": "#/texts/215",
+            "parent": {
+              "$ref": "#/pictures/3"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 13,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 478.5436526,
+                  "r": 504.171157584,
+                  "b": 437.2637743929203,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  377
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/283",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 14,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 690.494981698544,
+                  "r": 278.684131549932,
+                  "b": 671.3102693279877,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  18
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/284",
+            "parent": {
+              "$ref": "#/pictures/4"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 14,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 176.6486526,
+                  "r": 505.3881887999995,
+                  "b": 146.27877439292035,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  266
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/395",
+            "parent": {
+              "$ref": "#/body"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "text",
+            "prov": [
+              {
+                "page_no": 15,
+                "bbox": {
+                  "l": 106.973484208,
+                  "t": 676.2441981971681,
+                  "r": 278.108855361604,
+                  "b": 657.0087669816432,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  18
+                ]
+              }
+            ]
+          },
+          {
+            "self_ref": "#/texts/396",
+            "parent": {
+              "$ref": "#/pictures/5"
+            },
+            "children": [],
+            "content_layer": "body",
+            "label": "caption",
+            "prov": [
+              {
+                "page_no": 15,
+                "bbox": {
+                  "l": 108.0,
+                  "t": 188.53165260000003,
+                  "r": 504.00139487999957,
+                  "b": 158.16077439292042,
+                  "coord_origin": "BOTTOMLEFT"
+                },
+                "charspan": [
+                  0,
+                  269
+                ]
+              }
+            ]
+          }
+        ],
+        "headings": [
+          "Attention Visualizations Input-Input Layer5"
+        ],
+        "origin": {
+          "mimetype": "application/pdf",
+          "binary_hash": 2949302674760005271,
+          "filename": "attention_is_all_you_need.pdf"
+        }
+      },
+      "anomaly_flags": [
+        "possible_column_interleave: multiple short disconnected lines"
+      ]
+    }
+  ]
+}
