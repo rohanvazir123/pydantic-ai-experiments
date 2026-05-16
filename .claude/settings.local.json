@@ -48,7 +48,14 @@
       "Bash(\"C:\\\\Users\\\\rohan\\\\anaconda3\\\\envs\\\\pydantic_ai_agents\\\\python.exe\" final_version/verify.py --help)",
       "PowerShell(& \"C:\\\\Users\\\\rohan\\\\anaconda3\\\\envs\\\\pydantic_ai_agents\\\\python.exe\" -c \"import pkg_resources; print\\(pkg_resources.get_distribution\\('pgcli'\\).version\\)\" 2>&1)",
       "PowerShell(New-Item *)",
-      "Bash(grep -v \"^$\\\\|INFO\\\\|WARNING\")"
+      "Bash(grep -v \"^$\\\\|INFO\\\\|WARNING\")",
+      "Bash(docker-compose up *)",
+      "Bash(dir entity_relationships)",
+      "Bash(dir entity_relationships\\\\jsons)",
+      "Bash(New-Item -ItemType Directory -Force kg/tests)",
+      "Bash(Out-Null)",
+      "Bash(New-Item -ItemType File -Force kg/tests/__init__.py)",
+      "Bash(Move-Item rag/tests/knowledge_graph/test_extraction_pipeline_e2e.py kg/tests/test_extraction_pipeline_e2e.py)"
     ]
   },
   "enableAllProjectMcpServers": true,
