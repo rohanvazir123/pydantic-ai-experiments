@@ -17,6 +17,7 @@
   - [Chunk JSON structure](#chunk-json-structure)
   - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
 - [Does Docling work with research papers?](#does-docling-work-with-research-papers)
+  - [Will a VLM fix the remaining issues?](#will-a-vlm-fix-the-remaining-issues)
 
 ---
 
@@ -511,3 +512,31 @@ Yes — but with caveats depending on paper type.
 ### Recommendation
 
 For standard ML/NLP research paper RAG: Docling is good enough. Use `TableFormerMode.ACCURATE` and expect minor noise in author blocks and reference lists. For biomedical or equation-heavy papers, add a post-hoc filter to drop very short chunks and inspect `prov` bounding boxes to catch column mixing.
+
+### Will a VLM fix the remaining issues?
+
+Partially — it depends on the failure type.
+
+**Author block / column mixing** — VLM does not help. This is a layout analysis problem, not a vision understanding problem. The text is already extracted by the text pipeline, just mis-ordered. VLM only processes image content, so it never sees this.
+
+**Figures and charts** — Yes, fully fixed. VLM describes the figure and injects the description as text into the chunk. Quantitative data from charts and diagrams becomes queryable.
+
+**Multi-column tables** — Depends on how Docling classified the table:
+- If Docling fell back to treating the table as an image (`FigureItem`) — VLM can describe it.
+- If Docling correctly identified it as a `TableItem` but got cell ordering wrong — VLM is not in the loop. The table goes through TableFormer, not the VLM.
+
+**Mathematical equations** — Depends on the model. `llava:13b` produces vague descriptions ("a mathematical expression"). `granite3.2-vision` is better but still not LaTeX-accurate. For proper equation extraction, use `Nougat` (Meta) — a specialist model purpose-built for scientific PDF math.
+
+#### Summary
+
+| Problem | VLM fixes it? |
+|---|---|
+| Column mixing (author blocks, body text) | No |
+| Figure content (charts, diagrams) | Yes |
+| Multi-column tables classified as images | Yes |
+| Multi-column tables classified as TableItems | No — goes through TableFormer, not VLM |
+| Mathematical equations | Partially — description only, not LaTeX |
+
+#### Bottom line
+
+For a research paper RAG system, wiring a VLM gets you figure descriptions but does not solve the fundamental layout analysis failures. The remaining gaps (column mixing, equation accuracy) require either a specialist model (`Nougat` for equations) or accepting the noise and relying on the surrounding chunks for retrieval quality.
