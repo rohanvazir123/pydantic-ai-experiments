@@ -12,20 +12,20 @@ This document maps where the system can fail in production across all four compo
 
 ## Table of Contents
 
-1. [Local LLM Failures — Shared Across All Components](#s1)
-2. [Document Ingestion & Chunking](#s2)
-3. [Embedding Quality](#s3)
-4. [Hybrid RAG: Retrieval Failures](#s4)
-5. [Hybrid RAG: Answer Synthesis Failures](#s5)
-6. [Knowledge Graph: Construction Failures](#s6)
-7. [Knowledge Graph: NL→Cypher Failures](#s7)
-8. [NL→SQL Failures](#s8)
-9. [Inter-Component Failures — Where the Systems Collide](#s9)
-10. [Infrastructure & Connection Failures](#s10)
-11. [Token & Context Window Limits](#s11)
-12. [Data Consistency & Staleness](#s12)
-13. [Silent Failures — Wrong Answers That Look Right](#s13)
-14. [Risk Matrix](#s14)
+1. [Local LLM Failures — Shared Across All Components](#1-local-llm-failures--shared-across-all-components)
+2. [Document Ingestion & Chunking](#2-document-ingestion--chunking)
+3. [Embedding Quality](#3-embedding-quality)
+4. [Hybrid RAG: Retrieval Failures](#4-hybrid-rag-retrieval-failures)
+5. [Hybrid RAG: Answer Synthesis Failures](#5-hybrid-rag-answer-synthesis-failures)
+6. [Knowledge Graph: Construction Failures](#6-knowledge-graph-construction-failures)
+7. [Knowledge Graph: NL→Cypher Failures](#7-knowledge-graph-nlcypher-failures)
+8. [NL→SQL Failures](#8-nlsql-failures)
+9. [Inter-Component Failures — Where the Systems Collide](#9-inter-component-failures--where-the-systems-collide)
+10. [Infrastructure & Connection Failures](#10-infrastructure--connection-failures)
+11. [Token & Context Window Limits](#11-token--context-window-limits)
+12. [Data Consistency & Staleness](#12-data-consistency--staleness)
+13. [Silent Failures — Wrong Answers That Look Right](#13-silent-failures--wrong-answers-that-look-right)
+14. [Risk Matrix](#14-risk-matrix)
 
 ---
 
@@ -39,7 +39,7 @@ Every component that calls an LLM (RAG answer synthesis, KG entity extraction, N
 
 **What goes wrong:** Smaller local models (7B–14B parameters) frequently ignore explicit output format instructions. The system prompt says "Return ONLY plain SQL. No Markdown fences, no explanation, no comments." A 7B model will often return:
 
-```
+````
 Sure! Here is the SQL query you requested:
 
 ```sql
@@ -47,7 +47,7 @@ SELECT COUNT(*) FROM orders WHERE ...
 ```
 
 This query counts the number of orders where...
-```
+````
 
 `strip_sql_fences()` handles the Markdown code block, but the surrounding prose is not stripped. The SQL parser then fails because the string starts with "Sure!".
 
