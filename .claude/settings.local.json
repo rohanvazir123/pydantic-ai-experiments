@@ -24,7 +24,11 @@
       "Bash(node *)",
       "Bash(npm *)",
       "Bash(nvidia-smi *)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "WebFetch(domain:docling-project.github.io)",
+      "Bash(VLM_ENABLED=true python -c ' *)",
+      "Bash(VLM_ENABLED=true python *)",
+      "WebFetch(domain:qwen.ai)"
     ]
   },
   "enableAllProjectMcpServers": true,

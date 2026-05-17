@@ -23,7 +23,7 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
 | LLM / Embeddings | Ollama (local) or any OpenAI-compatible API |
 | Vector store | PostgreSQL + pgvector |
 | Knowledge graph | Apache AGE (PostgreSQL extension, port 5433) |
-| Ingestion | Docling (multi-format → structured chunks) |
+| Ingestion | Docling (multi-format → structured chunks; VlmPipeline optional) |
 | User memory | Mem0 (backed by same PostgreSQL) |
 | Observability | Langfuse (optional) |
 | UI | Streamlit — `rag/app/streamlit/streamlit_app.py` |
@@ -47,11 +47,21 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
   ┌───────────────────────────────────┐
   │   _read_document()                │
   │                                   │
-  │   PDF/DOCX/…  → Docling           │
-  │                 DocumentConverter │
-  │   Audio       → Docling ASR       │
-  │                 + Whisper         │
-  │   MD / TXT    → direct read       │
+  │   .pdf → _get_pdf_converter()     │
+  │     VLM_ENABLED=false             │
+  │       → StandardPdfPipeline       │
+  │         (layout + OCR)            │
+  │     VLM_ENABLED=true              │
+  │       → VlmPipeline               │
+  │         page image → Ollama       │
+  │         Qwen2.5-VL → markdown     │
+  │         with [Figure:...] tags    │
+  │   .docx/.pptx/.xlsx/.html/.md     │
+  │       → _get_standard_converter() │
+  │         (text layer — no VLM,     │
+  │          no OCR)                  │
+  │   Audio → Docling ASR + Whisper   │
+  │   .txt  → direct read             │
   └───────────────┬───────────────────┘
                   │
                   ▼

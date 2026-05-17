@@ -236,36 +236,33 @@ class Settings(BaseSettings):
         description="Name of the AGE graph to use (created automatically on initialize).",
     )
 
-    # Vision Model Configuration (for multimodal processing)
-    vision_model_provider: str = Field(
-        default="ollama",
-        description="Vision model provider (ollama, openai, anthropic)",
+    # Docling VLM pipeline — converts PDF pages as images via a vision-language model.
+    # When enabled, each page is rendered and sent to the VLM instead of using
+    # Docling's default layout + OCR pipeline.  This annotates figures, tables,
+    # and image-heavy content that the standard pipeline silently ignores.
+    vlm_enabled: bool = Field(
+        default=False,
+        description="Enable Docling VLM pipeline for PDF ingestion (annotates images/figures).",
     )
 
-    vision_model: str = Field(
-        default="llava:latest",
-        description="Vision model name (llava:latest for Ollama, gpt-4o for OpenAI)",
+    vlm_model: str = Field(
+        default="qwen2.5vl:7b",
+        description="Ollama model tag for the VLM pipeline (e.g. qwen2.5vl:7b).",
     )
 
-    vision_model_base_url: str | None = Field(
-        default="http://localhost:11434/v1",
-        description="Base URL for vision model API",
+    vlm_base_url: str = Field(
+        default="http://localhost:11434/v1/chat/completions",
+        description="OpenAI-compatible chat-completions endpoint for the VLM.",
     )
 
-    vision_model_api_key: str = Field(
-        default="ollama",
-        description="API key for vision model (use 'ollama' for local)",
+    vlm_timeout: float = Field(
+        default=120.0,
+        description="Per-page timeout in seconds for VLM API calls.",
     )
 
-    vision_max_tokens: int = Field(
-        default=1024,
-        description="Maximum tokens for vision model response",
-    )
-
-    # Multimodal Processing Configuration
-    multimodal_processing_enabled: bool = Field(
-        default=True,
-        description="Enable multimodal content processing (images, tables, etc.)",
+    vlm_concurrency: int = Field(
+        default=1,
+        description="Number of concurrent page requests to the VLM.",
     )
 
     # Context window for local LLMs (Ollama only — ignored for cloud providers).

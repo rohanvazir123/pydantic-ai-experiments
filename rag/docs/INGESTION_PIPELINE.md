@@ -9,6 +9,7 @@
 ## Table of Contents
 
 - [Pipeline Steps](#pipeline-steps)
+- [Planned Improvements](#planned-improvements)
 - [Modes](#modes)
 - [CUAD Legal Contract Ingestion](#cuad-legal-contract-ingestion)
 - [Supported Formats](#supported-formats)
@@ -29,12 +30,22 @@ For each document file:
       Hash changed   → delete existing chunks + re-ingest
 
 3. _read_document()
-      PDF / DOCX / PPTX / XLSX / HTML
-            → Docling DocumentConverter (ML model, cached per pipeline instance)
-      Audio (.mp3 / .wav / .m4a / .flac)
+      .pdf → _get_pdf_converter() [cached]
+            VLM_ENABLED=false (default)
+              → DocumentConverter()  StandardPdfPipeline (layout + OCR)
+            VLM_ENABLED=true
+              → DocumentConverter(VlmPipeline + ApiVlmOptions)
+                  each page rendered as image → POST Ollama /v1/chat/completions
+                  model=qwen2.5vl:7b → markdown with [Figure: ...] descriptions
+                  DoclingDocument flows into HybridChunker unchanged
+      .docx / .pptx / .xlsx / .html / .htm / .md / .markdown
+            → _get_standard_converter() [cached]
+              → DocumentConverter()  standard pipeline
+              (text layer embedded — no VLM, no OCR ever run)
+      .mp3 / .wav / .m4a / .flac
             → Docling ASR pipeline + Whisper (requires ffmpeg in PATH)
-      Markdown / TXT
-            → direct read
+      .txt and others
+            → direct file read
 
 4. _extract_title()
       First "# " heading, falling back to filename stem
@@ -53,6 +64,15 @@ For each document file:
 8. store.add(chunks)
       executemany INSERT INTO chunks (single batch per document)
 ```
+
+---
+
+## Planned Improvements
+
+| Item | Description |
+|------|-------------|
+| PDF preprocessing | Detect text layer presence before routing to VLM or OCR — skip OCR for digital PDFs, skip VLM for text-only PDFs |
+| DOCX/PPTX image extraction | Run VLM on embedded images in Word/PowerPoint files |
 
 ---
 
@@ -119,3 +139,8 @@ hf_hub_download(
 | `EMBEDDING_MODEL` | `nomic-embed-text:latest` | Embedding model |
 | `EMBEDDING_DIMENSION` | `768` | Must match model output |
 | `EMBEDDING_BASE_URL` | `http://localhost:11434/v1` | Ollama or OpenAI endpoint |
+| `VLM_ENABLED` | `false` | Enable Docling VlmPipeline for PDF ingestion |
+| `VLM_MODEL` | `qwen2.5vl:7b` | Ollama model tag for VLM (must be pulled first) |
+| `VLM_BASE_URL` | `http://localhost:11434/v1/chat/completions` | VLM API endpoint |
+| `VLM_TIMEOUT` | `120.0` | Per-page timeout in seconds |
+| `VLM_CONCURRENCY` | `1` | Concurrent page requests to VLM |

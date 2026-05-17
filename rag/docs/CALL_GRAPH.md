@@ -47,9 +47,23 @@ rag/main.py:main()                                                L100
               │     └── [for each file]:
               │           _ingest_single_document(file_path)       L413
               │             ├── _read_document(file_path)
-              │             │     ├── [PDF/DOCX] Docling DocumentConverter
-              │             │     ├── [Audio]    _transcribe_audio()
-              │             │     └── [MD/TXT]   direct file read
+              │             │     ├── [.pdf]   _get_pdf_converter()
+              │             │     │     ├── [VLM_ENABLED=false]  DocumentConverter()
+              │             │     │     │     └── StandardPdfPipeline (layout + OCR)
+              │             │     │     └── [VLM_ENABLED=true]   DocumentConverter(
+              │             │     │           format_options={PDF: PdfFormatOption(
+              │             │     │             pipeline_cls=VlmPipeline,
+              │             │     │             vlm_options=ApiVlmOptions(
+              │             │     │               url=VLM_BASE_URL,
+              │             │     │               model=VLM_MODEL (qwen2.5vl:7b),
+              │             │     │               POST /v1/chat/completions → Ollama
+              │             │     │             ))})
+              │             │     │           → DoclingDocument with [Figure:...] descriptions
+              │             │     ├── [.docx/.pptx/.xlsx/.html/.md]
+              │             │     │     _get_standard_converter()
+              │             │     │     └── DocumentConverter() — text layer, no VLM, no OCR
+              │             │     ├── [.mp3/.wav/.m4a/.flac]  _transcribe_audio()
+              │             │     └── [.txt and others]  direct file read
               │             ├── _extract_title()
               │             ├── _extract_document_metadata()
               │             │     └── _compute_file_hash()
@@ -85,6 +99,8 @@ rag/main.py:main()                                                L100
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L136) | `DocumentIngestionPipeline` | L136 |
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L479) | `ingest_documents()` | L479 |
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L413) | `_ingest_single_document()` | L413 |
+| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L175) | `_get_pdf_converter()` — VlmPipeline or StandardPdfPipeline | L175 |
+| [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py) | `_get_standard_converter()` — DOCX/PPTX/HTML/MD (no VLM, no OCR) | |
 | [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py) | `DoclingHybridChunker` | |
 | [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L135) | `EmbeddingGenerator` | L135 |
 | [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L207) | `embed_chunks()` — sets `chunk.embedding` | L207 |
@@ -93,6 +109,7 @@ rag/main.py:main()                                                L100
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L257) | `add()` — INSERT chunks with embedding `$3` | L257 |
 | [`rag/config/settings.py`](../rag/config/settings.py#L135) | `embedding_dimension` (default 768) | L135 |
+| [`rag/config/settings.py`](../rag/config/settings.py) | `vlm_enabled`, `vlm_model`, `vlm_base_url` | |
 
 ---
 

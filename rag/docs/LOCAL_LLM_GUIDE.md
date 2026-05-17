@@ -109,39 +109,70 @@ VLMs are needed in the RAG pipeline wherever **documents contain images, tables 
 
 ### Where VLMs are used
 
-| Component | Current state | VLM needed |
-|-----------|--------------|------------|
-| Docling table extraction | Uses heuristic layout parser — no VLM | VLM improves complex table parsing |
-| Docling figure extraction | Captions extracted as text; image content ignored | VLM needed if image content matters |
-| Scanned PDF OCR | Docling uses EasyOCR / Tesseract | VLM (e.g., ColPali) improves accuracy on dense scans |
-| Audio via Whisper | Whisper is a standalone ASR model, not a VLM | No VLM needed |
+| Component | State | Notes |
+|-----------|-------|-------|
+| Docling PDF pipeline | **Enabled** — `VLM_ENABLED=true` | Each page rendered as image → Qwen2.5-VL via Ollama → markdown with figure descriptions |
+| Docling figure extraction | **Enabled** via VLM pipeline | Figures annotated in-line with `[Figure: ...]` descriptions |
+| Scanned PDF OCR | Handled by VLM pipeline | VLM reads the rendered page image directly |
+| Audio via Whisper | No VLM | Whisper is a standalone ASR model |
 
 ### Recommended VLMs
 
 | Use case | Model | Params | VRAM | Ollama tag |
 |----------|-------|--------|------|------------|
-| Document layout + OCR | `minicpm-v:8b` | 8B | ~6 GB | `minicpm-v:8b-2.6-q4_K_M` |
-| General image description | `llava:13b` | 13B | ~10 GB | `llava:13b-v1.6-mistral-q4_K_M` |
-| High-accuracy doc parsing | `qwen2.5vl:7b` | 7B | ~5 GB | `qwen2.5vl:7b-instruct-q4_K_M` |
-| Production doc parsing | `qwen2.5vl:72b` | 72B | ~44 GB | `qwen2.5vl:72b-instruct-q4_K_M` |
+| **Default (implemented)** | `qwen2.5vl:7b` | 7B | ~5 GB | `qwen2.5vl:7b` |
+| Higher accuracy | `qwen2.5vl:72b` | 72B | ~44 GB | `qwen2.5vl:72b` |
 
-### When to add VLM to Docling
+The VLM runs via Ollama — no VRAM is consumed by the Python process directly.
 
-Currently Docling's `DocumentConverter` is initialised without a VLM pipeline. To enable:
+### How VLM is wired into Docling (implemented)
+
+`_get_converter()` in `rag/ingestion/pipeline.py` builds the converter based on `VLM_ENABLED`:
 
 ```python
-from docling.pipeline.vlm_pipeline import VlmPipeline
-from docling.models.smolvlm_model import SmolVlmOptions
+# VLM_ENABLED=false (default) — standard layout + OCR pipeline
+converter = DocumentConverter()
 
-pipeline_options = VlmPipelineOptions(
-    vlm_options=SmolVlmOptions(),  # swap for qwen2.5vl for higher accuracy
+# VLM_ENABLED=true — each PDF page sent to Qwen2.5-VL via Ollama
+from docling.datamodel.pipeline_options import VlmPipelineOptions
+from docling.datamodel.pipeline_options_vlm_model import ApiVlmOptions, ResponseFormat
+from docling.pipeline.vlm_pipeline import VlmPipeline
+
+vlm_options = ApiVlmOptions(
+    url="http://localhost:11434/v1/chat/completions",
+    params={"model": "qwen2.5vl:7b", "max_tokens": 4096},
+    timeout=120.0,
+    response_format=ResponseFormat.MARKDOWN,
+    prompt=(
+        "Convert this page to markdown. "
+        "For every figure, chart, diagram, or image: write a detailed description "
+        "explaining what it shows, wrapped in a [Figure: ...] tag. "
+        "Do not miss any text and only output the bare markdown."
+    ),
 )
 converter = DocumentConverter(
-    pipeline_options=pipeline_options,
+    format_options={
+        InputFormat.PDF: PdfFormatOption(
+            pipeline_cls=VlmPipeline,
+            pipeline_options=VlmPipelineOptions(vlm_options=vlm_options),
+        )
+    }
 )
 ```
 
-For legal contracts and financial tables this meaningfully reduces extraction errors. On 8 GB VRAM, **do not run VLM + chat LLM simultaneously** — load VLM at ingestion time only.
+The resulting `DoclingDocument` flows unchanged into `HybridChunker` — figure descriptions land in the chunks and are embedded and indexed alongside text.
+
+Enable via `.env`:
+
+```bash
+VLM_ENABLED=true
+VLM_MODEL=qwen2.5vl:7b        # must be pulled in Ollama first
+VLM_BASE_URL=http://localhost:11434/v1/chat/completions
+VLM_TIMEOUT=120.0              # seconds per page
+VLM_CONCURRENCY=1              # parallel page requests
+```
+
+On 8 GB VRAM, **do not run VLM + chat LLM simultaneously** — pull model before serving and set `OLLAMA_NUM_PARALLEL=1`.
 
 ---
 

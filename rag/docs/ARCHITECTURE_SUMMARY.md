@@ -78,6 +78,7 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
 | Retriever — rerank | LLM or CrossEncoder | `RERANKER_ENABLED=true` |
 | Mem0Store | LLM + Embeddings | Every `add()` call |
 | Ingestion pipeline | Embeddings | Every chunk |
+| Ingestion pipeline — VLM | VLM (Qwen2.5-VL via Ollama) | `VLM_ENABLED=true`, every PDF page |
 
 ---
 

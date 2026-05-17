@@ -170,16 +170,118 @@ class DocumentIngestionPipeline:
         self.store = PostgresHybridStore()
 
         self._initialized = False
-        self._doc_converter = None  # Cached DocumentConverter (expensive to init)
+        self._pdf_converter = None      # PDF-specific: with or without Qwen2.5-VL picture description
+        self._standard_converter = None # DOCX/PPTX/XLSX/HTML/MD: text-layer formats, no VLM, no OCR
 
-    def _get_converter(self):
-        """Get or create the cached DocumentConverter (loads ML models once)."""
-        if self._doc_converter is None:
+    def _get_pdf_converter(self):
+        """PDF converter — only used for .pdf files.
+
+        VLM_ENABLED=false (default):
+            Standard PDF pipeline — layout analysis + text extraction.
+            No OCR (assumes digital PDF), no picture description.
+
+        VLM_ENABLED=true:
+            Standard PDF pipeline + Qwen2.5-VL picture description via Ollama.
+            Text is extracted by layout analysis (reliable).  Only cropped figure
+            images are sent to Qwen2.5-VL — so a doc with 2 charts triggers exactly
+            2 VLM calls, never touching the surrounding text.
+            Requires: ollama pull qwen2.5vl:7b
+        """
+        if self._pdf_converter is None:
             from docling.document_converter import DocumentConverter
 
-            self._doc_converter = DocumentConverter()
-            logger.info("DocumentConverter initialized (ML models loaded)")
-        return self._doc_converter
+            if self.settings.vlm_enabled:
+                from docling.datamodel.base_models import InputFormat
+                from docling.datamodel.pipeline_options import (
+                    PdfPipelineOptions,
+                    PictureDescriptionApiOptions,
+                )
+                from docling.document_converter import PdfFormatOption
+
+                # Standard PDF pipeline with Qwen2.5-VL picture description.
+                # Text is extracted via layout analysis (reliable); only figures
+                # are sent to Qwen2.5-VL via Ollama for description.
+                pdf_opts = PdfPipelineOptions()
+                pdf_opts.do_ocr = False
+                pdf_opts.do_table_structure = True
+                pdf_opts.do_picture_classification = False
+                pdf_opts.do_picture_description = True
+                pdf_opts.generate_picture_images = True
+                pdf_opts.enable_remote_services = True
+
+                pdf_opts.picture_description_options = PictureDescriptionApiOptions(
+                    url=self.settings.vlm_base_url,  # type: ignore[arg-type]
+                    params={
+                        "model": self.settings.vlm_model,
+                        "temperature": 0.1,
+                    },
+                    prompt=(
+                        "Describe this image in detail, explicitly capturing any "
+                        "charts, tables, diagrams, or structural data shown."
+                    ),
+                    timeout=self.settings.vlm_timeout,
+                    concurrency=self.settings.vlm_concurrency,
+                )
+
+                self._pdf_converter = DocumentConverter(
+                    format_options={
+                        InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts)
+                    }
+                )
+                logger.info(
+                    "PDF converter: standard pipeline + Qwen2.5-VL picture description "
+                    f"(model={self.settings.vlm_model})"
+                )
+            else:
+                from docling.datamodel.base_models import InputFormat
+                from docling.datamodel.pipeline_options import PdfPipelineOptions
+                from docling.document_converter import PdfFormatOption
+
+                # Standard PDF pipeline: text + table extraction only.
+                # Set VLM_ENABLED=true to add Qwen2.5-VL picture descriptions.
+                pdf_opts = PdfPipelineOptions()
+                pdf_opts.do_ocr = False
+                pdf_opts.do_table_structure = True
+                pdf_opts.do_picture_classification = False
+                pdf_opts.do_picture_description = False
+                pdf_opts.generate_picture_images = False
+                pdf_opts.generate_page_images = False
+
+                self._pdf_converter = DocumentConverter(
+                    format_options={
+                        InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts)
+                    }
+                )
+                logger.info("PDF converter: standard pipeline (text-only, no OCR, no picture description)")
+        return self._pdf_converter
+
+    def _get_standard_converter(self):
+        """Standard DocumentConverter for DOCX, PPTX, XLSX, HTML, and MD files.
+        These formats have embedded text layers — no VLM pipeline, no OCR.
+        Picture description is disabled; generate_picture_images is off.
+        """
+        if self._standard_converter is None:
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.document_converter import (
+                DocumentConverter,
+                PdfFormatOption,
+            )
+
+            pdf_opts = PdfPipelineOptions()
+            pdf_opts.do_ocr = False
+            pdf_opts.do_picture_classification = False
+            pdf_opts.do_picture_description = False
+            pdf_opts.generate_picture_images = False
+            pdf_opts.generate_page_images = False
+
+            self._standard_converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_opts)
+                }
+            )
+            logger.info("Standard converter initialized (DOCX/PPTX/XLSX/HTML/MD — no VLM, no OCR)")
+        return self._standard_converter
 
     async def initialize(self) -> None:
         """Initialize PostgreSQL connection."""
@@ -238,72 +340,63 @@ class DocumentIngestionPipeline:
 
         return sorted(files)
 
-    def _read_document(self, file_path: str) -> tuple[str, Any | None]:
-        """
-        Read document content from file.
+    # Format routing constants — controls which converter each extension gets.
+    # PDF is separated because it may use VlmPipeline when VLM_ENABLED=true.
+    # Structured binary formats (DOCX/PPTX/XLSX/HTML/MD) have embedded text layers:
+    # no VLM and no OCR are ever needed for them.
+    _PDF_FORMATS = frozenset({".pdf"})
+    _STRUCTURED_FORMATS = frozenset({
+        ".docx", ".doc",
+        ".pptx", ".ppt",
+        ".xlsx", ".xls",
+        ".html", ".htm",
+        ".md", ".markdown",
+    })
+    _AUDIO_FORMATS = frozenset({".mp3", ".wav", ".m4a", ".flac"})
 
-        Args:
-            file_path: Path to the document file
+    def _read_document(self, file_path: str) -> tuple[str, Any | None]:
+        """Read document content, routing each format to the right converter.
 
         Returns:
-            Tuple of (content, docling_document)
+            Tuple of (markdown_content, docling_document | None)
         """
         file_ext = os.path.splitext(file_path)[1].lower()
+        name = os.path.basename(file_path)
 
-        # Audio formats - transcribe with Whisper ASR
-        audio_formats = [".mp3", ".wav", ".m4a", ".flac"]
-        if file_ext in audio_formats:
+        if file_ext in self._AUDIO_FORMATS:
             return self._transcribe_audio(file_path)
 
-        # Docling-supported formats
-        docling_formats = [
-            ".pdf",
-            ".docx",
-            ".doc",
-            ".pptx",
-            ".ppt",
-            ".xlsx",
-            ".xls",
-            ".html",
-            ".htm",
-            ".md",
-            ".markdown",
-        ]
+        if file_ext in self._PDF_FORMATS:
+            # PDF: VlmPipeline (figures described) or standard layout+OCR
+            return self._convert_with_docling(file_path, self._get_pdf_converter(), name)
 
-        if file_ext in docling_formats:
-            try:
-                logger.info(
-                    f"Converting {file_ext} file using Docling: {os.path.basename(file_path)}"
-                )
+        if file_ext in self._STRUCTURED_FORMATS:
+            # DOCX/PPTX/XLSX/HTML/MD: always standard converter — no VLM, no OCR
+            return self._convert_with_docling(file_path, self._get_standard_converter(), name)
 
-                converter = self._get_converter()
-                result = converter.convert(file_path)
+        # Plain text (.txt and anything else)
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                return (f.read(), None)
+        except UnicodeDecodeError:
+            with open(file_path, encoding="latin-1") as f:
+                return (f.read(), None)
 
-                markdown_content = result.document.export_to_markdown()
-                logger.info(f"Successfully converted {os.path.basename(file_path)}")
-
-                return (markdown_content, result.document)
-
-            except Exception as e:
-                logger.error(f"Failed to convert {file_path} with Docling: {e}")
-                # Fall back to raw text
-                try:
-                    with open(file_path, encoding="utf-8") as f:
-                        return (f.read(), None)
-                except Exception:
-                    return (
-                        f"[Error: Could not read file {os.path.basename(file_path)}]",
-                        None,
-                    )
-
-        # Text-based formats
-        else:
+    def _convert_with_docling(self, file_path: str, converter: Any, name: str) -> tuple[str, Any | None]:
+        """Run a Docling converter and return (markdown, DoclingDocument)."""
+        try:
+            logger.info(f"Converting {name} with Docling")
+            result = converter.convert(file_path)
+            markdown_content = result.document.export_to_markdown()
+            logger.info(f"Converted {name} → {len(markdown_content)} chars")
+            return (markdown_content, result.document)
+        except Exception as e:
+            logger.error(f"Docling conversion failed for {name}: {e}")
             try:
                 with open(file_path, encoding="utf-8") as f:
                     return (f.read(), None)
-            except UnicodeDecodeError:
-                with open(file_path, encoding="latin-1") as f:
-                    return (f.read(), None)
+            except Exception:
+                return (f"[Error: Could not read file {name}]", None)
 
     def _transcribe_audio(self, file_path: str) -> tuple[str, Any | None]:
         """
