@@ -1,140 +1,206 @@
-# RAG + PDF Question Generator — Architecture
+# RAG System — Architecture
 
-## Overview
+Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid retrieval and knowledge graph tools to synthesise answers from ingested documents.
 
-Agentic Retrieval-Augmented Generation over ingested documents (CUAD legal contracts).
-A Pydantic AI agent orchestrates retrieval tools (vector search, knowledge graph) and synthesises answers with an LLM.
-A separate PDF question generator pipeline produces MCQs from ingested documents.
+---
 
 ## Stack
 
 | Layer | Technology |
-|---|---|
-| LLM / Embeddings | Ollama (local) or any OpenAI-compatible API |
-| Vector store | PostgreSQL + pgvector (local Docker) |
-| Knowledge graph | Apache AGE (PostgreSQL extension, port 5433) |
+|-------|-----------|
 | Agent framework | Pydantic AI |
-| Ingestion | Docling (PDF → structured chunks) |
-| Observability | Langfuse |
+| LLM / Embeddings | Ollama (local) or any OpenAI-compatible API |
+| Vector store | PostgreSQL + pgvector |
+| Knowledge graph | Apache AGE (PostgreSQL extension, port 5433) |
+| Ingestion | Docling (multi-format → structured chunks) |
 | User memory | Mem0 (backed by same PostgreSQL) |
-| UI | Streamlit (`apps/rag/streamlit_app.py`) |
-| REST API | FastAPI (`apps/rag/api.py`) |
+| Observability | Langfuse (optional) |
+| UI | Streamlit — `rag/app/streamlit/streamlit_app.py` |
+| REST API | FastAPI — `rag/app/rest_api/api.py` |
 
-## Components
+---
 
-```
-apps/rag/
-├── streamlit_app.py   — Chat UI with streaming tool call display
-└── api.py             — FastAPI: /health, /v1/chat, /v1/chat/stream,
-                         /v1/retrieve, /v1/ingest
-
-rag/
-├── config/settings.py         — All config (pydantic-settings, .env)
-├── agent/
-│   ├── rag_agent.py           — Pydantic AI agent, RAGState, tools
-│   └── agent_main.py          — stream_agent_interaction helper
-├── ingestion/
-│   └── pipeline.py            — DocumentIngestionPipeline (Docling → chunks → embed)
-├── retrieval/
-│   └── retriever.py           — HyDE + hybrid search + LLM reranker
-├── storage/
-│   └── vector_store/
-│       └── postgres.py        — PostgresHybridStore (asyncpg, pgvector)
-├── knowledge_graph/
-│   ├── age_graph_store.py     — AgeGraphStore (Apache AGE via asyncpg)
-│   └── pipeline.py            — KG extraction from ingested chunks
-├── memory/
-│   └── mem0_store.py          — Mem0Store (per-user episodic memory)
-└── observability/
-    └── langfuse_tracer.py     — Langfuse span helpers
-```
-
-## Data Flow — Chat Query
+## Ingestion Pipeline
 
 ```
-User question
-    │
-    ▼
-RAGState (lazy-init retriever + AGE store)
-    │
-    ▼
-Pydantic AI agent
-    ├── search_knowledge_base(query)
-    │       │
-    │       ▼
-    │   Retriever.retrieve(query, search_type="hybrid")
-    │       ├── HyDE: LLM generates hypothetical answer → embed
-    │       ├── Semantic search (pgvector cosine)
-    │       ├── Full-text search (tsvector BM25)
-    │       ├── RRF fusion
-    │       └── LLM reranker (parallel scoring)
-    │
-    ├── search_knowledge_graph(query)
-    │       └── AgeGraphStore.search_as_context(query)
-    │
-    └── run_graph_query(cypher)
-            └── AgeGraphStore.run_cypher_query(cypher)
-    │
-    ▼
-LLM synthesis
-    │
-    ▼
-Response (streamed via SSE or Streamlit)
+  Documents (rag/documents/)
+  PDF · DOCX · PPTX · MD · TXT · Audio
+          │
+          ▼
+  ┌───────────────────────────────────┐
+  │   _compute_file_hash()  (MD5)     │
+  │   Incremental: skip if unchanged  │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │   _read_document()                │
+  │                                   │
+  │   PDF/DOCX/…  → Docling           │
+  │                 DocumentConverter │
+  │   Audio       → Docling ASR       │
+  │                 + Whisper         │
+  │   MD / TXT    → direct read       │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │   chunker.chunk_document()        │
+  │                                   │
+  │   Docling HybridChunker           │
+  │   · token-aware splitting         │
+  │   · preserves heading context     │
+  │   Fallback: sliding-window        │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │   embedder.embed_chunks()         │
+  │                                   │
+  │   Batched POST → /v1/embeddings   │
+  │   nomic-embed-text → 768-dim      │
+  │   Async LRU cache (1000 entries)  │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │   PostgresHybridStore             │
+  │                                   │
+  │   INSERT INTO documents           │
+  │   executemany → chunks            │
+  │   (single batch per document)     │
+  └───────────────────────────────────┘
+
+  Key file: rag/ingestion/pipeline.py
 ```
 
-## Data Flow — Ingestion
+---
+
+## Retrieval Pipeline
 
 ```
-PDF files (rag/documents/)
-    │
-    ▼
-DocumentIngestionPipeline.ingest_documents()
-    ├── Docling: PDF → structured markdown
-    ├── Chunking (RecursiveCharacterSplitter)
-    ├── Embedding (OpenAI-compatible API)
-    └── PostgresHybridStore.upsert_chunks() (batch executemany)
-    │
-    ▼
-KG pipeline (if KG_BACKEND=age)
-    ├── LLM entity extraction per chunk
-    ├── AgeGraphStore.upsert_entity() per entity
-    └── AgeGraphStore.add_relationship() per relation
+  User query
+      │
+      ▼
+  ┌───────────────────────────────────┐
+  │   ResultCache (LRU, TTL 5 min)    │
+  │   Key: sha256(query:type:n)[:24]  │
+  │   Hit → return immediately        │
+  └───────────────┬───────────────────┘
+                  │ miss
+                  ▼
+  ┌───────────────────────────────────┐
+  │   Query embedding                 │
+  │                                   │
+  │   HyDE off → embed raw query      │
+  │   HyDE on  → LLM generates        │
+  │              hypothetical answer  │
+  │              → embed that instead │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────────────────────┐
+  │   Search  (asyncio.gather for hybrid)             │
+  │                                                   │
+  │   semantic ──▶ ORDER BY embedding <=> $1 LIMIT N  │
+  │   text     ──▶ content_tsv @@ plainto_tsquery()   │
+  │                         │                         │
+  │                         ▼                         │
+  │              RRF merge  (k = 60)                  │
+  │              score = Σ 1 / (k + rank_i)           │
+  └───────────────────────────────────┬───────────────┘
+                                      │
+                                      ▼
+  ┌───────────────────────────────────────────────────┐
+  │   Rerank  (optional, RERANKER_ENABLED=true)       │
+  │                                                   │
+  │   Over-fetch:  n × RERANKER_OVERFETCH_FACTOR      │
+  │                                                   │
+  │   llm          → parallel LLM scoring             │
+  │                  asyncio.gather → sort → trim      │
+  │   cross_encoder→ sentence-transformers (local)    │
+  │                  → sort → trim                    │
+  └───────────────────────────────────┬───────────────┘
+                                      │
+                                      ▼
+  ┌───────────────────────────────────┐
+  │   Score filter                    │
+  │   Drop chunks < MIN_RELEVANCE     │
+  │   (default 0.4)                   │
+  └───────────────┬───────────────────┘
+                  │
+                  ▼
+  ┌───────────────────────────────────┐
+  │   Cache write                     │
+  │   Return list[SearchResult]       │
+  └───────────────────────────────────┘
+
+  Key file: rag/retrieval/retriever.py
 ```
 
-## Key Configuration (`.env`)
+---
+
+## Query Flow (Agent)
 
 ```
-DATABASE_URL=postgresql://...          # pgvector store
-AGE_DATABASE_URL=postgresql://...      # Apache AGE (port 5433)
-KG_BACKEND=age                         # age | postgres
-LLM_PROVIDER=ollama                    # ollama | openai | anthropic
-LLM_MODEL=llama3.2:3b
-EMBEDDING_MODEL=nomic-embed-text
-LANGFUSE_PUBLIC_KEY=...
-MEM0_ENABLE=true
+  User question
+        │
+        ▼
+  ┌─────────────────────────────────────────────────┐
+  │  Pydantic AI Agent   rag/agent/rag_agent.py     │
+  │                                                 │
+  │  ┌─ search_knowledge_base(query) ─────────────┐ │
+  │  │  Retriever.retrieve_as_context()           │ │
+  │  │  + Mem0Store.get_context_string()          │ │
+  │  └────────────────────────────────────────────┘ │
+  │                                                 │
+  │  ┌─ search_knowledge_graph(query) ────────────┐ │
+  │  │  AgeGraphStore.search_entities()           │ │
+  │  │  + get_related_entities()                  │ │
+  │  └────────────────────────────────────────────┘ │
+  └──────────────────────────┬──────────────────────┘
+                             │
+                             ▼
+                       LLM synthesis
+                             │
+                             ▼
+               Response  (JSON · SSE · Streamlit)
 ```
+
+---
+
+## Database Schema
+
+```
+  documents
+  ├── id           UUID PK
+  ├── title        TEXT
+  ├── source       TEXT UNIQUE      ← dedup key
+  ├── content      TEXT
+  ├── metadata     JSONB            ← file hash, format
+  └── created_at   TIMESTAMPTZ
+
+  chunks
+  ├── id           UUID PK
+  ├── document_id  UUID FK → documents CASCADE
+  ├── content      TEXT
+  ├── embedding    vector(768)      ← IVFFlat index (cosine)
+  ├── chunk_index  INTEGER
+  ├── metadata     JSONB
+  ├── token_count  INTEGER
+  └── content_tsv  tsvector GENERATED  ← GIN index (full-text)
+```
+
+---
 
 ## API Endpoints
 
 | Method | Path | Description |
-|---|---|---|
-| GET | `/health` | DB, embedding API, LLM connectivity |
-| POST | `/v1/chat` | Full agent run (tool calls + synthesis) |
+|--------|------|-------------|
+| GET | `/health` | DB + embedding API + LLM connectivity |
+| POST | `/v1/chat` | Full agent run — tool calls + synthesis |
 | POST | `/v1/chat/stream` | SSE-streamed agent response |
-| POST | `/v1/retrieve` | Raw retrieval (no LLM synthesis) |
+| POST | `/v1/retrieve` | Raw retrieval, no LLM synthesis |
 | POST | `/v1/ingest` | Trigger document ingestion |
 
-## Running
-
-```bash
-# UI
-streamlit run apps/rag/streamlit_app.py
-
-# API
-uvicorn apps.rag.api:app --port 8000 --reload
-
-# Ingest documents
-curl -X POST http://localhost:8000/v1/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"documents_folder": "rag/documents"}'
-```
+Run: `uvicorn rag.app.rest_api.api:app --port 8000 --reload`
