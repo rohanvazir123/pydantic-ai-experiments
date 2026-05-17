@@ -9,6 +9,8 @@
   - [Internal Workflow](#internal-workflow)
   - [Customization and Tuning](#customization-and-tuning)
   - [Image Handling and Local VLMs](#image-handling-and-local-vlms)
+  - [VLM picture annotation — how it works](#vlm-picture-annotation--how-it-works)
+  - [Results from running vlm_picture_annotation.py](#results-from-running-vlm_picture_annotationpy)
 - [Docling Chunking Failures](#docling-chunking-failures)
   - [Which documents demonstrate bad chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
   - [Failure Scenarios and Fixes](#failure-scenarios-and-fixes)
@@ -228,36 +230,126 @@ By default, Docling extracts figure captions and bounding boxes but does **not**
 
 #### Wiring a VLM for figure descriptions
 
-```python
-from docling.document_converter import DocumentConverter, PdfPipelineOptions
-from docling.datamodel.base_models import InputFormat
-from docling.models.picture_description_api_model import PictureDescriptionApiOptions
-
-# Enable image export so figures are available as PIL images
-pipeline_options = PdfPipelineOptions()
-pipeline_options.generate_picture_images = True
-pipeline_options.images_scale = 2.0
-
-# Point to a local Ollama VLM endpoint
-picture_options = PictureDescriptionApiOptions(
-    url="http://localhost:11434/v1/chat/completions",
-    params={"model": "llava:13b"},
-    prompt="Describe this figure concisely for a retrieval system.",
-)
-pipeline_options.picture_description_options = picture_options
-
-converter = DocumentConverter(
-    format_options={InputFormat.PDF: PdfPipelineOptions(**pipeline_options.__dict__)}
-)
-result = converter.convert("document_with_figures.pdf")
-
-# Figure descriptions are now in FigureItem.annotations
-for item, _ in result.document.iterate_items():
-    if hasattr(item, "annotations") and item.annotations:
-        print(item.annotations[0].text)
-```
+See [VLM picture annotation — how it works](#vlm-picture-annotation--how-it-works) below for the full working implementation with `PictureDescriptionApiOptions`.
 
 **Practical note:** VLM processing is slow — expect ~5–30s per figure depending on model size and GPU. For bulk ingestion, filter to only `FigureItem` objects and batch them.
+
+### VLM picture annotation — how it works
+
+The correct way to wire Qwen2.5-VL (or any OpenAI-compatible vision model) into Docling is via `PictureDescriptionApiOptions`. This keeps the standard PDF pipeline for text and tables, and routes **only cropped figure images** to the VLM.
+
+```python
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionApiOptions
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.do_ocr = False               # digital PDFs have a text layer
+pipeline_options.do_table_structure = True    # parse table rows/cols locally
+pipeline_options.do_picture_classification = False
+pipeline_options.do_picture_description = True   # route figures to VLM
+pipeline_options.generate_picture_images = True  # crop figures for the VLM call
+pipeline_options.enable_remote_services = True   # required for API-based description
+
+pipeline_options.picture_description_options = PictureDescriptionApiOptions(
+    url="http://localhost:11434/v1/chat/completions",  # or port 8000 for vLLM
+    params={"model": "qwen2.5vl:7b"},
+    prompt="Describe this chart or image in detail.",
+    timeout=180,
+    concurrency=1,
+)
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+result = converter.convert("document.pdf")
+print(result.document.export_to_markdown())
+```
+
+**Key behaviour:** If a 10-page document has 2 charts, Qwen2.5-VL is called exactly **2 times** — once per cropped figure image. The remaining 10 pages of text never touch the VLM. This is fundamentally different from `VlmPipeline`, which renders every page as an image and sends all of them to the model.
+
+| Approach | VLM calls per page | Text quality | When to use |
+|----------|-------------------|--------------|-------------|
+| `PictureDescriptionApiOptions` | Once per figure on that page | High — layout analysis extracts text | Most cases — digital PDFs with figures |
+| `VlmPipeline` | Every page | Lower — VLM reconstructs all text from image | Scanned PDFs, image-only documents |
+
+**GPU requirement:** None on the Docling/Python side — it makes HTTP calls to Ollama. The GPU is only needed on the Ollama server. On Apple Silicon, Ollama uses Metal automatically.
+
+### Results from running vlm_picture_annotation.py
+
+Tested on `rag_paper.pdf` (original RAG paper, 2005.11401) with `qwen2.5vl:7b` via Ollama.
+
+**Script:** `basics/rag/docling/vlm_picture_annotation.py`
+**Output:** `basics/rag/docling/output/vlm_annotation/rag_paper_vlm_comparison.json`
+
+#### Chunk counts
+
+| Pipeline | Total chunks | Figure chunks | Figures described |
+|----------|-------------|---------------|-------------------|
+| Standard (no VLM) | 105 | 4 (captions only) | 0 |
+| VLM (`qwen2.5vl:7b`) | 118 | 5 | 4 |
+
+The VLM pipeline produced 13 more chunks — figures that previously had only a caption became their own richer chunks with Qwen's description appended inline.
+
+#### Side-by-side comparison
+
+**Figure 1** — RAG architecture flowchart:
+
+```
+Standard [394 chars]:
+  Figure 1: Overview of our approach. We combine a pre-trained retriever
+  (Query Encoder + Document Index) with a pre-trained seq2seq model (Generator)
+  and fine-tune end-to-end...
+
+VLM [1064 chars]:
+  Figure 1: Overview of our approach. We combine a pre-trained retriever...
+  The image provided is a flowchart outlining the architecture of the MultiDial
+  system. Components: 1. Query Encoder (q): encodes the current context/query.
+  This embedding is used by the retriever to identify relevant passages...
+```
+
+**Figure 3** — Line graphs (NQ performance vs retrieved docs):
+
+```
+Standard [840 chars]:
+  Effect of Retrieving more documents... Figure 3 (left) shows that retrieving
+  more documents at test time monotonically improves Open-domain QA performance.
+  [no chart data]
+
+VLM [594 chars]:
+  Figure 3: Left: NQ performance... Right: MS-MARCO Bleu-1 and Rouge-L...
+  The image shows a series of three line graphs, each comparing performance of
+  different models at varying values of K (number of retrieved documents).
+  These graphs appear to be associated with information retrieval systems...
+```
+
+**Figure 4** — Human evaluation annotation UI:
+
+```
+Standard [698 chars]:
+  Figure 4: Annotation interface for human evaluation of factuality.
+  [no UI description]
+
+VLM [880 chars]:
+  The image is a screenshot from a standardised question evaluation setup.
+  It is a multiple-choice question task designed to assess the ability to
+  evaluate factual truth of statements. The question: "Which sentence is more
+  factually true?" Subject: "Hemingway"...
+```
+
+#### What worked well
+
+- Flowcharts and architecture diagrams: Qwen correctly identified components, labelled them, and described data flow
+- Line/bar graphs: accurately described axes, compared model curves, named the metric on each graph
+- UI screenshots: described layout, labelled buttons and UI elements, extracted visible question text
+
+#### What to watch for
+
+- Qwen sometimes misidentifies the domain context ("MultiDial system" for a RAG diagram) — the visual description is accurate but the framing may be off
+- Heatmaps and attention matrices: description was vaguer ("a chart representing publication timeline") — a more specific prompt or a higher-capacity model (72B) would improve this
+- The description is appended **inline after the caption** in the markdown export, not in a separate field — the chunk is longer but not structurally tagged
 
 ---
 

@@ -120,7 +120,17 @@ def chunk_doc(doc) -> list[dict]:
 # VLM pipeline: figures are described in-line; we prompt for [Figure: ...] tags.
 _FIGURE_PLACEHOLDER = re.compile(r"<!--\s*image\s*-->", re.I)
 _FIGURE_CAPTION = re.compile(r"^Figure\s+\d+", re.M)   # "Figure 1: ..." captions
-_FIGURE_DESCRIPTION = re.compile(r"\[Figure:", re.I)
+# Qwen2.5-VL appends descriptions inline after the figure caption.
+# Detect by phrases that appear in natural image descriptions.
+_FIGURE_DESCRIPTION = re.compile(
+    r"The image (you'?ve provided|shows|depicts|displays|is a)|"
+    r"(This|The) (image|figure|chart|graph|diagram|screenshot|flowchart) (shows|depicts|displays|illustrates|presents|appears|is)|"
+    r"(bar|line|pie|scatter|stacked) (chart|graph)|"
+    r"shows a series of|"
+    r"flowchart|screenshot from|"
+    r"\[Figure:",
+    re.I,
+)
 
 
 def count_figures_placeholder(chunks: list[dict]) -> int:
@@ -129,12 +139,12 @@ def count_figures_placeholder(chunks: list[dict]) -> int:
 
 
 def count_figures_with_caption(chunks: list[dict]) -> int:
-    """Chunks that contain a figure caption (standard pipeline found the figure label)."""
+    """Chunks that contain a figure caption label."""
     return sum(1 for c in chunks if _FIGURE_CAPTION.search(c["text"]))
 
 
 def count_figures_described(chunks: list[dict]) -> int:
-    """Chunks where the VLM wrote a [Figure: ...] description."""
+    """Chunks where Qwen2.5-VL produced an inline description."""
     return sum(1 for c in chunks if _FIGURE_DESCRIPTION.search(c["text"]))
 
 
