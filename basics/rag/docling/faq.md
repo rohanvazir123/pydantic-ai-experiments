@@ -279,77 +279,108 @@ print(result.document.export_to_markdown())
 
 ### Results from running vlm_picture_annotation.py
 
-Tested on `rag_paper.pdf` (original RAG paper, 2005.11401) with `qwen2.5vl:7b` via Ollama.
+Two documents tested with `qwen2.5vl:7b` via Ollama.
 
 **Script:** `basics/rag/docling/vlm_picture_annotation.py`
-**Output:** `basics/rag/docling/output/vlm_annotation/rag_paper_vlm_comparison.json`
+**Outputs:** `basics/rag/docling/output/vlm_annotation/`
 
-#### Chunk counts
+---
+
+#### Test 1 — rag_paper.pdf (academic paper, 2005.11401)
 
 | Pipeline | Total chunks | Figure chunks | Figures described |
 |----------|-------------|---------------|-------------------|
 | Standard (no VLM) | 105 | 4 (captions only) | 0 |
 | VLM (`qwen2.5vl:7b`) | 118 | 5 | 4 |
 
-The VLM pipeline produced 13 more chunks — figures that previously had only a caption became their own richer chunks with Qwen's description appended inline.
-
-#### Side-by-side comparison
+The VLM produced 13 more chunks. Figures that had only a caption became richer chunks with Qwen's description appended inline.
 
 **Figure 1** — RAG architecture flowchart:
-
 ```
 Standard [394 chars]:
   Figure 1: Overview of our approach. We combine a pre-trained retriever
-  (Query Encoder + Document Index) with a pre-trained seq2seq model (Generator)
-  and fine-tune end-to-end...
+  (Query Encoder + Document Index)... [caption only]
 
 VLM [1064 chars]:
-  Figure 1: Overview of our approach. We combine a pre-trained retriever...
-  The image provided is a flowchart outlining the architecture of the MultiDial
-  system. Components: 1. Query Encoder (q): encodes the current context/query.
-  This embedding is used by the retriever to identify relevant passages...
+  Figure 1: Overview of our approach...
+  The image is a flowchart. Components: 1. Query Encoder (q): encodes the
+  current context/query. This embedding is used by the retriever to identify
+  relevant passages from previously generated responses...
 ```
 
-**Figure 3** — Line graphs (NQ performance vs retrieved docs):
-
+**Figure 3** — Line graphs (retrieval performance vs K):
 ```
 Standard [840 chars]:
-  Effect of Retrieving more documents... Figure 3 (left) shows that retrieving
-  more documents at test time monotonically improves Open-domain QA performance.
-  [no chart data]
+  Effect of Retrieving more documents... [surrounding text, no chart data]
 
 VLM [594 chars]:
   Figure 3: Left: NQ performance... Right: MS-MARCO Bleu-1 and Rouge-L...
   The image shows a series of three line graphs, each comparing performance of
-  different models at varying values of K (number of retrieved documents).
-  These graphs appear to be associated with information retrieval systems...
+  different models at varying values of K (number of retrieved documents)...
 ```
 
-**Figure 4** — Human evaluation annotation UI:
+---
 
-```
-Standard [698 chars]:
-  Figure 4: Annotation interface for human evaluation of factuality.
-  [no UI description]
+#### Test 2 — tesla_q4_2023.pdf (financial slide-deck)
 
-VLM [880 chars]:
-  The image is a screenshot from a standardised question evaluation setup.
-  It is a multiple-choice question task designed to assess the ability to
-  evaluate factual truth of statements. The question: "Which sentence is more
-  factually true?" Subject: "Hemingway"...
+This is the more revealing test — the Tesla Q4 report is a designed slide-deck where almost every slide is a chart. The standard pipeline extracted essentially no figure content.
+
+| Pipeline | Total chunks | Figure chunks | Figures described |
+|----------|-------------|---------------|-------------------|
+| Standard (no VLM) | 132 | **0** | 0 |
+| VLM (`qwen2.5vl:7b`) | 157 | 19 | 19 |
+
+Standard pipeline: zero figures detected — the deck's charts were invisible to text extraction.
+VLM pipeline: **19 figures described**, covering market share trends, FSD miles, vehicle costs, and gross profit bars across every slide.
+
+**Figure 1** — Market share line graph:
 ```
+VLM [822 chars]:
+  Market share of Tesla vehicles by region (TTM)
+  This chart is a line graph tracking % changes for three regions: US/Canada,
+  Europe, and China, from Q4 2017 to Q4 2023. X-axis: quarters. Y-axis: %.
+  Key observations: 1. US/Canada — noticeable upward trend...
+```
+
+**Figure 2** — FSD cumulative miles:
+```
+VLM [1033 chars]:
+  Cumulative miles driven with FSD Beta (millions)
+  Line chart from March 2021 to December 2023. X-axis: monthly increments.
+  Initial period shows gradual increase, accelerating significantly in 2022...
+```
+
+**Figure 3** — Cost of goods sold per vehicle:
+```
+VLM [825 chars]:
+  Cost of goods sold per vehicle
+  Bar chart Q4 2022 to Q4 2023. Y-axis in thousands, ranging 34,000–40,000.
+  Q4 2022 highest bar. Visible downward trend through 2023...
+```
+
+**Figure 6** — Services gross profit:
+```
+VLM [969 chars]:
+  Services & Other gross profit bar chart, 2015 to 2023.
+  Y-axis: -600 to 600 millions USD. Chart shows the progression from losses
+  in early years to profit in later years...
+```
+
+---
 
 #### What worked well
 
-- Flowcharts and architecture diagrams: Qwen correctly identified components, labelled them, and described data flow
-- Line/bar graphs: accurately described axes, compared model curves, named the metric on each graph
-- UI screenshots: described layout, labelled buttons and UI elements, extracted visible question text
+- **Financial charts**: accurately described axes, ranges, trend direction, and year-over-year comparisons
+- **Line graphs**: identified regions/models being compared, described trend shape
+- **Bar charts**: extracted y-axis scale, labelled quarters/years, described relative bar heights
+- **Slide-deck PDFs**: the biggest win — standard pipeline gets nothing, VLM gets everything
 
 #### What to watch for
 
-- Qwen sometimes misidentifies the domain context ("MultiDial system" for a RAG diagram) — the visual description is accurate but the framing may be off
-- Heatmaps and attention matrices: description was vaguer ("a chart representing publication timeline") — a more specific prompt or a higher-capacity model (72B) would improve this
-- The description is appended **inline after the caption** in the markdown export, not in a separate field — the chunk is longer but not structurally tagged
+- Qwen sometimes misidentifies domain context (called the RAG architecture a "MultiDial system") — the visual description is accurate but framing can be off
+- Heatmaps and attention matrices: vaguer descriptions ("a chart representing timeline") — a more specific prompt or larger model (72B) improves this
+- Descriptions are appended **inline after the caption** in markdown export, not in a separate field — chunks are longer but not structurally tagged
+- The `--pages` flag defaults to 5 — run with `--pages -1` to process the full document
 
 ---
 
