@@ -39,27 +39,28 @@ Legend: ✅ Built · 🔶 Partially built · ❌ Not built · 📋 Planned (desi
 | §6 | Prompt normalization (whitespace, case) | ✅ | `_normalize_nl()` in `ConversationManager` |
 | §6 | Date normalization | ❌ | Not implemented |
 | §6 | RBAC constraints in prompt | ❌ | Design target; not implemented |
-| §6 | `<thinking>` + `<query>` output format | ❌ | Not implemented; model returns raw SQL |
+| §6 | `<thinking>` + `<query>` output format | ✅ | `_parse_tagged_output()` extracts both; falls back to raw SQL when local model ignores tags |
 | §6 | Conversation history context | ✅ | Last 3 successful turns injected into user prompt |
 | §7 | N-candidate generation + confidence scoring | ❌ | Design target; not implemented |
 | §7 | Single-generation + self-correcting retry (≤3) | ✅ | `ConversationManager.run_query()` |
 | §8 | Static guardrail — regex read-only check | ✅ | `_check_readonly()` blocks DDL/DML keywords |
 | §8 | Static guardrail — row cap | ✅ | `_apply_row_cap()` appends `LIMIT` if absent |
 | §8 | Static guardrail — query timeout | ✅ | `threading.Timer` + `conn.interrupt()` |
-| §8 | Schema validation — SQLGlot AST | ❌ | Design target; not implemented |
+| §8 | Schema validation — SQLGlot AST | 🔶 | `_validate_sql()` syntax-checks all SQL; column validation requires `schema_dict` from caller. Full catalog-qualified name validation (`rag.main.documents`) deferred — SQLGlot doesn't handle DuckDB multi-catalog naming cleanly |
 | §8 | RBAC policy check | ❌ | Design target; not implemented |
 | §8 | Repair loop (re-prompt with error) | ✅ | `_build_correction_prompt()`, up to 3 attempts |
 | §9 | SQL execution (DuckDB + PostgreSQL scanner) | ✅ | `_execute_with_timeout()` |
 | §9 | Cursor-based pagination | ❌ | Row cap (`LIMIT`) only; no cursor |
 | §9 | Output adapters (CSV / charts / images) | ❌ | Not implemented |
-| §9 | Structured observability logs | ❌ | Not implemented |
+| §9 | Structured observability logs | ✅ | `_emit_event()` emits JSON per `run_query()` call: `latency_ms`, `cache_tier`, `attempts`, `error` |
 | §9 | DB Index Updater Service | ❌ | Design target; not implemented |
 | §10 | SQL best practices in system prompt | ✅ | Enforced via `_SYSTEM_PROMPT` |
 | §11 | NL→Cypher — rule-based (`IntentParser`) | ✅ | `kg/legal/retrieval/nl2cypher.py` |
 | §11 | NL→Cypher — LLM-based (free-form) | ❌ | Design target; not implemented |
 | — | Agent orchestration — single-prompt v1 | ✅ | `nl2sql/nlp_sql_postgres_v2.py` |
 | — | Agent orchestration — tool-calling v2 | ✅ | `nl2sql/sql_discovery.py` |
-| — | Query router (SQL vs Cypher target selection) | ❌ | No unified router; pipelines called separately |
+| — | Query router (SQL vs Cypher target selection) | ❌ | Deferred — medium effort; design in Gap 6 |
+| — | LLM NL→Cypher fallback (free-form) | ❌ | Deferred — prompts designed in §11/Gap 7; medium effort |
 | — | Session persistence (`HistoryStore`) | ✅ | asyncpg-backed `conversation_history` table |
 
 ---

@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -123,6 +124,74 @@ def strip_sql_fences(sql: str) -> str:
     return sql
 
 
+# ---------------------------------------------------------------------------
+# Tagged output parser — <thinking>/<query> format (Gap 2)
+# Local models often ignore format instructions, so we always fall back
+# to strip_sql_fences() if the tags are absent.
+# ---------------------------------------------------------------------------
+_TAG_QUERY = re.compile(r"<query>(.*?)</query>", re.DOTALL | re.IGNORECASE)
+_TAG_THINKING = re.compile(r"<thinking>(.*?)</thinking>", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_tagged_output(raw: str) -> tuple[str, str | None]:
+    """Return (sql, reasoning). Falls back to strip_sql_fences if no <query> tag."""
+    raw = raw.strip()
+    reasoning: str | None = None
+    m_think = _TAG_THINKING.search(raw)
+    if m_think:
+        reasoning = m_think.group(1).strip()
+    m_query = _TAG_QUERY.search(raw)
+    if m_query:
+        return m_query.group(1).strip(), reasoning
+    # Fallback — model didn't follow format (common with smaller local models)
+    return strip_sql_fences(raw), reasoning
+
+
+# ---------------------------------------------------------------------------
+# SQLGlot schema validation helper (Gap 1)
+# Only syntax-checks when schema_dict is None; validates columns when provided.
+# DuckDB's catalog-prefixed names (rag.main.documents) make full column
+# qualification unreliable, so we run a best-effort check and treat failures
+# as soft errors passed to the repair loop rather than hard stops.
+# ---------------------------------------------------------------------------
+def _validate_sql(sql: str, schema_dict: dict | None = None) -> str | None:
+    """Return an error string if SQL fails syntax or schema validation, else None."""
+    try:
+        import sqlglot
+        ast = sqlglot.parse_one(sql, read="duckdb")  # syntax check
+        if schema_dict:
+            from sqlglot.optimizer import qualify_columns
+            qualify_columns(ast, schema=schema_dict)
+        return None
+    except ImportError:
+        return None  # sqlglot not installed — skip silently
+    except Exception as exc:
+        return str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Observability event emitter (Gap 9)
+# ---------------------------------------------------------------------------
+def _emit_event(
+    qr: "QueryResult",
+    cache_tier: str,
+    start: float,
+    session_id: str | None = None,
+) -> None:
+    """Emit a structured JSON event to the logger after every run_query() call."""
+    event = {
+        "session_id": session_id,
+        "nl_query": qr.nl_query,
+        "sql": qr.sql,
+        "cached": qr.cached,
+        "cache_tier": cache_tier,   # "nl" | "sql" | "miss"
+        "attempts": qr.attempts,
+        "latency_ms": round((time.monotonic() - start) * 1000),
+        "error": qr.error,
+    }
+    logger.info("query_event %s", json.dumps(event))
+
+
 _SYSTEM_PROMPT = """\
 You are an expert SQL assistant working with DuckDB.
 
@@ -131,7 +200,15 @@ Table naming rules (IMPORTANT — always follow these):
 - rag_db tables       -> rag.main.<table>,          e.g.  FROM rag.main.documents
 - local_pg tables     -> local_pg.main.<table>,     e.g.  FROM local_pg.main.baby_names
 
-Return ONLY plain SQL. No Markdown fences, no explanation, no comments.\
+Return your response in exactly this format:
+<thinking>
+[Brief reasoning: which tables you chose, how you applied filters, how you handled dates.]
+</thinking>
+<query>
+[Single valid SQL SELECT. No backticks, no explanation, no comments.]
+</query>
+
+If your model cannot follow this format, return ONLY plain SQL with no other text.\
 """
 
 
@@ -147,6 +224,7 @@ class QueryResult:
     error: str | None = None
     cached: bool = False
     attempts: int = 1
+    reasoning: str | None = None   # Gap 2: <thinking> content from LLM
 
     @property
     def success(self) -> bool:
@@ -315,10 +393,12 @@ class ConversationManager:
         history_store: Optional[HistoryStore] = None,
         session_id: Optional[str] = None,
         _initial_history: Optional[list] = None,
+        schema_dict: Optional[dict] = None,  # Gap 1: structured schema for SQLGlot validation
     ):
         self.conn = conn
         self.agent = agent
         self.schema_text = schema_text
+        self.schema_dict = schema_dict
         self.cache_size = cache_size
         self.max_retries = max_retries
         self.max_result_rows = max_result_rows
@@ -364,43 +444,59 @@ class ConversationManager:
             f"Question: {nl_query}"
         )
 
-    def _build_correction_prompt(self, nl_query: str, bad_sql: str, error: str) -> str:
+    def _build_correction_prompt(
+        self,
+        nl_query: str,
+        bad_sql: str,
+        error: str,
+        prior_reasoning: str | None = None,
+    ) -> str:
         error_snippet = error[:400] if len(error) > 400 else error
+        reasoning_block = (
+            f"Your reasoning was:\n{prior_reasoning}\n\n" if prior_reasoning else ""
+        )
         return (
             f"Schema:\n{self.schema_text}\n\n"
             f"The following SQL you generated failed:\n"
             f"Question: {nl_query}\n"
+            f"{reasoning_block}"
             f"SQL: {bad_sql}\n"
             f"Error: {error_snippet}\n\n"
-            f"Return ONLY the corrected SQL."
+            f"Return your corrected response in <thinking>/<query> format."
         )
 
     async def run_query(self, nl_query: str) -> QueryResult:
+        start = time.monotonic()                         # Gap 9: latency tracking
         nl_key = self._normalize_nl(nl_query)
 
         # NL-level cache hit (normalized match) — no new turn, no persistence needed
         if nl_key in self._nl_cache:
             cached = self._nl_cache[nl_key]
             logger.info("NL cache hit -> %s", cached.sql)
-            return QueryResult(
+            qr = QueryResult(
                 nl_query=nl_query,
                 sql=cached.sql,
                 columns=cached.columns,
                 rows=cached.rows,
                 cached=True,
             )
+            _emit_event(qr, "nl", start, self.session_id)  # Gap 9
+            return qr
 
         last_error: str | None = None
+        last_reasoning: str | None = None
         sql = ""
 
         for attempt in range(1, self.max_retries + 1):
             prompt = (
                 self._build_prompt(nl_query)
                 if attempt == 1
-                else self._build_correction_prompt(nl_query, sql, last_error)
+                else self._build_correction_prompt(
+                    nl_query, sql, last_error, prior_reasoning=last_reasoning
+                )
             )
             raw = await self.agent.run(prompt)
-            sql = strip_sql_fences(raw.output)
+            sql, last_reasoning = _parse_tagged_output(raw.output)  # Gap 2
             logger.info("Attempt %d/%d — SQL: %s", attempt, self.max_retries, sql)
 
             # Guardrail 1: SELECT-only enforcement
@@ -412,6 +508,13 @@ class ConversationManager:
 
             # Guardrail 2: result row cap (append LIMIT if missing)
             safe_sql = _apply_row_cap(sql, self.max_result_rows)
+
+            # Gap 1: SQLGlot syntax + schema validation
+            schema_err = _validate_sql(safe_sql, self.schema_dict)
+            if schema_err:
+                last_error = f"SQL validation error: {schema_err}"
+                logger.warning("Guardrail (sqlglot): %s", last_error)
+                continue
 
             # SQL hash cache (same SQL generated for a different NL question)
             h = self._hash(safe_sql)
@@ -425,11 +528,13 @@ class ConversationManager:
                     rows=cached_qr.rows,
                     cached=True,
                     attempts=attempt,
+                    reasoning=last_reasoning,
                 )
                 self._cache_put(self._nl_cache, nl_key, qr)
                 self.history.append((nl_query, safe_sql, qr))
                 if self.history_store:
                     await self.history_store.save(self.session_id, nl_query, safe_sql, qr)
+                _emit_event(qr, "sql", start, self.session_id)  # Gap 9
                 return qr
 
             try:
@@ -443,6 +548,7 @@ class ConversationManager:
                     columns=columns,
                     rows=rows,
                     attempts=attempt,
+                    reasoning=last_reasoning,
                 )
                 self._cache_put(self._sql_cache, h, qr)
                 self._cache_put(self._nl_cache, nl_key, qr)
@@ -450,6 +556,7 @@ class ConversationManager:
                 if self.history_store:
                     await self.history_store.save(self.session_id, nl_query, safe_sql, qr)
                 logger.info("OK — %d row(s), %d col(s)", len(rows), len(columns))
+                _emit_event(qr, "miss", start, self.session_id)  # Gap 9
                 return qr
             except Exception as exc:
                 err_str = str(exc)
@@ -468,10 +575,12 @@ class ConversationManager:
             rows=[],
             error=last_error,
             attempts=self.max_retries,
+            reasoning=last_reasoning,
         )
         self.history.append((nl_query, sql, qr))
         if self.history_store:
             await self.history_store.save(self.session_id, nl_query, sql, qr)
+        _emit_event(qr, "miss", start, self.session_id)  # Gap 9
         return qr
 
     def show_history(self) -> None:
@@ -573,13 +682,24 @@ class UnifiedDataSource:
     def init_agent(
         self,
         model: str = "gpt-4o",
-        provider: Literal["openai", "anthropic"] = "openai",
+        provider: Literal["openai", "anthropic", "ollama"] = "openai",
+        base_url: str | None = None,
     ) -> Agent:
         if provider == "anthropic":
             from pydantic_ai.models.anthropic import AnthropicModel
             llm = AnthropicModel(model, api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        elif provider == "ollama":
+            llm = OpenAIModel(
+                model,
+                base_url=base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+                api_key="ollama",
+            )
         else:
-            llm = OpenAIModel(model, api_key=os.environ["OPENAI_API_KEY"])
+            llm = OpenAIModel(
+                model,
+                base_url=base_url,
+                api_key=os.environ["OPENAI_API_KEY"],
+            )
         self.agent = Agent(model=llm, result_type=str, system_prompt=_SYSTEM_PROMPT)
         logger.info("Agent ready: %s (%s)", model, provider)
         return self.agent
@@ -592,6 +712,7 @@ class UnifiedDataSource:
         query_timeout: float = 30.0,
         history_store: Optional[HistoryStore] = None,
         session_id: Optional[str] = None,
+        schema_dict: Optional[dict] = None,
     ) -> ConversationManager:
         if self.agent is None or self.schema_text is None:
             raise ValueError("Call generate_schema() and init_agent() first.")
@@ -611,6 +732,7 @@ class UnifiedDataSource:
             history_store=history_store,
             session_id=sid,
             _initial_history=initial_history,
+            schema_dict=schema_dict,
         )
 
     async def discovery_query(

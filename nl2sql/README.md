@@ -1,6 +1,27 @@
 # NLP-to-SQL
 
-Natural language query interface over multiple data sources, powered by DuckDB + GPT-4o / Claude.
+Natural language query interface over multiple data sources, powered by DuckDB and a configurable LLM (OpenAI or Anthropic).
+
+---
+
+## Table of Contents
+
+- [Files](#files)
+- [Data sources](#data-sources)
+- [End-to-end flow](#end-to-end-flow)
+- [QueryResult — structured return type](#queryresult--structured-return-type)
+- [Self-correcting retry loop](#self-correcting-retry-loop)
+- [Guardrails](#guardrails)
+- [Conversation context](#conversation-context)
+- [Schema discovery](#schema-discovery)
+- [How Pydantic AI manages conversation context](#how-pydantic-ai-manages-conversation-context)
+- [Prompting](#prompting)
+- [Known limitations](#known-limitations)
+- [Why DuckDB](#why-duckdb)
+- [Prerequisites](#prerequisites)
+- [Running](#running)
+- [Running tests](#running-tests)
+- [Extending](#extending)
 
 ---
 
@@ -8,11 +29,9 @@ Natural language query interface over multiple data sources, powered by DuckDB +
 
 | File | Description |
 |---|---|
-| `nlp_sql_postgres_v1.py` | Original — GCS Parquets + PostgreSQL, returns raw tuples |
-| `nlp_sql_postgres_v2.py` | **Current** — self-correcting retry, structured `QueryResult`, column names, normalized NL cache, execution guardrails |
+| `nlp_sql_postgres_v2.py` | Main implementation — self-correcting retry, structured `QueryResult`, column names, normalized NL cache, execution guardrails |
 | `sql_discovery.py` | Schema-discovery agent — LLM calls `list_tables`/`describe_table` tools at inference time instead of receiving a pre-built schema string |
-| `test_nlp_sql_postgres_v2.py` | Test suite for v2 (92 tests, all offline) |
-| `test_nlp_sql_postgres.py` | Test suite for v1 |
+| `test_nlp_sql_postgres_v2.py` | Test suite (92 tests, all offline) |
 
 ---
 
@@ -234,19 +253,6 @@ Cross-source JOINs run 100% inside DuckDB's in-memory engine. GCS Parquets are r
 
 ---
 
-## v1 vs v2
-
-| | v1 | v2 |
-|---|---|---|
-| **Return type** | Raw `Any` (list of tuples or `None`) | `QueryResult` with `.columns`, `.rows`, `.success`, `.error`, `.attempts` |
-| **SQL errors** | Silent `None`, dead end | Self-correcting retry loop: error fed back to LLM, up to `max_retries` (default 3) |
-| **NL cache matching** | Exact string equality | Normalized: lowercase + whitespace-collapsed |
-| **Column names** | Anonymous tuples | Populated from `cursor.description` |
-| **Provider** | OpenAI only, hardcoded path | `provider="openai"` or `"anthropic"`, env-var paths |
-| **History context** | Includes failed turns | Failed turns excluded from context shown to model |
-| **Guardrails** | None | SELECT-only enforcement, result row cap, query timeout |
-
----
 
 ## Prerequisites
 
