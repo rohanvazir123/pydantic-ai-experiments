@@ -79,12 +79,17 @@ rag/
 │   └── app.py                    # FastAPI REST API (GET /health, POST /v1/chat, /v1/chat/stream, /v1/ingest)
 ├── mcp/
 │   └── server.py                 # MCP server (FastMCP, stdio transport)
-├── knowledge_graph/
-│   ├── __init__.py               # create_kg_store() factory (reads KG_BACKEND env var)
-│   ├── pg_graph_store.py         # PgGraphStore: kg_entities + kg_relationships tables (PostgreSQL)
-│   ├── age_graph_store.py        # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
-│   ├── cuad_kg_ingest.py         # build_cuad_kg(): CUAD annotations → AgeGraphStore (AGE-only)
-│   └── constants.py              # Single source of truth: VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP
+kg/                               # Knowledge graph (top-level module, separate from rag/)
+├── __init__.py                   # create_kg_store() factory (reads KG_BACKEND env var)
+├── age_graph_store.py            # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
+├── entity_index.py               # Entity indexing utilities
+└── legal/
+    ├── common/
+    │   └── cuad_ontology.py      # VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP, RELATIONSHIP_MAP
+    └── ingestion/
+        ├── cuad_kg_ingest.py     # build_cuad_kg(): CUAD annotations → AgeGraphStore
+        ├── extraction_pipeline.py # LLM-based entity/relationship extraction
+        └── eval_pipeline.py      # KG evaluation pipeline
 ├── memory/
 │   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
 ├── legal/
@@ -109,7 +114,6 @@ rag/
 │   │   ├── test_api.py           # FastAPI REST API tests (14, all mocked)
 │   │   └── test_mcp_server.py    # MCP server tests (21, all mocked)
 │   ├── knowledge_graph/          # KG + NL→Cypher tests
-│   │   ├── test_pg_graph_store.py     # PgGraphStore unit tests (40, no external deps)
 │   │   ├── test_age_graph_store.py    # AgeGraphStore unit + 1 integration test (24 total)
 │   │   ├── test_hybrid_kg_retrieval.py # HybridKGRetriever unit + integration
 │   │   └── test_nl_query.py           # NL→Cypher intent parsing + query builder
@@ -239,7 +243,6 @@ python -m pytest rag/tests/ -m "not integration" -v
 | `agent/` | `test_agent_flow.py` | Pydantic AI event stream debugging | PostgreSQL + Ollama |
 | `agent/` | `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
 | `agent/` | `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
-| `knowledge_graph/` | `test_pg_graph_store.py` | PgGraphStore entity/relationship CRUD, search | None (all unit) |
 | `knowledge_graph/` | `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
 | `knowledge_graph/` | `test_hybrid_kg_retrieval.py` | HybridKGRetriever unit + integration | Mocked / PostgreSQL + AGE + Ollama |
 | `knowledge_graph/` | `test_nl_query.py` | NL→Cypher intent parsing + query builder | None / AGE (integration) |
