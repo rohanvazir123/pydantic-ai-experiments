@@ -322,6 +322,26 @@ Qwen-2.5 performs competitively on SQL benchmarks (Spider, BIRD) while running l
 
 ---
 
+**Q: Are local LLMs trained to generate SQL from natural language?**
+
+Yes — and SQL is one of the strongest areas for local models. Most popular local LLMs (Llama 3, Qwen 2.5 Coder, Mistral, DeepSeek-Coder) have seen large volumes of SQL during pre-training: Stack Overflow answers, GitHub repositories, Kaggle notebooks, database documentation, and academic datasets. Several standard NL→SQL benchmarks (Spider, WikiSQL, BIRD) have also been used in instruction fine-tuning. Qwen 2.5 Coder in particular is explicitly fine-tuned on code generation tasks including SQL.
+
+**What works well:**
+- Simple `SELECT … WHERE … GROUP BY` queries reliably generated from a brief schema description.
+- Multi-table joins when the schema context names the join key clearly.
+- Common aggregations (`COUNT`, `SUM`, `AVG`, `MAX/MIN`, window functions in larger models).
+- Self-correction: models read their own SQL errors and fix them on retry.
+
+**Where they struggle:**
+- Dialect-specific syntax — DuckDB's `QUALIFY`, `::` casting, `LIST_AGG`, and `PIVOT` are less common in training data than standard SQL.
+- Complex date arithmetic — "last rolling 12 weeks" or fiscal-quarter logic is often wrong on the first attempt.
+- Schema hallucination — when schema context is missing or ambiguous, models invent plausible-sounding column names that don't exist.
+- Multi-step reasoning — queries requiring a CTE to pre-aggregate before joining tend to degrade in quality as model size decreases.
+
+**Practical implication for this system:** The schema text injected into every prompt is the single most important input. A correct, complete schema description recovers most of the failures listed above. The self-correcting retry loop (up to 3 attempts with the DuckDB error fed back) handles the rest. A 7B model with good schema context outperforms a 70B model with a vague schema description.
+
+---
+
 ## System Design — SQL Validation
 
 **Q: Why sqlglot for validation instead of a dry-run EXPLAIN?**
@@ -491,3 +511,35 @@ Beyond write operations (CREATE, MERGE, SET, DELETE, REMOVE, DETACH, DROP), also
 | `CALL` procedures | Not available in AGE's Cypher subset |
 | `null` property values in MERGE | AGE rejects null in property maps |
 | `LIKE` for string matching | Use `toLower(n.prop) CONTAINS '...'` instead |
+
+---
+
+**Q: Are local LLMs trained to generate Apache AGE Cypher from natural language?**
+
+Poorly, and unreliably — this is one of the hardest NL→query tasks for local models. Two compounding problems make it significantly harder than NL→SQL:
+
+**Problem 1 — Training data scarcity**
+
+openCypher (Neo4j's dialect) has moderate representation in pre-training data: Neo4j documentation, GitHub repos, and some Stack Overflow answers. Apache AGE has almost none — it is a PostgreSQL extension with a small user base, and the AGE-specific query format is essentially invisible in public training corpora. Models have no exposure to:
+- The `ag_catalog.cypher('graph', $$ … $$) AS (col agtype, …)` execution wrapper
+- The `agtype` column type and why it requires the `AS` clause
+- The prohibition on `$1` parameterisation inside Cypher strings
+- AGE-specific `OPTIONAL MATCH` requirements (e.g. `WHERE property IS NULL` patterns that work in Neo4j fail in AGE)
+
+**Problem 2 — Non-standard output format required**
+
+The `<cypher>` + `<columns>` dual-block output format used by this system is entirely custom. The `<columns>` block must list every value in the RETURN clause, comma-separated, with the correct count — a mismatch by even one entry causes AGE to throw `column definition list has too few/many entries`. No model has seen this format in training; it relies entirely on prompt engineering and often fails on the first attempt.
+
+**What happens in practice with a capable model (Qwen 2.5 Coder 14B+, Llama 3.1 70B, frontier APIs):**
+- Syntactically plausible openCypher MATCH queries: generated reliably.
+- Correct node labels and relationship types when schema context is explicit: works most of the time.
+- `LIMIT` clause: frequently omitted without explicit instruction.
+- `toLower(n.prop) CONTAINS '...'` vs `LIKE`: models default to `LIKE` which AGE does not support.
+- `<columns>` count matching RETURN clause: fails ~20–30% of the time — the most common runtime error.
+- Multi-hop paths requiring two or more relationship hops: degrade significantly in quality on smaller models.
+
+**Why this system avoids the LLM for Cypher generation:**
+
+The rule-based pipeline (`IntentParser` + `QUERY_CAPABILITIES` + builder functions) covers the 23 most common legal KG intents with zero LLM calls, zero hallucination risk, and deterministic output. The LLM is only proposed as a fallback (Gap 7 in `nl2sql/docs/SYSTEM_DESIGN.md`) for the catch-all case — questions that don't match any known intent pattern — where the rule-based system would return a useless generic result anyway. In that fallback scenario, an imperfect LLM-generated Cypher (with validation) is strictly better than the catch-all `list_contracts` template.
+
+**Bottom line:** Use a rule-based pipeline as the primary path for well-defined intents. Reserve LLM-based Cypher generation for the long tail of free-form questions, with strict post-generation validation (write-keyword guard + RETURN↔columns parity) before execution.

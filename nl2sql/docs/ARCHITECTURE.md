@@ -1,5 +1,24 @@
 # NL-to-SQL — Architecture
 
+## Table of Contents
+
+1. [Detailed Architecture Diagram](#detailed-architecture-diagram)
+2. [Overview](#overview)
+3. [Stack](#stack)
+4. [Components](#components)
+5. [Data Flow — NL Query](#data-flow--nl-query)
+6. [Sample LLM Prompts — NL→SQL](#sample-llm-prompts--nlsql)
+7. [Sample LLM Prompts — NL→Cypher](#sample-llm-prompts--nlcypher)
+8. [Agent Orchestration: Single Prompt vs Tool Calling](#agent-orchestration-single-prompt-vs-tool-calling)
+9. [DuckDB ↔ PostgreSQL Bridge](#duckdb--postgresql-bridge)
+10. [Guardrails](#guardrails)
+11. [Caching](#caching)
+12. [Key Configuration](#key-configuration-env)
+13. [API Endpoints](#api-endpoints)
+14. [Running](#running)
+
+---
+
 ## Detailed Architecture Diagram
 
 ```
@@ -264,6 +283,308 @@ ConversationManager.run_query(nl_query)
     │
     └── Return QueryResult(sql, columns, rows, cached, attempts, error)
 ```
+
+## Sample LLM Prompts — NL→SQL
+
+The agent is a Pydantic AI `Agent` with a fixed system prompt and a dynamic user turn built per query.
+Source: `nl2sql/nlp_sql_postgres_v2.py` — `_SYSTEM_PROMPT`, `_build_prompt()`, `_build_correction_prompt()`.
+
+### System prompt (sent once per session)
+
+```
+You are an expert SQL assistant working with DuckDB.
+
+Table naming rules (IMPORTANT — always follow these):
+- GCS Parquet tables  -> bare table name,          e.g.  FROM orders
+- rag_db tables       -> rag.main.<table>,          e.g.  FROM rag.main.documents
+- local_pg tables     -> local_pg.main.<table>,     e.g.  FROM local_pg.main.baby_names
+
+Return ONLY plain SQL. No Markdown fences, no explanation, no comments.
+```
+
+### First-attempt user prompt (`_build_prompt`)
+
+```
+Schema:
+=== GCS Parquet tables (use bare name) ===
+Table: orders
+  - order_id (VARCHAR)
+  - order_date (DATE)
+  - customer_id (VARCHAR)
+  - amount (DOUBLE)
+
+=== rag_db tables (prefix: rag.main.<table>) ===
+Table: rag.main.documents
+  - id (UUID)
+  - title (TEXT)
+  - source (TEXT)
+  - created_at (TIMESTAMP WITH TIME ZONE)
+
+Conversation so far:
+Q: How many orders are there?
+SQL: SELECT COUNT(*) FROM orders LIMIT 10000
+Result preview: [(42891,)]
+
+Question: How many orders were placed in Q4?
+```
+
+The "Conversation so far" block is omitted on the very first turn of a session.
+Only the last 3 **successful** turns are included — failed SQL is excluded to avoid confusing the model.
+
+**Expected LLM response:**
+
+```sql
+SELECT COUNT(*) FROM orders
+WHERE order_date >= '2024-10-01' AND order_date < '2025-01-01'
+LIMIT 10000
+```
+
+### Self-correction prompt (`_build_correction_prompt`)
+
+Sent on attempt 2 and 3 when the previous SQL raised an exception during execution.
+
+```
+Schema:
+=== GCS Parquet tables (use bare name) ===
+Table: orders
+  - order_id (VARCHAR)
+  - order_date (DATE)
+  - customer_id (VARCHAR)
+  - amount (DOUBLE)
+
+The following SQL you generated failed:
+Question: How many orders were placed in Q4?
+SQL: SELECT COUNT(*) FROM orders WHERE order_date BETWEEN '2024-10-01' AND '2024-31-12'
+Error: Conversion Error: date field value out of range: "2024-31-12"
+
+Return ONLY the corrected SQL.
+```
+
+The error string is truncated to 400 characters before being embedded.
+
+**Expected LLM response:**
+
+```sql
+SELECT COUNT(*) FROM orders
+WHERE order_date >= '2024-10-01' AND order_date < '2025-01-01'
+LIMIT 10000
+```
+
+---
+
+## Sample LLM Prompts — NL→Cypher
+
+> **Current implementation note:** `kg/legal/retrieval/nl2cypher.py` uses a **rule-based** pipeline — `IntentParser` (regex patterns) maps the question to an intent, and `QUERY_CAPABILITIES[intent](params)` builds the Cypher string directly. **No LLM is involved.**
+>
+> The prompts below document the LLM-based Cypher generation described in `nl2sql/docs/SYSTEM_DESIGN.md` section 11, which applies when the system is extended to handle free-form graph queries that cannot be covered by fixed intent patterns.
+
+### System prompt
+
+```
+You are a Cypher query generator for Apache AGE running on PostgreSQL.
+
+Rules:
+- Only generate read-only MATCH … RETURN queries. Never use CREATE, MERGE, SET,
+  DELETE, REMOVE, DETACH, DROP, or CALL.
+- Use node labels and property keys exactly as listed in the schema context.
+  Labels are case-sensitive: Party ≠ party.
+- Always include a LIMIT clause.
+- Do not reference properties that are not in the provided property_keys list.
+- For string comparisons use toLower(n.name) CONTAINS '...' (not LIKE).
+
+Output format — respond with exactly two blocks:
+<cypher>
+MATCH (n:Label)-[:REL]->(m)
+WHERE ...
+RETURN n.prop, m.prop
+LIMIT 20
+</cypher>
+<columns>n.prop, m.prop</columns>
+```
+
+The `<columns>` block must list every value in the RETURN clause, comma-separated.
+It is used to build the required `AS (col agtype, …)` clause for AGE execution.
+
+### User prompt (with graph schema context)
+
+Graph schema context is discovered at query time from `ag_catalog` tables and sampled property keys.
+
+```
+Graph: legal_graph
+
+Node labels:
+  Party:        [uuid, name, document_id, label]
+  Contract:     [uuid, name, document_id, label]
+  Clause:       [uuid, text, clause_type, document_id]
+  Risk:         [uuid, description, risk_type, severity, document_id]
+  Jurisdiction: [uuid, name, document_id]
+
+Relationship types:
+  PARTY_TO, GOVERNED_BY_LAW, HAS_LICENSE, HAS_TERMINATION,
+  HAS_RESTRICTION, HAS_IP_CLAUSE, HAS_LIABILITY, HAS_CLAUSE, CAUSES_RISK
+
+Question: Which contracts does Acme Corp appear in as a party?
+```
+
+**Expected LLM response:**
+
+```
+<cypher>
+MATCH (p:Party)-[:PARTY_TO]->(c:Contract)
+WHERE toLower(p.name) CONTAINS 'acme corp'
+RETURN p.name, c.name
+LIMIT 20
+</cypher>
+<columns>p.name, c.name</columns>
+```
+
+### Prompt vs SQL differences
+
+| Dimension | SQL prompt | Cypher prompt |
+|-----------|-----------|---------------|
+| Schema context | Table names + column names + data types | Node labels + property key lists + edge types |
+| Query syntax | `SELECT … FROM … WHERE … GROUP BY` | `MATCH (n:Label)-[:REL]->(m) WHERE … RETURN …` |
+| Output format | Raw SQL string | `<cypher>` block **and** a matching `<columns>` block |
+| Null handling | `IS NULL` / `COALESCE` | `OPTIONAL MATCH`; AGE rejects null in MERGE |
+| Case sensitivity | Column names case-insensitive (DuckDB) | Label names and property keys are case-sensitive |
+| Joins | Explicit `JOIN … ON` | Implicit via path pattern `(a)-[:REL]->(b)` |
+| Parameterisation | `$1` placeholders (safe) | Inline string escaping (AGE limitation) |
+
+---
+
+## Agent Orchestration: Single Prompt vs Tool Calling
+
+Two implementations exist in this repo. They make a fundamentally different choice about when and how the LLM accesses schema information.
+
+### v1 — Single-prompt (stateless) · `nl2sql/nlp_sql_postgres_v2.py`
+
+Schema is discovered **before** the LLM is invoked. The `UnifiedDataSource` inspects `information_schema` at startup and serialises the entire schema into a plain-text block. That block is embedded directly in the user message on every call.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  User question                                          │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+                 schema already in memory
+                           │
+                           ▼
+           ┌───────────────────────────────┐
+           │     Pydantic AI agent.run()   │
+           │                               │
+           │  [system]  _SYSTEM_PROMPT     │   ← fixed, sent once
+           │  [user]    Schema:\n{schema}  │
+           │            History:\n{…}      │   ← last 3 good turns
+           │            Question: {nl}     │
+           └───────────────┬───────────────┘
+                           │
+                           │  single LLM generation
+                           ▼
+                      raw SQL string
+                           │
+                  guardrails + execution
+                           │
+                  success? → done
+                  error?   → _build_correction_prompt()
+                             → agent.run() again (≤ 3 attempts)
+```
+
+**Turn sequence (happy path, 1 attempt):**
+
+| # | Role | Content |
+|---|------|---------|
+| 1 | system | `_SYSTEM_PROMPT` (table naming rules + "Return ONLY plain SQL") |
+| 2 | user | `Schema:\n{schema_text}\n\nConversation so far:\n{history}\n\nQuestion: {nl}` |
+| 3 | assistant | `SELECT COUNT(*) FROM orders WHERE … LIMIT 10000` |
+
+**Turn sequence (self-correction, attempt 2):**
+
+| # | Role | Content |
+|---|------|---------|
+| 1 | system | `_SYSTEM_PROMPT` |
+| 2 | user | `Schema:\n{schema_text}\n\nThe following SQL you generated failed:\nQuestion: …\nSQL: …\nError: …\n\nReturn ONLY the corrected SQL.` |
+| 3 | assistant | corrected SQL |
+
+**Characteristics:**
+- LLM sees the full schema on every call — context window cost scales with schema size.
+- No round-trips for schema discovery; single generation per attempt is fast.
+- Works well when the schema is small enough to fit in one prompt.
+- Retry loop handles transient SQL errors without user intervention.
+
+---
+
+### v2 — Tool-calling (agentic) · `nl2sql/sql_discovery.py`
+
+The agent has no schema injected upfront. It uses **Pydantic AI tool calls** to discover the schema at runtime — deciding which tables to inspect before writing SQL. The result is a structured `SQLResponse` Pydantic model, not a raw string.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  User question                                          │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+                           ▼
+           ┌───────────────────────────────┐
+           │     Pydantic AI agent.run()   │
+           │     system_prompt:            │
+           │     "Discover the schema      │
+           │      first."                  │
+           └───────────────┬───────────────┘
+                           │ LLM decides to call tools
+                           ▼
+              tool: list_tables("postgres")
+                → ["documents", "chunks", …]   ← live DB call
+                           │
+              tool: describe_table("postgres", "documents")
+                → "documents: id (UUID), title (TEXT), …" ← live DB call
+                           │
+                           ▼ LLM now has enough schema context
+           ┌───────────────────────────────┐
+           │  LLM generates final response │
+           │  SQLResponse(                 │
+           │    database_type="postgres",  │
+           │    sql="SELECT COUNT(*) …",   │
+           │    explanation="Used the      │
+           │      documents table because…"│
+           │  )                            │
+           └───────────────────────────────┘
+                           │
+              execute on postgres or DuckDB
+              based on database_type field
+```
+
+**Turn sequence:**
+
+| # | Role | Content |
+|---|------|---------|
+| 1 | system | `"You are a data expert with access to Postgres and DuckDB. Discover the schema first."` |
+| 2 | user | `"How many documents are in the RAG database?"` |
+| 3 | assistant (tool call) | `list_tables(db_type="postgres")` |
+| 4 | tool result | `["documents", "chunks", "conversation_history"]` |
+| 5 | assistant (tool call) | `describe_table(db_type="postgres", table_name="documents")` |
+| 6 | tool result | `"Postgres table documents: id (UUID), title (TEXT), source (TEXT), …"` |
+| 7 | assistant (final) | `SQLResponse(database_type="postgres", sql="SELECT COUNT(*) FROM documents", explanation="…")` |
+
+**Characteristics:**
+- Schema is discovered lazily — the LLM decides which tables to inspect, so irrelevant tables are never read.
+- Handles large or unknown schemas where pre-building the full schema text is impractical.
+- Multiple round-trips (one per tool call) add latency — each tool call is a separate LLM generation.
+- Returns a structured `SQLResponse` with an `explanation` field, not a raw SQL string — easier to display reasoning to the user.
+- No built-in retry loop; error handling is the caller's responsibility.
+
+---
+
+### Comparison
+
+| | v1: Single-prompt | v2: Tool-calling |
+|--|-------------------|------------------|
+| **File** | `nl2sql/nlp_sql_postgres_v2.py` | `nl2sql/sql_discovery.py` |
+| **Schema delivery** | Pre-built text injected into every user message | LLM calls `list_tables` / `describe_table` at runtime |
+| **LLM round-trips** | 1 (+ retry on error) | 2–4 (schema discovery) + 1 (SQL generation) |
+| **Result type** | Raw SQL string → stripped by `strip_sql_fences()` | `SQLResponse` Pydantic model (typed, validated) |
+| **Retry / self-correction** | Built-in: `_build_correction_prompt()` up to 3 attempts | Not built-in |
+| **Context window cost** | Full schema text on every call | Only inspected tables |
+| **Best for** | Known, bounded schema; latency-sensitive paths | Large/unknown schema; when reasoning trace matters |
+
+---
 
 ## DuckDB ↔ PostgreSQL Bridge
 

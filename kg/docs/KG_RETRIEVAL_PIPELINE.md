@@ -18,6 +18,7 @@ final answer synthesis in `rag/agent/rag_agent.py`.
 9. [Two-level intent routing](#two-level-intent-routing)
 10. [Key files](#key-files)
 11. [Adding a new KG intent](#adding-a-new-kg-intent)
+12. [Rule-Based Cypher Generation — How It Works](#rule-based-cypher-generation--how-it-works)
 
 ---
 
@@ -397,3 +398,237 @@ The first routes at the tool level. The second routes within the KG path.
 2. Write `build_<intent>_query(params: dict) -> str` in `kg/legal/retrieval/query_builder.py`.
 3. Register it in `QUERY_CAPABILITIES`.
 4. No prompt changes, no model dependency.
+
+---
+
+## Rule-Based Cypher Generation — How It Works
+
+No LLM is involved at any point. Cypher is assembled deterministically by three components chained in sequence. This section explains each component and traces a complete example from question string to executed Cypher.
+
+---
+
+### The three components
+
+```
+Question (str)
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Component 1 — IntentParser                                     │
+│  kg/legal/retrieval/intent_parser.py                            │
+│                                                                 │
+│  Scans ~25 compiled regex patterns in registration order.       │
+│  First match wins.                                              │
+│  Also extracts an entity name from the question string.         │
+│                                                                 │
+│  Input:  "Which contracts does Acme Corp appear in as a party?" │
+│  Output: IntentMatch(intent="find_parties",                     │
+│                      params={"name": "Acme Corp"})              │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Component 2 — QUERY_CAPABILITIES dict                          │
+│  kg/legal/retrieval/query_builder.py                            │
+│                                                                 │
+│  Maps intent name → builder callable.                           │
+│  Dict lookup: O(1), no logic.                                   │
+│                                                                 │
+│  Input:  "find_parties"                                         │
+│  Output: build_parties_query  (a function)                      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Component 3 — Builder function                                 │
+│  kg/legal/retrieval/query_builder.py                            │
+│                                                                 │
+│  Python f-string interpolation. No LLM. No template engine.    │
+│  Branches on whether params["name"] is present.                 │
+│  _esc() escapes backslashes and single quotes before inlining.  │
+│                                                                 │
+│  Input:  {"name": "Acme Corp"}                                  │
+│  Output: Cypher string (see below)                              │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+        AgeGraphStore.run_cypher_query(cypher)
+        → wraps in ag_catalog.cypher(), executes via asyncpg
+        → returns pipe-separated table string
+```
+
+---
+
+### Fully traced example
+
+**Question:** `"Which contracts does Acme Corp appear in as a party?"`
+
+---
+
+**Step 1 — IntentParser scans `_PATTERNS` top-to-bottom**
+
+`_PATTERNS` is a list of `(compiled_regex, intent_name)` tuples checked in order. The first match wins — more specific patterns are registered before broader ones.
+
+The `find_parties` pattern is:
+```python
+re.compile(
+    r"\bsigned\b|\bsign(?:ed|s)?\s+by\b|\bpart(?:y|ies)\b|\bsignator(?:y|ies)\b",
+    re.I
+)
+```
+
+The word `party` in the question triggers `\bpart(?:y|ies)\b`. Intent = `"find_parties"`.
+
+---
+
+**Step 2 — `_extract_name()` pulls the entity name from the same question string**
+
+`_extract_name()` tries three heuristics in order, stopping at the first match:
+
+```
+1. Quoted string — _QUOTED = re.compile(r'"([^"]+)"|\'([^\']+)\'')
+   → "Acme Corp" in double quotes?  No.
+
+2. Multi-word title-case — _TITLED = re.compile(
+       r"\b([A-Z][A-Za-z0-9&',.\\-]*(?:\s+[A-Z][A-Za-z0-9&',.\\-]*)+)\b"
+   )
+   → Two consecutive title-case words: "Acme Corp"  ✓
+   → Strip leading interrogatives (Which/What/Who/…): "Acme Corp" is clean.
+   → name = "Acme Corp"
+
+3. Single proper noun — _SINGLE_PROPER
+   → Not reached.
+```
+
+`IntentParser.parse()` returns:
+```python
+IntentMatch(intent="find_parties", params={"name": "Acme Corp"})
+```
+
+---
+
+**Step 3 — `NL2CypherConverter.convert()` wires the two together**
+
+```python
+# kg/legal/retrieval/nl2cypher.py
+def convert(self, question: str) -> str:
+    match = self._parser.parse(question)              # Step 1+2
+    builder = QUERY_CAPABILITIES[match.intent]        # Step 3a: dict lookup
+    return builder(match.params)                      # Step 3b: call builder
+```
+
+`QUERY_CAPABILITIES["find_parties"]` → `build_parties_query`
+
+---
+
+**Step 4 — `build_parties_query({"name": "Acme Corp"})` does string interpolation**
+
+```python
+def build_parties_query(intent: dict[str, str]) -> str:
+    if name := intent.get("name"):          # "Acme Corp" is truthy
+        return (
+            f"MATCH (c:Contract)-[:SIGNED_BY]->(p:Party)"
+            f" WHERE c.name CONTAINS '{_esc(name)}'"
+            f" RETURN c.name AS contract, p.name AS party"
+            f" LIMIT 20"
+        )
+    # name absent → generic version, LIMIT 50
+    return (
+        "MATCH (c:Contract)-[:SIGNED_BY]->(p:Party)"
+        " RETURN c.name AS contract, p.name AS party"
+        " LIMIT 50"
+    )
+```
+
+`_esc("Acme Corp")` → `"Acme Corp"` (no quotes or backslashes to escape here).
+
+**Output Cypher:**
+```cypher
+MATCH (c:Contract)-[:SIGNED_BY]->(p:Party)
+WHERE c.name CONTAINS 'Acme Corp'
+RETURN c.name AS contract, p.name AS party
+LIMIT 20
+```
+
+---
+
+**Step 5 — AGE execution**
+
+`AgeGraphStore.run_cypher_query()` wraps the Cypher string:
+```sql
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (c:Contract)-[:SIGNED_BY]->(p:Party)
+    WHERE c.name CONTAINS 'Acme Corp'
+    RETURN c.name AS contract, p.name AS party
+    LIMIT 20
+$$) AS (contract agtype, party agtype)
+```
+
+asyncpg returns agtype values as quoted strings (`'"Acme Corp"'`). Surrounding quotes are stripped before the result is formatted as a pipe-separated table.
+
+---
+
+### Name extraction — all three heuristics
+
+| Heuristic | Pattern | Example input | Extracted |
+|-----------|---------|---------------|-----------|
+| Quoted string | `"..."` or `'...'` | `fees in "Strategic Alliance Agreement"` | `Strategic Alliance Agreement` |
+| Multi-word title-case | Two+ consecutive `Title Case` words | `indemnification in Acme Corp agreement` | `Acme Corp` |
+| Single proper noun | One `Title` word before contract-related term or end of input | `fees in the Lightbridge agreement` | `Lightbridge` |
+
+Interrogatives (`Which`, `What`, `Who`, `Whose`, `Whom`, `How`, `When`, `Where`) are always stripped from the front of a title-case match so they are never treated as entity names.
+
+---
+
+### Full intent registry
+
+24 intents total. `list_contracts` is the catch-all — it fires when no other pattern matches.
+
+| Group | Intent | Trigger keywords | Cypher pattern |
+|-------|--------|-----------------|----------------|
+| **Entity** | `find_parties` | signed, party, parties, signatory | `(Contract)-[:SIGNED_BY]->(Party)` |
+| | `find_indemnification` | indemnif*, indemnity | `(Party)-[:INDEMNIFIES]->(Party)` |
+| | `find_jurisdictions` | governing law, jurisdiction, choice of law | `(Contract)-[:GOVERNED_BY]->(Jurisdiction)` |
+| | `find_termination_clauses` | terminat* | `(Contract)-[:HAS_TERMINATION]->(TerminationClause)` |
+| | `find_confidentiality_clauses` | confidential*, nda, non-disclosure | `(Contract)-[:HAS_CLAUSE]->(ConfidentialityClause)` |
+| | `find_payment_terms` | payment term*, fee*, royalt*, revenue shar* | `(Contract)-[:HAS_PAYMENT_TERM]->(PaymentTerm)` |
+| | `find_obligations` | obligation*, duties, duty | `(Contract)-[:OBLIGATES]->(Obligation)` |
+| | `find_liability_clauses` | limitation of liability, liabilit* | `(Contract)-[:LIMITS_LIABILITY]->(LiabilityClause)` |
+| | `find_effective_dates` | effective date, commences, takes effect | `(Contract)-[:HAS_CLAUSE]->(EffectiveDate)` |
+| | `find_expiration_dates` | expir*, expiry | `(Contract)-[:HAS_CLAUSE]->(ExpirationDate)` |
+| | `find_renewal_terms` | renewal, auto-renew* | `(Contract)-[:HAS_RENEWAL]->(RenewalTerm)` |
+| | `find_disclosures` | disclose*, disclosure* | `(Party)-[:DISCLOSES_TO]->(Party)` |
+| **Lineage** | `find_superseded_contracts` | supersed*, supercede* | `(Contract)-[:SUPERCEDES]->(Contract)` |
+| | `find_amendments` | amend* | `(Contract)-[:AMENDS]->(Contract)` |
+| | `find_references` | referenced document, documents referenced | `(Contract)-[:REFERENCES]->(ReferenceDocument)` |
+| | `find_incorporated_documents` | incorporated by reference | `(Contract)-[:INCORPORATES_BY_REFERENCE]->(ReferenceDocument)` |
+| | `find_attachments` | attached, attachment | `(Contract)-[:ATTACHES]->(ReferenceDocument)` |
+| | `find_replacements` | replace*, replacement* | `(Contract)-[:REPLACES]->(Contract)` |
+| **Risk** | `find_all_risks` | risk*, compliance gap, exposure, vulnerabilit* | `(Risk)-[:INCREASES_RISK_FOR]->(Party)` |
+| | `find_risk_chains` | cause* risk, risk* cause* | `(Risk)-[:CAUSES]->(Risk)` |
+| | `find_missing_indemnity` | missing/no/lacks indemnit* | `OPTIONAL MATCH` for absent `IndemnityClause` |
+| | `find_missing_termination` | missing/no/lacks terminat* | `OPTIONAL MATCH` for absent `TerminationClause` |
+| **Hierarchy** | `find_sections` | section*, paragraph*, heading*, document structure | `(Contract)-[:HAS_SECTION]->(Section)` |
+| **Fallback** | `list_contracts` | `.*` (matches everything) | `MATCH (c:Contract) RETURN c.name, c.document_id` |
+
+---
+
+### The hard ceiling and catch-all behaviour
+
+The catch-all `list_contracts` pattern is `re.compile(r".*", re.I)` — it matches every string. This means **every question gets an answer**, even if no intent matched. The trade-off:
+
+- ✅ No silent failures — the system always returns something.
+- ❌ Questions that don't match any of the 23 specific intents get "list all contracts" as the answer, which is almost always wrong for complex or multi-intent questions.
+
+**Examples that hit the catch-all:**
+```
+"Find all contracts where governing law is California AND the indemnification clause mentions IP"
+→ Two intents required: find_jurisdictions + find_indemnification
+→ No single pattern covers both → list_contracts fires
+
+"Show me contracts that reference external documents and were signed after 2020"
+→ Date filtering + lineage: not covered by any template
+→ list_contracts fires
+```
+
+This is the motivation for Gap 7 in `nl2sql/docs/SYSTEM_DESIGN.md`: when `list_contracts` fires, fall back to an LLM-based Cypher generator instead of returning the generic template.
