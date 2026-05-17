@@ -11,6 +11,7 @@ this project.
 0. [Quick Start — Crash Course](#quick-start--crash-course)
    - [Cheat Sheet](#cheat-sheet)
 1. [How AGE Works](#how-age-works)
+   - [PostgreSQL Storage Model](#postgresql-storage-model)
 2. [Setup & Connection](#setup--connection)
 3. [Running in DBeaver](#running-in-dbeaver)
 4. [Core Concepts](#core-concepts)
@@ -292,6 +293,60 @@ SET search_path = ag_catalog, "$user", public;
 
 This is why we register an `init` callback on the asyncpg pool (see
 `rag/knowledge_graph/age_graph_store.py`).
+
+### PostgreSQL Storage Model
+
+AGE stores all graph data as ordinary PostgreSQL tables, split across a global catalog and per-graph schemas.
+
+**1. Global catalog — `ag_catalog`**
+
+When the extension is installed it creates the `ag_catalog` schema. The central registry table is:
+
+| Table | Purpose |
+|-------|---------|
+| `ag_catalog.ag_graph` | One row per graph — stores the graph name and its PostgreSQL schema OID |
+| `ag_catalog.ag_label` | One row per label — stores label name, kind (`v`=vertex / `e`=edge), and the backing relation OID |
+
+```sql
+-- See all graphs
+SELECT * FROM ag_catalog.ag_graph;
+
+-- See all labels in legal_graph
+SELECT name, kind FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph');
+```
+
+**2. Graph schema — created by `create_graph()`**
+
+`SELECT create_graph('legal_graph')` creates a new PostgreSQL schema named `legal_graph` and populates it with:
+
+| Object | Type | Purpose |
+|--------|------|---------|
+| `_ag_vertex` | Table | Parent table for all vertex (node) data |
+| `_ag_edge` | Table | Parent table for all edge (relationship) data |
+| `_ag_vertex_id_seq` | Sequence | Generates unique IDs for vertices |
+| `_ag_edge_id_seq` | Sequence | Generates unique IDs for edges |
+
+**3. Label tables — created per label**
+
+Each Cypher label you create produces a child table in the graph schema that inherits from the base:
+
+- Vertex label `:Party` → `legal_graph."Party"` (inherits `_ag_vertex`)
+- Edge label `:PARTY_TO` → `legal_graph."PARTY_TO"` (inherits `_ag_edge`)
+
+`MATCH (p:Party)` therefore only scans `legal_graph."Party"` — not all vertex rows. `MATCH (e)` (no label) must union all vertex child tables, which is why it is slow on large graphs.
+
+**4. `agtype` — the property column**
+
+Every vertex and edge table has a `properties agtype` column backed by JSONB. This gives AGE schema-less property storage inside rigid relational tables. Because it is real JSONB you can create expression indexes on it:
+
+```sql
+-- Index the uuid property on the Party vertex table
+CREATE INDEX party_uuid_idx ON legal_graph."Party"
+    ((properties->>'uuid'));
+```
+
+asyncpg receives `agtype` values as quoted strings (`'"Acme Corp"'`) — strip with `val.strip('"')` before use.
 
 ---
 
@@ -1050,25 +1105,6 @@ ERROR: graph "legel_graph" does not exist
 - Use `conn.execute(sql)` for MERGE/CREATE — returns no rows
 - Use `conn.fetch(sql)` for MATCH/RETURN — returns rows
 - Using `conn.fetch` on a CREATE gives no error but returns empty
-
----
-
-## Running Examples
-
-```bash
-# Connect to the AGE container
-docker exec -it rag_age psql -U age_user -d legal_graph
-
-# Inside psql:
-LOAD 'age';
-SET search_path = ag_catalog, "$user", public;
-SELECT create_graph('legal_graph');  -- first time only
-
--- After running the extraction pipeline:
-SELECT * FROM ag_catalog.cypher('legal_graph', $$
-    MATCH (e) RETURN e.label, count(*) ORDER BY count(*) DESC
-$$) AS (label agtype, cnt agtype);
-```
 
 See `rag/knowledge_graph/age_graph_store.py` for the full production
 implementation used in this project.
