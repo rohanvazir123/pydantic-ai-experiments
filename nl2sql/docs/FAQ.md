@@ -365,3 +365,129 @@ Use **NL→Results** for recurring business questions that always produce the sa
 **Q: How is the schema cache invalidated?**
 
 The Schema Discovery Service writes new embeddings for changed tables and deletes stale chunks by their `db:schema:table` metadata path. No global cache flush — only affected chunks are replaced, so the cache stays warm for unchanged tables.
+
+---
+
+## Graph Query Generation — NL→Cypher (Apache AGE)
+
+**Q: Does NL→Cypher need its own pipeline or can it reuse the SQL pipeline?**
+
+The five-stage structure (discover → prompt → generate → validate → execute) is the same. What changes are the inputs at each stage: graph schema instead of relational schema, Cypher syntax in the prompt, a write-keyword guard instead of sqlglot, and the AGE execution wrapper instead of a plain SQL connection. It is the same pipeline with a different adapter at each stage, not a separate system.
+
+---
+
+**Q: What inputs does the Cypher generation stage need that SQL generation does not?**
+
+| Input | SQL | Cypher |
+|-------|-----|--------|
+| Table/column definitions | `information_schema` | — |
+| Node labels | — | `ag_catalog.ag_label WHERE kind = 'v'` |
+| Edge/relationship types | — | `ag_catalog.ag_label WHERE kind = 'e'` |
+| Property keys per label | — | Sampled via `MATCH (n:Label) RETURN keys(n)` |
+| Graph name | — | Required for `ag_catalog.cypher('graph_name', …)` |
+| AS column list | — | Required; must match RETURN clause exactly |
+
+---
+
+**Q: Why does Cypher need a separate `<columns>` output block from the LLM?**
+
+AGE requires an `AS (col1 agtype, col2 agtype, …)` clause whose column count must exactly match the Cypher `RETURN` clause. If the count is off by one, AGE throws `column definition list has too few/many entries`. Rather than parsing the RETURN clause with regex post-hoc, asking the LLM to output the column list explicitly in a `<columns>` tag is simpler and more reliable.
+
+---
+
+**Q: Why can't we use `$1` parameters in Cypher like we do in SQL?**
+
+AGE does not support parameterised Cypher — all values must be inlined into the query string. This means string values from user input must be escaped before insertion: replace `"` with `\"`. The write-keyword guard and label allowlist (see below) are the main defences against injection, since parameterisation is unavailable.
+
+---
+
+**Q: How are node labels and relationship types validated to prevent injection?**
+
+Validate every label and relationship type against an allowlist before interpolating it into Cypher:
+
+```python
+_VALID_LABELS = frozenset({
+    "Contract", "Party", "Jurisdiction", "Date",
+    "LicenseClause", "TerminationClause", "RestrictionClause",
+    "IPClause", "LiabilityClause", "Clause",
+})
+_VALID_REL_TYPES = frozenset({
+    "PARTY_TO", "GOVERNED_BY_LAW", "HAS_LICENSE", "HAS_TERMINATION",
+    "HAS_RESTRICTION", "HAS_IP_CLAUSE", "HAS_LIABILITY", "HAS_CLAUSE",
+})
+```
+
+If the LLM generates an unknown label, the validation stage rejects the query and triggers the repair loop with an error message listing the valid labels.
+
+---
+
+**Q: How is graph schema discovered for AGE — it has no `information_schema`?**
+
+Two queries replace `information_schema` introspection:
+
+```sql
+-- Node labels
+SELECT name FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
+  AND kind = 'v'::"char" AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+
+-- Edge types
+SELECT name FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
+  AND kind = 'e'::"char" AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+```
+
+Because AGE properties are schema-less (agtype/JSONB), property keys must be sampled:
+
+```sql
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (n:Party) RETURN keys(n) LIMIT 100
+$$) AS (k agtype);
+```
+
+Run at discovery time per label; deduplicate and store with the schema chunk.
+
+---
+
+**Q: How often should graph schema be re-discovered?**
+
+On the same schedule as relational schema: event-driven on label creation or bulk ingestion, with a periodic fallback. Unlike relational schema, a new vertex or edge does not change the schema — only a new *label* or new *property key* does. Graph schema is more stable than relational schema in practice.
+
+---
+
+**Q: What does the AGE execution wrapper look like?**
+
+```python
+async def run_cypher(conn, graph, cypher, columns_str):
+    col_names = [c.strip().split(".")[-1] for c in columns_str.split(",")]
+    as_clause = ", ".join(f"{c} agtype" for c in col_names)
+    sql = f"SELECT * FROM ag_catalog.cypher('{graph}', $$ {cypher} $$) AS ({as_clause})"
+    rows = await conn.fetch(sql)
+    return [
+        {col: (row[i].strip('"') if row[i] not in (None, "null") else None)
+         for i, col in enumerate(col_names)}
+        for row in rows
+    ]
+```
+
+Each connection in the pool must have AGE loaded: register `init=_init_age_conn` on `asyncpg.create_pool`, where `_init_age_conn` runs `LOAD 'age'` and `SET search_path = ag_catalog, "$user", public`.
+
+---
+
+**Q: Why do agtype values come back as quoted strings like `'"Acme Corp"'`?**
+
+AGE's `agtype` is a custom PostgreSQL type. asyncpg does not have a codec for it, so it falls back to the text representation, which includes surrounding double-quotes for string values. Strip them with `val.strip('"')`. The special value `"null"` (the string) represents a graph null — convert it to Python `None`.
+
+---
+
+**Q: What Cypher constructs should the LLM be instructed to avoid?**
+
+Beyond write operations (CREATE, MERGE, SET, DELETE, REMOVE, DETACH, DROP), also instruct the model to avoid:
+
+| Construct | Reason |
+|-----------|--------|
+| `MATCH (e)` without a label | Scans all vertex tables — slow on large graphs |
+| Variable-length paths `*1..N` with large N and no LIMIT | Can explode exponentially |
+| `CALL` procedures | Not available in AGE's Cypher subset |
+| `null` property values in MERGE | AGE rejects null in property maps |
+| `LIKE` for string matching | Use `toLower(n.prop) CONTAINS '...'` instead |

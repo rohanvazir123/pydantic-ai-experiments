@@ -1,4 +1,6 @@
-# NL-to-SQL — System Design
+# NL-to-Query — System Design
+
+Natural language to SQL (relational) and Cypher (knowledge graph) over multi-tenant PostgreSQL, DuckDB, and Apache AGE.
 
 ---
 
@@ -14,6 +16,7 @@
 8. [SQL Validation Pipeline](#8-sql-validation-pipeline)
 9. [SQL Executor Pipeline](#9-sql-executor-pipeline)
 10. [SQL Best Practices](#10-sql-best-practices-prompt-guardrails)
+11. [Graph Query Generation — NL→Cypher (Apache AGE)](#11-graph-query-generation--nlcypher-apache-age)
 
 ---
 
@@ -416,3 +419,228 @@ Enforced via system prompt instructions injected at prompt assembly time.
 | Covering indexes on `WHERE` + `JOIN` + `ORDER BY` columns | Engine skips table reads |
 
 **Latency targets:** <100ms for simple lookups · <500ms for aggregations · <10s system SLA
+
+---
+
+## 11. Graph Query Generation — NL→Cypher (Apache AGE)
+
+The same five-stage pipeline (discover → prompt → generate → validate → execute) applies to knowledge graph queries. The inputs, prompt, validation rules, and execution wrapper all differ from the SQL path.
+
+### How it fits
+
+```
+User NL query
+      │
+      ├──[target = relational]──→ SQL pipeline (sections 5–9)
+      │
+      └──[target = graph]──→ Cypher pipeline (this section)
+                                    │
+                          ┌─────────▼──────────┐
+                          │  Graph Schema       │
+                          │  Discovery          │
+                          │  ag_catalog tables  │
+                          └─────────┬──────────┘
+                                    │
+                          ┌─────────▼──────────┐
+                          │  Prompt Assembly    │
+                          │  labels + rel types │
+                          │  + sampled props    │
+                          └─────────┬──────────┘
+                                    │
+                          ┌─────────▼──────────┐
+                          │  Cypher Generation  │
+                          │  Qwen-2.5           │
+                          │  MATCH…RETURN + AS  │
+                          └─────────┬──────────┘
+                                    │
+                          ┌─────────▼──────────┐
+                          │  Cypher Validation  │
+                          │  write-keyword guard│
+                          │  RETURN↔AS parity   │
+                          └─────────┬──────────┘
+                                    │
+                          ┌─────────▼──────────┐
+                          │  AGE Execution      │
+                          │  ag_catalog.cypher()│
+                          │  agtype stripping   │
+                          └────────────────────┘
+```
+
+---
+
+### Graph Schema Discovery (inputs to the prompt)
+
+AGE stores graph metadata in `ag_catalog` tables. Properties are schema-less (agtype/JSONB), so schema context must be built from two sources:
+
+**1. Structural metadata — from catalog tables**
+
+```sql
+-- Node labels
+SELECT name FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
+  AND kind = 'v'::"char"
+  AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+
+-- Edge / relationship types
+SELECT name FROM ag_catalog.ag_label
+WHERE graph = (SELECT oid FROM ag_catalog.ag_graph WHERE name = 'legal_graph')
+  AND kind = 'e'::"char"
+  AND name NOT LIKE '\_ag\_%' ESCAPE '\';
+```
+
+**2. Property keys — sampled from live data (no fixed schema)**
+
+```sql
+-- Sample property keys for a label
+SELECT * FROM ag_catalog.cypher('legal_graph', $$
+    MATCH (n:Party) RETURN keys(n) LIMIT 100
+$$) AS (k agtype);
+```
+
+Run this for each label at discovery time; deduplicate and store as part of the schema chunk.
+
+**Schema chunk format for a graph:**
+
+```json
+{
+  "graph": "legal_graph",
+  "node_labels": [
+    {
+      "label": "Party",
+      "property_keys": ["uuid", "name", "document_id", "label"]
+    },
+    {
+      "label": "Contract",
+      "property_keys": ["uuid", "name", "document_id", "label"]
+    }
+  ],
+  "edge_types": [
+    "PARTY_TO", "GOVERNED_BY_LAW", "HAS_LICENSE",
+    "HAS_TERMINATION", "HAS_RESTRICTION", "HAS_IP_CLAUSE",
+    "HAS_LIABILITY", "HAS_CLAUSE"
+  ]
+}
+```
+
+---
+
+### Prompt differences vs SQL
+
+| Dimension | SQL prompt | Cypher prompt |
+|-----------|-----------|---------------|
+| Schema context | Table names + column names + types | Node labels + property keys + edge types |
+| Query syntax | `SELECT … FROM … WHERE … GROUP BY` | `MATCH (n:Label)-[:REL]->(m) WHERE … RETURN …` |
+| Output format | Raw SQL | Cypher body **and** a matching `AS` column list |
+| Null handling | `IS NULL` / `COALESCE` | `OPTIONAL MATCH`; AGE rejects null property values in MERGE |
+| Case sensitivity | Column names case-insensitive (usually) | Label names and property keys are case-sensitive |
+| Joins | Explicit JOIN … ON | Implicit via pattern: `(a)-[:REL]->(b)` |
+
+**System prompt additions for Cypher:**
+
+```
+You are a Cypher query generator for Apache AGE running on PostgreSQL.
+
+Rules:
+- Only generate read-only MATCH … RETURN queries. Never use CREATE, MERGE, SET,
+  DELETE, REMOVE, DETACH, DROP, or CALL.
+- Use node labels and property keys exactly as listed in the schema context.
+  Labels are case-sensitive: Party ≠ party.
+- Always include a LIMIT clause.
+- Do not reference properties that are not in the provided property_keys list.
+- For string comparisons use toLower(n.name) CONTAINS '...' (not LIKE).
+
+Output format — respond with exactly two blocks:
+<cypher>
+MATCH (p:Party)-[:PARTY_TO]->(c:Contract)
+WHERE toLower(p.name) CONTAINS 'acme'
+RETURN p.name, c.name
+LIMIT 20
+</cypher>
+<columns>p.name, c.name</columns>
+```
+
+The `<columns>` block lists every value in the RETURN clause, comma-separated. This is used to build the required `AS (col agtype, …)` clause for AGE execution.
+
+---
+
+### Cypher Validation
+
+**1. Write-keyword guard**
+
+```python
+_CYPHER_WRITE = re.compile(
+    r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DETACH|DROP|CALL)\b",
+    re.IGNORECASE,
+)
+
+def is_cypher_readonly(cypher: str) -> bool:
+    return not _CYPHER_WRITE.search(cypher)
+```
+
+**2. RETURN ↔ AS column parity**
+
+The number of names in `<columns>` must equal the number of items in the Cypher RETURN clause. Mismatch causes AGE to throw `column definition list has too few/many entries`.
+
+```python
+def build_as_clause(columns_str: str) -> str:
+    cols = [c.strip().split(".")[-1] for c in columns_str.split(",")]
+    return ", ".join(f"{c} agtype" for c in cols)
+```
+
+**3. No parameterised values**
+
+AGE does not support `$1` parameters inside Cypher. All values are inlined. String values must be escaped: `value.replace('"', '\\"')`.
+
+---
+
+### AGE Execution
+
+**Connection requirements (per connection in the pool):**
+
+```python
+async def _init_age_conn(conn: asyncpg.Connection) -> None:
+    await conn.execute("LOAD 'age'")
+    await conn.execute("SET search_path = ag_catalog, \"$user\", public")
+```
+
+Register this as `init=` on `asyncpg.create_pool` so every connection is AGE-ready.
+
+**Execution wrapper:**
+
+```python
+async def run_cypher(
+    conn: asyncpg.Connection,
+    graph: str,
+    cypher: str,
+    columns_str: str,
+) -> list[dict]:
+    as_clause = build_as_clause(columns_str)
+    sql = (
+        f"SELECT * FROM ag_catalog.cypher('{graph}', $$ {cypher} $$)"
+        f" AS ({as_clause})"
+    )
+    rows = await conn.fetch(sql)
+    col_names = [c.strip().split(".")[-1] for c in columns_str.split(",")]
+    return [
+        {col: row[i].strip('"') if row[i] not in (None, "null") else None
+         for i, col in enumerate(col_names)}
+        for row in rows
+    ]
+```
+
+**agtype stripping:** asyncpg returns agtype values as quoted strings (`'"Acme Corp"'`). Strip surrounding quotes and convert `"null"` to `None` before returning results.
+
+---
+
+### SQL vs Cypher pipeline comparison
+
+| | SQL (sections 5–9) | Cypher (section 11) |
+|--|-------------------|---------------------|
+| Schema source | `information_schema.tables/columns` | `ag_catalog.ag_label` + sampled `keys(n)` |
+| Schema type | Fixed columns + data types | Labels + property key lists (schema-less) |
+| Generation output | `<thinking>` + `<query>` | `<cypher>` + `<columns>` |
+| Validation | sqlglot AST + DDL/DML guard | Regex write-keyword guard + RETURN↔AS parity |
+| Parameterisation | `$1` placeholders (safe) | Inline string escaping (AGE limitation) |
+| Execution | `conn.execute(sql)` | `ag_catalog.cypher('graph', $$ … $$) AS (…)` |
+| Connection init | Standard asyncpg pool | `LOAD 'age'` + `SET search_path` on every connection |
+| Null handling | NULL / COALESCE | `"null"` string → Python `None` (agtype quirk) |
