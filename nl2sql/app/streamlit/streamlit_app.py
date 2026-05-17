@@ -2,22 +2,22 @@
 NL-to-SQL Explorer — Streamlit UI.
 
 Ask questions about the RAG PostgreSQL database in plain English.
-Wraps ConversationManager from nlp2sql/nlp_sql_postgres_v2.py.
+Wraps ConversationManager from nl2sql/nlp_sql_postgres_v2.py.
 Connects via DuckDB's postgres scanner; generated SQL and results
 are displayed alongside the answer.
 
 Usage:
-    streamlit run apps/nl2sql/streamlit_app.py
+    streamlit run nl2sql/app/streamlit/streamlit_app.py
 
 API:
-    uvicorn apps.nl2sql.api:app --port 8001
+    uvicorn nl2sql.app.rest_api.api:app --port 8001
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from nlp2sql.nlp_sql_postgres_v2 import ConversationManager, QueryResult
+from nl2sql.nlp_sql_postgres_v2 import ConversationManager, QueryResult
 from rag.config.settings import load_settings
 
 load_dotenv(override=True)
@@ -50,25 +50,19 @@ _SYSTEM_PROMPT = (
 @st.cache_resource(show_spinner="Connecting to database…")
 def _build_manager() -> tuple[ConversationManager, str]:
     settings = load_settings()
-
     conn = duckdb.connect(database=":memory:")
     conn.execute("INSTALL postgres; LOAD postgres;")
-    conn.execute(
-        f"ATTACH '{settings.database_url}' AS rag_db (TYPE postgres, READ_ONLY)"
-    )
+    conn.execute(f"ATTACH '{settings.database_url}' AS rag_db (TYPE postgres, READ_ONLY)")
 
     lines: list[str] = ["=== rag_db tables (prefix: rag_db.main.<table>) ==="]
     tables = conn.execute(
         "SELECT table_name FROM rag_db.information_schema.tables "
-        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-        "ORDER BY table_name"
+        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name"
     ).fetchall()
     for (tbl,) in tables:
         cols = conn.execute(
-            f"SELECT column_name, data_type "
-            f"FROM rag_db.information_schema.columns "
-            f"WHERE table_schema = 'public' AND table_name = '{tbl}' "
-            f"ORDER BY ordinal_position"
+            f"SELECT column_name, data_type FROM rag_db.information_schema.columns "
+            f"WHERE table_schema = 'public' AND table_name = '{tbl}' ORDER BY ordinal_position"
         ).fetchall()
         lines.append(f"Table: rag_db.main.{tbl}")
         for col_name, col_type in cols:
@@ -76,21 +70,11 @@ def _build_manager() -> tuple[ConversationManager, str]:
         lines.append("")
     schema_text = "\n".join(lines).strip()
 
-    llm = OpenAIModel(
-        settings.llm_model,
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-    )
+    llm = OpenAIModel(settings.llm_model, base_url=settings.llm_base_url, api_key=settings.llm_api_key)
     pydantic_agent = Agent(model=llm, result_type=str, system_prompt=_SYSTEM_PROMPT)
-
     manager = ConversationManager(
-        conn=conn,
-        agent=pydantic_agent,
-        schema_text=schema_text,
-        cache_size=30,
-        max_retries=3,
-        max_result_rows=500,
-        query_timeout=30.0,
+        conn=conn, agent=pydantic_agent, schema_text=schema_text,
+        cache_size=30, max_retries=3, max_result_rows=500, query_timeout=30.0,
     )
     return manager, schema_text
 
@@ -125,7 +109,7 @@ def _render_sidebar(schema_text: str) -> None:
             """
             )
         st.divider()
-        st.caption("**API:** `uvicorn apps.nl2sql.api:app --port 8001`")
+        st.caption("**API:** `uvicorn nl2sql.app.rest_api.api:app --port 8001`")
 
 
 def _render_result(qr: QueryResult) -> str:
@@ -145,8 +129,7 @@ def _render_result(qr: QueryResult) -> str:
     sep = " | ".join("---" for _ in qr.columns)
     lines.append(f"| {header} |")
     lines.append(f"| {sep} |")
-    display_rows = qr.rows[:50]
-    for row in display_rows:
+    for row in qr.rows[:50]:
         cells = " | ".join(str(v) if v is not None else "" for v in row)
         lines.append(f"| {cells} |")
     if len(qr.rows) > 50:
@@ -166,7 +149,6 @@ def main() -> None:
         return
 
     _render_sidebar(schema_text)
-
     st.title("💬 Ask your database anything")
 
     for msg in st.session_state.nl_messages:

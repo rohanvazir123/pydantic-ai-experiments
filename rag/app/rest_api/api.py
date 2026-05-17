@@ -10,7 +10,7 @@ POST /v1/retrieve      — Raw retrieval (no LLM synthesis)
 POST /v1/ingest        — Trigger document ingestion pipeline
 
 Usage:
-    uvicorn apps.rag.api:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn rag.app.rest_api.api:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import asyncio
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -124,8 +124,6 @@ async def health() -> HealthResponse:
         logger.warning("Health: DB check failed: %s", exc)
 
     try:
-       # The code snippet `async with httpx.AsyncClient(timeout=5.0) as client:` is creating an
-       # asynchronous HTTP client using the `httpx` library in Python.
         async with httpx.AsyncClient(timeout=5.0) as client:
             base = (settings.embedding_base_url or "").rstrip("/")
             resp = await client.get(
@@ -164,12 +162,6 @@ async def health() -> HealthResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     """Full agent run with tool calls and LLM synthesis."""
     try:
-       # The line `result = await traced_agent_run(` is calling an asynchronous function named
-       # `traced_agent_run` and awaiting its result. This function is likely responsible for running
-       # the RAG agent with additional tracing or logging capabilities. By using `await`, the code is
-       # waiting for the `traced_agent_run` function to complete its execution before proceeding
-       # further. The result of this function call is then stored in the `result` variable for further
-       # processing or returning as part of the API response.
         result = await traced_agent_run(
             query=request.query,
             user_id=request.user_id,
@@ -212,12 +204,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
 @app.post("/v1/retrieve", response_model=RetrieveResponse, tags=["retrieve"])
 async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
-    """
-    Run retrieval directly — returns ranked chunks without LLM synthesis.
-
-    Use this when you want to embed retrieval into your own pipeline or
-    display raw source passages to users.
-    """
+    """Run retrieval directly — returns ranked chunks without LLM synthesis."""
     state = RAGState()
     try:
         retriever = await state.get_retriever()
@@ -229,10 +216,7 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
         results = []
         for c in chunks:
             metadata = getattr(c, "metadata", None)
-            if isinstance(metadata, dict):
-                title = metadata.get("title", "")
-            else:
-                title = ""
+            title = metadata.get("title", "") if isinstance(metadata, dict) else ""
             results.append(
                 RetrieveResult(
                     id=c.chunk_id,
@@ -291,4 +275,4 @@ async def ingest(request: IngestRequest) -> IngestResponse:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("apps.rag.api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("rag.app.rest_api.api:app", host="0.0.0.0", port=8000, reload=True)

@@ -12,7 +12,7 @@ POST /v1/contracts     — Find contracts that mention a named entity
 POST /v1/cypher        — Execute a read-only Cypher MATCH query
 
 Usage:
-    uvicorn apps.kg.api:app --host 0.0.0.0 --port 8002 --reload
+    uvicorn kg.app.rest_api.api:app --host 0.0.0.0 --port 8002 --reload
 
 Example:
     curl http://localhost:8002/v1/stats
@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -46,7 +46,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Module-level singletons; store initialized on first request
 _store: AgeGraphStore | None = None
 _router: GraphRouter = GraphRouter()
 _converter: NL2CypherConverter = NL2CypherConverter()
@@ -141,7 +140,7 @@ class HealthResponse(BaseModel):
 async def health() -> HealthResponse:
     try:
         store = await _get_store()
-        stats = await store.get_graph_stats()
+        await store.get_graph_stats()
         return HealthResponse(status="ok", age_connected=True)
     except Exception as exc:
         logger.warning("Health: AGE check failed: %s", exc)
@@ -189,12 +188,7 @@ async def search(request: SearchRequest) -> list[EntityResult]:
 
 @app.post("/v1/context", tags=["graph"])
 async def context(request: ContextRequest) -> dict[str, str]:
-    """
-    Retrieve entity relationships formatted as LLM-ready context.
-
-    Returns a Markdown-formatted string listing matched entity relationships,
-    suitable for inclusion in an LLM prompt.
-    """
+    """Retrieve entity relationships formatted as LLM-ready context."""
     try:
         store = await _get_store()
         ctx = await store.search_as_context(query=request.query, limit=request.limit)
@@ -246,12 +240,7 @@ async def contracts(request: ContractsRequest) -> list[ContractResult]:
 
 @app.post("/v1/cypher", tags=["graph"])
 async def cypher(request: CypherRequest) -> dict[str, str]:
-    """
-    Execute a read-only Cypher MATCH query and return results as a table string.
-
-    Only MATCH/RETURN queries are permitted. CREATE/MERGE/SET/DELETE/DROP/DETACH
-    are blocked by the store's guardrail.
-    """
+    """Execute a read-only Cypher MATCH query. CREATE/MERGE/SET/DELETE/DROP/DETACH are blocked."""
     try:
         store = await _get_store()
         result = await store.run_cypher_query(request.cypher)
@@ -263,26 +252,13 @@ async def cypher(request: CypherRequest) -> dict[str, str]:
 
 @app.post("/v1/nl_query", response_model=NLQueryResponse, tags=["graph"])
 async def nl_query(request: NLQueryRequest) -> NLQueryResponse:
-    """
-    Answer a natural-language question by routing to the right graph schema,
-    generating Cypher, and executing it.
-
-    Pipeline:
-      1. GraphRouter classifies the question → relevant graph type(s).
-      2. get_schema() returns the compact token-bounded schema for those types.
-      3. NL2CypherConverter generates a Cypher MATCH query (temperature=0).
-      4. AgeGraphStore executes the query and returns results.
-
-    Returns the routed graph types, generated Cypher, and query results.
-    """
+    """Answer a natural-language question via GraphRouter → NL2Cypher → AGE execution."""
     try:
-        store     = await _get_store()
-
+        store = await _get_store()
         graph_types = _router.route(request.question)
-        schema      = get_schema(graph_types)
-        generated   = await _converter.convert(request.question, schema)
-        result      = await store.run_cypher_query(generated)
-
+        schema = get_schema(graph_types)
+        generated = await _converter.convert(request.question, schema)
+        result = await store.run_cypher_query(generated)
         return NLQueryResponse(
             question=request.question,
             graph_types=[gt.value for gt in graph_types],
@@ -296,4 +272,4 @@ async def nl_query(request: NLQueryRequest) -> NLQueryResponse:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("apps.kg.api:app", host="0.0.0.0", port=8002, reload=True)
+    uvicorn.run("kg.app.rest_api.api:app", host="0.0.0.0", port=8002, reload=True)

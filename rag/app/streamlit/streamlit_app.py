@@ -5,7 +5,7 @@ Chat interface for the Legal Contract RAG agent.
 Streams tool calls and responses in real time.
 
 Usage:
-    streamlit run apps/rag/streamlit_app.py
+    streamlit run rag/app/streamlit/streamlit_app.py
 """
 
 import asyncio
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -171,7 +171,7 @@ def render_sidebar() -> None:
 - Find all contracts governed by Delaware law
 - What does the license grant say in contracts where Google is the licensee?
 
-**API:** `uvicorn apps.rag.api:app --port 8000`
+**API:** `uvicorn rag.app.rest_api.api:app --port 8000`
             """
             )
 

@@ -5,7 +5,7 @@ Browse and query the Apache AGE knowledge graph built from ingested documents.
 Supports entity search, relationship traversal, graph statistics, and custom Cypher.
 
 Usage:
-    streamlit run apps/kg/streamlit_app.py
+    streamlit run kg/app/streamlit/streamlit_app.py
 
 Requirements:
     - Apache AGE container running: docker-compose up age
@@ -13,14 +13,14 @@ Requirements:
     - Documents ingested with KG_BACKEND=age
 
 API:
-    uvicorn apps.kg.api:app --port 8002
+    uvicorn kg.app.rest_api.api:app --port 8002
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -39,20 +39,12 @@ st.set_page_config(
 )
 
 
-# ---------------------------------------------------------------------------
-# Cached store — initialized once per server process
-# ---------------------------------------------------------------------------
-
 @st.cache_resource(show_spinner="Connecting to Apache AGE…")
 def _get_store() -> AgeGraphStore:
     store = AgeGraphStore()
     asyncio.run(store.initialize())
     return store
 
-
-# ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
 
 def _render_sidebar() -> str:
     with st.sidebar:
@@ -82,16 +74,12 @@ RELATED_TO, LICENSED_TO, …
 typed vertices and relationships from named entities
 and clause structure.
 
-**API:** `uvicorn apps.kg.api:app --port 8002`
+**API:** `uvicorn kg.app.rest_api.api:app --port 8002`
             """
             )
 
     return mode
 
-
-# ---------------------------------------------------------------------------
-# Tabs
-# ---------------------------------------------------------------------------
 
 def _show_stats(store: AgeGraphStore) -> None:
     st.subheader("Graph Statistics")
@@ -140,11 +128,7 @@ def _show_search(store: AgeGraphStore) -> None:
     if st.button("Search", type="primary") and query:
         with st.spinner("Searching…"):
             results = asyncio.run(
-                store.search_entities(
-                    query=query,
-                    entity_type=entity_type or None,
-                    limit=limit,
-                )
+                store.search_entities(query=query, entity_type=entity_type or None, limit=limit)
             )
         if not results:
             st.info("No entities found matching that query.")
@@ -204,9 +188,7 @@ def _show_related(store: AgeGraphStore) -> None:
     entity_name = st.text_input("Entity name", placeholder="e.g. Amazon")
     if st.button("Find Contracts") and entity_name:
         with st.spinner("Searching contracts…"):
-            contracts = asyncio.run(
-                store.find_contracts_by_entity(entity_name=entity_name.strip())
-            )
+            contracts = asyncio.run(store.find_contracts_by_entity(entity_name=entity_name.strip()))
         if not contracts:
             st.info("No contracts found for that entity.")
         else:
@@ -218,40 +200,19 @@ def _show_cypher(store: AgeGraphStore) -> None:
     st.subheader("Custom Cypher Query")
     st.caption("Read-only MATCH queries only. CREATE/MERGE/SET/DELETE are blocked.")
 
-    default_query = (
-        "MATCH (e:Party)-[r]->(c:Contract)\n"
-        "RETURN e.name, type(r), c.name\n"
-        "LIMIT 20"
-    )
+    default_query = "MATCH (e:Party)-[r]->(c:Contract)\nRETURN e.name, type(r), c.name\nLIMIT 20"
     cypher = st.text_area("Cypher query", value=default_query, height=120)
 
     with st.expander("📖 Query examples"):
         st.markdown(
             """
 ```cypher
--- All Party → Contract relationships
 MATCH (p:Party)-[r]->(c:Contract)
-RETURN p.name, type(r), c.name
-LIMIT 20
+RETURN p.name, type(r), c.name LIMIT 20
 
--- Contracts governed by Delaware
 MATCH (c:Contract)-[:GOVERNED_BY_LAW]->(j:Jurisdiction)
 WHERE toLower(j.name) CONTAINS 'delaware'
-RETURN c.name, j.name
-LIMIT 20
-
--- Party co-occurrence count
-MATCH (p:Party)-[]->(c:Contract)<-[]-(p2:Party)
-WHERE p.uuid <> p2.uuid
-RETURN p.name, p2.name, count(c) AS shared_contracts
-ORDER BY shared_contracts DESC
-LIMIT 15
-
--- Top clause types per contract
-MATCH (c:Contract)<-[:HAS_CLAUSE]-(cl)
-RETURN c.name, cl.label, count(cl) AS clause_count
-ORDER BY clause_count DESC
-LIMIT 20
+RETURN c.name, j.name LIMIT 20
 ```
         """
         )
@@ -268,19 +229,12 @@ LIMIT 20
                 st.code(result, language="text")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main() -> None:
     try:
         store = _get_store()
     except Exception as exc:
         st.error(f"Failed to connect to Apache AGE: {exc}")
-        st.info(
-            "Make sure the AGE container is running (`docker-compose up age`) "
-            "and AGE_DATABASE_URL is set in .env."
-        )
+        st.info("Make sure the AGE container is running (`docker-compose up age`) and AGE_DATABASE_URL is set in .env.")
         return
 
     mode = _render_sidebar()
