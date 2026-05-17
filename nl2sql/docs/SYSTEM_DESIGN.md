@@ -13,6 +13,7 @@
 7. [SQL Generation Pipeline](#7-sql-generation-pipeline)
 8. [SQL Validation Pipeline](#8-sql-validation-pipeline)
 9. [SQL Executor Pipeline](#9-sql-executor-pipeline)
+10. [SQL Best Practices](#10-sql-best-practices-prompt-guardrails)
 
 ---
 
@@ -52,6 +53,48 @@
 
 ## 3. Pipeline Overview
 
+```
+User NL query
+      │
+      ▼
+┌─────────────────────────────────┐
+│  Prompt Generation Pipeline     │
+│  1. Normalize query             │
+│  2. Retrieve schema context     │──→ Schema Cache (pgvector + tsvector)
+│  3. Inject RBAC + guardrails    │
+│  4. Assemble structured prompt  │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  SQL Generation Pipeline        │
+│  Qwen-2.5 → N candidates        │
+│  <thinking> + <query> format    │
+│  Score candidates (1–10)        │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  SQL Validation Pipeline        │
+│  1. Static guardrails           │
+│  2. sqlglot syntax + schema     │
+│  3. RBAC policy check           │
+│  └── fail → LLM repair loop     │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│  SQL Execution Pipeline         │
+│  Route → connection pool        │
+│  Timeout + cursor pagination    │
+│  Output: CSV / grid / chart     │
+└─────────────────────────────────┘
+
+Background:
+  Schema Discovery Service  ──→  Schema Cache
+  DB Index Updater          ──→  query frequency tracking
+```
+
 Each pipeline can have one or more stages. The system is composed of:
 
 1. **Schema Discovery Service** — background service, event-driven
@@ -65,21 +108,14 @@ Each pipeline can have one or more stages. The system is composed of:
 
 ## 4. Caching Strategy
 
-### Schema Cache
-- Updated by the Schema Discovery Service via schema embeddings
-- At query time: embed the NL query and run ANN search against the vector DB to retrieve the most relevant schema chunks
+| Cache | Key | Populated by | Use case |
+|-------|-----|--------------|----------|
+| Schema cache | NL query embedding → top-K tables/columns | Schema Discovery Service | Avoid full schema scan per query |
+| NL → SQL | Normalized NL query | SQL Generation Pipeline | Skip generation for repeated questions |
+| NL → Results | Normalized NL query | SQL Execution Pipeline | Recurring analytics / fixed dashboards |
+| SQL → Results | SQL string hash | SQL Execution Pipeline | Same SQL reached via different NL phrasings |
 
-### NL Query → SQL Cache
-- Given a user's NL query, reuse a previously generated SQL statement
-- Keyed on normalized NL query
-
-### NL Query → Results Cache
-- For fully deterministic dashboards and recurring analytics questions
-- Bypasses SQL generation and execution entirely
-
-### SQL Query → Results Cache
-- If the same SQL is executed frequently and data freshness requirements allow
-- Keyed on SQL hash
+All caches stored in pgvector (semantic ANN) + tsvector (keyword fallback).
 
 ---
 
@@ -363,3 +399,20 @@ Results can be returned as:
 ### Index Feedback
 
 - Track frequently executed queries and feed patterns to the DB Index Updater Service
+
+---
+
+## 10. SQL Best Practices (prompt guardrails)
+
+Enforced via system prompt instructions injected at prompt assembly time.
+
+| Rule | Reason |
+|------|--------|
+| `SELECT` specific columns — never `SELECT *` | Reduces I/O and memory |
+| Apply `WHERE` before `JOIN` / `GROUP BY` | Narrows dataset early |
+| `UNION ALL` instead of `UNION` | No de-duplication overhead |
+| `EXISTS` instead of `IN` for subqueries | Stops on first match |
+| Avoid `LIKE '%value'` | Prevents index use (forces full scan) |
+| Covering indexes on `WHERE` + `JOIN` + `ORDER BY` columns | Engine skips table reads |
+
+**Latency targets:** <100ms for simple lookups · <500ms for aggregations · <10s system SLA

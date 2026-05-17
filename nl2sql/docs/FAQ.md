@@ -253,3 +253,115 @@ except Exception as exc:
 ```
 
 `timer.cancel()` in the `finally` block prevents the timer from firing if the query completes normally, avoiding a spurious interrupt on the next query.
+
+---
+
+## System Design — Schema Discovery
+
+**Q: Why store schema chunks in pgvector + tsvector instead of passing the full schema in every prompt?**
+
+A full schema for 100 tables can easily exceed the LLM's context window and increases cost per query. By embedding schema chunks and retrieving only the top-K relevant tables at query time you keep the prompt small and focused. tsvector provides a keyword fallback for exact column or table name matches that vector similarity might miss.
+
+---
+
+**Q: How does schema retrieval scale to 100+ tables?**
+
+The schema cache holds one chunk per table (columns + descriptions + sample values). At query time, the normalized NL query is embedded and an ANN search returns the top-50 candidate chunks, which are then re-ranked to top-K. Only those K tables are injected into the prompt. A warehouse with 1 000+ tables would need a second-stage retrieval or domain routing layer on top.
+
+---
+
+**Q: How often does the Schema Discovery Service run?**
+
+Event-driven (schema-change hook) with a periodic fallback (e.g. nightly). Any ALTER TABLE, new table creation, or column rename should trigger a re-index of the affected chunks. Stale schema is the most common cause of hallucinated column names.
+
+---
+
+**Q: What metadata is stored alongside each schema embedding?**
+
+Each chunk stores a `db:schema:table:column` path string. This allows ANN results to be filtered by database or schema before being passed to the prompt — critical for multi-tenant isolation.
+
+---
+
+## System Design — Prompt Engineering
+
+**Q: Why the `<thinking>` and `<query>` output format?**
+
+Structured output forces the model to separate reasoning from the SQL statement, which improves quality (the model "thinks before it writes") and makes parsing deterministic — the validation pipeline extracts the SQL block with a simple tag split rather than regex heuristics. The `<thinking>` block is useful for debugging wrong queries.
+
+---
+
+**Q: What goes into the RBAC context in the prompt?**
+
+Two things: (1) an explicit list of permitted tables and columns for the requesting tenant/role, and (2) mandatory WHERE filters (e.g. `region = 'North America'`) that must appear in the generated SQL. These are injected as hard requirements so the LLM cannot generate queries that cross tenant boundaries.
+
+---
+
+**Q: How are business acronyms handled?**
+
+The normalization stage resolves known acronyms to their expanded form before schema retrieval (e.g. "MCR" → "Monthly Conversion Rate"). A static acronym dictionary per tenant/domain is the simplest approach; a retrieval-augmented glossary works for large or changing vocabularies.
+
+---
+
+**Q: Why resolve dates to YYYY-MM-DD in normalization?**
+
+LLMs are inconsistent about date formatting across requests — "last quarter" might produce `Q3 2024`, `'2024-07-01'`, or a relative expression. Normalizing to ISO format eliminates ambiguity and ensures the generated SQL uses a format the database can parse.
+
+---
+
+## System Design — SQL Generation
+
+**Q: Why generate N candidates instead of one?**
+
+A single LLM sample can fail schema validation or produce a suboptimal join order. N candidates with confidence scores let the validation pipeline fall back to the next-best candidate without re-prompting the LLM, saving a full round-trip.
+
+---
+
+**Q: Why Qwen-2.5 as the generation model?**
+
+Qwen-2.5 performs competitively on SQL benchmarks (Spider, BIRD) while running locally — no API cost, no data leaving the environment. For a multi-tenant analytical system this matters because queries may touch sensitive commercial data. Swap to a larger model (Qwen-2.5-72B or GPT-4o) if accuracy requirements increase.
+
+---
+
+## System Design — SQL Validation
+
+**Q: Why sqlglot for validation instead of a dry-run EXPLAIN?**
+
+`EXPLAIN` requires a live database connection and leaks query patterns to the query planner. sqlglot validates syntax and schema entirely in-process with no network round-trip. It also provides structured AST inspection for detecting DDL nodes (DROP, DELETE, etc.) more reliably than regex.
+
+---
+
+**Q: What counts as a "hard" vs "recoverable" validation error?**
+
+| Error | Type | Reason |
+|-------|------|--------|
+| Disallowed keyword (INSERT, DROP) | Hard | Re-prompting is likely to reproduce it |
+| RBAC policy violation | Hard | Re-prompting without changing permissions won't help |
+| Unknown column name | Recoverable | Error message names the column so the LLM can correct |
+| Syntax error | Recoverable | Malformed SQL the LLM can fix |
+| Schema type mismatch | Recoverable | Correctable with the schema in context |
+
+---
+
+## System Design — Execution & Caching
+
+**Q: Why cursor-based pagination instead of OFFSET/LIMIT?**
+
+OFFSET forces the database to scan and discard the first N rows on every page, degrading linearly with page depth. A cursor (keyset pagination on an ordered unique column) fetches only the next page's rows regardless of depth.
+
+---
+
+**Q: How is multi-tenancy enforced at the execution layer?**
+
+Each tenant gets a dedicated connection pool bound to a read-only database user scoped to their schema or database. A misconfigured query cannot cross tenant data even if RBAC prompt injection fails — the database user simply has no SELECT permission on other tenants' tables.
+
+---
+
+**Q: When should the NL→Results cache be used vs the SQL→Results cache?**
+
+Use **NL→Results** for recurring business questions that always produce the same SQL and data (fixed dashboard metrics). Use **SQL→Results** when different NL phrasings generate the same SQL — catches semantically equivalent questions without re-executing. Both need data-freshness consideration: invalidate on ETL completion or use a short TTL.
+
+---
+
+**Q: How is the schema cache invalidated?**
+
+The Schema Discovery Service writes new embeddings for changed tables and deletes stale chunks by their `db:schema:table` metadata path. No global cache flush — only affected chunks are replaced, so the cache stays warm for unchanged tables.
