@@ -7,10 +7,10 @@ Fixes applied:
   3. Table splitting        → ACCURATE mode + do_cell_matching=False + repeat_table_header
 
 Chunks are saved as JSON to:
-  basics/docling_lightrag_raganything/output/docling/good_chunks/
+  basics/rag/docling/output/good_chunks/
 
 Run:
-  python basics/docling_lightrag_raganything/produce_good_chunks.py
+  python basics/rag/docling/produce_good_chunks.py
 """
 
 import json
@@ -21,9 +21,9 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMo
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.chunking import HybridChunker
 
-DOCS_DIR = Path(__file__).parent / "documents"
-OUT_DIR = Path(__file__).parent / "output" / "docling" / "good_chunks"
-BAD_DIR = Path(__file__).parent / "output" / "docling" / "bad_chunks"
+DOCS_DIR = Path(__file__).parent.parent / "common" / "documents"
+OUT_DIR = Path(__file__).parent / "output" / "good_chunks"
+BAD_DIR = Path(__file__).parent / "output" / "bad_chunks"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # -------------------------------------------------------------------

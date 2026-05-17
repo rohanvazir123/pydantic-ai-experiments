@@ -8,10 +8,10 @@ Demonstrates known failure modes:
   4. q4_financial_report.pdf        — table splitting across pages
 
 Chunks are saved as JSON to:
-  basics/docling_lightrag_raganything/output/docling/bad_chunks/
+  basics/rag/docling/output/bad_chunks/
 
 Run:
-  python basics/docling_lightrag_raganything/produce_bad_chunks.py
+  python basics/rag/docling/produce_bad_chunks.py
 """
 
 import json
@@ -21,8 +21,8 @@ from pathlib import Path
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
 
-DOCS_DIR = Path(__file__).parent / "documents"
-OUT_DIR = Path(__file__).parent / "output" / "docling" / "bad_chunks"
+DOCS_DIR = Path(__file__).parent.parent / "common" / "documents"
+OUT_DIR = Path(__file__).parent / "output" / "bad_chunks"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Default converter — no accuracy tuning, no fixes

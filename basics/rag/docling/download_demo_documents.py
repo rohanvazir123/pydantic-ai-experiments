@@ -7,14 +7,14 @@ Documents downloaded:
   3. apache_age_manual.pdf          — long technical manual (header/footer contamination)
 
 Run:
-  python basics/docling_lightrag_raganything/download_demo_documents.py
+  python basics/rag/docling/download_demo_documents.py
 """
 
 import sys
 import urllib.request
 from pathlib import Path
 
-DEST = Path(__file__).parent / "documents"
+DEST = Path(__file__).parent.parent / "common" / "documents"
 DEST.mkdir(exist_ok=True)
 
 DOCUMENTS = [

@@ -12,14 +12,14 @@ Links jump directly to the relevant line in source code.
 - [5. Streamlit Apps](#5-streamlit-apps)
 - [6. Architecture Overview](#6-architecture-overview)
 - [7. Knowledge Graph — Build (CuadKgBuilder)](#7-knowledge-graph--build-cuadkgbuilder)
-- [8. Knowledge Graph — Query (AgeGraphStore / PgGraphStore)](#8-knowledge-graph--query-agegraphstore--pggraphstore)
+- [8. Knowledge Graph — Query (AgeGraphStore)](#8-knowledge-graph--query-agegraphstore)
 - [9. Agent KG Tools (search_knowledge_graph)](#9-agent-kg-tools-search_knowledge_graph)
 
 ---
 
 ## 1. Document Ingestion
 
-> See [RAG.md](RAG.md) and [DATASTORE_GUIDE.md](DATASTORE_GUIDE.md) for details.
+> See [DATASTORE_GUIDE.md](DATASTORE_GUIDE.md) for details.
 
 **Entry point**: `python -m rag.main --ingest`
 
@@ -27,7 +27,7 @@ Links jump directly to the relevant line in source code.
 rag/main.py:main()                                                L100
   ├── validate_config()                                           L46
   │     └── load_settings()
-  └── run_ingestion_pipeline()                                    L633
+  └── run_ingestion_pipeline()                                    L646
         └── DocumentIngestionPipeline                             L136
               ├── __init__(config, documents_folder, clean)       L136
               │     ├── load_settings()
@@ -81,6 +81,7 @@ rag/main.py:main()                                                L100
 | File | Symbol | Line |
 |------|--------|------|
 | [`rag/main.py`](../rag/main.py#L100) | `main()` | L100 |
+| [`rag/main.py`](../rag/main.py#L646) | `run_ingestion_pipeline()` | L646 |
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L136) | `DocumentIngestionPipeline` | L136 |
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L479) | `ingest_documents()` | L479 |
 | [`rag/ingestion/pipeline.py`](../rag/ingestion/pipeline.py#L413) | `_ingest_single_document()` | L413 |
@@ -97,7 +98,7 @@ rag/main.py:main()                                                L100
 
 ## 2. Query & Retrieval
 
-> See [RAG.md](RAG.md) and [DATASTORE_GUIDE.md](DATASTORE_GUIDE.md) for details.
+> See [DATASTORE_GUIDE.md](DATASTORE_GUIDE.md) for details.
 
 **Entry point**: [`Retriever.retrieve()`](../rag/retrieval/retriever.py#L234)
 
@@ -106,14 +107,10 @@ Retriever.retrieve(query, match_count, search_type, use_cache)    L234
   ├── 1. ResultCache.get(query, search_type, match_count)          L266
   │        └── cache hit? → return list[SearchResult]
   │
-  ├── 2. Query embedding  (HyDE if hyde_enabled=True)
-  │     ├── [hyde_enabled=True]:
-  │     │     ├── HyDEProcessor.generate_hypothetical(query)       ← LLM call
-  │     │     └── embedder.generate_embedding(hypothetical_doc)
-  │     └── [hyde_enabled=False]:
-  │           └── EmbeddingGenerator.embed_query(query)            L288
-  │                 ├── _cached_embed(text, model)  async_lru(1000)
-  │                 └── openai.AsyncOpenAI.embeddings.create()
+  ├── 2. Query embedding
+  │     └── EmbeddingGenerator.embed_query(query)                  L263
+  │           ├── _cached_embed(text, model)  async_lru(1000)
+  │           └── openai.AsyncOpenAI.embeddings.create()
   │
   ├── 3. fetch_count = match_count × reranker_overfetch_factor     (if reranker_enabled)
   │
@@ -129,17 +126,17 @@ Retriever.retrieve(query, match_count, search_type, use_cache)    L234
   │           └── _reciprocal_rank_fusion(results_list)
   │                 └── RRF score = Σ 1/(k=60 + rank), deduplicate, sort
   │
-  ├── 5. Rerank  (if reranker_enabled=True)
-  │     ├── [reranker_type == "llm"]:
+  ├── 5. Rerank  (if reranker_enabled=True; off by default)
+  │     ├── [reranker_type == "llm"]  ← default; no extra deps
   │     │     └── LLMReranker.rerank(query, results, top_k)
   │     │           └── asyncio.gather(*[_score_document(...) for each result])
-  │     └── [reranker_type == "cross_encoder"]:
+  │     └── [reranker_type == "cross_encoder"]  requires sentence-transformers
   │           └── CrossEncoderReranker.rerank(query, results, top_k)
   │
   ├── 6. ResultCache.set(...)
   └── return list[SearchResult]
 
-Retriever.retrieve_as_context(query, match_count, search_type)    L334
+Retriever.retrieve_as_context(query, match_count, search_type)    L353
   └── retrieve(...)
         └── join chunks as formatted context string
 ```
@@ -155,8 +152,6 @@ Retriever.retrieve_as_context(query, match_count, search_type)    L334
 
 ## 3. RAG Agent (CLI)
 
-> See [RAG.md](RAG.md) for details.
-
 **Entry point**: `python -m rag.agent.agent_main`  →  [`agent_main()`](../rag/agent/agent_main.py#L75)
 
 ```
@@ -171,10 +166,10 @@ agent_main.py:stream_agent_interaction()                          L75
                     ├── CallToolsNode  (tool execution)
                     │   └── node.stream() yields:
                     │         FunctionToolCallEvent
-                    │           → search_knowledge_base(ctx, query, ...)  L244
-                    │               ├── RAGState.get_retriever()           L201
+                    │           → search_knowledge_base(ctx, query, ...)  L247
+                    │               ├── RAGState.get_retriever()           L202
                     │               │     └── PostgresHybridStore.initialize()
-                    │               ├── retriever.retrieve_as_context()    L334
+                    │               ├── retriever.retrieve_as_context()    L353
                     │               │     └── [see Query & Retrieval]
                     │               ├── mem0_store.get_context_string()
                     │               └── return combined_context
@@ -182,7 +177,7 @@ agent_main.py:stream_agent_interaction()                          L75
                     ├── ModelRequestNode  (LLM final answer)
                     └── EndNode
 
-RAGState lazy init (first get_retriever() call):                   L201
+RAGState lazy init (first get_retriever() call):                   L202
   ├── PostgresHybridStore().initialize()
   ├── EmbeddingGenerator()                                         L135
   ├── Retriever(store, embedder)                                   L181
@@ -193,24 +188,22 @@ RAGState lazy init (first get_retriever() call):                   L201
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L244) | `search_knowledge_base()` tool | L244 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L176) | `RAGState` | L176 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L201) | `RAGState.get_retriever()` | L201 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L437) | `traced_agent_run()` | L437 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L247) | `search_knowledge_base()` tool | L247 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L177) | `RAGState` | L177 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L202) | `RAGState.get_retriever()` | L202 |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L663) | `traced_agent_run()` | L663 |
 | [`rag/agent/agent_main.py`](../rag/agent/agent_main.py#L75) | `stream_agent_interaction()` | L75 |
 | [`rag/storage/vector_store/postgres.py`](../rag/storage/vector_store/postgres.py#L116) | `PostgresHybridStore` | L116 |
 | [`rag/ingestion/embedder.py`](../rag/ingestion/embedder.py#L135) | `EmbeddingGenerator` | L135 |
 | [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L181) | `Retriever` | L181 |
 | [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L234) | `Retriever.retrieve()` | L234 |
-| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L334) | `Retriever.retrieve_as_context()` | L334 |
+| [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L353) | `Retriever.retrieve_as_context()` | L353 |
 | [`rag/retrieval/retriever.py`](../rag/retrieval/retriever.py#L96) | `ResultCache` | L96 |
 | [`rag/memory/mem0_store.py`](../rag/memory/mem0_store.py#L94) | `Mem0Store` | L94 |
 
 ---
 
 ## 4. Mem0 Memory
-
-> See [RAG.md §16](RAG.md#16-mem0-memory-layer) for details.
 
 **Entry point**: [`Mem0Store`](../rag/memory/mem0_store.py#L93) methods (called from `search_knowledge_base`)
 
@@ -336,19 +329,19 @@ Page rerun:
 ── App 1: Legal Contract Assistant  rag/app/streamlit/streamlit_app.py ──
     │
     ▼
-PydanticAI Agent  rag/agent/rag_agent.py:L176
+PydanticAI Agent  rag/agent/rag_agent.py:L177
     │
     ├──────────────────────┬──────────────────────┬────────────────────┐
     ▼                      ▼                      ▼                    ▼
 search_knowledge_base()  search_knowledge_graph() run_graph_query()  Mem0Store
-L245                     L347                    L409                L94
+L247                     L349                    L478                L94
     │                      │                      │                    │
     ▼                      ▼                      ▼                    │
 Retriever  L181      create_kg_store()      create_kg_store()         │
-    │                 ├── AgeGraphStore L98   └── AgeGraphStore L98   │
-    ├── Embedder      │     search_entities        run_cypher_query    │
-    │                 │     get_related_entities    L525               │
-    ▼                 └── PgGraphStore L72 (legacy)                   ▼
+    │                 └── AgeGraphStore L139  └── AgeGraphStore L139  │
+    ├── Embedder            search_entities        run_cypher_query    │
+    │                       get_related_entities   L574                │
+    ▼                                                                  ▼
 PostgresHybridStore L116 ←─────────────────────────────────────────────┘
     │
     ▼
@@ -427,110 +420,95 @@ build_cuad_kg(store, doc_pool, eval_path, limit)
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `build_cuad_kg()` | L62 |
-| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `_get_document_id()` | L38 |
-| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `entity_type_for()` | L141 |
-| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `relationship_type_for()` | L146 |
-| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `ENTITY_TYPE_MAP` | L83 |
-| [`rag/knowledge_graph/constants.py`](../rag/knowledge_graph/constants.py) | `RELATIONSHIP_MAP` | L127 |
-| [`rag/knowledge_graph/cuad_kg_ingest.py`](../rag/knowledge_graph/cuad_kg_ingest.py) | `main()` | L115 |
-| [`rag/knowledge_graph/__init__.py`](../rag/knowledge_graph/__init__.py) | `create_kg_store()` | |
+| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `build_cuad_kg()` | L61 |
+| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `_get_document_id()` | L41 |
+| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `entity_type_for()` | L141 |
+| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `relationship_type_for()` | L146 |
+| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `ENTITY_TYPE_MAP` | L83 |
+| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `RELATIONSHIP_MAP` | L127 |
+| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `main()` | L162 |
+| [`kg/__init__.py`](../../kg/__init__.py) | `create_kg_store()` | L79 |
 
 ---
 
-## 8. Knowledge Graph — Query (AgeGraphStore / PgGraphStore)
+## 8. Knowledge Graph — Query (AgeGraphStore)
 
 Both stores share the same public interface; swap via `KG_BACKEND` env var.
 
 ```
-── AgeGraphStore (default, Apache AGE)  L98 ──────────────────────────
-── PgGraphStore  (legacy, SQL tables)   L72 ──────────────────────────
+── AgeGraphStore  kg/age_graph_store.py:L139 ───────────────────────
 
-initialize()                                       AGE:L124  PG:L85
-  ├── [AGE] asyncpg.create_pool(init=_age_init)    L92
+initialize()                                                L161
+  ├── asyncpg.create_pool(init=_age_init)           L133 (_age_init)
   │     └── _age_init(conn)   per-connection setup
   │           ├── LOAD '$libdir/plugins/age'
   │           └── SET search_path = ag_catalog, "$user", public
-  ├── [AGE] ag_catalog.create_graph(graph_name)
-  ├── [AGE] CREATE UNIQUE constraint on (normalized_name, entity_type, document_id)
-  └── [PG]  CREATE TABLE kg_entities, kg_relationships + indexes
+  └── ag_catalog.create_graph(graph_name)
 
-upsert_entity(name, entity_type, document_id, metadata) → UUID
-  ├── _normalize(name)                             L67  (from pg_graph_store)
-  ├── [AGE] _conn() → _cypher("MERGE (e:Entity {…})")
-  │     └── _unquote_agtype(result)                L82
-  └── [PG]  INSERT INTO kg_entities ON CONFLICT DO UPDATE (merge metadata)
+upsert_entity(name, entity_type, document_id, metadata) → UUID       L252
+  ├── _normalize(name)                             L57
+  └── _conn() → _cypher("MERGE (e:Entity {…})")    L234
+        └── _unquote_agtype(result)                L123
 
-add_relationship(src_id, tgt_id, rel_type, document_id, props) → UUID
-  ├── [AGE] _cypher("MATCH (s),(t) MERGE (s)-[r:REL_TYPE {…}]->(t)")
-  └── [PG]  INSERT INTO kg_relationships ON CONFLICT DO NOTHING
+add_relationship(src_id, tgt_id, rel_type, document_id, props) → UUID  L305
+  └── _cypher("MATCH (s),(t) MERGE (s)-[r:REL_TYPE {…}]->(t)")
 
-search_entities(query, entity_type, limit) → list[dict]
-  ├── [AGE] MATCH (e:Entity) WHERE toLower(e.name) CONTAINS toLower($query)
-  │         [optional] AND e.entity_type = $entity_type
-  └── [PG]  WHERE name_tsv @@ plainto_tsquery($query)
-            [optional] AND entity_type = $entity_type
-            ORDER BY ts_rank(…)
+search_entities(query, entity_type, limit) → list[dict]               L361
+  └── MATCH (e:Entity) WHERE toLower(e.name) CONTAINS toLower($query)
+        [optional] AND e.entity_type = $entity_type
 
-get_related_entities(entity_id, rel_type, limit) → list[dict]
-  ├── [AGE] MATCH (e)-[r]-(other)  WHERE id(e) = $id
-  │         [optional] AND type(r) = $rel_type
-  └── [PG]  UNION ALL of outgoing (source_id=$id) + incoming (target_id=$id)
+get_related_entities(entity_id, rel_type, limit) → list[dict]          L422
+  └── MATCH (e)-[r]-(other)  WHERE id(e) = $id
+        [optional] AND type(r) = $rel_type
 
-find_contracts_by_entity(entity_name, entity_type, limit) → list[dict]
+find_contracts_by_entity(entity_name, entity_type, limit) → list[dict]  L463
   ├── _normalize(entity_name)
-  ├── [AGE] MATCH (e:Entity {normalized_name:$n})-[]->(c:Entity {entity_type:"Contract"})
-  └── [PG]  JOIN kg_entities with documents WHERE normalized_name=$n
+  └── MATCH (e:Entity {normalized_name:$n})-[]->(c:Entity {entity_type:"Contract"})
 
-search_as_context(query, limit) → str             AGE:L413  PG:L403
+search_as_context(query, limit) → str                                  L503
   ├── search_entities(query, limit=limit)
   ├── [for each entity]: get_related_entities(entity_id, limit=5)
   └── format as "## Knowledge Graph — Facts\n- [TYPE] name\n  └─ REL → target"
         fallback: bullet list of entities if no relationships found
 
-get_graph_stats() → dict                          AGE:L452  PG:L454
-  ├── [AGE] MATCH (e:Entity) RETURN e.entity_type, count(*)
-  │         MATCH ()-[r]->() RETURN type(r), count(*)
-  └── [PG]  SELECT entity_type, COUNT(*) FROM kg_entities GROUP BY 1
-            SELECT relationship_type, COUNT(*) FROM kg_relationships GROUP BY 1
+get_graph_stats() → dict                                               L542
+  ├── MATCH (e:Entity) RETURN e.entity_type, count(*)
+  └── MATCH ()-[r]->() RETURN type(r), count(*)
 
-run_cypher_query(cypher) → str                    AGE:L525  PG:L473
-  ├── [AGE] guard: block CREATE/MERGE/SET/DELETE/REMOVE/DROP/DETACH
-  │         _parse_return_aliases(cypher)          L74  → list of display names
-  │           ├── regex-find RETURN clause
-  │           ├── paren-depth comma split
-  │           └── extract AS alias or last identifier token
-  │         build AS (c0 agtype, c1 agtype, …) from alias count
-  │         _conn() → conn.fetch(_cypher(cypher) + AS clause)
-  │         format as pipe-separated table: "col1 | col2\n---\nv1 | v2\n(N rows)"
-  └── [PG]  returns "Cypher requires AGE backend" message (stub)
+run_cypher_query(cypher) → str                                         L574
+  ├── guard: block CREATE/MERGE/SET/DELETE/REMOVE/DROP/DETACH
+  ├── _parse_return_aliases(cypher)                L74  → list of display names
+  │     ├── regex-find RETURN clause
+  │     ├── paren-depth comma split
+  │     └── extract AS alias or last identifier token
+  ├── build AS (c0 agtype, c1 agtype, …) from alias count
+  ├── _conn() → conn.fetch(_cypher(cypher) + AS clause)
+  └── format as pipe-separated table: "col1 | col2\n---\nv1 | v2\n(N rows)"
 ```
 
 **Internal helpers (AgeGraphStore)**:
 
 | Helper | Line | Purpose |
 |--------|------|---------|
-| `_normalize(name)` | pg L67 | `lower(re.sub(r"\s+", " ", name.strip()))` — imported from pg_graph_store |
-| `_unquote_agtype(value)` | L82 | strips surrounding `"` from AGE agtype strings |
-| `_age_init(conn)` | L92 | asyncpg pool `init=` callback; loads AGE extension + sets search_path |
-| `_conn()` | L181 | async context manager; acquires connection + re-runs AGE setup |
-| `_cypher(body)` | L194 | wraps body in `SELECT * FROM ag_catalog.cypher('graph', $$…$$, NULL) AS (v agtype)` |
+| `_normalize(name)` | L57 | `lower(re.sub(r"\s+", " ", name.strip()))` |
+| `_unquote_agtype(value)` | L123 | strips surrounding `"` from AGE agtype strings |
+| `_age_init(conn)` | L133 | asyncpg pool `init=` callback; loads AGE extension + sets search_path |
+| `_conn()` | L234 | async context manager; acquires connection + re-runs AGE setup |
+| `_cypher(body)` | L247 | wraps body in `SELECT * FROM ag_catalog.cypher('graph', $$…$$, NULL) AS (v agtype)` |
 | `_parse_return_aliases(cypher)` | L74 | parses RETURN clause → display name list for the AS column declaration |
 
 **Key files**:
 
 | File | Symbol | Line |
 |------|--------|------|
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L98) | `AgeGraphStore` | L98 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L74) | `_parse_return_aliases()` | L74 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L82) | `_unquote_agtype()` | L82 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L92) | `_age_init()` | L92 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L181) | `_conn()` | L181 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L194) | `_cypher()` | L194 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L525) | `run_cypher_query()` | L525 |
-| [`rag/knowledge_graph/pg_graph_store.py`](../rag/knowledge_graph/pg_graph_store.py#L72) | `PgGraphStore` | L72 |
-| [`rag/knowledge_graph/pg_graph_store.py`](../rag/knowledge_graph/pg_graph_store.py#L67) | `_normalize()` | L67 |
-| [`rag/knowledge_graph/pg_graph_store.py`](../rag/knowledge_graph/pg_graph_store.py#L473) | `run_cypher_query()` stub | L473 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L139) | `AgeGraphStore` | L139 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L74) | `_parse_return_aliases()` | L74 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L123) | `_unquote_agtype()` | L123 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L133) | `_age_init()` | L133 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L234) | `_conn()` | L234 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L247) | `_cypher()` | L247 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L574) | `run_cypher_query()` | L574 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L57) | `_normalize()` | L57 |
 
 ---
 
@@ -541,7 +519,7 @@ run_cypher_query(cypher) → str                    AGE:L525  PG:L473
 ```
 ── Tool: search_knowledge_graph ─────────────────────────────────── L347
 search_knowledge_graph(ctx, query, entity_type, limit)
-  ├── RAGState.get_kg_store()  (lazy init)                          L217
+  ├── RAGState.get_kg_store()  (lazy init)                          L216
   ├── [entity_type provided]:
   │     └── kg.search_entities(query, entity_type, limit)
   │           → "## Knowledge Graph — {entity_type} entities\n- [TYPE] name …"
@@ -553,19 +531,19 @@ search_knowledge_graph(ctx, query, entity_type, limit)
 
 ── Tool: run_graph_query ─────────────────────────────────────────── L409
 run_graph_query(ctx, cypher)
-  ├── RAGState.get_kg_store()  (lazy init, same cached instance)    L217
-  └── kg.run_cypher_query(cypher)                                   AGE:L525
+  ├── RAGState.get_kg_store()  (lazy init, same cached instance)    L216
+  └── kg.run_cypher_query(cypher)                                   L574
         ├── guard: block mutating keywords
         ├── _parse_return_aliases(cypher)  → display name list      L74
         ├── build AS (c0 agtype, …) clause
         ├── conn.fetch(_cypher(cypher) + AS clause)
         └── → pipe-separated table string
 
-── Shared lazy init ──────────────────────────────────────────────── L217
+── Shared lazy init ──────────────────────────────────────────────── L216
 RAGState.get_kg_store()
   ├── [first call] create_kg_store()  reads KG_BACKEND
   │     ├── [default "age"]      → AgeGraphStore().initialize()
-  │     └── [KG_BACKEND=postgres] → PgGraphStore().initialize()
+
   └── cache result in self._kg_store  (reused for all KG tool calls)
 ```
 
@@ -575,6 +553,6 @@ RAGState.get_kg_store()
 |------|--------|------|
 | [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L347) | `search_knowledge_graph()` tool | L347 |
 | [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L409) | `run_graph_query()` tool | L409 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L217) | `RAGState.get_kg_store()` | L217 |
-| [`rag/knowledge_graph/age_graph_store.py`](../rag/knowledge_graph/age_graph_store.py#L525) | `run_cypher_query()` | L525 |
-| [`rag/knowledge_graph/__init__.py`](../rag/knowledge_graph/__init__.py) | `create_kg_store()` | |
+| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L216) | `RAGState.get_kg_store()` | L216 |
+| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L574) | `run_cypher_query()` | L574 |
+| [`kg/__init__.py`](../../kg/__init__.py) | `create_kg_store()` | L79 |
