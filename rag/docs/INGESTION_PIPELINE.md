@@ -6,6 +6,16 @@
 
 ---
 
+## Table of Contents
+
+- [Pipeline Steps](#pipeline-steps)
+- [Modes](#modes)
+- [CUAD Legal Contract Ingestion](#cuad-legal-contract-ingestion)
+- [Supported Formats](#supported-formats)
+- [Configuration](#configuration)
+
+---
+
 ## Pipeline Steps
 
 For each document file:

@@ -4,6 +4,16 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
 
 ---
 
+## Table of Contents
+
+- [What It Does](#what-it-does)
+- [System Overview](#system-overview)
+- [AI Service Calls](#ai-service-calls)
+- [Key Files](#key-files)
+- [Further Reading](#further-reading)
+
+---
+
 ## What It Does
 
 1. **Ingests** documents (PDF, DOCX, audio, Markdown) → chunks → embeddings → PostgreSQL

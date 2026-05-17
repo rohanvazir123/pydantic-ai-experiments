@@ -4,6 +4,17 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
 
 ---
 
+## Table of Contents
+
+- [Stack](#stack)
+- [Ingestion Pipeline](#ingestion-pipeline)
+- [Retrieval Pipeline](#retrieval-pipeline)
+- [Query Flow (Agent)](#query-flow-agent)
+- [Database Schema](#database-schema)
+- [API Endpoints](#api-endpoints)
+
+---
+
 ## Stack
 
 | Layer | Technology |

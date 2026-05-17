@@ -4,6 +4,16 @@
 
 ---
 
+## Table of Contents
+
+- [Pipeline Steps](#pipeline-steps)
+- [Configuration](#configuration)
+- [Caching Layers](#caching-layers)
+- [Agent Integration](#agent-integration)
+- [Search Types](#search-types)
+
+---
+
 ## Pipeline Steps
 
 ```
