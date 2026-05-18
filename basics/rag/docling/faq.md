@@ -9,30 +9,22 @@
   - [Internal Workflow](#internal-workflow)
   - [Customization and Tuning](#customization-and-tuning)
   - [Image Handling and Local VLMs](#image-handling-and-local-vlms)
-  - [VLM picture annotation — how it works](#vlm-picture-annotation--how-it-works)
-  - [Results from running vlm_picture_annotation.py](#results-from-running-vlm_picture_annotationpy)
+  - [VLM Picture Annotation — How It Works](#vlm-picture-annotation--how-it-works)
+  - [Results from Running vlm_picture_annotation.py](#results-from-running-vlm_picture_annotationpy)
 - [Docling Chunking Failures](#docling-chunking-failures)
-  - [Which documents demonstrate bad chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
+  - [Which Documents Demonstrate Bad Chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
   - [Failure Scenarios and Fixes](#failure-scenarios-and-fixes)
   - [Scripts and Results](#scripts-and-results)
 - [Docling Output Format](#docling-output-format)
-  - [Chunk JSON structure](#chunk-json-structure)
-  - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
-- [Does Docling work with research papers?](#does-docling-work-with-research-papers)
-  - [Will a VLM fix the remaining issues?](#will-a-vlm-fix-the-remaining-issues)
-  - [Do we need a specialist model like Nougat for equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
-  - [Internal Pipeline](#internal-pipeline)
-  - [Graph Ontology](#graph-ontology)
-  - [LLM Prompts](#llm-prompts)
-  - [Local LLM and Configurables](#local-llm-and-configurables)
-  - [Context Window Management](#context-window-management)
-  - [PostgreSQL Storage Schema](#postgresql-storage-schema)
-  - [How Apache AGE is Used](#how-apache-age-is-used)
-  - [Query Modes](#query-modes)
-  - [What does the entity-relationship output look like?](#what-does-the-entity-relationship-output-look-like)
-  - [How is data stored in LIGHTRAG_VDB_ENTITY and LIGHTRAG_VDB_RELATION?](#how-is-data-stored-in-lightrag_vdb_entity-and-lightrag_vdb_relation)
-  - [Limitations and Where It Will Fail](#limitations-and-where-it-will-fail)
-  - [Will It Scale?](#will-it-scale)
+  - [Chunk JSON Structure](#chunk-json-structure)
+  - [How to Spot Column Mixing in the Output](#how-to-spot-column-mixing-in-the-output)
+- [Does Docling Work with Research Papers?](#does-docling-work-with-research-papers)
+  - [What Docling Gets Right](#what-docling-gets-right)
+  - [What It Struggles With](#what-it-struggles-with)
+  - [Practical Reality from Our Test Run](#practical-reality-from-our-test-run)
+  - [When It Genuinely Fails](#when-it-genuinely-fails)
+  - [Will a VLM Fix the Remaining Issues?](#will-a-vlm-fix-the-remaining-issues)
+  - [Do We Need a Specialist Model Like Nougat for Equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
 
 ---
 
@@ -519,6 +511,32 @@ chunker = HybridChunker(repeat_table_header=True)
 | `repeat_table_header=True` | **Works** | Table header rows are injected into every continuation chunk |
 | `strip_headers_footers()` via doc tree mutation | **Did not work** | `doc.body.children` manipulation does not remove items from the document in Docling 2.x — the internal ref structure is more complex |
 | Post-hoc chunk filtering for headers/footers | **TODO — revisit** | Simpler and more reliable: filter chunks by short length + all-caps or page-number patterns after chunking, without touching the document tree |
+
+#### How `TableFormerMode.ACCURATE` fixes two-column mixing
+
+The root cause of column mixing is that `FAST` mode (the default) uses a lighter layout model that does not reliably detect column boundaries. It reads text left-to-right across both columns, interleaving sentences from unrelated paragraphs. `ACCURATE` activates the full `DocLayNet`-based classifier, which identifies column regions as separate layout blocks and assigns reading order within each column before combining them.
+
+Switching to `ACCURATE` fixed column mixing for **content sections** but did not eliminate all flagged anomalies:
+
+| Document | Flagged after fix | What remained |
+|---|---|---|
+| `attention_is_all_you_need.pdf` | 2 chunks | Author name grid (page 1) + reference list fragment |
+| `bert_paper.pdf` | 1 chunk | Author name grid (page 1) |
+
+Both residual failures are the **author block on page 1** — a dense two-column grid of names and affiliations that the layout model still mis-reads. This is structural noise, not content. Introduction, methods, experiments, and results all chunked correctly. For RAG purposes these are accepted as noise and do not affect retrieval quality.
+
+**VLMs do not fix this.** Column mixing is a layout analysis problem — the text is already extracted by the text pipeline, just in the wrong order. VLMs only process image content and never see the mis-ordered text.
+
+#### Fix-to-failure mapping (confirmed results)
+
+| Failure | Fix applied | Works? |
+|---|---|---|
+| Two-column mixing — content sections | `TableFormerMode.ACCURATE` | Yes |
+| Two-column mixing — author block / reference list | No fix — accepted as noise | N/A |
+| Multi-page table splitting | `TableFormerMode.ACCURATE` + `do_cell_matching=False` + heuristic column-count post-processor | Partially |
+| Table continuation losing column context | `repeat_table_header=True` in `HybridChunker` | Yes |
+| Header / footer contamination | `strip_headers_footers()` via `doc.body.children` mutation | **Failed** — Docling 2.x internal ref structure is more complex; tree manipulation has no effect |
+| Header / footer contamination (alternative) | Post-hoc chunk filter: drop short chunks matching all-caps or page-number patterns | TODO — not yet tried |
 
 #### Output locations
 
