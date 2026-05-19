@@ -144,12 +144,12 @@ class PostgresHybridStore:
             try:
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-                try:
-                    await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
-                except Exception:
-                    # pg_search (ParadeDB) is optional — only needed for bm25_search().
-                    # Standard vector + tsvector search works without it.
-                    pass
+                # Uncomment to enable BM25 search via ParadeDB (requires pg_search extension).
+                # Install: https://docs.paradedb.com/documentation/getting-started/self-hosted
+                # try:
+                #     await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
+                # except Exception:
+                #     pass
             finally:
                 await temp_conn.close()
 
@@ -329,6 +329,9 @@ class PostgresHybridStore:
                 # Set IVF probes for better recall (default is 1, we use 10)
                 await conn.execute("SET ivfflat.probes = 10")
 
+                # <=> is pgvector cosine distance (0=identical, 2=opposite).
+                # 1 - distance converts it to similarity (1=identical, -1=opposite).
+                # IVFFlat index with probes=10 trades recall for speed vs exact scan.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -369,14 +372,31 @@ class PostgresHybridStore:
         self, query: str, match_count: int | None = None
     ) -> list[SearchResult]:
         """
-        Perform full-text search using PostgreSQL ts_vector.
+        Full-text search using PostgreSQL tsvector + ts_rank.
+
+        plainto_tsquery stems and ANDs the query terms using the English dictionary
+        (e.g. "machine learning" → 'machin' & 'learn'). Only documents containing
+        ALL stemmed terms pass the WHERE filter.
+
+        ts_rank scoring — what it does and does NOT do:
+          - Counts how often each query term appears in the tsvector (term frequency).
+          - Weights positions by lexeme type: title > body (if set at index time).
+          - No IDF: a common word like "the" scores the same as rare "indemnification".
+          - No length normalisation: we pass no normalization flag (default 0), so
+            longer documents are NOT penalised. A 2000-word chunk with 5 hits scores
+            the same as a 100-word chunk with 5 hits.
+          - No corpus-level statistics of any kind — scores are computed per-document.
+
+        Implication: ts_rank degrades as corpus grows because high-frequency terms
+        in many documents all receive the same score. BM25 (not used here) fixes this
+        via IDF. The semantic + fuzzy legs in hybrid_search compensate partially.
 
         Args:
             query: Search query text
             match_count: Number of results to return
 
         Returns:
-            List of search results ordered by text relevance
+            List of search results ordered by ts_rank score
         """
         await self.initialize()
 
@@ -386,7 +406,8 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
-                # Convert query to tsquery format
+                # ts_rank with no normalization flag (default 0) = raw term frequency only.
+                # No IDF, no length penalty. See docstring for full implications.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -428,16 +449,21 @@ class PostgresHybridStore:
         self, query: str, match_count: int | None = None
     ) -> list[SearchResult]:
         """
-        Perform fuzzy text search using pg_trgm trigram similarity.
+        Fuzzy search via pg_trgm's word_similarity function.
 
-        Catches typos, partial words, and short queries that plainto_tsquery misses.
+        Splits text into overlapping 3-character trigrams and scores the best
+        matching word-boundary alignment between query and content (0–1 float).
+        Threshold 0.2 filters noise; backed by a GIN trigram index for fast lookup.
+
+        Catches typos ("NeuralFow" → "NeuralFlow"), abbreviations, and partial words
+        that plainto_tsquery misses because it requires exact stem matches.
 
         Args:
             query: Search query text
             match_count: Number of results to return
 
         Returns:
-            List of search results ordered by trigram similarity
+            List of search results ordered by trigram similarity score
         """
         await self.initialize()
 
@@ -447,6 +473,9 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
+                # word_similarity scores the best trigram match between any word in
+                # the query and any word in the content (0–1). Threshold 0.2 filters
+                # noise; backed by a GIN pg_trgm index for fast lookup.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -484,66 +513,61 @@ class PostgresHybridStore:
             logger.error(f"Fuzzy search failed: {e}")
             return []
 
-    async def bm25_search(
-        self, query: str, match_count: int | None = None
-    ) -> list[SearchResult]:
-        """
-        Perform BM25 full-text search using pg_search (ParadeDB).
-
-        Provides better relevance ranking than ts_rank by accounting for
-        term frequency and document length normalization.
-
-        Args:
-            query: Search query text
-            match_count: Number of results to return
-
-        Returns:
-            List of search results ordered by BM25 score
-        """
-        await self.initialize()
-
-        if match_count is None:
-            match_count = self.settings.default_match_count
-        match_count = min(match_count, self.settings.max_match_count)
-
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT
-                        c.id as chunk_id,
-                        c.document_id,
-                        c.content,
-                        paradedb.score(c.id) as similarity,
-                        c.metadata,
-                        d.title as document_title,
-                        d.source as document_source
-                    FROM {self.settings.postgres_table_chunks} c
-                    JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
-                    WHERE c.id @@@ paradedb.match('content', $1)
-                    ORDER BY paradedb.score(c.id) DESC
-                    LIMIT $2
-                    """,
-                    query,
-                    match_count * 2,  # Over-fetch for RRF
-                )
-
-                return [
-                    SearchResult(
-                        chunk_id=str(row["chunk_id"]),
-                        document_id=str(row["document_id"]),
-                        content=row["content"],
-                        similarity=float(row["similarity"]),
-                        metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                        document_title=row["document_title"],
-                        document_source=row["document_source"],
-                    )
-                    for row in rows
-                ]
-
-        except Exception as e:
-            logger.error(f"BM25 search failed: {e}")
-            return []
+    # ------------------------------------------------------------------
+    # Uncomment to enable BM25 search via ParadeDB (pg_search extension).
+    # Also uncomment the corresponding lines in hybrid_search() below and
+    # the CREATE EXTENSION block in _do_initialize().
+    # Install: https://docs.paradedb.com/documentation/getting-started/self-hosted
+    # ------------------------------------------------------------------
+    # async def bm25_search(
+    #     self, query: str, match_count: int | None = None
+    # ) -> list[SearchResult]:
+    #     """
+    #     BM25 search via ParadeDB pg_search extension.
+    #     @@@ is ParadeDB's match operator. paradedb.score() computes BM25
+    #     (term frequency + IDF + length normalisation) — better than ts_rank
+    #     at scale. Requires pg_search to be installed and the extension enabled.
+    #     """
+    #     await self.initialize()
+    #     if match_count is None:
+    #         match_count = self.settings.default_match_count
+    #     match_count = min(match_count, self.settings.max_match_count)
+    #     try:
+    #         async with self.pool.acquire() as conn:
+    #             rows = await conn.fetch(
+    #                 f"""
+    #                 SELECT
+    #                     c.id as chunk_id,
+    #                     c.document_id,
+    #                     c.content,
+    #                     paradedb.score(c.id) as similarity,
+    #                     c.metadata,
+    #                     d.title as document_title,
+    #                     d.source as document_source
+    #                 FROM {self.settings.postgres_table_chunks} c
+    #                 JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
+    #                 WHERE c.id @@@ paradedb.match('content', $1)
+    #                 ORDER BY paradedb.score(c.id) DESC
+    #                 LIMIT $2
+    #                 """,
+    #                 query,
+    #                 match_count * 2,
+    #             )
+    #             return [
+    #                 SearchResult(
+    #                     chunk_id=str(row["chunk_id"]),
+    #                     document_id=str(row["document_id"]),
+    #                     content=row["content"],
+    #                     similarity=float(row["similarity"]),
+    #                     metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+    #                     document_title=row["document_title"],
+    #                     document_source=row["document_source"],
+    #                 )
+    #                 for row in rows
+    #             ]
+    #     except Exception as e:
+    #         logger.error(f"BM25 search failed: {e}")
+    #         return []
 
     async def hybrid_search(
         self,
@@ -552,9 +576,15 @@ class PostgresHybridStore:
         match_count: int | None = None,
     ) -> list[SearchResult]:
         """
-        Perform hybrid search combining semantic and keyword matching.
+        Runs three searches concurrently and merges via Reciprocal Rank Fusion (RRF, k=60):
 
-        Uses Reciprocal Rank Fusion (RRF) to merge semantic, FTS, trigram, and BM25 results.
+          1. semantic_search  — pgvector cosine distance (<=>); catches synonyms/paraphrasing
+          2. text_search      — tsvector ts_rank via plainto_tsquery; exact stemmed terms
+          3. fuzzy_search     — pg_trgm word_similarity; handles typos and partial matches
+
+        Each leg over-fetches (match_count × 2) for better RRF coverage. Any leg that raises
+        is caught by return_exceptions=True and treated as an empty list. RRF score =
+        Σ 1/(60 + rank) across legs, deduped by chunk_id.
 
         Args:
             query: Search query text
@@ -573,14 +603,23 @@ class PostgresHybridStore:
         # Over-fetch for better RRF results
         fetch_count = match_count * 2
 
-        # Run all four searches concurrently
-        semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
+        # Run all three searches concurrently.
+        # To add BM25 as a 4th leg: uncomment bm25_search() above, then replace
+        # the three lines below with the four-leg version in the comment that follows.
+        semantic_results, text_results, fuzzy_results = await asyncio.gather(
             self.semantic_search(query_embedding, fetch_count),
             self.text_search(query, fetch_count),
             self.fuzzy_search(query, fetch_count),
-            self.bm25_search(query, fetch_count),
             return_exceptions=True,
         )
+        # Four-leg version (ParadeDB):
+        # semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
+        #     self.semantic_search(query_embedding, fetch_count),
+        #     self.text_search(query, fetch_count),
+        #     self.fuzzy_search(query, fetch_count),
+        #     self.bm25_search(query, fetch_count),
+        #     return_exceptions=True,
+        # )
 
         # Handle errors gracefully
         if isinstance(semantic_results, Exception):
@@ -592,17 +631,18 @@ class PostgresHybridStore:
         if isinstance(fuzzy_results, Exception):
             logger.warning(f"Fuzzy search failed: {fuzzy_results}")
             fuzzy_results = []
-        if isinstance(bm25_results, Exception):
-            logger.warning(f"BM25 search failed: {bm25_results}")
-            bm25_results = []
+        # if isinstance(bm25_results, Exception):  # uncomment with 4-leg version
+        #     logger.warning(f"BM25 search failed: {bm25_results}")
+        #     bm25_results = []
 
-        if not any([semantic_results, text_results, fuzzy_results, bm25_results]):
+        if not any([semantic_results, text_results, fuzzy_results]):
             logger.error("All searches failed")
             return []
 
-        # Merge using RRF across all four signals
+        # Merge using RRF across all three signals.
+        # Four-leg version: _reciprocal_rank_fusion([semantic_results, text_results, fuzzy_results, bm25_results], k=60)
         merged_results = self._reciprocal_rank_fusion(
-            [semantic_results, text_results, fuzzy_results, bm25_results], k=60
+            [semantic_results, text_results, fuzzy_results], k=60
         )
 
         return merged_results[:match_count]

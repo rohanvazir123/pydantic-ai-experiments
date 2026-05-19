@@ -11,9 +11,7 @@ Links jump directly to the relevant line in source code.
 - [4. Mem0 Memory](#4-mem0-memory)
 - [5. Streamlit Apps](#5-streamlit-apps)
 - [6. Architecture Overview](#6-architecture-overview)
-- [7. Knowledge Graph — Build (CuadKgBuilder)](#7-knowledge-graph--build-cuadkgbuilder)
-- [8. Knowledge Graph — Query (AgeGraphStore)](#8-knowledge-graph--query-agegraphstore)
-- [9. Agent KG Tools (search_knowledge_graph)](#9-agent-kg-tools-search_knowledge_graph)
+- [7–9. Knowledge Graph](#79-knowledge-graph)
 
 ---
 
@@ -138,10 +136,22 @@ Retriever.retrieve(query, match_count, search_type, use_cache)    L234
   │     ├── [search_type == "text"]
   │     │     └── store.text_search(query, fetch_count)
   │     │           └── SQL: WHERE content_tsv @@ plainto_tsquery(...)
-  │     └── [search_type == "hybrid"]  (default)
-  │           ├── asyncio.gather(semantic_search, text_search)
-  │           └── _reciprocal_rank_fusion(results_list)
-  │                 └── RRF score = Σ 1/(k=60 + rank), deduplicate, sort
+  │     └── [search_type == "hybrid"]  (default)       postgres.py:560
+  │           └── PostgresHybridStore.hybrid_search(query, query_embedding, fetch_count)
+  │                 ├── asyncio.gather(                 ← 3 legs run concurrently; return_exceptions=True
+  │                 │     │                               so any failing leg returns [] and is skipped
+  │                 │     ├── semantic_search(query_embedding, fetch_count×2)
+  │                 │     │     └── pgvector <=> cosine distance; catches synonyms + paraphrasing
+  │                 │     │         IVFFlat index, probes=10; similarity = 1 − distance
+  │                 │     ├── text_search(query, fetch_count×2)
+  │                 │     │     └── tsvector GIN index + plainto_tsquery (stems + ANDs terms)
+  │                 │     │         ts_rank scores by term frequency / doc length
+  │                 │     └── fuzzy_search(query, fetch_count×2)
+  │                 │           └── pg_trgm word_similarity; handles typos + partial matches
+  │                 │               GIN trigram index; threshold 0.2 filters noise
+  │                 │   )
+  │                 └── _reciprocal_rank_fusion([sem, text, fuzzy], k=60)
+  │                       └── RRF score = Σ 1/(60 + rank), deduplicate by chunk_id, sort → [:match_count]
   │
   ├── 5. Rerank  (if reranker_enabled=True; off by default)
   │     ├── [reranker_type == "llm"]  ← default; no extra deps
@@ -389,187 +399,6 @@ KG Build CLI  kg/legal/ingestion/cuad_kg_ingest.py
 
 ---
 
-## 7. Knowledge Graph — Build (build_cuad_kg)
+## 7–9. Knowledge Graph
 
-> See [HYBRID_KG_QUESTIONS.md](HYBRID_KG_QUESTIONS.md) for evaluation queries over this graph.
-
-**Entry point**: `python -m rag.knowledge_graph.cuad_kg_ingest [--eval-path ...] [--limit N]`
-
-```
-main()                                                              cuad_kg_ingest.py
-  ├── load_settings()
-  ├── AgeGraphStore()  ← graph backend (AGE only)
-  ├── asyncpg.create_pool(settings.database_url)  ← doc lookups
-  └── build_cuad_kg(store, doc_pool, eval_path, limit)
-
-build_cuad_kg(store, doc_pool, eval_path, limit)
-  ├── load cuad_eval.json  → list[{question_type, answers, contract_title}]
-  ├── [for each QA pair]:
-  │     ├── _get_document_id(doc_pool, contract_title, cache)
-  │     │     └── doc_pool → conn.fetchrow(SELECT id WHERE title …)
-  │     │           (result cached in local dict)
-  │     ├── entity_type_for(question_type)      ← constants.py
-  │     │     └── ENTITY_TYPE_MAP.get(question_type, "Clause")
-  │     ├── relationship_type_for(entity_type)  ← constants.py
-  │     │     └── RELATIONSHIP_MAP.get(entity_type, "HAS_CLAUSE")
-  │     ├── store.upsert_entity("Contract", …)   ← contract node
-  │     └── [for each answer_text]:
-  │           ├── store.upsert_entity(entity_type, answer_text, …)
-  │           └── store.add_relationship(entity_id, contract_id, rel_type, …)
-  └── return {"entities": N, "relationships": N, "skipped": N}
-```
-
-**Entity type map (35+ CUAD question types → 9 entity types)**:
-
-| CUAD question type | Entity type | Relationship |
-|---|---|---|
-| `Parties` | `Party` | `PARTY_TO` |
-| `Governing Law` | `Jurisdiction` | `GOVERNED_BY_LAW` |
-| `Effective Date`, `Expiration Date`, … | `Date` | `HAS_DATE` |
-| `License Grant`, `Non-Transferable License`, … | `LicenseClause` | `HAS_LICENSE` |
-| `Termination For Convenience`, … | `TerminationClause` | `HAS_TERMINATION` |
-| `Non-Compete`, `Exclusivity`, … | `RestrictionClause` | `HAS_RESTRICTION` |
-| `IP Ownership Assignment`, `Work For Hire`, … | `IPClause` | `HAS_IP_CLAUSE` |
-| `Liability Cap`, `Uncapped Liability`, … | `LiabilityClause` | `HAS_LIABILITY` |
-| *(everything else)* | `Clause` | `HAS_CLAUSE` |
-
-**Key files**:
-
-| File | Symbol | Line |
-|------|--------|------|
-| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `build_cuad_kg()` | L61 |
-| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `_get_document_id()` | L41 |
-| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `entity_type_for()` | L141 |
-| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `relationship_type_for()` | L146 |
-| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `ENTITY_TYPE_MAP` | L83 |
-| [`kg/legal/common/cuad_ontology.py`](../../kg/legal/common/cuad_ontology.py) | `RELATIONSHIP_MAP` | L127 |
-| [`kg/legal/ingestion/cuad_kg_ingest.py`](../../kg/legal/ingestion/cuad_kg_ingest.py) | `main()` | L162 |
-| [`kg/__init__.py`](../../kg/__init__.py) | `create_kg_store()` | L79 |
-
----
-
-## 8. Knowledge Graph — Query (AgeGraphStore)
-
-Both stores share the same public interface; swap via `KG_BACKEND` env var.
-
-```
-── AgeGraphStore  kg/age_graph_store.py:L139 ───────────────────────
-
-initialize()                                                L161
-  ├── asyncpg.create_pool(init=_age_init)           L133 (_age_init)
-  │     └── _age_init(conn)   per-connection setup
-  │           ├── LOAD '$libdir/plugins/age'
-  │           └── SET search_path = ag_catalog, "$user", public
-  └── ag_catalog.create_graph(graph_name)
-
-upsert_entity(name, entity_type, document_id, metadata) → UUID       L252
-  ├── _normalize(name)                             L57
-  └── _conn() → _cypher("MERGE (e:Entity {…})")    L234
-        └── _unquote_agtype(result)                L123
-
-add_relationship(src_id, tgt_id, rel_type, document_id, props) → UUID  L305
-  └── _cypher("MATCH (s),(t) MERGE (s)-[r:REL_TYPE {…}]->(t)")
-
-search_entities(query, entity_type, limit) → list[dict]               L361
-  └── MATCH (e:Entity) WHERE toLower(e.name) CONTAINS toLower($query)
-        [optional] AND e.entity_type = $entity_type
-
-get_related_entities(entity_id, rel_type, limit) → list[dict]          L422
-  └── MATCH (e)-[r]-(other)  WHERE id(e) = $id
-        [optional] AND type(r) = $rel_type
-
-find_contracts_by_entity(entity_name, entity_type, limit) → list[dict]  L463
-  ├── _normalize(entity_name)
-  └── MATCH (e:Entity {normalized_name:$n})-[]->(c:Entity {entity_type:"Contract"})
-
-search_as_context(query, limit) → str                                  L503
-  ├── search_entities(query, limit=limit)
-  ├── [for each entity]: get_related_entities(entity_id, limit=5)
-  └── format as "## Knowledge Graph — Facts\n- [TYPE] name\n  └─ REL → target"
-        fallback: bullet list of entities if no relationships found
-
-get_graph_stats() → dict                                               L542
-  ├── MATCH (e:Entity) RETURN e.entity_type, count(*)
-  └── MATCH ()-[r]->() RETURN type(r), count(*)
-
-run_cypher_query(cypher) → str                                         L574
-  ├── guard: block CREATE/MERGE/SET/DELETE/REMOVE/DROP/DETACH
-  ├── _parse_return_aliases(cypher)                L74  → list of display names
-  │     ├── regex-find RETURN clause
-  │     ├── paren-depth comma split
-  │     └── extract AS alias or last identifier token
-  ├── build AS (c0 agtype, c1 agtype, …) from alias count
-  ├── _conn() → conn.fetch(_cypher(cypher) + AS clause)
-  └── format as pipe-separated table: "col1 | col2\n---\nv1 | v2\n(N rows)"
-```
-
-**Internal helpers (AgeGraphStore)**:
-
-| Helper | Line | Purpose |
-|--------|------|---------|
-| `_normalize(name)` | L57 | `lower(re.sub(r"\s+", " ", name.strip()))` |
-| `_unquote_agtype(value)` | L123 | strips surrounding `"` from AGE agtype strings |
-| `_age_init(conn)` | L133 | asyncpg pool `init=` callback; loads AGE extension + sets search_path |
-| `_conn()` | L234 | async context manager; acquires connection + re-runs AGE setup |
-| `_cypher(body)` | L247 | wraps body in `SELECT * FROM ag_catalog.cypher('graph', $$…$$, NULL) AS (v agtype)` |
-| `_parse_return_aliases(cypher)` | L74 | parses RETURN clause → display name list for the AS column declaration |
-
-**Key files**:
-
-| File | Symbol | Line |
-|------|--------|------|
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L139) | `AgeGraphStore` | L139 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L74) | `_parse_return_aliases()` | L74 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L123) | `_unquote_agtype()` | L123 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L133) | `_age_init()` | L133 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L234) | `_conn()` | L234 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L247) | `_cypher()` | L247 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L574) | `run_cypher_query()` | L574 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L57) | `_normalize()` | L57 |
-
----
-
-## 9. Agent KG Tools (search_knowledge_graph + run_graph_query)
-
-**Entry point**: Two Pydantic AI tools registered on the RAG agent for KG access.
-
-```
-── Tool: search_knowledge_graph ─────────────────────────────────── L347
-search_knowledge_graph(ctx, query, entity_type, limit)
-  ├── RAGState.get_kg_store()  (lazy init)                          L216
-  ├── [entity_type provided]:
-  │     └── kg.search_entities(query, entity_type, limit)
-  │           → "## Knowledge Graph — {entity_type} entities\n- [TYPE] name …"
-  └── [no entity_type]:
-        └── kg.search_as_context(query, limit)
-              ├── search_entities(query)
-              ├── get_related_entities(entity_id) per entity
-              └── → pipe-formatted context string
-
-── Tool: run_graph_query ─────────────────────────────────────────── L409
-run_graph_query(ctx, cypher)
-  ├── RAGState.get_kg_store()  (lazy init, same cached instance)    L216
-  └── kg.run_cypher_query(cypher)                                   L574
-        ├── guard: block mutating keywords
-        ├── _parse_return_aliases(cypher)  → display name list      L74
-        ├── build AS (c0 agtype, …) clause
-        ├── conn.fetch(_cypher(cypher) + AS clause)
-        └── → pipe-separated table string
-
-── Shared lazy init ──────────────────────────────────────────────── L216
-RAGState.get_kg_store()
-  ├── [first call] create_kg_store()  reads KG_BACKEND
-  │     ├── [default "age"]      → AgeGraphStore().initialize()
-
-  └── cache result in self._kg_store  (reused for all KG tool calls)
-```
-
-**Key files**:
-
-| File | Symbol | Line |
-|------|--------|------|
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L347) | `search_knowledge_graph()` tool | L347 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L409) | `run_graph_query()` tool | L409 |
-| [`rag/agent/rag_agent.py`](../rag/agent/rag_agent.py#L216) | `RAGState.get_kg_store()` | L216 |
-| [`kg/age_graph_store.py`](../../kg/age_graph_store.py#L574) | `run_cypher_query()` | L574 |
-| [`kg/__init__.py`](../../kg/__init__.py) | `create_kg_store()` | L79 |
+> Full KG call graphs live in [`kg/docs/CALL_GRAPH.md`](../../kg/docs/CALL_GRAPH.md) — KG population, CUAD fast ingest, NL→Cypher, entity search, context retrieval, AGE pool init, and key file table.

@@ -540,7 +540,7 @@ psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -f "C:\path\to\file.
 psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT version();"
 
 # List available extensions
-psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT name, installed_version FROM pg_available_extensions WHERE name IN ('vector', 'pg_trgm', 'pg_search');"
+psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT name, installed_version FROM pg_available_extensions WHERE name IN ('vector', 'pg_trgm');"
 
 # Check table row counts
 psql "postgresql://rag_user:rag_pass@localhost:5434/rag_db" -c "SELECT 'documents' AS tbl, COUNT(*) FROM documents UNION ALL SELECT 'chunks', COUNT(*) FROM chunks;"
@@ -601,10 +601,7 @@ Extensions are enabled automatically by `PostgresHybridStore.initialize()` on fi
 |-----------|-----------|--------|---------|
 | `vector` (pgvector) | `pgvector` | Always enabled | Dense vector storage + IVFFlat/HNSW ANN search |
 | `pg_trgm` | `pgvector` | Always enabled | Trigram similarity — fuzzy matching, `LIKE`/`ILIKE` acceleration |
-| `pg_search` (ParadeDB) | `pgvector` | Optional — skipped gracefully if absent | BM25 full-text search via `bm25` index + `@@@` operator |
 | `age` | `age` | Pre-installed in image | openCypher graph queries (`MATCH`, `MERGE`, `CREATE`) |
-
-The `pg_search` extension is the only optional one. If it's not available, the system falls back to native `ts_rank` for the text leg of hybrid search. The `pgvector/pgvector:pg17` image does not include ParadeDB, so BM25 search is not active by default.
 
 **Connection pooling**
 
@@ -2029,14 +2026,31 @@ At this scale, drop the tsvector leg from the retriever and route keyword querie
 
 **BM25 vs ts_rank**
 
-`ts_rank` is a term-frequency heuristic — it does not account for document length or inverse document frequency (IDF). BM25 (used by Elasticsearch and pg_search) does both, giving significantly better relevance ranking at scale. If retrieval quality degrades as the corpus grows, replacing `ts_rank` with BM25 is often the highest-leverage fix before switching engines entirely.
+`ts_rank` scoring — what it does and does NOT do:
+
+| Property | `ts_rank` (our impl) | BM25 |
+|---|---|---|
+| Term frequency (TF) | Yes — counts query term occurrences in tsvector | Yes |
+| IDF (inverse document frequency) | **No** — no corpus-level stats at all | Yes — rare terms score higher |
+| Document length normalisation | **No** — we pass no normalization flag (default 0) | Yes — longer docs penalised |
+| Per-document or corpus-wide | Per-document only | Corpus-wide |
+
+Because we call `ts_rank(content_tsv, query)` with no normalization argument, it uses the default bitmask `0`: raw term frequency, no penalties, no IDF. A common word like "agreement" scores the same as a rare term like "indemnification". A 2000-word chunk with 5 hits scores the same as a 100-word chunk with 5 hits.
+
+This degrades gracefully at small corpus sizes (hundreds of documents) but becomes a relevance problem as the corpus grows — high-frequency terms in many documents all score identically. The semantic leg of `hybrid_search` compensates partially since vector similarity inherently captures term rarity via embedding geometry.
+
+To add length normalisation without changing anything else, pass normalization bitmask `1` or `2`:
+```sql
+ts_rank(content_tsv, query, 1)  -- divide by 1 + log(doc length)
+ts_rank(content_tsv, query, 2)  -- divide by doc length
+```
 
 **Summary: what to do in this project**
 
 Current scale (hundreds of documents) — no action needed. If the corpus grows:
 1. Add a read replica and route `text_search` + `semantic_search` queries to it.
 2. Partition `chunks` by `document_id` hash (4–8 partitions covers up to ~5M chunks).
-3. At 10M+ chunks, replace `store.text_search()` with a pg_search or Elasticsearch call — the RRF merge layer does not need to change.
+3. At 10M+ chunks, replace `store.text_search()` with an Elasticsearch call or add length normalisation to `ts_rank` (bitmask `1`) — the RRF merge layer does not need to change.
 
 ---
 
@@ -2333,9 +2347,8 @@ The following indexes are active in the local PostgreSQL database. Each serves a
 | `chunks_embedding_idx` | ivfflat (cosine) | `embedding` | Semantic search (`semantic_search`) |
 | `chunks_content_tsv_idx` | GIN | `content_tsv` | Full-text search (`text_search`) |
 | `chunks_content_trgm_idx` | GIN (trigram) | `content` | Fuzzy search (`fuzzy_search`) |
-| `chunks_bm25_idx` | bm25 (pg_search) | `id`, `content` | BM25 search (`bm25_search`) |
 
-All four search indexes feed into `hybrid_search` via parallel `asyncio.gather`, then merge through Reciprocal Rank Fusion (RRF).
+All three search indexes feed into `hybrid_search` via parallel `asyncio.gather`, then merge through Reciprocal Rank Fusion (RRF).
 
 <a id="q116d"></a>
 **Q116d. How does re-indexing happen on the fly?**
@@ -3010,7 +3023,7 @@ Leg 3 (Cypher) is currently exposed as a separate agent tool (`search_knowledge_
 
 ```
 score(chunk) = Σ  1 / (60 + rank_i)
-               i ∈ {vector, bm25, kg}
+               i ∈ {vector, fts, fuzzy}
 
 where rank_i = position of chunk in leg i's result list (1-based),
       chunks not in a leg's results are omitted from that term

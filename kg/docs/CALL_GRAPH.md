@@ -2,6 +2,18 @@
 
 Method-level call graphs for all KG workflows.  Line numbers reference the source files as of 2026-05-16.
 
+## Table of Contents
+
+- [KG Population](#kg-population-python--m-kglegalingestionextraction_pipeline)
+  - [Silver + Gold replay](#silver--gold-replay-no-llm-fast)
+  - [Contract loading](#contract-loading)
+- [CUAD Fast Ingest](#cuad-fast-ingest-python--m-kglegalingestioncuad_kg_ingest)
+- [NL → Cypher Query](#nl--cypher-query)
+- [Entity Search](#entity-search-api--streamlit--rag-agent-tool)
+- [Context Retrieval](#context-retrieval-rag-agent-tool--api)
+- [AGE Pool Initialization](#age-pool-initialization)
+- [Key Files](#key-files)
+
 ---
 
 ## KG Population (`python -m kg.legal.ingestion.extraction_pipeline`)
@@ -93,12 +105,27 @@ AgeGraphStore.run_cypher_query(cypher)                           L574 (age_graph
 
 ---
 
-## Entity Search (API + Streamlit)
+## Entity Search (API + Streamlit + RAG agent tool)
+
+Four production callers: RAG agent `search_knowledge_graph` tool (`rag/agent/rag_agent.py:390`),
+REST API (`kg/app/rest_api/api.py:170`), Streamlit UI (`kg/app/streamlit/streamlit_app.py:131`),
+and `HybridKGRetriever` (`rag/retrieval/hybrid_kg_retriever.py:135`).
 
 ```
 AgeGraphStore.search_entities(query, entity_type, limit)         L361 (age_graph_store.py)
-    └── MATCH (e:{label}) WHERE toLower(e.name) CONTAINS {query}
-        RETURN e.uuid, e.name, e.label, e.document_id LIMIT {limit}
+    │
+    ├── [EntityIndex initialized]  ← fast path via shadow table
+    │     EntityIndex.hybrid_search(query, label=entity_type, limit)  L199 (entity_index.py)
+    │         ├── EmbeddingGenerator.embed_query(query)       → q_embedding
+    │         ├── _SQL_HYBRID.format(label_filter, limit)     L78  (entity_index.py)
+    │         │     └── asyncpg: WITH text_ranked AS (tsvector BM25),
+    │         │                       vec_ranked  AS (pgvector cosine)
+    │         │                  SELECT ... RRF(k=60) score → ORDER BY score DESC
+    │         └── [no rows] → _vector_only(q_embedding, label, limit)  fallback
+    │
+    └── [EntityIndex not initialized]  ← slow fallback (O(n) CONTAINS scan in AGE)
+          MATCH (e:{label}) WHERE toLower(e.name) CONTAINS {query}
+          RETURN e.uuid, e.name, e.label, e.document_id LIMIT {limit}
 ```
 
 ---

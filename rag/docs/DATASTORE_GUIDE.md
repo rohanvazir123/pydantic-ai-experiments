@@ -59,8 +59,7 @@ class VectorStore(Protocol):
 | `semantic_search(query_embedding, match_count)` | pgvector cosine similarity search |
 | `text_search(query, match_count)` | Full-text search via `tsvector` |
 | `fuzzy_search(query, match_count)` | Trigram fuzzy search via `pg_trgm` |
-| `bm25_search(query, match_count)` | BM25 search via `pg_search` (ParadeDB, optional) |
-| `hybrid_search(query, query_embedding, match_count)` | RRF fusion of all four signals |
+| `hybrid_search(query, query_embedding, match_count)` | RRF fusion of all three signals |
 | `clean_collections()` | Delete all chunks and documents |
 | `get_document_by_source(source)` | Fetch document dict by source path |
 | `get_document_hash(source)` | Fetch `content_hash` from document metadata |
@@ -81,8 +80,7 @@ class VectorStore(Protocol):
 - pgvector extension for vector similarity search
 - PostgreSQL tsvector for full-text search
 - pg_trgm for fuzzy/trigram search (typo tolerance)
-- pg_search (ParadeDB) for BM25 ranking (optional)
-- RRF fusion across all four search signals
+- RRF fusion across all three search signals
 - Works with Supabase, or local PostgreSQL
 
 **Usage:**
@@ -109,12 +107,10 @@ The following extensions are enabled automatically on `initialize()`:
 |-----------|---------|----------|
 | `vector` | pgvector — vector similarity search | Yes |
 | `pg_trgm` | Trigram fuzzy matching | Yes |
-| `pg_search` | ParadeDB BM25 full-text ranking | No (optional) |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS pg_search;  -- optional (ParadeDB)
 ```
 
 #### Tables
@@ -161,9 +157,6 @@ CREATE INDEX chunks_content_trgm_idx ON chunks USING GIN(content gin_trgm_ops);
 CREATE INDEX chunks_document_id_idx ON chunks(document_id);
 CREATE INDEX documents_source_idx ON documents(source);
 
--- BM25 index (optional — requires pg_search / ParadeDB)
-CREATE INDEX chunks_bm25_idx ON chunks
-    USING bm25 (id, content) WITH (key_field='id');
 ```
 
 > **IVFFlat auto-reindex:** After each `add()` call, the store checks if the total chunk count has grown beyond 3× the count at last index build time. If so, it issues `REINDEX INDEX CONCURRENTLY chunks_embedding_idx` automatically to maintain recall quality.
@@ -227,36 +220,16 @@ LIMIT $2;
 
 Catches typos and partial-word matches that `plainto_tsquery` misses.
 
-#### BM25 Search (pg_search / ParadeDB — optional)
+#### Hybrid Search (RRF over 3 signals)
 
-```sql
-SELECT
-    c.id as chunk_id,
-    c.document_id,
-    c.content,
-    paradedb.score(c.id) as similarity,
-    c.metadata,
-    d.title as document_title,
-    d.source as document_source
-FROM chunks c
-JOIN documents d ON c.document_id = d.id
-WHERE c.id @@@ paradedb.match('content', $1)
-ORDER BY paradedb.score(c.id) DESC
-LIMIT $2;
-```
-
-Provides better relevance ranking than `ts_rank` via term-frequency / document-length normalization. Falls back gracefully to tsvector search when `pg_search` is not installed.
-
-#### Hybrid Search (RRF over 4 signals)
-
-All four searches run concurrently via `asyncio.gather`. Results are merged with Reciprocal Rank Fusion (k=60):
+All three searches run concurrently via `asyncio.gather`. Results are merged with Reciprocal Rank Fusion (k=60):
 
 ```
 rrf_score(chunk) = Σ 1 / (k + rank_in_list)
-                   across [semantic, fts, fuzzy, bm25]
+                   across [semantic, fts, fuzzy]
 ```
 
-Failed or unavailable search signals are silently excluded from the merge.
+Any leg that raises an exception is silently excluded from the merge.
 
 ### 3.3 Settings
 
@@ -395,20 +368,19 @@ class <Name>HybridStore:
             match_count = self.settings.default_match_count
 
         fetch_count = match_count * 2
-        semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
+        semantic_results, text_results, fuzzy_results = await asyncio.gather(
             self.semantic_search(query_embedding, fetch_count),
             self.text_search(query, fetch_count),
             self.fuzzy_search(query, fetch_count),
-            self.bm25_search(query, fetch_count),
             return_exceptions=True,
         )
 
-        for attr in ("semantic_results", "text_results", "fuzzy_results", "bm25_results"):
+        for attr in ("semantic_results", "text_results", "fuzzy_results"):
             if isinstance(locals()[attr], Exception):
                 locals()[attr] = []
 
         return self._reciprocal_rank_fusion(
-            [semantic_results, text_results, fuzzy_results, bm25_results]
+            [semantic_results, text_results, fuzzy_results]
         )[:match_count]
 
     def _reciprocal_rank_fusion(
@@ -665,9 +637,8 @@ await store.add(chunks, doc_id)
 semantic_results = await store.semantic_search(query_embedding, 10)
 text_results     = await store.text_search(query, 10)
 fuzzy_results    = await store.fuzzy_search(query, 10)
-bm25_results     = await store.bm25_search(query, 10)  # requires pg_search
 
-# Combined RRF over all four signals
+# Combined RRF over all three signals
 results = await store.hybrid_search(query, query_embedding, 10)
 
 await store.close()
