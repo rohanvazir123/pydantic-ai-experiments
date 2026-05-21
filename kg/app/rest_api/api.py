@@ -1,3 +1,17 @@
+# Copyright 2024 The Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Knowledge Graph — FastAPI server.
 
@@ -159,7 +173,7 @@ async def stats() -> StatsResponse:
         return StatsResponse(**data)
     except Exception as exc:
         logger.exception("Stats endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/search", response_model=list[EntityResult], tags=["graph"])
@@ -183,7 +197,7 @@ async def search(request: SearchRequest) -> list[EntityResult]:
         ]
     except Exception as exc:
         logger.exception("Search endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/context", tags=["graph"])
@@ -195,7 +209,7 @@ async def context(request: ContextRequest) -> dict[str, str]:
         return {"context": ctx}
     except Exception as exc:
         logger.exception("Context endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/related", response_model=list[RelatedResult], tags=["graph"])
@@ -219,7 +233,7 @@ async def related(request: RelatedRequest) -> list[RelatedResult]:
         ]
     except Exception as exc:
         logger.exception("Related endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/contracts", response_model=list[ContractResult], tags=["graph"])
@@ -235,7 +249,7 @@ async def contracts(request: ContractsRequest) -> list[ContractResult]:
         return [ContractResult(title=r["title"], document_id=r["document_id"]) for r in results]
     except Exception as exc:
         logger.exception("Contracts endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/cypher", tags=["graph"])
@@ -247,7 +261,7 @@ async def cypher(request: CypherRequest) -> dict[str, str]:
         return {"result": result}
     except Exception as exc:
         logger.exception("Cypher endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/nl_query", response_model=NLQueryResponse, tags=["graph"])
@@ -267,7 +281,7 @@ async def nl_query(request: NLQueryRequest) -> NLQueryResponse:
         )
     except Exception as exc:
         logger.exception("NL query endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 if __name__ == "__main__":

@@ -84,13 +84,13 @@ class Settings(BaseSettings):
         default=10, ge=1, description="Maximum PostgreSQL connection pool size"
     )
 
-    @field_validator("postgres_table_documents", "postgres_table_chunks", mode="before")
+    @field_validator("postgres_table_documents", "postgres_table_chunks", "age_graph_name", mode="before")
     @classmethod
     def validate_table_name(cls, v: str) -> str:
-        """Prevent SQL injection via settings-supplied table names."""
+        """Prevent SQL/Cypher injection via settings-supplied table and graph names."""
         if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", v):
             raise ValueError(
-                f"Invalid table name '{v}': only letters, digits, and underscores allowed"
+                f"Invalid name '{v}': only letters, digits, and underscores allowed"
             )
         return v
 

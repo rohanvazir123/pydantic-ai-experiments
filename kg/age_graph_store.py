@@ -1,3 +1,17 @@
+# Copyright 2024 The Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Apache AGE knowledge graph store.
 
@@ -581,7 +595,9 @@ class AgeGraphStore:
         assert self.pool, "Call initialize() first"
 
         if re.search(
-            r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|DETACH)\b", cypher, re.IGNORECASE
+            r"\b(CREATE|MERGE|SET|DELETE|REMOVE|DROP|DETACH|FOREACH|LOAD\s+CSV|CALL)\b",
+            cypher,
+            re.IGNORECASE,
         ):
             return "Error: only read-only MATCH queries are permitted."
 
