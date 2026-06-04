@@ -1,4 +1,4 @@
-# TODO
+# RAG v2 — System Design
 
 ## Table of Contents
 
@@ -10,6 +10,7 @@
   - [Redis Pub/Sub + Async Worker Model](#redis-pubsub--async-worker-model)
   - [Caching Architecture](#caching-architecture)
   - [Retrieval Pipeline](#retrieval-pipeline)
+  - [Confidence-Based Scoring](#confidence-based-scoring)
   - [Model Tiering](#model-tiering)
   - [Query Validation & Hook System](#query-validation--hook-system)
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
@@ -315,9 +316,127 @@ Citation model:
         chunk_id: UUID
         document_title: str
         document_source: str      # file path or URL
-        relevance_score: float    # post-rerank score
+        relevance_score: float    # post-rerank score (confidence, 0-1)
         excerpt: str              # ≤ 200 chars of the supporting chunk
 ```
+
+---
+
+### Confidence-Based Scoring
+
+#### Why the Current `similarity` Field Is Not a Confidence Score
+
+The existing `SearchResult.similarity` field is a catch-all that holds fundamentally different values depending on search mode:
+
+| Search mode | What `similarity` actually contains | Calibrated 0–1? |
+|-------------|-------------------------------------|-----------------|
+| `semantic` | `1 - pgvector cosine distance` | Yes — but cosine similarity ≠ relevance |
+| `text` | `ts_rank` output | No — unbounded, no IDF, no length norm |
+| `fuzzy` | `pg_trgm word_similarity` | Yes — but trigram overlap ≠ semantic relevance |
+| `hybrid` (default) | RRF score `Σ 1/(60+rank)` | No — rank-based, max ~0.05 |
+
+The `min_relevance_score` guardrail in `Retriever` only fires for `search_type == "semantic"` for exactly this reason — applying a threshold to an RRF score or `ts_rank` float would be meaningless. This means the guardrail is effectively dead in the default hybrid path.
+
+After CrossEncoder reranking, scores are normalised to 0–1 and carry real signal — but they are used only for ordering and trimming, not for filtering. No chunk is ever dropped based on post-rerank confidence.
+
+#### Design: Dual-Score `SearchResult`
+
+The `knowledge/` module will separate raw search scores from calibrated confidence:
+
+```python
+class SearchResult(BaseModel):
+    chunk_id: UUID
+    document_id: UUID
+    document_title: str
+    document_source: str
+    content: str
+    metadata: dict[str, Any]
+
+    # Raw score from the search leg — scale varies by search_type
+    raw_score: float
+    raw_score_type: Literal["cosine_similarity", "ts_rank", "trigram_similarity", "rrf"]
+
+    # Calibrated confidence — populated after reranking; None until then
+    # Always 0-1; comparable across search types and corpus sizes
+    confidence: float | None = None
+```
+
+`Citation.relevance_score` maps to `confidence`, never `raw_score`. The agent and the API response only expose `confidence`.
+
+#### Confidence Population
+
+```
+hybrid_search() → SearchResult[] with raw_score=rrf, raw_score_type="rrf", confidence=None
+      │
+      ▼
+CrossEncoderReranker.rerank()
+      │  scores all (query, chunk) pairs in one batch forward pass
+      │  normalises raw logits → [0, 1] via sigmoid
+      │
+      └─► SearchResult.confidence = sigmoid(cross_encoder_logit)   # populated here
+          SearchResult.raw_score  = rrf_score                      # unchanged
+
+semantic_search() (standalone) → confidence = raw cosine similarity  # already 0-1
+text_search()    (standalone) → confidence = None (ts_rank is not calibrated)
+```
+
+`confidence` is set on every result returned from the retriever whenever reranking is on (which is always, per design). For standalone semantic search without reranking, `confidence` falls back to the cosine similarity score.
+
+#### Confidence Threshold Filter
+
+Replace the current `search_type == "semantic"` guardrail with a mode-agnostic confidence filter applied post-rerank:
+
+```python
+# knowledge/retrieval/retriever.py
+MIN_CONFIDENCE_THRESHOLD: float = settings.min_confidence_score  # default 0.10
+
+results = [r for r in reranked if r.confidence is not None and r.confidence >= MIN_CONFIDENCE_THRESHOLD]
+```
+
+Settings additions:
+```python
+min_confidence_score: float = 0.10   # drop chunks with post-rerank confidence < this
+confidence_warn_threshold: float = 0.40  # log warning if best chunk confidence < this
+```
+
+If the top result's `confidence < confidence_warn_threshold`, the agent receives a low-confidence context flag and the system prompt includes: *"The retrieved context has low confidence scores. State any uncertainty explicitly."*
+
+#### Confidence in the Response
+
+Every API response exposes per-citation confidence:
+
+```json
+{
+  "answer": "The PTO policy allows ...",
+  "citations": [
+    {
+      "chunk_id": "uuid",
+      "document_title": "Employee Handbook",
+      "document_source": "hr/handbook.pdf",
+      "confidence": 0.87,
+      "excerpt": "Employees accrue 15 days of PTO per year..."
+    }
+  ],
+  "low_confidence_context": false
+}
+```
+
+`low_confidence_context: true` is a flag clients can use to show a UI warning or trigger a human-review hook.
+
+#### EvalResult Extension
+
+Add `confidence` tracking to offline evaluation:
+
+```python
+class EvalResult(BaseModel):
+    ...
+    # Confidence distribution over retrieved chunks
+    mean_confidence: float | None       # mean post-rerank confidence across top-K
+    min_confidence: float | None        # lowest confidence chunk that was used
+    low_confidence_flag: bool = False   # True if min_confidence < warn_threshold
+```
+
+This lets the Grafana dashboard correlate low-confidence retrieval with low faithfulness or poor user feedback — the primary signal for knowing when to improve the index or add more data to a corpus.
 
 ---
 
@@ -1304,6 +1423,19 @@ Before committing to full integration, validate these items in a spike branch:
 - [ ] Add `eval-worker` service to Docker Compose
 - [ ] Wire regression check into GitHub Actions CI (block merge on regression)
 - [ ] Add all eval Prometheus metrics + 7-row Grafana dashboard
+
+#### Phase K — Confidence-Based Scoring
+- [ ] Add `raw_score`, `raw_score_type`, `confidence` fields to `SearchResult` in `knowledge/ingestion/models.py`; deprecate bare `similarity`
+- [ ] Update `CrossEncoderReranker.rerank()` to populate `confidence` via `sigmoid(logit)` on every result
+- [ ] Update semantic standalone path: set `confidence = raw_score` (cosine similarity) when reranker is off
+- [ ] Replace `search_type == "semantic"` guardrail in `Retriever` with mode-agnostic `confidence >= min_confidence_score` filter (post-rerank only)
+- [ ] Add `min_confidence_score` and `confidence_warn_threshold` to `settings.py`
+- [ ] Wire low-confidence flag into agent system prompt: prepend uncertainty notice when best chunk confidence < `confidence_warn_threshold`
+- [ ] Add `confidence` field to `Citation` model; map from `SearchResult.confidence`
+- [ ] Add `low_confidence_context: bool` to API response envelope
+- [ ] Add `mean_confidence`, `min_confidence`, `low_confidence_flag` fields to `EvalResult`
+- [ ] Update `metrics/retrieval.py` to record and report confidence distribution per eval run
+- [ ] Port changes back to `rag/retrieval/retriever.py` and `rag/retrieval/rerankers.py` for current system (pre-`knowledge/` migration)
 
 ---
 
