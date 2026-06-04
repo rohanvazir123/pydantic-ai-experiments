@@ -878,63 +878,77 @@ docker run -p 8501:8501 --env-file .env rag-streamlit
 
 ## 3. Chunking Strategies
 
-### Current Implementation: DoclingHybridChunker
+### Chunker Interface (`rag/ingestion/chunkers/base.py`)
 
-**Location**: [`rag/ingestion/chunkers/docling.py`](../rag/ingestion/chunkers/docling.py)
+All chunkers implement one of two protocols:
 
-#### What It Does
+```python
+class Chunker(Protocol):
+    def chunk(self, document: IngestedDocument) -> list[DocumentChunk]: ...
 
-`DoclingHybridChunker` wraps Docling's built-in `HybridChunker`. Rather than splitting text blindly at character counts, it understands the document's structure — sections, headings, paragraphs, tables, code blocks — and uses that structure to find natural chunk boundaries.
+class AsyncChunker(Protocol):
+    async def chunk_document(
+        self, content: str, title: str, source: str,
+        metadata: dict | None = None, **kwargs
+    ) -> list[ChunkData]: ...
+```
+
+`DoclingHybridChunker` and `SemanticChunker` implement `AsyncChunker`. The `chunk_document` signature is the canonical interface — any new chunker must match it.
+
+---
+
+### 3.1 DoclingHybridChunker — **Active default**
+
+**Location**: `rag/ingestion/chunkers/docling.py`
+
+Wraps Docling's built-in `HybridChunker`. Understands document structure — sections, headings, paragraphs, tables, code blocks — and finds natural chunk boundaries rather than splitting at character counts.
 
 #### Initialisation
 
 ```python
-# docling.py:130-135
-TOKENIZER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-
-tokenizer_obj = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)
+# docling.py:129-135
+tokenizer_obj = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)  # "sentence-transformers/all-MiniLM-L6-v2"
 self.chunker = HybridChunker(
     tokenizer=tokenizer_obj,
-    max_tokens=config.max_tokens,   # hard token ceiling per chunk
-    merge_peers=True,               # merge small sibling sections
+    max_tokens=config.max_tokens,  # hard token ceiling per chunk
+    merge_peers=True,              # merge short adjacent sibling sections
 )
+self.tokenizer = tokenizer_obj    # stored separately for token counting
 ```
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
 | `max_tokens` | `512` | Hard token ceiling — chunks never exceed this |
 | `merge_peers` | `True` | Merges short adjacent sibling sections into one chunk |
-| Tokenizer | `all-MiniLM-L6-v2` | Used for accurate token counting (not for embeddings) |
-| `chunk_size` | `1000` | Character limit for fallback chunker |
+| Tokenizer | `all-MiniLM-L6-v2` | Token counting only — not used for embeddings |
+| `chunk_size` | `1000` | Character limit for fallback sliding window |
 | `chunk_overlap` | `200` | Overlap for fallback sliding window |
+| `min_chunk_size` | `100` | Minimum chunk size; fallback won't produce smaller chunks |
 
-#### Requires a `DoclingDocument`
+#### Primary path — requires a `DoclingDocument`
 
-The primary path requires a `DoclingDocument` object — the structured representation produced by Docling's `DocumentConverter`. This is passed in from the ingestion pipeline directly (the converter result is reused, not re-run):
+The converter result is passed in directly (reused, not re-run):
 
 ```python
-# pipeline.py — converter result passed directly to chunker
 chunks = await self.chunker.chunk_document(
     content=markdown_text,
     title=title,
     source=str(file_path),
     metadata=metadata,
-    docling_doc=docling_doc,   # ← structured doc from DocumentConverter
+    docling_doc=docling_doc,   # structured doc from DocumentConverter
 )
 ```
 
-If `docling_doc` is `None` (e.g. for plain `.txt` files), the chunker logs a warning and falls back to `_simple_fallback_chunk()`.
+If `docling_doc` is `None` (e.g. plain `.txt`), the chunker logs a warning and falls back to `_simple_fallback_chunk()`.
 
-#### `contextualize()` — Heading Context Prepended
-
-After chunking, each chunk is passed through `HybridChunker.contextualize()`:
+#### `contextualize()` — heading context prepended
 
 ```python
 # docling.py:191
 contextualized_text = self.chunker.contextualize(chunk=chunk)
 ```
 
-This prepends the full heading hierarchy to the chunk text:
+Prepends the full heading hierarchy so every chunk is self-contained:
 
 ```
 ## Company Overview
@@ -942,160 +956,159 @@ This prepends the full heading hierarchy to the chunk text:
 Our mission is to build AI tools that...
 ```
 
-Without contextualization, the second chunk of a section would contain only the body text, with no indication of which section it belongs to. With it, every chunk is self-contained — the embedding captures both the topic (heading) and the content (body).
+Chunks without contextualization carry no section signal in their embedding. With it, the embedding captures both topic (heading) and content (body).
 
 #### Fallback: `_simple_fallback_chunk()`
 
-Used when no `DoclingDocument` is available or when `HybridChunker` raises an exception:
+Used when no `DoclingDocument` is available or `HybridChunker` raises:
 
 ```python
-# docling.py:249-292
-# Sliding window with sentence-boundary detection
+# docling.py:249-292 — sliding window with sentence-boundary detection
 while start < len(content):
     end = start + chunk_size
-    # Walk back from end to find ".!?\n" sentence boundary
     for i in range(end, max(start + min_chunk_size, end - 200), -1):
         if content[i] in ".!?\n":
             chunk_end = i + 1
             break
     chunks.append(ChunkData(content=chunk_text, ...))
-    start = end - overlap   # advance with overlap
+    start = end - overlap
 ```
 
-Chunks are tagged `chunk_method: "simple_fallback"` in metadata so you can distinguish them.
+Chunks are tagged `chunk_method: "simple_fallback"` in metadata.
 
 #### Output: `ChunkData`
-
-Each chunk carries:
 
 | Field | Contents |
 |-------|----------|
 | `content` | Contextualized chunk text (heading hierarchy + body) |
 | `index` | Position within document |
 | `start_char` / `end_char` | Estimated character offsets |
-| `token_count` | Exact token count via the tokenizer |
+| `token_count` | Exact token count via tokenizer |
 | `metadata.chunk_method` | `"hybrid"` or `"simple_fallback"` |
 | `metadata.has_context` | `True` when heading context was prepended |
 | `metadata.total_chunks` | Total chunk count for the document |
 
-### Available Strategies
+---
 
-#### 2.1 Fixed-Size Chunking
-Already implemented as fallback in `_simple_fallback_chunk()`.
+### 3.2 SemanticChunker / GradientSemanticChunker — **Implemented, not wired**
 
-```python
-# rag/ingestion/chunkers/docling.py
-def _simple_fallback_chunk(self, text: str) -> list[ChunkData]:
-    # Sliding window with sentence boundary detection
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(start + self.config.chunk_size, len(text))
-        # Find sentence boundary...
-        chunks.append(ChunkData(content=text[start:end], ...))
-        start = end - self.config.chunk_overlap
-    return chunks
-```
+**Location**: `rag/ingestion/chunkers/semantic.py`
 
-#### 2.2 Semantic Chunking
-**Goal**: Split at semantic boundaries using embeddings.
+Both classes exist and are fully implemented. Neither is wired into the ingestion pipeline — they are available for opt-in use but `DoclingHybridChunker` is the active default.
 
-**Files to modify**:
-- Create `rag/ingestion/chunkers/semantic.py`
+#### `SemanticChunker` — threshold-based
+
+Splits at sentence-level semantic breaks. When cosine similarity between adjacent sentence embeddings drops below `similarity_threshold`, a new chunk starts.
 
 ```python
-# rag/ingestion/chunkers/semantic.py
-from sentence_transformers import SentenceTransformer
-import numpy as np
-
+# semantic.py — actual signatures
 class SemanticChunker:
-    def __init__(self, threshold: float = 0.5):
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
-        self.threshold = threshold
+    def __init__(
+        self,
+        config: ChunkingConfig,
+        similarity_threshold: float = 0.5,
+        min_sentences: int = 2,
+        max_sentences: int = 15,
+        embedding_model: str = "all-MiniLM-L6-v2",
+    ): ...
 
-    async def chunk(self, content: str) -> list[ChunkData]:
-        # Split into sentences
-        sentences = self._split_sentences(content)
-
-        # Embed each sentence
-        embeddings = self.model.encode(sentences)
-
-        # Find semantic breaks (low similarity between adjacent sentences)
-        chunks = []
-        current_chunk = [sentences[0]]
-
-        for i in range(1, len(sentences)):
-            similarity = np.dot(embeddings[i-1], embeddings[i])
-            if similarity < self.threshold:
-                # Semantic break - start new chunk
-                chunks.append(ChunkData(content=" ".join(current_chunk), ...))
-                current_chunk = []
-            current_chunk.append(sentences[i])
-
-        if current_chunk:
-            chunks.append(ChunkData(content=" ".join(current_chunk), ...))
-
-        return chunks
+    async def chunk_document(
+        self, content: str, title: str, source: str,
+        metadata: dict | None = None,
+    ) -> list[ChunkData]: ...
 ```
 
-#### 2.3 Hierarchical Chunking
-**Goal**: Create parent-child chunk relationships.
+Key implementation details:
+- Model is **lazy-loaded** on first call via `_load_model()` — not at `__init__` time.
+- Similarity computed as **normalised cosine similarity** (`np.dot(a, b) / (norm(a) * norm(b))`), not raw dot product.
+- Enforces `min_sentences` (no splits until at least N sentences in current chunk) and `max_sentences` (hard split regardless of similarity).
+- Token counting uses a character approximation (`len(text) // 4`), not the HuggingFace tokenizer.
+- `chunk_method` metadata tag: `"semantic"`.
 
-**Files to modify**:
-- Create `rag/ingestion/chunkers/hierarchical.py`
-- Update PostgreSQL schema in `rag/storage/vector_store/postgres.py`
+#### `GradientSemanticChunker` — percentile-based
+
+More robust variant: instead of a fixed threshold it computes the `percentile_threshold`-th percentile of all inter-sentence similarity scores, then uses that as a dynamic split threshold. Better for documents with varying similarity distributions.
 
 ```python
-# rag/ingestion/chunkers/hierarchical.py
+class GradientSemanticChunker:
+    def __init__(
+        self,
+        config: ChunkingConfig,
+        percentile_threshold: int = 25,   # split where similarity < 25th percentile
+        min_chunk_size: int = 100,        # chars
+        max_chunk_size: int = 2000,       # chars
+        embedding_model: str = "all-MiniLM-L6-v2",
+    ): ...
+```
+
+`chunk_method` metadata tag: `"gradient_semantic"`.
+
+#### Factory
+
+```python
+from rag.ingestion.chunkers.semantic import create_semantic_chunker
+
+chunker = create_semantic_chunker(config, chunker_type="basic")    # SemanticChunker
+chunker = create_semantic_chunker(config, chunker_type="gradient") # GradientSemanticChunker
+```
+
+---
+
+### 3.3 MinerUParser — **Implemented, GPU required**
+
+**Location**: `rag/ingestion/chunkers/mineru.py`
+
+VLM-based multimodal document parser using MinerU 2.5 (`opendatalab/MinerU2.5-2509-1.2B`). Extracts text, tables, figures, and layout information from PDFs and images, with automatic figure/diagram description. Requires a CUDA-capable GPU and the `mineru_vl_utils` package.
+
+Use this instead of `DoclingHybridChunker` for scanned PDFs or documents with dense figures/tables where layout understanding is critical.
+
+---
+
+### 3.4 HierarchicalChunker — **Not yet implemented**
+
+**Goal**: Create parent-child chunk relationships so retrieval can fetch a fine-grained child chunk and expand to its parent for broader context.
+
+**Design**:
+
+```python
+# rag/ingestion/chunkers/hierarchical.py (to create)
 class HierarchicalChunker:
     def __init__(self, levels: list[int] = [2000, 500]):
-        self.levels = levels  # [parent_size, child_size]
+        self.levels = levels  # [parent_size_chars, child_size_chars]
 
-    async def chunk(self, content: str) -> list[ChunkData]:
-        chunks = []
-
-        # Level 0: Large parent chunks
+    async def chunk_document(self, content, title, source, metadata=None) -> list[ChunkData]:
         parent_chunks = self._chunk_at_size(content, self.levels[0])
-
         for parent_idx, parent in enumerate(parent_chunks):
             parent.metadata["hierarchy_level"] = 0
             parent.metadata["parent_chunk_id"] = None
-            chunks.append(parent)
-
-            # Level 1: Smaller child chunks
-            children = self._chunk_at_size(parent.content, self.levels[1])
-            for child in children:
+            for child in self._chunk_at_size(parent.content, self.levels[1]):
                 child.metadata["hierarchy_level"] = 1
                 child.metadata["parent_chunk_id"] = parent_idx
-                chunks.append(child)
-
-        return chunks
+        ...
 ```
 
-**Schema extension** in PostgreSQL:
+**Schema extension required**:
 ```sql
--- Add to chunks table
 ALTER TABLE chunks ADD COLUMN parent_chunk_id UUID REFERENCES chunks(id);
-ALTER TABLE chunks ADD COLUMN hierarchy_level INTEGER DEFAULT 0;  -- 0=parent, 1=child
+ALTER TABLE chunks ADD COLUMN hierarchy_level INTEGER DEFAULT 0;
 ```
+
+---
 
 ### Switching Chunking Strategy
 
-**Modify**: `rag/ingestion/pipeline.py`
+No `_get_chunker` dispatcher exists in `pipeline.py` yet — the pipeline currently hard-codes `DoclingHybridChunker`. To switch strategy, replace the chunker instantiation in `DocumentIngestionPipeline.__init__`:
 
 ```python
-def _get_chunker(self, strategy: str):
-    match strategy:
-        case "hybrid":
-            return DoclingHybridChunker(self.chunking_config)
-        case "semantic":
-            return SemanticChunker()
-        case "hierarchical":
-            return HierarchicalChunker()
-        case "fixed":
-            return FixedSizeChunker(self.chunking_config)
-        case _:
-            return DoclingHybridChunker(self.chunking_config)
+# rag/ingestion/pipeline.py — current (hard-coded)
+self.chunker = DoclingHybridChunker(chunking_config)
+
+# To use semantic chunker instead:
+from rag.ingestion.chunkers.semantic import create_semantic_chunker
+self.chunker = create_semantic_chunker(chunking_config, chunker_type="basic")
+```
+
+A `_get_chunker(strategy: str)` dispatcher is a planned addition (Phase D in RAGV2_DESIGN.md).
 ```
 
 ---
