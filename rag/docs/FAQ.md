@@ -13,8 +13,15 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q5. What is the "lost in the middle" problem and how does chunk ordering help?](#q5)
 - [Q6. Why store the full document alongside chunks?](#q6)
 
-### Hybrid Search + Knowledge Graph Evaluation Questions
-- [100 questions that require both hybrid search and Apache AGE graph traversal](HYBRID_KG_QUESTIONS.md) — covers party/jurisdiction/IP/termination/restriction/liability queries and multi-hop Cypher patterns over the CUAD legal corpus.
+### Agentic RAG & Pydantic AI
+- [Q46. What makes this system "agentic"?](#q46)
+- [Q47. How does Pydantic AI's tool system work?](#q47)
+- [Q47a. How does the LLM know which tool to call?](#q47a)
+- [Q48. What is `RAGState` and why are its attributes `PrivateAttr`?](#q48)
+- [Q50. Why is per-user state important in a multi-user chat app?](#q50)
+- [Q51. How does the agent handle tool call failures?](#q51)
+- [Q118. How does the Pydantic AI agent loop work — agent creation, RunContext, deps, and the tool execution cycle?](#q118)
+- [Q204. Does this project need a multi-agent architecture?](#q204)
 
 ### Hybrid Search & RRF
 - [Q7. Explain hybrid search. What problem does each leg solve?](#q7)
@@ -54,6 +61,24 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q116h. Why doesn't the SELECT query show trigram data?](#q116h)
 - [Q117. What does the PostgreSQL data model look like — entity diagram and sample records?](#q117)
 - [Q117b. How do I run natural language queries over PostgreSQL tables and GCS Parquet files together?](#q117b)
+
+### Legal Documents & Knowledge Graph (Apache AGE)
+- [Q142. Why does legal document RAG need a knowledge graph?](#q142)
+- [Q143. Where can I download public domain legal documents?](#q143)
+- [Q144. How is the knowledge graph wired into the agent?](#q144)
+- [Q145. What is the CUAD entity type map and how are entities generated?](#q145)
+- [Q145b. What is the Tri-Retriever Pipeline (Vector + BM25 + Cypher)?](#q145b)
+- [Q145c. How does LLM-based entity/relationship extraction work for any document?](#q145c)
+- [Q146. How does CUAD help bootstrap and validate the legal graph?](#q146)
+- [Q147b. What is the CUAD knowledge graph — what's in it and how is it built?](#q147b)
+- [Q148. How do I ingest CUAD contracts into the RAG system?](#q148)
+- [Q149. Why are legal datasets excluded from git?](#q149)
+- [Q151. How are retrieval quality tests structured for the legal corpus?](#q151)
+- [Q153. How is the Apache AGE knowledge graph designed?](#q153)
+- [Q154. Why add Apache AGE if the PostgreSQL tables work? How do we switch later?](#q154)
+- [Q156. How do you prevent Cypher injection when using Apache AGE with asyncpg?](#q156)
+- [Q156b. What is `$$...$$` in AGE queries — does it mark Cypher boundaries?](#q156b)
+- [Hybrid Search + KG evaluation questions](HYBRID_KG_QUESTIONS.md) — 100 questions requiring both hybrid search and AGE graph traversal over the CUAD corpus.
 
 ### Document Ingestion & Chunking
 - [Q26. What does Docling's `HybridChunker` do that sliding-window cannot?](#q26)
@@ -97,12 +122,6 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q114. What models can be swapped in to improve retrieval precision?](#q114)
 - [Q115. How would you benchmark and choose between embedding models for this corpus?](#q115)
 
-### Query Enhancement: HyDE
-- [Q37. Explain HyDE. Why might it outperform raw query embedding?](#q37)
-- [Q38. What are the risks of HyDE?](#q38)
-- [Q39. When would you enable HyDE?](#q39)
-- [Q40. How is HyDE implemented in the retriever?](#q40)
-
 ### Reranking
 - [Q41. What problem does a cross-encoder solve that bi-encoder retrieval cannot?](#q41)
 - [Q42. What reranker implementations exist in this codebase?](#q42)
@@ -112,29 +131,12 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q45. Retrieval recall vs reranking precision — how do they compose?](#q45)
 - [Q89. LLM reranker with partial failure (rate limiting).](#q89)
 
-### Agentic RAG & Pydantic AI
-- [Q46. What makes this system "agentic"?](#q46)
-- [Q47. How does Pydantic AI's tool system work?](#q47)
-- [Q47a. How does the LLM know which tool to call?](#q47a)
-- [Q48. What is `RAGState` and why are its attributes `PrivateAttr`?](#q48)
-- [Q50. Why is per-user state important in a multi-user chat app?](#q50)
-- [Q51. How does the agent handle tool call failures?](#q51)
-- [Q204. Does this project need a multi-agent architecture?](#q204)
-- [Q118. How does the Pydantic AI agent loop work — agent creation, RunContext, deps, and the tool execution cycle?](#q118)
-
-### Memory (Mem0)
-- [Q52. What problem does Mem0 solve that conversation history cannot?](#q52)
-- [Q53. How is Mem0 stored in this project?](#q53)
-- [Q54. `add()` vs `get_context_string()` — difference?](#q54)
-- [Q55. Why is Mem0 disabled by default?](#q55)
-- [Q56. How would you prevent Mem0 from storing sensitive information?](#q56)
-
-### Async & Concurrency
-- [Q57. Why must all I/O be async? What happens with a blocking call?](#q57)
-- [Q58. What is an asyncpg connection pool and why use it?](#q58)
-- [Q59. Maximum latency improvement from `asyncio.gather` on semantic + text search?](#q59)
-- [Q60. Why `init=register_vector` rather than registering after pool creation?](#q60)
-- [Q61. If `asyncio.gather` has two coroutines and one raises an exception — what happens?](#q61)
+### RAG Guardrails
+- [Q199. What categories of guardrails should a production RAG system have?](#q199)
+- [Q200. What guardrails exist in the RAG pipeline?](#q200)
+- [Q201. How does the relevance threshold guardrail work?](#q201)
+- [Q202. How is citation enforcement implemented?](#q202)
+- [Q203. What happens when no chunks pass the relevance threshold?](#q203)
 
 ### Evaluation & Retrieval Metrics
 - [Q62. Hit Rate@K vs Precision@K — when do they diverge?](#q62)
@@ -149,52 +151,10 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q69b. Where in the code are retrieval metrics collected?](#q69b)
 - [Q69c. Which evaluation metrics do we implement and which do we skip — and why?](#q69c)
 
-### Observability & Langfuse
-- [Q49. Why `ContextVar` for Langfuse trace context?](#q49)
-- [Q70. What does Langfuse trace in this project?](#q70)
-- [Q71. Why `ContextVar` rather than function arguments?](#q71)
-- [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
-- [Q73. Trace vs span vs generation in Langfuse?](#q73)
-
-### Scale & Performance
-- [Q76. Scale to 10M documents — what breaks first?](#q76)
-- [Q80. Sub-100ms latency — what to sacrifice first?](#q80)
-- [Q104. Top three bottlenecks at 10,000 docs/day and fixes.](#q104)
-- [Q111. What are the main scale bottlenecks in this system at 1M documents?](#q111)
-- [Q112. What are the ingestion latency bottlenecks and how would you profile them?](#q112)
-- [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
-- [Q113b. How does tsvector full-text search scale with millions of documents?](#q113b)
-
-### Legal Documents & Knowledge Graph (Apache AGE)
-- [Q142. Why does legal document RAG need a knowledge graph?](#q142)
-- [Q143. Where can I download public domain legal documents?](#q143)
-- [Q144. How is the knowledge graph wired into the agent?](#q144)
-- [Q145. What is the CUAD entity type map and how are entities generated?](#q145)
-- [Q145b. What is the Tri-Retriever Pipeline (Vector + BM25 + Cypher)?](#q145b)
-- [Q145c. How does LLM-based entity/relationship extraction work for any document?](#q145c)
-- [Q146. How does CUAD help bootstrap and validate the legal graph?](#q146)
-- [Q147b. What is the CUAD knowledge graph — what's in it and how is it built?](#q147b)
-- [Q148. How do I ingest CUAD contracts into the RAG system?](#q148)
-- [Q149. Why are legal datasets excluded from git?](#q149)
-- [Q151. How are retrieval quality tests structured for the legal corpus?](#q151)
-- [Q153. How is the Apache AGE knowledge graph designed?](#q153)
-- [Q154. Why add Apache AGE if the PostgreSQL tables work? How do we switch later?](#q154)
-- [Q156. How do you prevent Cypher injection when using Apache AGE with asyncpg?](#q156)
-- [Q156b. What is `$$...$$` in AGE queries — does it mark Cypher boundaries?](#q156b)
-
 ### Production Readiness
 - [Q78. Is multi-tenancy supported? What would it take to make this production-ready?](#q78)
 - [Q120. What are all the changes needed to make this RAG system production-ready?](#q120)
 - [Q121. What are all the tunables in this RAG system and how should they be set?](#q121)
-
-### MCP Server
-- [Q132. What is the MCP server and what tools does it expose?](#q132)
-- [Q133. How does the MCP server relate to the REST API — when to use which?](#q133)
-- [Q134. How do I register the MCP server with Claude Desktop or Claude Code?](#q134)
-- [Q135. How does the MCP server handle resource lifecycle (connections, pools)?](#q135)
-- [Q136. How do I test the MCP server locally without Claude Desktop?](#q136)
-- [Q137. What does the MCP server test suite cover and how does it work?](#q137)
-- [Q155. What is the `postgresql` MCP server in `.mcp.json` and how does it differ from `rag/mcp/server.py`?](#q155)
 
 ### REST API
 - [Q123. What HTTP endpoints does the REST API expose?](#q123)
@@ -206,6 +166,51 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q129. How is the asyncpg pool lifecycle managed across HTTP requests?](#q129)
 - [Q130. How would you add authentication to the REST API?](#q130)
 - [Q131. How do I fire off a query over the REST API?](#q131)
+
+### MCP Server
+- [Q132. What is the MCP server and what tools does it expose?](#q132)
+- [Q133. How does the MCP server relate to the REST API — when to use which?](#q133)
+- [Q134. How do I register the MCP server with Claude Desktop or Claude Code?](#q134)
+- [Q135. How does the MCP server handle resource lifecycle (connections, pools)?](#q135)
+- [Q136. How do I test the MCP server locally without Claude Desktop?](#q136)
+- [Q137. What does the MCP server test suite cover and how does it work?](#q137)
+- [Q155. What is the `postgresql` MCP server in `.mcp.json` and how does it differ from `rag/mcp/server.py`?](#q155)
+
+### Scale & Performance
+- [Q76. Scale to 10M documents — what breaks first?](#q76)
+- [Q80. Sub-100ms latency — what to sacrifice first?](#q80)
+- [Q104. Top three bottlenecks at 10,000 docs/day and fixes.](#q104)
+- [Q111. What are the main scale bottlenecks in this system at 1M documents?](#q111)
+- [Q112. What are the ingestion latency bottlenecks and how would you profile them?](#q112)
+- [Q113. What are the retrieval latency bottlenecks and how would you reduce them to sub-100ms?](#q113)
+- [Q113b. How does tsvector full-text search scale with millions of documents?](#q113b)
+
+### Observability & Langfuse
+- [Q49. Why `ContextVar` for Langfuse trace context?](#q49)
+- [Q70. What does Langfuse trace in this project?](#q70)
+- [Q71. Why `ContextVar` rather than function arguments?](#q71)
+- [Q72. Using Langfuse traces to debug a wrong answer.](#q72)
+- [Q73. Trace vs span vs generation in Langfuse?](#q73)
+
+### Async & Concurrency
+- [Q57. Why must all I/O be async? What happens with a blocking call?](#q57)
+- [Q58. What is an asyncpg connection pool and why use it?](#q58)
+- [Q59. Maximum latency improvement from `asyncio.gather` on semantic + text search?](#q59)
+- [Q60. Why `init=register_vector` rather than registering after pool creation?](#q60)
+- [Q61. If `asyncio.gather` has two coroutines and one raises an exception — what happens?](#q61)
+
+### Memory (Mem0)
+- [Q52. What problem does Mem0 solve that conversation history cannot?](#q52)
+- [Q53. How is Mem0 stored in this project?](#q53)
+- [Q54. `add()` vs `get_context_string()` — difference?](#q54)
+- [Q55. Why is Mem0 disabled by default?](#q55)
+- [Q56. How would you prevent Mem0 from storing sensitive information?](#q56)
+
+### Query Enhancement: HyDE
+- [Q37. Explain HyDE. Why might it outperform raw query embedding?](#q37)
+- [Q38. What are the risks of HyDE?](#q38)
+- [Q39. When would you enable HyDE?](#q39)
+- [Q40. How is HyDE implemented in the retriever?](#q40)
 
 ### Code Quality & Tooling
 - [Q81. Why `pydantic-settings` instead of `os.environ`?](#q81)
@@ -222,13 +227,6 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q147. DuckDB is installed — do we need it alongside PostgreSQL?](#q147)
 - [Q150. Can we leverage the GPU to speed up CUAD / document ingestion?](#q150)
 - [Q152. `clean=True` wiped all CUAD data when re-ingesting NeuralFlow docs — how to avoid this?](#q152)
-
-### RAG Guardrails
-- [Q199. What categories of guardrails should a production RAG system have?](#q199)
-- [Q200. What guardrails exist in the RAG pipeline?](#q200)
-- [Q201. How does the relevance threshold guardrail work?](#q201)
-- [Q202. How is citation enforcement implemented?](#q202)
-- [Q203. What happens when no chunks pass the relevance threshold?](#q203)
 
 ---
 
