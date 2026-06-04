@@ -235,8 +235,9 @@ ChunkData(content, index, metadata, token_count, embedding=None)
 | Chunking | `rag/ingestion/chunkers/docling.py` | Docling HybridChunker (token-aware, structure-preserving) |
 | Embedding | `rag/ingestion/embedder.py` | OpenAI-compatible API (Ollama, OpenAI) |
 | Storage | `rag/storage/vector_store/postgres.py` | PostgreSQL/pgvector with vector + text search |
-| Retrieval | `rag/retrieval/retriever.py` | Semantic, text, and hybrid (RRF) search |
-| Agent | `rag/agent/rag_agent.py` | Pydantic AI agent with search tool |
+| Retrieval | `rag/retrieval/retriever.py` | Semantic, text, and hybrid (RRF) search; optional CrossEncoder/LLM reranking |
+| Reranking | `rag/retrieval/rerankers.py` | `LLMReranker` (default) and `CrossEncoderReranker`; off by default (`reranker_enabled=False`) |
+| Agent | `rag/agent/rag_agent.py` | Pydantic AI agent with 5 tools: `search_knowledge_base`, `search_knowledge_graph`, `search_hybrid_kg`, `run_graph_query`, `nl_graph_query` |
 | Config | `rag/config/settings.py` | Environment-based configuration |
 
 ### Current Search Methods
@@ -506,46 +507,40 @@ _result_cache = ResultCache(max_size=100, ttl_seconds=300)
 
 Class: Retriever
 
-__init__(store, embedder, reranker, hyde)
+__init__(store, embedder, reranker)
     ├──► load_settings()                    [settings.py]
     ├──► PostgresHybridStore()              (if store not provided)
     ├──► EmbeddingGenerator()              (if embedder not provided)
-    ├──► self._reranker = reranker          (lazy-init from settings if None)
-    └──► self._hyde = hyde                  (lazy-init from settings if None)
-
-_get_hyde()  [lazy-init]
-    └──► HyDEProcessor(model, base_url, api_key, embedding_model, ...)
+    └──► self._reranker = reranker          (lazy-init from settings if None)
 
 _get_reranker()  [lazy-init]
-    ├──► [reranker_type == "cross_encoder"]:
+    ├──► [reranker_type == "cross_encoder"]:   (default: False — off by default; type default: "llm")
     │       └──► CrossEncoderReranker(model_name)
     └──► [reranker_type == "llm"]:
             └──► LLMReranker(model, base_url, api_key)
 
-retrieve(query, match_count, search_type, use_cache)
+retrieve(query, match_count, search_type, use_cache, metadata_filter)
     ├──► 1. [if use_cache]:
-    │           └──► _result_cache.get()
+    │           └──► _result_cache.get(query, search_type, match_count, metadata_filter)
     │                   └──► [CACHE HIT] ──► return cached results
     │
-    ├──► 2. Query embedding:
-    │       ├──► [hyde_enabled=True]:
-    │       │       ├──► _get_hyde().generate_hypothetical(query)  [LLM call]
-    │       │       └──► embedder.generate_embedding(hypothetical)
-    │       └──► [hyde_enabled=False]:
-    │               └──► embedder.embed_query(query)               [embedder.py]
+    ├──► 2. embedder.embed_query(query)         [embedder.py]
     │
     ├──► 3. fetch_count = match_count × reranker_overfetch_factor  (if reranking)
     │
     ├──► 4. [based on search_type]:
-    │       ├──► self.store.semantic_search()   [postgres.py]
-    │       ├──► self.store.text_search()       [postgres.py]
-    │       └──► self.store.hybrid_search()     [postgres.py] (default)
+    │       ├──► self.store.semantic_search(embedding, count, metadata_filter)   [postgres.py]
+    │       ├──► self.store.text_search(query, count, metadata_filter)           [postgres.py]
+    │       └──► self.store.hybrid_search(query, embedding, count, metadata_filter) [postgres.py] (default)
     │
-    ├──► 5. [if reranker_enabled]:
+    ├──► 5. [if reranker_enabled]:  (settings.reranker_enabled — False by default)
     │       └──► _get_reranker().rerank(query, results, top_k=match_count)
     │
-    └──► 6. [if use_cache]:
-            └──► _result_cache.set()
+    ├──► 6. [if min_relevance_score > 0 AND search_type == "semantic"]:
+    │       └──► drop results below threshold
+    │
+    └──► 7. [if use_cache]:
+            └──► _result_cache.set(query, search_type, match_count, results, metadata_filter)
 
 get_cache_stats() [static]
     └──► _result_cache.stats()
@@ -553,9 +548,9 @@ get_cache_stats() [static]
 clear_cache() [static]
     └──► _result_cache.clear()
 
-retrieve_as_context(query, match_count, search_type)
+retrieve_as_context(query, match_count, search_type, metadata_filter)
     ├──► self.retrieve()
-    └──► [Format results as string]
+    └──► [Format results as numbered string with chunk_id citations]
 
 close()
     └──► self.store.close()                 [postgres.py]
@@ -575,14 +570,16 @@ get_llm_model(model_choice)
 get_model_info()
     └──► load_settings()                    [settings.py]
 
-agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT)
+agent = PydanticAgent(get_llm_model(), system_prompt=MAIN_SYSTEM_PROMPT, model_settings=_ms)
+# model_settings passes num_ctx to Ollama via extra_body
 
 ─────────────────────────────────────────────────────────────────
 
 Class: RAGState(BaseModel)
     _store:       PostgresHybridStore  (PrivateAttr)
     _retriever:   Retriever            (PrivateAttr)
-    _mem0:        Mem0Store            (PrivateAttr, if mem0_enabled)
+    _mem0:        Mem0Store            (PrivateAttr)  — always created, not conditional
+    _kg_store:    AgeGraphStore | None (PrivateAttr)  — initialized if KG tools used
     _initialized: bool                 (PrivateAttr)
     _init_lock:   asyncio.Lock         (PrivateAttr)
 
@@ -590,18 +587,18 @@ get_retriever()
     ├──► [if not initialized, under _init_lock]:
     │       ├──► PostgresHybridStore()         [postgres.py]
     │       ├──► store.initialize()
-    │       ├──► EmbeddingGenerator()          [embedder.py]
-    │       ├──► Retriever(store, embedder)    [retriever.py]
-    │       └──► Mem0Store()  (if mem0_enabled) [mem0_store.py]
+    │       ├──► Retriever(store=store)        [retriever.py]  — Retriever creates EmbeddingGenerator internally
+    │       └──► Mem0Store()                   [mem0_store.py]
     └──► return self._retriever
 
 close()
-    └──► self._store.close()                [postgres.py]
+    ├──► self._store.close()                [postgres.py]
+    └──► self._kg_store.close()             [age_graph_store.py]  (if initialized)
 
 ─────────────────────────────────────────────────────────────────
 
 @agent.tool
-search_knowledge_base(ctx, query, match_count, search_type)
+search_knowledge_base(ctx, query, match_count, search_type, document_source, metadata_filters)
     │
     ├──► RAGState.get_retriever()           (from ctx.deps)
     │
@@ -649,20 +646,20 @@ agent.run() [pydantic_ai]
     ├──► LLM decides to use tool
     │
     ▼
-search_knowledge_base() [rag_agent.py:101]
+search_knowledge_base() [rag_agent.py:247]
     │
     ├──► RAGState.get_retriever() ─────────────────────────────┐
     │       ├──► PostgresHybridStore() [postgres.py]                  │
     │       │       └──► load_settings() [settings.py]          │
     │       ├──► store.initialize()                             │
-    │       │       └──► asyncpg.connect()                     │
+    │       │       └──► asyncpg.connect() → create_pool()     │
     │       └──► Retriever(store) [retriever.py]                │
     │               ├──► load_settings()                        │
     │               └──► EmbeddingGenerator() [embedder.py]     │
     │                       └──► load_settings()                │
     │                                                           │
     ▼◄──────────────────────────────────────────────────────────┘
-retriever.retrieve_as_context() [retriever.py:189]
+retriever.retrieve_as_context() [retriever.py:343]
     │
     ├──► retriever.retrieve()
     │       │
@@ -725,7 +722,7 @@ The RAG agent includes a Streamlit-based web interface for interactive chat with
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  🔍 RAG Agent                  │  💬 Chat with RAG Agent            │
+│  ⚖️ Legal Contract Assistant   │  💬 Chat with RAG Agent            │
 │  ─────────────────────         │  ───────────────────────           │
 │  Configuration                 │                                     │
 │  LLM Provider: ollama          │  User: What is the PTO policy?     │
@@ -817,7 +814,7 @@ Edit `streamlit_app.py`:
 ```python
 st.set_page_config(
     page_title="Your Custom Title",
-    page_icon="🤖",  # Change emoji
+    page_icon="⚖️",  # Current default — change to any emoji
     layout="wide",
 )
 ```
@@ -856,7 +853,7 @@ st.markdown("""
 ### Running with Docker (Optional)
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 COPY . .
@@ -1118,117 +1115,58 @@ A `_get_chunker(strategy: str)` dispatcher is a planned addition (Phase D in RAG
 > **Implemented, not in default path.** `LLMReranker` and `CrossEncoderReranker` exist in `rag/retrieval/rerankers.py` and are wired into `Retriever`. Off by default — enable with `RERANKER_ENABLED=true` in `.env`.
 
 ### Current State
-Only RRF (Reciprocal Rank Fusion) scoring, no dedicated reranker.
 
-### Adding Reranking
+**Both rerankers are fully implemented** in `rag/retrieval/rerankers.py` and wired into `Retriever`. They are **off by default** (`reranker_enabled = False` in settings). Enable via `.env`:
 
-**Files to create/modify**:
-- Create `rag/retrieval/rerankers.py`
-- Modify `rag/retrieval/retriever.py`
-- Update `rag/config/settings.py`
-
-#### 3.1 Cross-Encoder Reranker
-
-```python
-# rag/retrieval/rerankers.py
-from sentence_transformers import CrossEncoder
-from rag.ingestion.models import SearchResult
-
-class CrossEncoderReranker:
-    def __init__(self, model_name: str = "BAAI/bge-reranker-large"):
-        self.model = CrossEncoder(model_name)
-
-    async def rerank(
-        self,
-        query: str,
-        results: list[SearchResult],
-        top_k: int
-    ) -> list[SearchResult]:
-        if not results:
-            return results
-
-        # Create query-document pairs
-        pairs = [(query, r.content) for r in results]
-
-        # Score with cross-encoder
-        scores = self.model.predict(pairs)
-
-        # Sort by score and update results
-        scored_results = list(zip(results, scores))
-        scored_results.sort(key=lambda x: x[1], reverse=True)
-
-        for result, score in scored_results:
-            result.similarity = float(score)
-
-        return [r for r, _ in scored_results[:top_k]]
+```bash
+RERANKER_ENABLED=true
+RERANKER_TYPE=llm           # "llm" (default) or "cross_encoder"
+RERANKER_MODEL=             # optional model override
+RERANKER_OVERFETCH_FACTOR=3 # fetch 3× results before reranking
 ```
 
-#### 3.2 LLM Reranker
+### 4.1 CrossEncoderReranker
+
+Scores all `(query, chunk)` pairs in a single batch forward pass using a cross-encoder model. Normalises raw logits to 0–1 via sigmoid. Requires `sentence-transformers`.
 
 ```python
-# rag/retrieval/rerankers.py
-class LLMReranker:
-    def __init__(self, llm_client):
-        self.llm = llm_client
+# rag/retrieval/rerankers.py — actual interface
+class CrossEncoderReranker(BaseReranker):
+    def __init__(self, model_name: str = "BAAI/bge-reranker-base"): ...
 
     async def rerank(
-        self,
-        query: str,
-        results: list[SearchResult],
-        top_k: int
-    ) -> list[SearchResult]:
-        prompt = f"""Rate the relevance of each document to the query on a scale of 0-10.
-
-Query: {query}
-
-Documents:
-{self._format_documents(results)}
-
-Return only the document numbers in order of relevance (most relevant first):"""
-
-        response = await self.llm.generate(prompt)
-        ranking = self._parse_ranking(response)
-
-        return [results[i] for i in ranking[:top_k]]
+        self, query: str, results: list[SearchResult], top_k: int
+    ) -> list[SearchResult]: ...
+    # Runs model.predict() in asyncio.to_thread(); normalises scores; trims to top_k
 ```
 
-#### 3.3 Integration in Retriever
+Install: `pip install sentence-transformers`
+
+### 4.2 LLMReranker
+
+Scores each `(query, chunk)` pair via an LLM call asking for a 0–10 relevance score. All pairs scored concurrently via `asyncio.gather`. Scores normalised to 0–1. No extra dependencies — uses the same LLM as the agent.
 
 ```python
-# rag/retrieval/retriever.py
-class Retriever:
-    def __init__(
-        self,
-        store: PostgresHybridStore | None = None,
-        embedder: EmbeddingGenerator | None = None,
-        reranker: Reranker | None = None,  # Add this
-    ):
-        self.store = store or PostgresHybridStore()
-        self.embedder = embedder or EmbeddingGenerator()
-        self.reranker = reranker
+# rag/retrieval/rerankers.py — actual interface
+class LLMReranker(BaseReranker):
+    def __init__(self, model: str, base_url: str, api_key: str): ...
 
-    async def retrieve(
-        self,
-        query: str,
-        match_count: int | None = None,
-        search_type: str = "hybrid",
-        rerank: bool = False,  # Add this
-    ) -> list[SearchResult]:
-        # ... existing search logic ...
+    async def rerank(
+        self, query: str, results: list[SearchResult], top_k: int
+    ) -> list[SearchResult]: ...
+    # Concurrent LLM scoring via asyncio.gather; slower than CrossEncoder at scale
+```
 
-        # Add reranking step
-        if rerank and self.reranker:
-            # Over-fetch for reranking
-            results = await self.store.hybrid_search(
-                query, query_embedding, match_count * 3
-            )
-            results = await self.reranker.rerank(query, results, match_count)
-        else:
-            results = await self.store.hybrid_search(
-                query, query_embedding, match_count
-            )
+### 4.3 Integration in Retriever
 
-        return results
+Reranking is controlled by `settings.reranker_enabled` (a flag, not a per-call parameter). When enabled, `Retriever.retrieve()` over-fetches `match_count × reranker_overfetch_factor` results, reranks, then trims to `match_count`:
+
+```python
+# retriever.py — actual flow when reranker_enabled=True
+fetch_count = match_count * settings.reranker_overfetch_factor
+results = await store.hybrid_search(query, embedding, fetch_count, metadata_filter)
+reranker = self._get_reranker()
+results = await reranker.rerank(query, results, top_k=match_count)
 ```
 
 ---
@@ -1484,65 +1422,53 @@ LANGFUSE_HOST=http://localhost:3000
 | Technique | Primary Files | Supporting Files |
 |-----------|---------------|------------------|
 | Chunking | `chunkers/docling.py` | `pipeline.py`, `models.py` |
-| Reranking | `retrieval/rerankers.py` (new) | `retriever.py`, `settings.py` |
-| Query Expansion | `retrieval/query_processors.py` (new) | `retriever.py` |
-| Context Expansion | `retrieval/context_expanders.py` (new) | `postgres.py`, `retriever.py` |
-| Parent-Child | `postgres.py`, `pipeline.py` | `chunkers/`, `retriever.py` |
-| Metadata Filtering | `postgres.py` | `rag_agent.py` |
-| Multi-Vector | `embedder.py`, `postgres.py` | `pipeline.py` |
-| Knowledge Graph | `knowledge_graph/graphiti_store.py` (new) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
-| Langfuse Tracing | `observability/langfuse_integration.py` | `rag_agent.py`, `settings.py` |
-| Streamlit Web UI | `agent/streamlit_app.py` | `rag_agent.py` |
-| Mem0 Memory | `memory/mem0_store.py` (new) | `rag_agent.py`, `settings.py` |
+| Reranking | `retrieval/rerankers.py` ✓ | `retriever.py`, `settings.py` |
+| Query Expansion | not yet implemented | `retriever.py` |
+| Context Expansion | not yet implemented | `postgres.py`, `retriever.py` |
+| Parent-Child | not yet implemented | `chunkers/`, `retriever.py` |
+| Metadata Filtering | `postgres.py` ✓ | `rag_agent.py` |
+| Multi-Vector | not yet implemented | `pipeline.py` |
+| Knowledge Graph | `kg/age_graph_store.py` ✓ (Apache AGE) | `retriever.py`, `pipeline.py`, `rag_agent.py` |
+| Langfuse Tracing | `observability/langfuse_integration.py` ✓ | `rag_agent.py`, `settings.py` |
+| Streamlit Web UI | `agent/streamlit_app.py` ✓ | `rag_agent.py` |
+| Mem0 Memory | `memory/mem0_store.py` ✓ | `rag_agent.py`, `settings.py` |
 
 ---
 
-## Configuration Template
+## Configuration Reference
 
-Add these to `rag/config/settings.py` for new features:
+Actual settings in `rag/config/settings.py` for implemented features:
 
 ```python
 class Settings(BaseSettings):
-    # Existing settings...
-
-    # Chunking
-    chunking_strategy: str = "hybrid"  # hybrid, semantic, hierarchical, fixed
-
-    # Reranking
+    # Reranking — implemented, off by default
     reranker_enabled: bool = False
-    reranker_type: str = "cross_encoder"  # cross_encoder, colbert, llm
-    reranker_model: str = "BAAI/bge-reranker-large"
-    reranker_top_k_multiplier: int = 3  # Over-fetch factor
+    reranker_type: str = "llm"              # "llm" (default) or "cross_encoder"
+    reranker_model: str | None = None       # None = use llm_model for LLMReranker
+    reranker_overfetch_factor: int = 3      # fetch N×factor before reranking
 
-    # Query Processing
-    query_expansion_enabled: bool = False
-    query_expansion_count: int = 3
-    hyde_enabled: bool = False
+    # Retrieval quality
+    min_relevance_score: float = 0.0        # semantic mode only; 0 = off
+    default_match_count: int = 5
+    max_match_count: int = 20
 
-    # Context Expansion
-    context_expansion_enabled: bool = False
-    context_chunks_before: int = 1
-    context_chunks_after: int = 1
+    # Knowledge Graph — implemented; uses Apache AGE (not Graphiti/Neo4j)
+    kg_backend: str = "age"                 # only supported value
+    age_database_url: str | None = None     # separate DB port 5433
+    age_graph_name: str = "legal_graph"
 
-    # Hierarchical
-    hierarchical_retrieval_enabled: bool = False
-    hierarchy_levels: list[int] = [2000, 500]
-
-    # Knowledge Graph (Graphiti)
-    graphiti_enabled: bool = False
-    graph_db_type: str = "neo4j"  # neo4j, falkordb, kuzu
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = ""
-    falkordb_host: str = "localhost"
-    falkordb_port: int = 6379
-
-    # Langfuse Observability (Already Implemented)
+    # Langfuse Observability — implemented
     langfuse_enabled: bool = False
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
+
+    # Mem0 User Memory — implemented
+    mem0_enabled: bool = False
+    mem0_collection_name: str = "user_memory"
 ```
+
+> **Not in settings.py**: `hyde_enabled`, `query_expansion_enabled`, `graphiti_enabled`, `neo4j_uri`, `reranker_top_k_multiplier` — these names do not exist. The correct name is `reranker_overfetch_factor`.
 
 ---
 
@@ -1558,22 +1484,22 @@ python -m pytest rag/tests/ -v
 
 ```bash
 # Configuration tests (fast, no external deps)
-python -m pytest rag/tests/test_config.py -v
+python -m pytest rag/tests/core/test_config.py -v
 
 # Ingestion model tests (fast, no external deps)
-python -m pytest rag/tests/test_ingestion.py -v
+python -m pytest rag/tests/core/test_ingestion.py -v
 
 # PostgreSQL connection & index tests (requires PostgreSQL)
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 
 # RAG agent integration tests (requires PostgreSQL + Ollama)
-python -m pytest rag/tests/test_rag_agent.py -v
-python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO --tb=short # log.info
+python -m pytest rag/tests/agent/test_rag_agent.py -v
+python -m pytest rag/tests/agent/test_rag_agent.py -v --log-cli-level=INFO --tb=short
 ```
 
 ### Debug Agent Flow
 
-python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s --log-cli-level=INFO 2>&1 > sample_run.txt
+python -m pytest rag/tests/agent/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s --log-cli-level=INFO 2>&1 > sample_run.txt
 
 #### Execution Flow Summary
 
@@ -1586,18 +1512,19 @@ test_agent_flow_verbose (test_agent_flow.py)
               |                                                  |
               |                            StateDeps[RAGState] --+
               |
-              +--> _stream_agent() (agent_main.py:332)
+              +--> _stream_agent() (agent_main.py:356)
                         |
                         +--> agent.iter(query, deps=deps, ...) --> yields nodes
                         |              |
-                        |              +-- NOTE: deps passed but NOT USED by tools
-                        |                  Tools create their own store/retriever
+                        |              +-- deps (RAGState) ARE used by tools:
+                        |                  search_knowledge_base checks ctx.deps
+                        |                  and uses the shared retriever if present
                                   |
                                   +--> NODE: UserPromptNode
                                   |         --> _debug_print()
                                   |
                                   +--> NODE: ModelRequestNode
-                                  |         --> _handle_model_request_node() (agent_main.py:185)
+                                  |         --> _handle_model_request_node() (agent_main.py:203)
                                   |                   |
                                   |                   +--> node.stream() --> yields events
                                   |                             |
@@ -1607,7 +1534,7 @@ test_agent_flow_verbose (test_agent_flow.py)
                                   |                             +--> PartEndEvent
                                   |
                                   +--> NODE: CallToolsNode
-                                  |         --> _handle_tool_call_node() (agent_main.py:266)
+                                  |         --> _handle_tool_call_node() (agent_main.py:287)
                                   |                   |
                                   |                   +--> node.stream() --> yields events
                                   |                             |
@@ -1627,7 +1554,7 @@ test_agent_flow_verbose (test_agent_flow.py)
 
 | Location | What Happens |
 |----------|--------------|
-| `test_agent_flow.py` | Creates `await RAGState.create()` with shared store/retriever |
+| `test_agent_flow.py` | Creates `RAGState()` (synchronous) with shared store/retriever |
 | `stream_agent_interaction()` | Receives `deps`, passes to `_stream_agent()` |
 | `_stream_agent()` | Passes `deps` to `agent.iter(..., deps=deps)` |
 | `search_knowledge_base()` | Uses `ctx.deps.retriever` if available (no connection overhead) |
@@ -1636,7 +1563,7 @@ test_agent_flow_verbose (test_agent_flow.py)
 
 ```python
 # Good: Shared store (fast - connection reused)
-state = await RAGState.create()  # Initialize once
+state = RAGState()   # synchronous init; connections open on first tool call
 deps = StateDeps(state)
 # ... multiple tool calls reuse state.retriever ...
 await state.close()  # Clean up once
@@ -1721,10 +1648,10 @@ The tests query the ingested NeuralFlow AI documents:
 ### Expected Test Results
 
 After successful ingestion of `rag/documents/`:
-- `test_config.py`: 13 tests pass
-- `test_ingestion.py`: 14 tests pass
-- `test_postgres_store.py`: 18 tests pass
-- `test_rag_agent.py`: All tests pass (requires indexes + Ollama running)
+- `rag/tests/core/test_config.py`: ~12 tests pass
+- `rag/tests/core/test_ingestion.py`: ~34 tests pass
+- `rag/tests/storage/test_postgres_store.py`: ~46 tests pass (requires PostgreSQL)
+- `rag/tests/agent/test_rag_agent.py`: all tests pass (requires PostgreSQL + Ollama)
 
 ---
 
@@ -1883,7 +1810,7 @@ The RAG system implements two levels of caching to improve response times for re
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    Result Cache (Retriever)                  │
-│  Key: (query, search_type, match_count)                     │
+│  Key: SHA-256(query + search_type + match_count + metadata_filter) │
 │  TTL: 5 minutes                                             │
 │  Max size: 100 entries                                      │
 │  ┌─────────────────────────────────────────────────────┐    │
@@ -2003,11 +1930,18 @@ class ResultCache:
         self._max_size = max_size
         self._ttl = ttl_seconds
 
-    def get(self, query: str, search_type: str, match_count: int) -> list[SearchResult] | None:
-        # Check TTL before returning
+    def get(
+        self, query: str, search_type: str, match_count: int,
+        metadata_filter: MetadataFilter | None = None,
+    ) -> list[SearchResult] | None:
+        # SHA-256 key includes metadata_filter; check TTL before returning
         ...
 
-    def set(self, query: str, search_type: str, match_count: int, results: list[SearchResult]) -> None:
+    def set(
+        self, query: str, search_type: str, match_count: int,
+        results: list[SearchResult],
+        metadata_filter: MetadataFilter | None = None,
+    ) -> None:
         # Evict oldest if over limit
         ...
 ```
@@ -2037,7 +1971,7 @@ Retriever.clear_cache()
 
 ---
 
-## 8. Test Queries by Document Type
+## 11. Test Queries by Document Type
 
 This section provides sample queries for testing the RAG system against different document types in the `rag/documents/` folder. These queries are designed to validate that ingestion and retrieval work correctly for each file format.
 
@@ -2294,8 +2228,8 @@ All future queries:
 │      # 2. Retrieve documents from RAG                       │
 │      # 3. Combine contexts for LLM                          │
 │                                                             │
-│  @agent.tool                                                │
-│  async def remember_user_context(...)  ← NEW                │
+│  @agent.tool  (NOT YET IMPLEMENTED — aspirational)          │
+│  async def remember_user_context(...)                       │
 │      # Store facts about user in Mem0                       │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -2502,10 +2436,10 @@ memory.search("Who does John work with?")
 
 | File | Changes |
 |------|---------|
-| `rag/memory/mem0_store.py` | New - Mem0 wrapper class |
-| `rag/config/settings.py` | Add mem0_enabled setting |
-| `rag/agent/rag_agent.py` | Integrate memory into RAGState and tools |
-| `requirements.txt` | Add mem0ai dependency |
+| `rag/memory/mem0_store.py` | **Implemented** — `Mem0Store` class exists |
+| `rag/config/settings.py` | **Implemented** — `mem0_enabled`, `mem0_collection_name` exist |
+| `rag/agent/rag_agent.py` | Integrated — `RAGState` creates `Mem0Store`; `search_knowledge_base` uses it |
+| `pyproject.toml` | `mem0ai` dependency already included |
 
 ### References
 
