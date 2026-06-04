@@ -11,6 +11,7 @@ This guide documents the vector store architecture and PostgreSQL/pgvector imple
 3. [PostgreSQL/pgvector Implementation](#3-postgresqlpgvector-implementation)
    - [3.1 Database Schema](#31-database-schema)
    - [3.2 Search Operations](#32-search-operations)
+     - [3.2.1 Metadata Filtering](#metadata-filtering)
    - [3.3 Settings](#33-settings)
    - [3.4 Setup Instructions](#34-setup-instructions)
 4. [Database Schema Reference](#4-database-schema-reference)
@@ -301,6 +302,44 @@ Metadata filters are built by `_build_filter_clause(metadata_filter, param_offse
 | `document_title` | `d.title = $N` | Restrict to a document by title |
 
 > **Date comparison note:** `metadata` is JSONB; `->>'key'` extracts values as text. ISO 8601 strings (`"YYYY-MM-DD"`) sort lexicographically in chronological order, so text `>=` / `<=` gives correct date range semantics without casting.
+
+> **Filtering is always post-JOIN.** All filter predicates are appended to a single `WHERE` clause that sits after `JOIN documents d ON c.document_id = d.id`. This is a structural requirement: document-level filters (`d.source`, `d.title`) reference columns that only exist on the `documents` table, so the join must happen before those predicates can be evaluated. In practice this is not a performance problem:
+> - **Chunk-level predicates** (`c.metadata->>...`) are pushed down by the PostgreSQL planner to a scan on `chunks` before the join rows are assembled — so unmatched chunks are discarded early.
+> - **Document-level predicates** (`d.source = $N`, `d.title = $N`) are cheap equality lookups on B-tree indexed columns and are evaluated after the join.
+>
+> If you need to filter to a small set of documents before doing a vector scan (e.g., tenant isolation at scale), the right approach is to add a `document_id` or tenant column directly to `chunks` and index it there — keeping the predicate entirely within the `chunks` scan and avoiding the join cost altogether.
+
+**Example — join order with mixed chunk + document filter:**
+
+```sql
+-- MetadataFilter(metadata_eq={"doc_type": "policy"}, document_title="Employee Handbook")
+--
+-- Logical execution order (as the planner sees it):
+--   1. Scan chunks      → apply c.metadata->>$3 = $4   (chunk-level, pushed down)
+--   2. JOIN documents   → match c.document_id = d.id
+--   3. Filter joined    → apply d.title = $5            (document-level, post-join)
+--   4. ORDER BY / LIMIT → vector distance sort, return top $2
+
+SELECT
+    c.id            AS chunk_id,
+    c.document_id,
+    c.content,
+    1 - (c.embedding <=> $1::vector) AS similarity,
+    c.metadata,
+    d.title         AS document_title,
+    d.source        AS document_source
+FROM chunks c
+JOIN documents d ON c.document_id = d.id   -- join happens first in SQL syntax
+WHERE c.metadata->>$3 = $4                 -- chunk-level: planner pushes to chunks scan
+  AND d.title = $5                         -- document-level: evaluated after join
+ORDER BY c.embedding <=> $1::vector
+LIMIT $2;
+-- $1 = query_embedding, $2 = match_count
+-- $3 = "doc_type",      $4 = "policy"
+-- $5 = "Employee Handbook"
+```
+
+The `WHERE` clause is always a single block after the `JOIN` line — there is no pre-join subquery. The planner decides independently which predicates to push down to each table's scan.
 
 **Example — exact metadata match (`metadata_eq`):**
 
