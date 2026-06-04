@@ -119,6 +119,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 - [Q48. What is `RAGState` and why are its attributes `PrivateAttr`?](#q48)
 - [Q50. Why is per-user state important in a multi-user chat app?](#q50)
 - [Q51. How does the agent handle tool call failures?](#q51)
+- [Q204. Does this project need a multi-agent architecture?](#q204)
 - [Q118. How does the Pydantic AI agent loop work — agent creation, RunContext, deps, and the tool execution cycle?](#q118)
 
 ### Memory (Mem0)
@@ -1129,6 +1130,31 @@ In async Python, multiple coroutines run concurrently on the same thread. A clas
 **Q51. How does the agent handle tool call failures?**
 
 The `search_knowledge_base` tool has a `try/except` that returns a formatted error string ("Error searching knowledge base: ...") rather than raising an exception. The LLM receives this error string as the tool result and is expected to gracefully inform the user that retrieval failed. The agent itself won't crash — Pydantic AI propagates the tool result back to the model regardless of whether it indicates success or failure.
+
+---
+
+<a id="q204"></a>
+**Q204. Does this project need a multi-agent architecture?**
+
+No — not for the current chat-over-contracts use case. Here is the concrete reasoning:
+
+**Why the single-agent + 3-tools design is already correct:**
+
+The main selling point of multi-agent is parallel retrieval across independent scopes. But `hybrid_search` already runs semantic + text + fuzzy concurrently via `asyncio.gather` and RRF-merges them in a single DB round trip. A planner agent decomposing "compare Amazon and Google termination clauses" into two sub-queries buys nothing that one hybrid search call doesn't already deliver.
+
+The second selling point is context window isolation. With `llama3.1:8b` locally, the binding constraint is reasoning quality, not context length — adding a planner and a synthesizer just introduces two extra weak LLM calls.
+
+The three-tool design (`search_knowledge_base`, `search_knowledge_graph`, `run_graph_query`) already covers the KG + text combination naturally in a single agent turn. The LLM decides which tool to call, can call multiple in sequence, and synthesises the results itself.
+
+**When multi-agent would genuinely help:**
+
+| Scenario | Why multi-agent helps |
+|----------|-----------------------|
+| "Summarise all 509 contracts by risk level" | Can't fit in one retrieval call — needs batched parallel executors |
+| Switched to a fast hosted model (GPT-4o, Claude) | Parallel LLM calls become cheap; planner overhead is worth it |
+| Per-contract deep analysis pipeline (not chat) | Each contract needs its own context window; parallelism compounds |
+
+For now, the right evolution path is: improve the single agent (better prompts, reranker, KG coverage) before adding orchestration complexity. See `basics/pydantic_ai/multi_agent.py` for a template when the time comes.
 
 ---
 
