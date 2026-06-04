@@ -11,6 +11,7 @@
   - [Caching Architecture](#caching-architecture)
   - [Retrieval Pipeline](#retrieval-pipeline)
   - [Confidence-Based Scoring](#confidence-based-scoring)
+  - [Confidence-Aware Pipeline](#confidence-aware-pipeline)
   - [Model Tiering](#model-tiering)
   - [Query Validation & Hook System](#query-validation--hook-system)
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
@@ -437,6 +438,197 @@ class EvalResult(BaseModel):
 ```
 
 This lets the Grafana dashboard correlate low-confidence retrieval with low faithfulness or poor user feedback — the primary signal for knowing when to improve the index or add more data to a corpus.
+
+---
+
+### Confidence-Aware Pipeline
+
+The confidence-aware pipeline wraps the retriever, generator, and judge into a single orchestration function. At each of the three layers a hard gate either short-circuits to an abstention response or lets the request proceed. No answer reaches the user unless it clears all three gates.
+
+Reference design (Microsoft Tech Community — "Confidence-Aware RAG: Teaching Your AI Pipeline to Acknowledge Uncertainty"):
+
+```python
+def confidence_aware_rag(user_query: str) -> dict:
+    # Layer 1 — retrieve with confidence gating
+    results = retrieve_with_confidence(user_query, threshold=1.5)
+    if not results:
+        return {"answer": "...", "status": "abstained_retrieval"}
+
+    # Layer 2 — generate with citation requirements
+    generation = generate_answer(user_query, context, results)
+    if not generation["citation_check"]["is_trustworthy"]:
+        return {"answer": "...", "status": "abstained_citation"}
+
+    # Layer 3 — judge the answer
+    judgement = judge_answer(user_query, context, generation["answer"])
+    if judgement["verdict"] == "unsupported" or judgement["confidence"] < 0.6:
+        return {"answer": "...", "status": "abstained_judge"}
+
+    if judgement["verdict"] == "partial":
+        generation["answer"] += "\n\nNote: This answer may be incomplete..."
+
+    return {"answer": ..., "status": "answered", "confidence": ..., "sources": [...]}
+```
+
+#### Architecture Mapping
+
+Each layer maps to a distinct component in the `knowledge/` module.
+
+```
+knowledge/agent/
+├── pipeline.py        # ConfidenceAwarePipeline — top-level orchestrator
+├── agent.py           # Layer 2: structured generation + citation check
+├── judge.py           # Layer 3: LLM-as-judge (nano/small model)
+└── model_router.py    # pre-pipeline: routes to correct model tier
+```
+
+#### Layer 1 — Retrieval Gate (`knowledge/retrieval/retriever.py`)
+
+`retrieve_with_confidence` runs the standard hybrid retrieval + CrossEncoder rerank pipeline, then computes an **aggregate confidence score** over the top-K results. If the aggregate falls below `retrieval_confidence_threshold` the function returns an empty list and the pipeline short-circuits immediately — no LLM call is made.
+
+**Aggregate score** — sum of `SearchResult.confidence` for the top-K reranked results:
+
+```python
+aggregate_confidence = sum(r.confidence for r in reranked_results[:k])
+```
+
+Why a sum rather than a mean: a single high-confidence chunk is insufficient if the query spans multiple topics; the sum rewards coverage. With K=5 and threshold=1.5 the system requires an average per-chunk confidence of 0.30 — a deliberately low floor that only blocks truly empty retrieval. Tighten `retrieval_confidence_threshold` per corpus as quality improves.
+
+```python
+# knowledge/config/settings.py additions
+retrieval_confidence_threshold: float = 1.5   # aggregate sum of top-K confidences
+judge_confidence_threshold: float = 0.60      # per judge_answer() call
+judge_k: int = 5                              # top-K chunks fed to judge + generator
+```
+
+#### Layer 2 — Citation Gate (`knowledge/agent/agent.py`)
+
+The Pydantic AI agent generates the answer as a structured output that includes an inline citation check. The LLM is required to ground every factual claim in a `chunk_id`; if it cannot, `is_trustworthy` is `False`.
+
+```python
+class CitationCheck(BaseModel):
+    is_trustworthy: bool
+    uncited_claims: list[str]   # claims the model couldn't attribute to a chunk
+
+class GenerationResult(BaseModel):
+    answer: str
+    citations: list[Citation]       # Citation model from Retrieval Pipeline section
+    citation_check: CitationCheck
+```
+
+System prompt constraint (always included):
+> "Every factual statement in your answer MUST be supported by one of the provided source chunks, cited inline as [chunk_id]. If you cannot find a supporting chunk for a claim, omit that claim entirely. Do not invent information."
+
+`is_trustworthy = len(uncited_claims) == 0`. If any claim is uncited, the pipeline returns `abstained_citation` without showing the answer.
+
+This gate catches the failure mode where the LLM has memorised a plausible-sounding answer that happens to contradict or go beyond the retrieved context — independent of whether the retrieval score was high.
+
+#### Layer 3 — Judge Gate (`knowledge/agent/judge.py`)
+
+A separate LLM call (nano or small model tier, cheaper than the generation model) evaluates the answer against the context. The judge is deliberately independent: it receives only the query, context, and answer — not the citation metadata — so it cannot be fooled by a well-formatted but hallucinated citation.
+
+```python
+class JudgeResult(BaseModel):
+    verdict: Literal["supported", "partial", "unsupported"]
+    confidence: float           # 0.0–1.0; judge's own confidence in its verdict
+    reasoning: str              # short explanation (logged, not returned to user)
+
+# Judge prompt (system):
+# "You are an impartial evaluator. Given a question, a set of source passages,
+#  and a generated answer, determine whether the answer is:
+#  - supported: fully grounded in the passages
+#  - partial: mostly grounded but missing or hedging on some aspects
+#  - unsupported: contains claims not found in or contradicted by the passages
+#  Return a JSON object with verdict, confidence (0-1), and reasoning."
+```
+
+Gate logic:
+- `verdict == "unsupported"` OR `confidence < judge_confidence_threshold` → `abstained_judge`
+- `verdict == "partial"` → answer proceeds but uncertainty note is appended
+- `verdict == "supported"` AND `confidence >= judge_confidence_threshold` → `answered`
+
+The judge uses the `nano` model tier by default. If the nano model's own `confidence` on the verdict is low (< 0.5), escalate the judge call to `small` — one level up. This avoids incorrect abstentions on ambiguous but answerable queries.
+
+#### Pipeline Orchestrator (`knowledge/agent/pipeline.py`)
+
+```python
+class PipelineStatus(str, Enum):
+    ANSWERED            = "answered"
+    ABSTAINED_RETRIEVAL = "abstained_retrieval"   # Layer 1 gate
+    ABSTAINED_CITATION  = "abstained_citation"    # Layer 2 gate
+    ABSTAINED_JUDGE     = "abstained_judge"       # Layer 3 gate
+
+class RAGResponse(BaseModel):
+    answer: str
+    status: PipelineStatus
+    confidence: float | None           # judge confidence; None on abstentions
+    citations: list[Citation] | None   # None on abstentions
+    low_confidence_warning: bool       # True when verdict == "partial"
+    pipeline_latency_ms: dict[str, int]  # {"retrieval": 120, "generation": 450, "judge": 80}
+    # abstention fields (populated only on abstain)
+    abstention_layer: int | None       # 1, 2, or 3
+    abstention_reason: str | None
+```
+
+Abstention responses use fixed, corpus-configurable strings (not LLM-generated) — fast, deterministic, and safe from hallucination in the error path itself.
+
+#### Hook Integration
+
+Every gate fires its own hook point so observers and custom policies can intercept without touching pipeline logic:
+
+| Gate outcome | Hook fired | HookContext additions |
+|---|---|---|
+| Layer 1 pass | `POST_RETRIEVE` | `aggregate_confidence`, `results` |
+| Layer 1 abstain | `ON_VALIDATION_FAIL` | `abstention_layer=1`, `aggregate_confidence` |
+| Layer 2 pass | `POST_LLM` | `generation_result`, `citation_check` |
+| Layer 2 abstain | `ON_VALIDATION_FAIL` | `abstention_layer=2`, `uncited_claims` |
+| Layer 3 pass | `POST_LLM` | `judge_result` |
+| Layer 3 abstain | `ON_VALIDATION_FAIL` | `abstention_layer=3`, `judge_verdict`, `judge_confidence` |
+| Partial answer | `POST_LLM` | `judge_verdict="partial"`, note appended |
+
+#### Evaluation Extension
+
+Add to `EvalResult`:
+
+```python
+# Pipeline status tracking
+pipeline_status: PipelineStatus
+abstention_layer: int | None        # which layer gated (1/2/3)
+
+# Per-layer confidence values (for tuning thresholds)
+retrieval_aggregate_confidence: float
+citation_trustworthy: bool | None
+judge_verdict: str | None
+judge_confidence: float | None
+
+# Derived quality flags
+false_abstention: bool   # pipeline abstained on a gold query that has a known GT answer
+                         # = the system should have answered but didn't
+```
+
+Key eval metrics to track per corpus:
+
+| Metric | Formula | Target |
+|--------|---------|--------|
+| Abstention rate | `abstained / total` | < 15% on gold dataset |
+| False abstention rate | `abstained_on_answerable / answerable` | < 5% |
+| Layer 1 abstention share | `abstained_layer1 / abstained` | diagnoses retrieval gaps |
+| Layer 2 abstention share | `abstained_layer2 / abstained` | diagnoses citation/hallucination pressure |
+| Layer 3 abstention share | `abstained_layer3 / abstained` | diagnoses judge threshold calibration |
+| Partial answer rate | `partial / answered` | < 20% on gold dataset |
+
+If `false_abstention_rate > 5%` → lower `retrieval_confidence_threshold` or `judge_confidence_threshold`. If `abstention_rate > 20%` on live traffic → likely a corpus coverage problem, not a threshold problem.
+
+#### Threshold Calibration Workflow
+
+Thresholds are not set once and forgotten. Calibrate per corpus using the gold dataset:
+
+1. Run eval with `retrieval_confidence_threshold = 0` (disable Layer 1 gate) to get a baseline hit rate.
+2. Sweep `retrieval_confidence_threshold` from 0.5 → 3.0; plot abstention rate vs. false abstention rate. Pick the knee point.
+3. Repeat for `judge_confidence_threshold` from 0.4 → 0.8.
+4. Re-run after every significant ingestion batch (new docs shift the confidence distribution).
+
+Store calibration results alongside `eval_runs` in the `eval_runs.report_json` column.
 
 ---
 
@@ -1436,6 +1628,18 @@ Before committing to full integration, validate these items in a spike branch:
 - [ ] Add `mean_confidence`, `min_confidence`, `low_confidence_flag` fields to `EvalResult`
 - [ ] Update `metrics/retrieval.py` to record and report confidence distribution per eval run
 - [ ] Port changes back to `rag/retrieval/retriever.py` and `rag/retrieval/rerankers.py` for current system (pre-`knowledge/` migration)
+
+#### Phase L — Confidence-Aware Pipeline
+- [ ] Implement `knowledge/agent/judge.py` — `LLMJudge`: structured output `JudgeResult(verdict, confidence, reasoning)`; uses nano model; escalates to small if nano verdict confidence < 0.5
+- [ ] Implement `knowledge/agent/pipeline.py` — `ConfidenceAwarePipeline` with 3-layer gate logic; `PipelineStatus` enum; `RAGResponse` model with `citations`, `low_confidence_warning`, `abstention_layer`, `pipeline_latency_ms`
+- [ ] Extend `Retriever.retrieve_with_confidence()` — compute aggregate confidence sum over top-K; return `[]` if below `retrieval_confidence_threshold`
+- [ ] Update `knowledge/agent/agent.py` — structured generation output: `GenerationResult(answer, citations, citation_check: CitationCheck)`; enforce citation system prompt constraint
+- [ ] Add `retrieval_confidence_threshold`, `judge_confidence_threshold`, `judge_k` to `settings.py`
+- [ ] Wire all 3 gate outcomes into `HookRegistry` (`ON_VALIDATION_FAIL` for abstentions, `POST_LLM` for passes)
+- [ ] Update `EvalResult` — add `pipeline_status`, `abstention_layer`, `retrieval_aggregate_confidence`, `citation_trustworthy`, `judge_verdict`, `judge_confidence`, `false_abstention`
+- [ ] Add `metrics/pipeline.py` — abstention rate, false abstention rate, per-layer abstention share, partial answer rate
+- [ ] Implement threshold calibration script: sweep `retrieval_confidence_threshold` 0.5→3.0 and `judge_confidence_threshold` 0.4→0.8 over gold dataset; output knee-point recommendations
+- [ ] Add abstention rate + false abstention rate panels to Grafana dashboard
 
 ---
 
