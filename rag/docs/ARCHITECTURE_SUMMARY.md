@@ -48,7 +48,7 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
   │  batched API calls       │      │  rag/retrieval/retriever.py   │
   │  async LRU cache         │      │                               │
   └──────────────┬───────────┘      │  1. Cache check (LRU 5 min)   │
-                 │                  │  2. Embed query / HyDE        │
+                 │                  │  2. Embed query               │
                  ▼                  │  3. Semantic search (cosine)  │
   ┌──────────────────────────┐      │  4. Full-text search (BM25)   │
   │  PostgresHybridStore     │◀─────│  5. RRF merge  (k=60)         │
@@ -73,7 +73,6 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
 | Caller | Service | When |
 |--------|---------|------|
 | Agent | LLM | Every query |
-| Retriever — HyDE | LLM | `HYDE_ENABLED=true` |
 | Retriever — embed query | Embeddings | Always |
 | Retriever — rerank | LLM or CrossEncoder | `RERANKER_ENABLED=true` |
 | Mem0Store | LLM + Embeddings | Every `add()` call |
@@ -93,7 +92,6 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
 | Data models | `rag/ingestion/models.py` |
 | PostgreSQL store | `rag/storage/vector_store/postgres.py` |
 | Retriever | `rag/retrieval/retriever.py` |
-| HyDE processor | `rag/retrieval/query_processors.py` |
 | Rerankers | `rag/retrieval/rerankers.py` |
 | RAG agent + RAGState | `rag/agent/rag_agent.py` |
 | Agent prompts | `rag/agent/prompts.py` |
@@ -109,10 +107,10 @@ Agentic RAG over PostgreSQL/pgvector. Read this first; see linked docs for depth
 
 | Doc | What's in it |
 |-----|-------------|
-| `rag/docs/rag/ARCHITECTURE.md` | Full ingestion + retrieval pipelines with query flow |
-| `rag/docs/rag/INGESTION_PIPELINE.md` | Ingestion pipeline step-by-step |
-| `rag/docs/rag/RETRIEVAL_PIPELINE.md` | Retrieval pipeline step-by-step |
-| `rag/docs/rag/DATASTORE_GUIDE.md` | PostgreSQL schema, indexes, SQL examples |
-| `rag/docs/rag/CALL_GRAPH.md` | Method-level call graphs |
-| `rag/docs/rag/RAG.md` | Deep dive on chunking, HyDE, reranking, caching |
+| `rag/docs/ARCHITECTURE.md` | Full ingestion + retrieval pipelines with query flow |
+| `rag/docs/INGESTION_PIPELINE.md` | Ingestion pipeline step-by-step |
+| `rag/docs/RETRIEVAL_PIPELINE.md` | Retrieval pipeline step-by-step |
+| `rag/docs/DATASTORE_GUIDE.md` | PostgreSQL schema, indexes, SQL examples |
+| `rag/docs/CALL_GRAPH.md` | Method-level call graphs |
+| `rag/docs/RAG.md` | Deep dive on chunking, reranking, caching strategies |
 | `kg/docs/KG_FAQ.md` | Knowledge graph design decisions and eval results |

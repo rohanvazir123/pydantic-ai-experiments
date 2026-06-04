@@ -25,10 +25,10 @@ This document describes all available tests in the RAG system, how to run them, 
 python -m pytest rag/tests/ -v
 
 # Run specific test file
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 
 # Run with verbose output (shows print statements)
-python -m pytest rag/tests/test_agent_flow.py -v -s
+python -m pytest rag/tests/agent/test_agent_flow.py -v -s
 
 # Run tests matching a pattern
 python -m pytest rag/tests/ -v -k "postgres"
@@ -38,24 +38,25 @@ python -m pytest rag/tests/ -v -k "postgres"
 
 ## Test Files Overview
 
-| Test File | Tests | Requirements | Description |
-|-----------|-------|--------------|-------------|
-| `test_config.py` | 13 | None | Configuration and settings validation |
-| `test_ingestion.py` | 14 | None | Data models and chunking validation |
-| `test_postgres_store.py` | 18 | PostgreSQL | PostgreSQL/pgvector store operations |
-| `test_rag_agent.py` | 25+ | PostgreSQL + Ollama | RAG retriever and agent queries |
-| `test_retrieval_metrics.py` | 28 | PostgreSQL + Ollama | Gold dataset evaluation: Hit Rate, MRR, NDCG, Precision, Recall |
-| `test_agent_flow.py` | 3 | PostgreSQL + Ollama | Agent execution flow with Pydantic AI |
-| `test_pdf_question_generator.py` | 23 | PostgreSQL + Ollama | PDF question generator with pgvector |
-| `test_mem0_store.py` | 15+ | PostgreSQL + Ollama | Mem0 memory store with pgvector |
-| `test_raganything.py` | 10+ | Ollama + raganything | Multimodal processors (tables, equations, images) |
-| `test_pg_graph_store.py` | 40 | None (all unit) | PgGraphStore SQL tables, entity/relationship CRUD, search |
-| `test_age_graph_store.py` | 24 | None (unit) / AGE (integration) | AgeGraphStore Cypher ops; 1 integration test skipped unless `AGE_DATABASE_URL` set |
-| `test_legal_retrieval.py` | 16 | PostgreSQL + Ollama (4 integration) | Legal contract retrieval quality; 4 integration tests require live services |
-| `test_api.py` | 14 | None (all mocked) | FastAPI REST API endpoint tests (chat, stream, ingest, health) |
-| `test_mcp_server.py` | 21 | None (all mocked) | MCP server tool tests (search, retrieve, ingest, health) |
-| `test_cuad_ingestion.py` | 34 | None (all mocked/unit) | CUAD dataset ingestion — parsing, file extraction, eval pairs, pipeline wiring |
-| `test_hybrid_kg_retrieval.py` | 19 unit + 40 integration | None (unit) / PostgreSQL + AGE + Ollama (integration) | Hybrid KG + text retrieval: intent classifier, fusion, 100 HYBRID_KG_QUESTIONS |
+| Test File | Subfolder | Tests | Requirements | Description |
+|-----------|-----------|-------|--------------|-------------|
+| `test_config.py` | `core/` | ~12 | None | Configuration and settings validation |
+| `test_ingestion.py` | `core/` | ~34 | None | Data models and chunking validation |
+| `test_postgres_store.py` | `storage/` | ~46 | PostgreSQL | PostgreSQL/pgvector store operations |
+| `test_mem0_store.py` | `storage/` | 15+ | PostgreSQL | Mem0 memory store with pgvector |
+| `test_rag_agent.py` | `agent/` | 25+ | PostgreSQL + Ollama | RAG retriever and agent queries |
+| `test_agent_flow.py` | `agent/` | 3 | PostgreSQL + Ollama | Agent execution flow with Pydantic AI |
+| `test_api.py` | `agent/` | 14 | None (all mocked) | FastAPI REST API endpoint tests (chat, stream, ingest, health) |
+| `test_mcp_server.py` | `agent/` | 21 | None (all mocked) | MCP server tool tests (search, retrieve, ingest, health) |
+| `test_retrieval_metrics.py` | `retrieval/` | 28 | PostgreSQL + Ollama | Gold dataset evaluation: Hit Rate, MRR, NDCG, Precision, Recall |
+| `test_legal_retrieval.py` | `retrieval/` | 16 | PostgreSQL + Ollama | Legal contract retrieval quality |
+| `test_pdf_question_generator.py` | `experimental/` | 23 | PostgreSQL + Ollama | PDF question generator with pgvector |
+| `test_raganything.py` | `experimental/` | 10+ | Ollama + raganything | Multimodal processors (tables, equations, images) |
+
+**Moved to `misc/kg_legal_cuad/tests/`** (no longer in `rag/tests/`):
+`test_cuad_ingestion.py`, `test_age_graph_store.py`, `test_hybrid_kg_retrieval.py`, `test_nl_query.py`
+
+**Does not exist**: `test_pg_graph_store.py` — `PgGraphStore` is not part of the current implementation.
 
 ---
 
@@ -78,7 +79,7 @@ python -m pytest rag/tests/ -v -n auto
 
 #### Configuration Tests (No External Dependencies)
 ```bash
-python -m pytest rag/tests/test_config.py -v
+python -m pytest rag/tests/core/test_config.py -v
 ```
 
 Tests:
@@ -93,7 +94,7 @@ Tests:
 
 #### Data Model Tests (No External Dependencies)
 ```bash
-python -m pytest rag/tests/test_ingestion.py -v
+python -m pytest rag/tests/core/test_ingestion.py -v
 ```
 
 Tests:
@@ -105,7 +106,7 @@ Tests:
 
 #### PostgreSQL/pgvector Store Tests
 ```bash
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 ```
 
 **Requirements:** PostgreSQL with pgvector extension
@@ -130,7 +131,7 @@ Tests:
 
 #### RAG Agent Tests
 ```bash
-python -m pytest rag/tests/test_rag_agent.py -v
+python -m pytest rag/tests/agent/test_rag_agent.py -v
 ```
 
 **Requirements:** PostgreSQL with data + Ollama running
@@ -161,7 +162,7 @@ Tests:
 
 #### Agent Flow Tests
 ```bash
-python -m pytest rag/tests/test_agent_flow.py -v -s
+python -m pytest rag/tests/agent/test_agent_flow.py -v -s
 ```
 
 **Requirements:** PostgreSQL with data + Ollama running
@@ -175,7 +176,7 @@ Tests:
 
 #### PDF Question Generator Tests
 ```bash
-python -m pytest rag/tests/test_pdf_question_generator.py -v
+python -m pytest rag/tests/experimental/test_pdf_question_generator.py -v
 ```
 
 **Requirements:** PostgreSQL with pgvector + Ollama running
@@ -211,7 +212,7 @@ Tests:
   - `test_questions_text_index_exists` - GIN index on questions
   - `test_chunks_text_index_exists` - GIN index on chunks
 ```bash
-python -m pytest rag/tests/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s
+python -m pytest rag/tests/agent/test_agent_flow.py::TestAgentFlow::test_agent_flow_verbose -v -s
 ```
 
 This shows:
@@ -222,7 +223,7 @@ This shows:
 
 #### Mem0 Store Tests
 ```bash
-python -m pytest rag/tests/test_mem0_store.py -v
+python -m pytest rag/tests/storage/test_mem0_store.py -v
 ```
 
 **Requirements:** PostgreSQL with pgvector + Ollama running + MEM0_ENABLED=true
@@ -256,7 +257,7 @@ Tests:
 
 #### RAG-Anything Multimodal Tests
 ```bash
-python -m pytest rag/tests/test_raganything.py -v
+python -m pytest rag/tests/experimental/test_raganything.py -v
 ```
 
 **Requirements:** Ollama + raganything + lightrag libraries
@@ -316,7 +317,7 @@ Tests cover:
 
 #### REST API Tests
 ```bash
-python -m pytest rag/tests/test_api.py -v
+python -m pytest rag/tests/agent/test_api.py -v
 ```
 
 **Requirements:** None — all external dependencies (DB, LLM, ingestion pipeline) are mocked.
@@ -331,7 +332,7 @@ Tests cover (`TestChatEndpoint`, `TestChatStreamEndpoint`, `TestIngestEndpoint`,
 
 #### MCP Server Tests
 ```bash
-python -m pytest rag/tests/test_mcp_server.py -v
+python -m pytest rag/tests/agent/test_mcp_server.py -v
 ```
 
 **Requirements:** None — all external dependencies are mocked.
@@ -406,10 +407,10 @@ Tests cover:
 
 ### Unit Tests (Fast, No External Dependencies)
 ```bash
-python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py \
+python -m pytest rag/tests/core/test_config.py rag/tests/core/test_ingestion.py \
     rag/tests/test_pg_graph_store.py rag/tests/test_age_graph_store.py \
-    rag/tests/test_legal_retrieval.py rag/tests/test_api.py \
-    rag/tests/test_mcp_server.py rag/tests/test_cuad_ingestion.py \
+    rag/tests/test_legal_retrieval.py rag/tests/agent/test_api.py \
+    rag/tests/agent/test_mcp_server.py rag/tests/test_cuad_ingestion.py \
     rag/tests/test_hybrid_kg_retrieval.py \
     -v -k "not Integration"
 ```
@@ -419,7 +420,7 @@ These tests run quickly and don't require any external services. Includes the 40
 ### Integration Tests (Require Database)
 ```bash
 # PostgreSQL/vector store tests
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 
 # AGE graph store integration (requires AGE_DATABASE_URL)
 python -m pytest rag/tests/test_age_graph_store.py -v -k "Integration"
@@ -430,7 +431,7 @@ python -m pytest rag/tests/test_legal_retrieval.py -v -k "Integration"
 
 ### End-to-End Tests (Require Database + LLM)
 ```bash
-python -m pytest rag/tests/test_rag_agent.py rag/tests/test_agent_flow.py -v
+python -m pytest rag/tests/agent/test_rag_agent.py rag/tests/agent/test_agent_flow.py -v
 ```
 
 These require:
@@ -458,7 +459,7 @@ python -m pytest rag/tests/test_hybrid_kg_retrieval.py -v -k "not integration"
 
 #### Retrieval Metrics Tests
 ```bash
-python -m pytest rag/tests/test_retrieval_metrics.py -v --log-cli-level=INFO
+python -m pytest rag/tests/retrieval/test_retrieval_metrics.py -v --log-cli-level=INFO
 ```
 
 **Requirements:** PostgreSQL with ingested NeuralFlow AI documents + Ollama running
@@ -651,10 +652,10 @@ python -m pytest rag/tests/ -v --timeout=300
 For detailed output during test execution:
 ```bash
 # Show print statements
-python -m pytest rag/tests/test_agent_flow.py -v -s
+python -m pytest rag/tests/agent/test_agent_flow.py -v -s
 
 # Show logging
-python -m pytest rag/tests/test_rag_agent.py -v --log-cli-level=INFO
+python -m pytest rag/tests/agent/test_rag_agent.py -v --log-cli-level=INFO
 
 # Both
 python -m pytest rag/tests/ -v -s --log-cli-level=INFO
@@ -666,19 +667,19 @@ python -m pytest rag/tests/ -v -s --log-cli-level=INFO
 
 ```bash
 # Quick validation (no external deps)
-python -m pytest rag/tests/test_config.py rag/tests/test_ingestion.py -v
+python -m pytest rag/tests/core/test_config.py rag/tests/core/test_ingestion.py -v
 
 # PostgreSQL store validation
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 
 # Full RAG system test
-python -m pytest rag/tests/test_rag_agent.py -v
+python -m pytest rag/tests/agent/test_rag_agent.py -v
 
 # Agent flow debugging
-python -m pytest rag/tests/test_agent_flow.py -v -s
+python -m pytest rag/tests/agent/test_agent_flow.py -v -s
 
 # Mem0 memory store tests
-python -m pytest rag/tests/test_mem0_store.py -v
+python -m pytest rag/tests/storage/test_mem0_store.py -v
 
 # Knowledge graph — PgGraphStore (no deps, all unit)
 python -m pytest rag/tests/test_pg_graph_store.py -v
@@ -690,10 +691,10 @@ python -m pytest rag/tests/test_age_graph_store.py -v -k "not Integration"
 python -m pytest rag/tests/test_legal_retrieval.py -v
 
 # REST API (all mocked, no external deps)
-python -m pytest rag/tests/test_api.py -v
+python -m pytest rag/tests/agent/test_api.py -v
 
 # MCP server (all mocked, no external deps)
-python -m pytest rag/tests/test_mcp_server.py -v
+python -m pytest rag/tests/agent/test_mcp_server.py -v
 
 # CUAD ingestion (all mocked, no external deps)
 python -m pytest rag/tests/test_cuad_ingestion.py -v

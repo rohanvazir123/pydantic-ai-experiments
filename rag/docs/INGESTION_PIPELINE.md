@@ -34,9 +34,10 @@ For each document file:
             VLM_ENABLED=false (default)
               → DocumentConverter()  StandardPdfPipeline (layout + OCR)
             VLM_ENABLED=true
-              → DocumentConverter(VlmPipeline + ApiVlmOptions)
-                  each page rendered as image → POST Ollama /v1/chat/completions
-                  model=qwen2.5vl:7b → markdown with [Figure: ...] descriptions
+              → DocumentConverter(PdfPipelineOptions(do_picture_description=True)
+                                  + PictureDescriptionApiOptions)
+                  cropped figure/table images → POST Ollama /v1/chat/completions
+                  model=qwen2.5vl:7b → figure captions inserted into DoclingDocument
                   DoclingDocument flows into HybridChunker unchanged
       .docx / .pptx / .xlsx / .html / .htm / .md / .markdown
             → _get_standard_converter() [cached]
@@ -80,34 +81,14 @@ For each document file:
 
 | Flag | Behaviour |
 |------|-----------|
-| `--ingest` | TRUNCATE both tables, ingest everything from scratch |
+| `--ingest` | `DELETE FROM` both tables, ingest everything from scratch |
 | `--ingest --no-clean` | Hash-based skip / update / delete — only changed files re-ingested |
 
 ---
 
 ## CUAD Legal Contract Ingestion
 
-Standalone script for the [CUAD dataset](https://huggingface.co/datasets/theatticusproject/cuad) (510 commercial contracts, 41 annotated question types).
-
-**Key file:** `rag/ingestion/cuad_ingestion.py`
-
-- Converts contracts to Markdown → `rag/documents/legal/`
-- Saves evaluation Q&A pairs → `rag/legal/cuad_eval.json`
-- Feeds contracts through `DocumentIngestionPipeline`
-
-```bash
-# Dry run — extract files only, no DB write
-python -m rag.ingestion.cuad_ingestion --dry-run
-
-# Test — first 10 contracts
-python -m rag.ingestion.cuad_ingestion --limit 10
-
-# Full — all 510 contracts
-python -m rag.ingestion.cuad_ingestion
-
-# Incremental
-python -m rag.ingestion.cuad_ingestion --no-clean
-```
+> **Moved:** The CUAD ingestion script and associated data were moved to `misc/kg_legal_cuad/` and are no longer importable as `rag.ingestion.*` modules. See `misc/kg_legal_cuad/cuad_ingestion.py` for the archived implementation.
 
 Download the dataset:
 ```python
@@ -139,7 +120,7 @@ hf_hub_download(
 | `EMBEDDING_MODEL` | `nomic-embed-text:latest` | Embedding model |
 | `EMBEDDING_DIMENSION` | `768` | Must match model output |
 | `EMBEDDING_BASE_URL` | `http://localhost:11434/v1` | Ollama or OpenAI endpoint |
-| `VLM_ENABLED` | `false` | Enable Docling VlmPipeline for PDF ingestion |
+| `VLM_ENABLED` | `false` | Enable figure-description VLM for PDF ingestion (`PictureDescriptionApiOptions`) |
 | `VLM_MODEL` | `qwen2.5vl:7b` | Ollama model tag for VLM (must be pulled first) |
 | `VLM_BASE_URL` | `http://localhost:11434/v1/chat/completions` | VLM API endpoint |
 | `VLM_TIMEOUT` | `120.0` | Per-page timeout in seconds |

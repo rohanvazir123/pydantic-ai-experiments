@@ -113,10 +113,7 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
   ┌───────────────────────────────────┐
   │   Query embedding                 │
   │                                   │
-  │   HyDE off → embed raw query      │
-  │   HyDE on  → LLM generates        │
-  │              hypothetical answer  │
-  │              → embed that instead │
+  │   embed raw query                 │
   └───────────────┬───────────────────┘
                   │
                   ▼
@@ -125,9 +122,10 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
   │                                                   │
   │   semantic ──▶ ORDER BY embedding <=> $1 LIMIT N  │
   │   text     ──▶ content_tsv @@ plainto_tsquery()   │
+  │   fuzzy    ──▶ word_similarity($1, content) > 0.2 │
   │                         │                         │
   │                         ▼                         │
-  │              RRF merge  (k = 60)                  │
+  │              RRF merge  (k = 60)  — all 3 legs    │
   │              score = Σ 1 / (k + rank_i)           │
   └───────────────────────────────────┬───────────────┘
                                       │

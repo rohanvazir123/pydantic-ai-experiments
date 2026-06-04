@@ -32,8 +32,10 @@
       "text"      WHERE content_tsv @@ plainto_tsquery('english', $1)
       "hybrid"    asyncio.gather(semantic, text) → RRF merge (k=60)
 
-4. Score filter
-      Drop chunks below MIN_RELEVANCE_SCORE (default 0.4)
+4. Score filter (semantic mode only)
+      Drop chunks below MIN_RELEVANCE_SCORE (default 0.0)
+      Not applied for hybrid or text modes — RRF and ts_rank scores are not
+      calibrated to the same 0–1 scale as cosine similarity
 
 5. Cache write + return list[SearchResult]
 ```
@@ -45,7 +47,7 @@
 | Setting | Default | Effect |
 |---------|---------|--------|
 | `DEFAULT_MATCH_COUNT` | `10` | Results returned per query |
-| `MIN_RELEVANCE_SCORE` | `0.4` | Drop chunks below this threshold; set to `0.0` to disable |
+| `MIN_RELEVANCE_SCORE` | `0.0` | Drop chunks below this threshold (semantic mode only); `0.0` = disabled |
 
 ---
 
@@ -54,7 +56,7 @@
 | Cache | Mechanism | Key | TTL | Capacity |
 |-------|-----------|-----|-----|----------|
 | Embeddings | `@alru_cache` | `(text, model)` | None | 1000 entries |
-| Search results | `ResultCache` (OrderedDict LRU) | `(query, type, count)` | 5 min | 100 entries |
+| Search results | `ResultCache` (OrderedDict LRU) | `SHA-256(query, type, count, metadata_filter)` | 5 min | 100 entries |
 
 ---
 

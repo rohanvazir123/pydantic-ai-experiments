@@ -63,8 +63,8 @@ Search Types
 
 Feature Flags (settings)
 ------------------------
-- reranker_enabled: True by default — always rerank using CrossEncoder (local)
-- reranker_type: "cross_encoder" (default, local) or "llm"
+- reranker_enabled: False by default — enable with RERANKER_ENABLED=true
+- reranker_type: "llm" (default) or "cross_encoder"
 - reranker_overfetch_factor: How many × match_count to fetch before reranking
 
 Usage

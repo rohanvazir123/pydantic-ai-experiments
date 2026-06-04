@@ -25,9 +25,6 @@ pip install -e .
 # Start AGE + viewer
 docker compose up -d age age-viewer
 
-# Populate graph from CUAD annotations (fast, no LLM)
-python -m kg.cuad_kg_ingest
-
 # Ingest documents into vector store
 python -m rag.main --ingest --documents rag/documents
 
@@ -88,15 +85,7 @@ See [`kg/docs/GRAPH_VIEWER.md`](kg/docs/GRAPH_VIEWER.md) for extended queries an
 
 ### Populating the graph
 
-```powershell
-# Option 1: CUAD annotations — 510 contracts, minutes, no LLM (recommended first)
-python -m kg.cuad_kg_ingest
-
-# Option 2: LLM extraction — Bronze → Silver → Gold → Risk, all 5 passes
-python -m kg.extraction_pipeline --all          # all contracts (~5 days local)
-python -m kg.extraction_pipeline --limit 20     # small batch to test
-python -m kg.extraction_pipeline --project --all  # replay Silver+Gold from existing Bronze
-```
+> **Note:** The CUAD legal KG ingestion scripts (`cuad_kg_ingest.py`, `extraction_pipeline.py`) were moved to `misc/kg_legal_cuad/` and are no longer importable as `kg.*` modules. See `misc/kg_legal_cuad/` for the archived implementation.
 
 ---
 
@@ -120,12 +109,9 @@ TESTS.md                              — test suite docs
 ## Tests
 
 ```powershell
-# All unit + Cypher shape tests (no external deps)
-pytest rag/tests/test_nl_query.py -v
-
-# Integration tests (requires live AGE + pgvector)
-pytest rag/tests/test_nl_query.py -m integration -v
-
 # Full suite
 pytest rag/tests/ -v
+
+# Fast unit tests only
+pytest rag/tests/core/ rag/tests/agent/ -m "not integration" -v
 ```

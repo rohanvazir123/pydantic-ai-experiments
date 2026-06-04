@@ -62,7 +62,6 @@ rag/
 │   └── settings.py              # Pydantic Settings configuration
 ├── ingestion/
 │   ├── pipeline.py               # Document ingestion pipeline
-│   ├── cuad_ingestion.py         # CUAD dataset ingestion (510 legal contracts)
 │   ├── embedder.py               # Embedding generation (OpenAI-compatible)
 │   ├── models.py                 # Data models (ChunkData, SearchResult, etc.)
 │   └── chunkers/
@@ -73,7 +72,7 @@ rag/
 ├── retrieval/
 │   └── retriever.py              # Search orchestrator
 ├── agent/
-│   ├── rag_agent.py              # Pydantic AI agent (search_knowledge_base + search_knowledge_graph tools)
+│   ├── rag_agent.py              # Pydantic AI agent (5 tools: search_knowledge_base, search_knowledge_graph, search_hybrid_kg, run_graph_query, nl_graph_query)
 │   └── prompts.py                # System prompts
 ├── api/
 │   └── app.py                    # FastAPI REST API (GET /health, POST /v1/chat, /v1/chat/stream, /v1/ingest)
@@ -82,29 +81,20 @@ rag/
 kg/                               # Knowledge graph (top-level module, separate from rag/)
 ├── __init__.py                   # create_kg_store() factory (reads KG_BACKEND env var)
 ├── age_graph_store.py            # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
-├── entity_index.py               # Entity indexing utilities
-└── legal/
-    ├── common/
-    │   └── cuad_ontology.py      # VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP, RELATIONSHIP_MAP
-    └── ingestion/
-        ├── cuad_kg_ingest.py     # build_cuad_kg(): CUAD annotations → AgeGraphStore
-        ├── extraction_pipeline.py # LLM-based entity/relationship extraction
-        └── eval_pipeline.py      # KG evaluation pipeline
+└── entity_index.py               # Entity indexing utilities
+# NOTE: kg/legal/ was moved to misc/kg_legal_cuad/kg_legal/ (CUAD legal use case)
 ├── memory/
 │   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
-├── legal/
-│   └── __init__.py               # Legal document ingestion and evaluation utilities
 ├── documents/                    # Sample documents for ingestion
 │   └── legal/                    # CUAD contract Markdown files (git-ignored)
 ├── tests/                        # Test suite (see retrieval/RETRIEVAL_FAQ.md for retrieval tests)
 │   ├── core/                     # Fast unit tests — no external deps
-│   │   ├── test_config.py        # Settings loading, credential masking (13 tests)
-│   │   └── test_ingestion.py     # Data models, chunking config (14 tests)
+│   │   ├── test_config.py        # Settings loading, credential masking (~12 tests)
+│   │   └── test_ingestion.py     # Data models, chunking config (~34 tests)
 │   ├── storage/                  # DB-layer tests
-│   │   ├── test_postgres_store.py # PostgreSQL connection & index tests (18 tests)
+│   │   ├── test_postgres_store.py # PostgreSQL connection & index tests (~46 tests)
 │   │   └── test_mem0_store.py    # Mem0Store CRUD tests
-│   ├── ingestion/                # Ingestion pipeline tests
-│   │   └── test_cuad_ingestion.py # CUAD ingestion unit tests (34, all mocked)
+│   ├── ingestion/                # Ingestion pipeline tests (currently empty — test_cuad_ingestion.py moved to misc/)
 │   ├── retrieval/                # Retrieval quality + IR metrics
 │   │   ├── test_retrieval_metrics.py # Gold dataset + Hit Rate/MRR/NDCG/Precision/Recall
 │   │   └── test_legal_retrieval.py   # Legal corpus quality + corpus isolation tests
@@ -113,11 +103,9 @@ kg/                               # Knowledge graph (top-level module, separate 
 │   │   ├── test_agent_flow.py    # Pydantic AI event stream debugging
 │   │   ├── test_api.py           # FastAPI REST API tests (14, all mocked)
 │   │   └── test_mcp_server.py    # MCP server tests (21, all mocked)
-│   ├── knowledge_graph/          # KG + NL→Cypher tests
-│   │   ├── test_age_graph_store.py    # AgeGraphStore unit + 1 integration test (24 total)
-│   │   ├── test_hybrid_kg_retrieval.py # HybridKGRetriever unit + integration
-│   │   └── test_nl_query.py           # NL→Cypher intent parsing + query builder
 │   └── experimental/             # Third-party integrations
+# NOTE: knowledge_graph tests (test_age_graph_store.py, test_hybrid_kg_retrieval.py,
+#       test_nl_query.py) moved to misc/kg_legal_cuad/tests/kg/
 │       ├── test_raganything.py   # RAG-Anything modal processors
 │       └── test_pdf_question_generator.py # PDFQuestionStore
 └── main.py                       # CLI entry point

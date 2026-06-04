@@ -602,7 +602,7 @@ Both tables have a `metadata JSONB` column. Keys are set by the ingestion pipeli
 
 | Key | Type | Example | Set by |
 |-----|------|---------|--------|
-| `content_hash` | `string` | `"a3f2..."` | Pipeline (SHA-256, used for incremental re-ingest detection) |
+| `content_hash` | `string` | `"a3f2..."` | Pipeline (MD5 via `hashlib.md5()`, used for incremental re-ingest detection) |
 | `file_type` | `string` | `"pdf"`, `"md"` | Pipeline |
 | `page_count` | `number` | `42` | Docling converter |
 | `word_count` | `number` | `8320` | Pipeline |
@@ -946,7 +946,7 @@ async def test_hybrid_search(store):
 
 ```bash
 # PostgreSQL store tests
-python -m pytest rag/tests/test_postgres_store.py -v
+python -m pytest rag/tests/storage/test_postgres_store.py -v
 
 # All tests
 python -m pytest rag/tests/ -v

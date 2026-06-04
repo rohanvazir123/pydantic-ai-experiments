@@ -111,9 +111,9 @@ VLMs are needed in the RAG pipeline wherever **documents contain images, tables 
 
 | Component | State | Notes |
 |-----------|-------|-------|
-| Docling PDF pipeline | **Enabled** — `VLM_ENABLED=true` | Each page rendered as image → Qwen2.5-VL via Ollama → markdown with figure descriptions |
-| Docling figure extraction | **Enabled** via VLM pipeline | Figures annotated in-line with `[Figure: ...]` descriptions |
-| Scanned PDF OCR | Handled by VLM pipeline | VLM reads the rendered page image directly |
+| Docling PDF pipeline | **Opt-in** — `VLM_ENABLED=false` by default | Cropped figure/table images → Qwen2.5-VL via Ollama → captions inserted into DoclingDocument |
+| Docling figure extraction | **Opt-in** via `do_picture_description=True` | Figures described in-line; uses `PictureDescriptionApiOptions` |
+| Scanned PDF OCR | Not handled by VLM path | Standard Docling OCR; VLM only handles extracted figures |
 | Audio via Whisper | No VLM | Whisper is a standalone ASR model |
 
 ### Recommended VLMs
@@ -133,29 +133,26 @@ The VLM runs via Ollama — no VRAM is consumed by the Python process directly.
 # VLM_ENABLED=false (default) — standard layout + OCR pipeline
 converter = DocumentConverter()
 
-# VLM_ENABLED=true — each PDF page sent to Qwen2.5-VL via Ollama
-from docling.datamodel.pipeline_options import VlmPipelineOptions
-from docling.datamodel.pipeline_options_vlm_model import ApiVlmOptions, ResponseFormat
-from docling.pipeline.vlm_pipeline import VlmPipeline
+# VLM_ENABLED=true — cropped figure images sent to Qwen2.5-VL via Ollama
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import PictureDescriptionApiOptions
 
-vlm_options = ApiVlmOptions(
+vlm_options = PictureDescriptionApiOptions(
     url="http://localhost:11434/v1/chat/completions",
-    params={"model": "qwen2.5vl:7b", "max_tokens": 4096},
+    params={"model": "qwen2.5vl:7b", "max_tokens": 1024},
     timeout=120.0,
-    response_format=ResponseFormat.MARKDOWN,
     prompt=(
-        "Convert this page to markdown. "
-        "For every figure, chart, diagram, or image: write a detailed description "
-        "explaining what it shows, wrapped in a [Figure: ...] tag. "
-        "Do not miss any text and only output the bare markdown."
+        "Describe this figure or table in detail. "
+        "Focus on what data, relationships, or visual content it conveys."
     ),
+)
+pipeline_options = PdfPipelineOptions(
+    do_picture_description=True,
+    picture_description_options=vlm_options,
 )
 converter = DocumentConverter(
     format_options={
-        InputFormat.PDF: PdfFormatOption(
-            pipeline_cls=VlmPipeline,
-            pipeline_options=VlmPipelineOptions(vlm_options=vlm_options),
-        )
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
     }
 )
 ```
