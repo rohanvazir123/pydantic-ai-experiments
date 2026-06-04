@@ -84,6 +84,14 @@ class Settings(BaseSettings):
         default=10, ge=1, description="Maximum PostgreSQL connection pool size"
     )
 
+    # DB query timeouts (Step 2)
+    db_query_timeout_s: float = Field(
+        default=10.0, gt=0, description="Per-query timeout in seconds for search/write operations"
+    )
+    db_health_timeout_s: float = Field(
+        default=5.0, gt=0, description="Timeout in seconds for health-check DB probe"
+    )
+
     @field_validator("postgres_table_documents", "postgres_table_chunks", "age_graph_name", mode="before")
     @classmethod
     def validate_table_name(cls, v: str) -> str:
@@ -112,6 +120,17 @@ class Settings(BaseSettings):
     llm_base_url: str | None = Field(
         default="http://localhost:11434/v1",
         description="Base URL for the LLM API (for OpenAI-compatible providers)",
+    )
+
+    # Embedding timeouts + retries (Step 1)
+    embedding_timeout_s: float = Field(
+        default=30.0, gt=0, description="Per-call timeout in seconds for embedding API requests"
+    )
+    embedding_retry_attempts: int = Field(
+        default=3, ge=1, description="Max retry attempts for transient embedding API errors"
+    )
+    embedding_retry_backoff_s: float = Field(
+        default=1.0, gt=0, description="Initial backoff in seconds for embedding retries (doubles each attempt)"
     )
 
     # Embedding Configuration
@@ -158,12 +177,6 @@ class Settings(BaseSettings):
             "Chunks below this threshold are dropped before being passed to the agent. "
             "Set to 0.0 to disable. Tune upward (0.5-0.6) for higher-precision corpora."
         ),
-    )
-
-    # HyDE (Hypothetical Document Embeddings) Configuration
-    hyde_enabled: bool = Field(
-        default=False,
-        description="Enable HyDE: embed a hypothetical answer instead of the raw query for better recall",
     )
 
     # Reranker Configuration
@@ -263,6 +276,19 @@ class Settings(BaseSettings):
     vlm_concurrency: int = Field(
         default=1,
         description="Number of concurrent page requests to the VLM.",
+    )
+
+    # LLM timeout (Step 3)
+    llm_timeout_s: float = Field(
+        default=120.0, gt=0, description="Per-call timeout in seconds for LLM API requests"
+    )
+
+    # Inbound API rate limiting (Step 4)
+    api_rate_limit_rpm: int = Field(
+        default=60, ge=1, description="Max requests per minute per IP on chat endpoints"
+    )
+    api_rate_limit_burst: int = Field(
+        default=10, ge=1, description="Token-bucket burst size for chat endpoint rate limiting"
     )
 
     # Context window for local LLMs (Ollama only — ignored for cloud providers).

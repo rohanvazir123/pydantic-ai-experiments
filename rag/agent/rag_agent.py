@@ -114,17 +114,17 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel
-from pydantic import PrivateAttr
+from pydantic import BaseModel, PrivateAttr
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from rag.agent.prompts import MAIN_SYSTEM_PROMPT
-from rag.config.settings import load_settings
 from kg import create_kg_store
 from kg.age_graph_store import AgeGraphStore
+from rag.agent.prompts import MAIN_SYSTEM_PROMPT
+from rag.config.settings import load_settings
+from rag.ingestion.models import MetadataFilter
 from rag.memory.mem0_store import Mem0Store
 from rag.observability import get_langfuse, trace_tool_call
 from rag.retrieval.retriever import Retriever
@@ -249,6 +249,8 @@ async def search_knowledge_base(
     query: str,
     match_count: int | None = 5,
     search_type: str | None = "hybrid",
+    document_source: str | None = None,
+    metadata_filters: dict[str, str] | None = None,
 ) -> str:
     """
     Search the knowledge base for relevant information.
@@ -256,10 +258,14 @@ async def search_knowledge_base(
     Combines RAG retrieval with Mem0 user context (if enabled and user_id provided).
 
     Args:
-        ctx: Agent runtime context (NOTE: ctx.deps is available but not currently used)
+        ctx: Agent runtime context
         query: Search query text
         match_count: Number of results to return (default: 5)
         search_type: Type of search - "semantic", "text", or "hybrid" (default)
+        document_source: Restrict search to a specific document by its source path
+            (e.g. "rag/documents/benefits.md"). Leave None to search all documents.
+        metadata_filters: Key-value pairs to filter chunks by metadata fields
+            (e.g. {"doc_type": "policy", "category": "hr"}). Leave None for no filter.
 
     Returns:
         String containing the retrieved information formatted for the LLM,
@@ -296,9 +302,20 @@ async def search_knowledge_base(
         actual_search_type = search_type or "hybrid"
         actual_match_count = match_count or 5
 
+        # Build metadata filter if any filter params were provided
+        mf: MetadataFilter | None = None
+        if document_source or metadata_filters:
+            mf = MetadataFilter(
+                document_source=document_source,
+                metadata_eq=metadata_filters or {},
+            )
+
         # Get RAG results
         rag_result = await retriever.retrieve_as_context(
-            query=query, match_count=actual_match_count, search_type=actual_search_type
+            query=query,
+            match_count=actual_match_count,
+            search_type=actual_search_type,
+            metadata_filter=mf,
         )
 
         # Get Mem0 user context if available
@@ -329,6 +346,8 @@ async def search_knowledge_base(
                     "match_count": actual_match_count,
                     "search_type": actual_search_type,
                     "user_id": user_id,
+                    "document_source": document_source,
+                    "metadata_filters": metadata_filters,
                 },
                 tool_output=result[:500] + "..." if len(result) > 500 else result,
                 duration_ms=duration_ms,
@@ -593,8 +612,8 @@ async def nl_graph_query(
         Pipe-separated table of results, or an error message.
     """
     from kg.legal.retrieval.graph_router import GraphRouter
-    from kg.legal.retrieval.schemas import get_schema
     from kg.legal.retrieval.nl2cypher import NL2CypherConverter
+    from kg.legal.retrieval.schemas import get_schema
 
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)

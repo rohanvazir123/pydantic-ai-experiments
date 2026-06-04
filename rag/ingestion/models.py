@@ -199,6 +199,60 @@ class SearchResult(BaseModel):
     document_source: str = Field(..., description="Source from document lookup")
 
 
+class MetadataFilter(BaseModel):
+    """Filter for retrieval based on chunk or document metadata.
+
+    All fields are ANDed together. Empty filter matches everything.
+
+    Date range example (ISO 8601 strings compare correctly as text)::
+
+        # Q4 2024 by date range
+        MetadataFilter(
+            metadata_gte={"date": "2024-10-01"},
+            metadata_lte={"date": "2024-12-31"},
+        )
+
+        # Q4 2024 by explicit quarter/year tags
+        MetadataFilter(metadata_eq={"quarter": "Q4", "year": "2024"})
+
+        # Only chunks from a specific file
+        MetadataFilter(document_source="rag/documents/benefits.md")
+
+        # Chunks where "category" is one of several values
+        MetadataFilter(metadata_in={"category": ["legal", "hr"]})
+    """
+
+    # Exact-match filters on chunks.metadata JSONB keys (all ANDed)
+    metadata_eq: dict[str, Any] = Field(default_factory=dict)
+
+    # List-inclusion filters on chunks.metadata JSONB keys (all ANDed)
+    metadata_in: dict[str, list[Any]] = Field(default_factory=dict)
+
+    # Range filters on chunks.metadata JSONB keys.
+    # Values must be ISO 8601 date strings ("YYYY-MM-DD") or comparable text.
+    # ISO 8601 strings sort lexicographically in the correct chronological order,
+    # so text comparison (>=, <=) gives correct date range semantics.
+    metadata_gte: dict[str, str] = Field(default_factory=dict)
+    metadata_lte: dict[str, str] = Field(default_factory=dict)
+
+    # Document-level filters (joined via documents table)
+    document_source: str | None = None
+    document_sources: list[str] = Field(default_factory=list)
+    document_title: str | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        return (
+            not self.metadata_eq
+            and not self.metadata_in
+            and not self.metadata_gte
+            and not self.metadata_lte
+            and not self.document_source
+            and not self.document_sources
+            and not self.document_title
+        )
+
+
 class RetrievedChunk(DocumentChunk):
     """A document chunk with relevance score from retrieval."""
 
