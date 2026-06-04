@@ -40,11 +40,12 @@ Retriever
             use_cache: bool = True
         ) -> list[SearchResult]
             Retrieve documents. Pipeline:
-              1. HyDE (if enabled): generate hypothetical doc, embed it
-              2. Over-fetch from DB (if reranking)
-              3. Search (semantic / text / hybrid)
-              4. Rerank (if enabled) down to match_count
-              5. Cache final results
+              1. Check cache
+              2. Embed query
+              3. Over-fetch from DB (if reranking)
+              4. Search (semantic / text / hybrid)
+              5. Rerank (if enabled) down to match_count
+              6. Cache final results
 
         async retrieve_as_context(query, match_count, search_type) -> str
             Retrieve and format results as LLM context string.
@@ -62,8 +63,8 @@ Search Types
 
 Feature Flags (settings)
 ------------------------
-- reranker_enabled: Rerank over-fetched results before returning
-- reranker_type: "llm" or "cross_encoder"
+- reranker_enabled: True by default — always rerank using CrossEncoder (local)
+- reranker_type: "cross_encoder" (default, local) or "llm"
 - reranker_overfetch_factor: How many × match_count to fetch before reranking
 
 Usage

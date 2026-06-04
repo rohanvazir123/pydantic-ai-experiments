@@ -16,6 +16,7 @@
   - [API Layer](#api-layer)
   - [Docker Compose — Local Dev](#docker-compose--local-dev)
   - [Cloud Deployment — Production](#cloud-deployment--production)
+  - [Evaluation System — Offline & Online Metrics](#evaluation-system--offline--online-metrics)
   - [Docling-Graph Evaluation Checklist](#docling-graph-evaluation-checklist)
   - [Implementation Phases](#implementation-phases)
 - [In Progress — Rate Limiting, Timeouts & Retries](#in-progress--rate-limiting-timeouts--retries)
@@ -92,6 +93,18 @@ knowledge/
 │   └── builtins.py              # placeholder hooks registered at app startup
 ├── validation/
 │   └── pipeline.py              # V1–V6 validation chain; ContentPolicyResult schema
+├── evaluation/
+│   ├── harness.py               # orchestrates evaluation runs end-to-end
+│   ├── datasets.py              # GoldDataset loader + GoldSample Pydantic model
+│   ├── runner.py                # async runner; publishes to knowledge:eval stream
+│   ├── reporter.py              # metric aggregation, regression detection, CI report
+│   ├── schemas.py               # EvalRun, EvalResult, UserFeedback, ImplicitSignal models
+│   └── metrics/
+│       ├── retrieval.py         # HitRate@k, MRR@k, NDCG@k, Precision@k, Recall@k
+│       ├── faithfulness.py      # claim extraction + NLI check (nano model)
+│       ├── answer_relevance.py  # reverse-question embedding similarity (nano model)
+│       ├── correctness.py       # BLEU-4, ROUGE-1/2/L, METEOR, BERTScore, semantic-sim
+│       └── online.py            # user feedback aggregation + implicit signal processing
 └── observability/
     ├── langfuse.py              # Langfuse trace + span helpers
     └── metrics.py               # Prometheus counters/histograms via prometheus-client
@@ -264,30 +277,46 @@ Every cache layer emits Prometheus counters:
 
 ### Retrieval Pipeline
 
+Three firm defaults (non-negotiable in this architecture):
+- **Reranking is always on.** `reranker_enabled = True` out of the box. CrossEncoder (`BAAI/bge-reranker-base`) is the default — it runs locally via `sentence-transformers`, no API call. LLMReranker is an opt-in alternative.
+- **Sources/citations are always included.** Every response carries `SearchResult.chunk_id`, `document_title`, `document_source`, and `similarity` score. The agent prompt mandates inline citation. Clients receive a structured `citations: list[Citation]` field alongside the answer text — never a bare string.
+- **All models are local (Ollama).** No cloud LLM calls by default. Cloud model IDs in the tiering table are available but require explicit `cloud_models_enabled = True` in settings. Local model IDs are the defaults for every tier.
+
 ```
 POST /v1/search
     │
     ├─► L3 semantic cache check (pgvector cosine sim)
-    │       └── HIT → decrypt JWE → return cached answer
+    │       └── HIT → decrypt JWE → return { answer, citations } cached
     │
     ├─► L2 Redis cache check (exact query hash)
-    │       └── HIT → return cached results
+    │       └── HIT → return cached { chunks, citations }
     │
     ├─► hybrid retrieval (parallel):
-    │       ├── vector_store.semantic_search(query_embedding, k)
-    │       ├── vector_store.text_search(query_text, k)
+    │       ├── vector_store.semantic_search(query_embedding, k × overfetch_factor)
+    │       ├── vector_store.text_search(query_text, k × overfetch_factor)
     │       └── (optional) graph_retriever.query(query_text)   ← NL→Cypher → AGE
     │
     ├─► RRF fusion (k=60)
     │
-    ├─► (optional) LLM re-ranker (asyncio.gather for parallel scoring)
+    ├─► CrossEncoder rerank  ← ALWAYS ON (local BAAI/bge-reranker-base)
+    │       trim to match_count; attach similarity + chunk_id to each result
     │
-    ├─► score filter (threshold from settings)
+    ├─► score filter (min_relevance_score threshold)
     │
-    └─► Pydantic AI agent (search_knowledge_base tool)
-            │
-            ├─► populate L2 Redis cache
-            └─► populate L3 semantic cache (async, non-blocking)
+    ├─► Pydantic AI agent (search_knowledge_base tool)
+    │       system prompt: "Always cite your sources using [chunk_id]."
+    │       structured output: { answer: str, citations: list[Citation] }
+    │
+    ├─► populate L2 Redis cache  (async)
+    └─► populate L3 semantic cache  (async, JWE-encrypted)
+
+Citation model:
+    class Citation(BaseModel):
+        chunk_id: UUID
+        document_title: str
+        document_source: str      # file path or URL
+        relevance_score: float    # post-rerank score
+        excerpt: str              # ≤ 200 chars of the supporting chunk
 ```
 
 ---
@@ -298,11 +327,13 @@ Route queries to the cheapest model that can answer them. Saves VRAM, reduces la
 
 #### Tier Definitions
 
-| Tier | Model (local) | Model (cloud) | Use cases |
-|------|--------------|---------------|-----------|
-| `nano` | `qwen2.5:0.5b` | `claude-haiku-4-5` | Input classification, intent detection, simple factual lookups from a single retrieved chunk |
+All tiers default to local Ollama models. Cloud model IDs are listed for reference only and are gated behind `cloud_models_enabled = True` in settings (off by default).
+
+| Tier | Local model (default) | Cloud model (opt-in) | Use cases |
+|------|----------------------|----------------------|-----------|
+| `nano` | `qwen2.5:0.5b` | `claude-haiku-4-5` | Input classification, intent detection, faithfulness/relevance evaluation, content policy check |
 | `small` | `llama3.2:3b` | `claude-sonnet-4-6` | Standard RAG chat, document Q&A, summarisation, KG entity extraction (simple ontologies) |
-| `large` | `llama3.1:70b` (q4) | `claude-opus-4-8` | Multi-hop reasoning, complex contract analysis, KG extraction on dense/structured domains, code generation |
+| `large` | `llama3.1:70b` (q4) | `claude-opus-4-8` | Multi-hop reasoning, complex analysis, KG extraction on dense domains |
 
 #### Routing Logic (`knowledge/agent/model_router.py`)
 
@@ -670,6 +701,511 @@ git push → GitHub Actions
 
 ---
 
+### Evaluation System — Offline & Online Metrics
+
+The evaluation system is a first-class citizen of the architecture, not an afterthought. Every retrieval or generation change must be measurable before and after.
+
+#### Module Layout
+
+```
+knowledge/evaluation/
+├── harness.py               # EvaluationHarness: orchestrates full eval runs
+├── datasets.py              # GoldDataset: load/save/validate gold samples; supports JSONL + PostgreSQL
+├── runner.py                # async runner; publishes EvalJob to knowledge:eval Redis stream
+├── reporter.py              # metric aggregation, trend comparison, regression detection, CI report
+├── schemas.py               # all Pydantic models (see Data Schemas below)
+└── metrics/
+    ├── retrieval.py         # HitRate@k, MRR@k, NDCG@k, Precision@k, Recall@k
+    ├── faithfulness.py      # claim decomposition + NLI-style LLM verification
+    ├── answer_relevance.py  # reverse-question generation + embedding cosine similarity
+    ├── correctness.py       # BLEU-4, ROUGE-1/2/L-F1, METEOR, BERTScore-F, semantic-sim
+    ├── performance.py       # latency breakdowns, token counts, cost estimates
+    └── online.py            # user feedback aggregation + implicit signal processing
+```
+
+#### Data Schemas (`evaluation/schemas.py`)
+
+```python
+class GoldSample(BaseModel):
+    id: UUID
+    corpus_id: str
+    query: str
+    relevant_doc_sources: list[str]   # for retrieval metrics (source stem matching)
+    ground_truth_answer: str | None   # for answer correctness; optional
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
+    tags: list[str] = []              # "factual", "multi-hop", "aggregation", "temporal"
+
+class EvalRun(BaseModel):
+    id: UUID
+    corpus_id: str
+    git_commit: str                   # reproducibility anchor
+    model_tier: str                   # "small" | "large"
+    search_type: str                  # "hybrid" | "semantic" | "text"
+    k: int = 5                        # top-K for retrieval metrics
+    started_at: datetime
+    completed_at: datetime | None
+    status: Literal["queued", "running", "completed", "failed"]
+    sample_count: int = 0
+    baseline_run_id: UUID | None      # for regression diff
+
+class EvalResult(BaseModel):
+    id: UUID
+    run_id: UUID
+    sample_id: UUID
+    # --- Retrieval (Context Relevance) ---
+    hit_rate: float                   # binary: any relevant in top-K
+    mrr: float                        # 1/rank_of_first_relevant
+    ndcg: float                       # normalised discounted cumulative gain
+    precision_at_k: float             # relevant_in_topk / k
+    recall_at_k: float                # relevant_in_topk / total_relevant
+    # --- Generation ---
+    faithfulness: float | None        # supported_claims / total_claims  (0-1)
+    answer_relevance: float | None    # mean cosine_sim(question, reverse_questions)  (0-1)
+    # --- Answer Correctness (requires ground_truth_answer) ---
+    bleu_4: float | None
+    rouge_1_f: float | None
+    rouge_2_f: float | None
+    rouge_l_f: float | None
+    meteor: float | None
+    bert_score_f: float | None
+    semantic_similarity: float | None  # cosine_sim(answer_emb, gt_emb); fast alternative to BERTScore
+    # --- Performance ---
+    retrieval_ms: int
+    llm_first_token_ms: int | None    # time-to-first-token for streamed responses
+    generation_ms: int
+    total_ms: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float | None  # None for local models
+    cache_tier_hit: str | None        # "l1" | "l2" | "l3" | None
+
+class UserFeedback(BaseModel):
+    id: UUID
+    request_id: UUID
+    user_id: str
+    corpus_id: str
+    query_hash: str               # SHA-256 of query (never store plaintext)
+    session_id: str | None
+    rating: int | None            # 1–5 stars
+    thumbs: bool | None           # True=up, False=down
+    correction: str | None        # user's suggested correction (stored encrypted)
+    tags: list[str] = []          # "hallucinated" | "irrelevant" | "incomplete" | "outdated" | "correct"
+    submitted_at: datetime
+
+class ImplicitSignal(BaseModel):
+    id: UUID
+    session_id: str
+    user_id: str
+    corpus_id: str
+    signal_type: Literal[
+        "query_reformulation",    # user re-asked similar question → likely unsatisfied
+        "follow_up_question",     # proxy for incomplete answer
+        "session_abandoned",      # no further interaction after response
+        "copy_action",            # user copied response → likely satisfied
+        "escalation",             # user escalated to human support
+    ]
+    request_id: UUID | None
+    recorded_at: datetime
+```
+
+#### Database Tables
+
+```sql
+-- Gold dataset samples (version-controlled via JSONL in git; also mirrored to DB)
+CREATE TABLE gold_samples (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    corpus_id   TEXT NOT NULL,
+    query       TEXT NOT NULL,
+    relevant_doc_sources TEXT[] NOT NULL,
+    ground_truth_answer  TEXT,
+    difficulty  TEXT NOT NULL DEFAULT 'medium',
+    tags        TEXT[] DEFAULT '{}',
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Evaluation runs (one row per triggered eval)
+CREATE TABLE eval_runs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    corpus_id       TEXT NOT NULL,
+    git_commit      TEXT NOT NULL,
+    model_tier      TEXT NOT NULL,
+    search_type     TEXT NOT NULL,
+    k               INT NOT NULL DEFAULT 5,
+    started_at      TIMESTAMPTZ NOT NULL,
+    completed_at    TIMESTAMPTZ,
+    status          TEXT NOT NULL DEFAULT 'queued',
+    sample_count    INT DEFAULT 0,
+    baseline_run_id UUID REFERENCES eval_runs(id)
+);
+CREATE INDEX ON eval_runs (corpus_id, started_at DESC);
+
+-- Per-sample results (normalised; join with eval_runs for context)
+CREATE TABLE eval_results (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id              UUID NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
+    sample_id           UUID NOT NULL REFERENCES gold_samples(id),
+    hit_rate            FLOAT,
+    mrr                 FLOAT,
+    ndcg                FLOAT,
+    precision_at_k      FLOAT,
+    recall_at_k         FLOAT,
+    faithfulness        FLOAT,
+    answer_relevance    FLOAT,
+    bleu_4              FLOAT,
+    rouge_1_f           FLOAT,
+    rouge_2_f           FLOAT,
+    rouge_l_f           FLOAT,
+    meteor              FLOAT,
+    bert_score_f        FLOAT,
+    semantic_similarity FLOAT,
+    retrieval_ms        INT,
+    llm_first_token_ms  INT,
+    generation_ms       INT,
+    total_ms            INT,
+    prompt_tokens       INT,
+    completion_tokens   INT,
+    total_tokens        INT,
+    estimated_cost_usd  FLOAT,
+    cache_tier_hit      TEXT
+);
+CREATE INDEX ON eval_results (run_id);
+
+-- Online user feedback (append-only)
+CREATE TABLE user_feedback (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id  UUID NOT NULL,
+    user_id     TEXT NOT NULL,
+    corpus_id   TEXT NOT NULL,
+    query_hash  TEXT NOT NULL,
+    session_id  TEXT,
+    rating      SMALLINT CHECK (rating BETWEEN 1 AND 5),
+    thumbs      BOOLEAN,
+    correction  TEXT,       -- stored as JWE if corpus marks data as sensitive
+    tags        TEXT[] DEFAULT '{}',
+    submitted_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ON user_feedback (corpus_id, submitted_at DESC);
+CREATE INDEX ON user_feedback (request_id);
+
+-- Implicit behavioural signals
+CREATE TABLE implicit_signals (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id   TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    corpus_id    TEXT NOT NULL,
+    signal_type  TEXT NOT NULL,
+    request_id   UUID,
+    recorded_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ON implicit_signals (corpus_id, signal_type, recorded_at DESC);
+```
+
+#### Offline Metric Definitions
+
+##### Context Relevance — Retrieval Quality
+
+Computed against `gold_samples.relevant_doc_sources`. Relevance = case-insensitive substring match of any gold source stem against `SearchResult.document_source`.
+
+| Metric | Formula | What it measures |
+|--------|---------|-----------------|
+| **Hit Rate@k** | `mean(any_relevant_in_topk)` | Does the system find *something* useful? |
+| **MRR@k** | `mean(1 / rank_first_relevant)` | How *early* does the first relevant result appear? |
+| **NDCG@k** | `mean(DCG@k / IDCG@k)` | Are relevant results ranked *above* irrelevant ones? |
+| **Precision@k** | `mean(relevant_in_topk / k)` | What fraction of returned results are relevant? |
+| **Recall@k** | `mean(relevant_in_topk / total_relevant)` | What fraction of all known-relevant docs are found? |
+
+##### Faithfulness (no ground truth needed)
+
+Measures whether the LLM answer is grounded in the retrieved context. Prevents hallucination reporting.
+
+```
+1. Decompose answer into atomic claims via nano-model:
+   prompt: "List every factual claim made in this answer as individual sentences."
+   → claims: list[str]
+
+2. For each claim, verify against context via nano-model:
+   prompt: "Context: {context}\nClaim: {claim}\nIs this claim supported by the context? YES or NO"
+   → supported: bool
+
+3. faithfulness = count(supported) / count(claims)
+   Range: 0.0 (fully hallucinated) → 1.0 (fully grounded)
+```
+
+Alert threshold: `faithfulness < 0.7` → emit alert; `< 0.5` → flag for human review.
+
+##### Answer Relevance (no ground truth needed)
+
+Measures whether the answer addresses the question, not whether it's correct.
+
+```
+1. Generate N=3 reverse questions from answer via nano-model:
+   prompt: "Generate 3 questions that this answer would be a good response to."
+   → reverse_questions: list[str]
+
+2. Embed original query + each reverse question.
+
+3. answer_relevance = mean(cosine_sim(query_emb, rq_emb) for rq in reverse_questions)
+   Range: 0.0 → 1.0
+```
+
+##### Answer Correctness (requires ground truth)
+
+| Metric | Library | What it captures |
+|--------|---------|-----------------|
+| **BLEU-4** | `nltk.translate.bleu_score` | N-gram precision up to 4-grams; brevity penalty for short answers |
+| **ROUGE-1-F** | `rouge-score` | Unigram recall + precision F1; word-level coverage |
+| **ROUGE-2-F** | `rouge-score` | Bigram F1; phrase-level coverage |
+| **ROUGE-L-F** | `rouge-score` | Longest common subsequence F1; preserves word order |
+| **METEOR** | `nltk.translate.meteor_score` | Recall-weighted + synonym matching + fragmentation penalty; better than BLEU for short texts |
+| **BERTScore-F** | `bert-score` | Contextual embedding F1 via BERT; best for paraphrase detection |
+| **Semantic Similarity** | cosine_sim(embed(answer), embed(gt)) | Fast embedding-level match; use when BERTScore is too slow |
+
+Use the full correctness suite when ground truth is available. Use faithfulness + answer relevance for corpora without ground truth.
+
+#### Performance & Cost Metrics
+
+Tracked on every request (production + eval), not just during evaluation runs.
+
+##### Latency Breakdown
+
+Every request records a span tree. Stored on `EvalResult` for eval runs; on `audit_events.response_ms` for production.
+
+```
+total_ms = validation_ms + routing_ms + cache_lookup_ms
+         + embed_ms + retrieval_ms + rerank_ms
+         + semantic_cache_ms + llm_first_token_ms + llm_stream_ms
+```
+
+| Span | Target (P95) | Alert threshold |
+|------|-------------|----------------|
+| `validation_ms` | < 20 ms | > 50 ms |
+| `routing_ms` | < 100 ms | > 300 ms |
+| `cache_lookup_ms` (L2 Redis) | < 5 ms | > 20 ms |
+| `embed_ms` | < 100 ms | > 300 ms |
+| `retrieval_ms` | < 150 ms | > 500 ms |
+| `rerank_ms` | < 300 ms (if enabled) | > 1 000 ms |
+| `llm_first_token_ms` | < 800 ms | > 2 000 ms |
+| `total_ms` | < 2 000 ms | > 5 000 ms |
+
+Latency spans are emitted as OpenTelemetry spans → Langfuse (LLM spans) + X-Ray/Cloud Trace (infra spans).
+
+##### Token Accounting
+
+Every LLM call records token counts from the provider response. Aggregated per corpus, per model tier, per day.
+
+```python
+class TokenUsage(BaseModel):
+    request_id: UUID
+    corpus_id: str
+    model_tier: str          # "nano" | "small" | "large"
+    model_id: str            # exact model name
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int       # provider-level prompt cache hits (if supported)
+    timestamp: datetime
+```
+
+Stored in `token_usage` table. Prometheus counter: `llm_tokens_total{tier, model, corpus, type}`.
+
+##### Cost Estimation
+
+Local Ollama models: cost = 0 (track for sizing only). Cloud models: use per-token pricing table.
+
+```python
+# knowledge/evaluation/metrics/performance.py
+COST_PER_1K_TOKENS: dict[str, dict[str, float]] = {
+    "claude-haiku-4-5":  {"input": 0.00025, "output": 0.00125},
+    "claude-sonnet-4-6": {"input": 0.003,   "output": 0.015},
+    "claude-opus-4-8":   {"input": 0.015,   "output": 0.075},
+    # updated as pricing changes; local models omitted (cost = 0)
+}
+
+def estimate_cost(model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
+    pricing = COST_PER_1K_TOKENS.get(model_id)
+    if not pricing:
+        return 0.0
+    return (prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1000
+```
+
+Aggregated cost dashboards: daily spend per corpus, per model tier, per user (for multi-tenant billing awareness).
+
+##### Storage Metrics
+
+| Metric | Source | Tracked in |
+|--------|--------|-----------|
+| `pg_table_bytes{table}` | PostgreSQL `pg_total_relation_size()` | Prometheus via pg_exporter |
+| `vector_index_bytes` | `pg_indexes_size('chunks_embedding_idx')` | Prometheus |
+| `chunk_count{corpus}` | `COUNT(*) FROM chunks WHERE corpus_id = $1` | Eval run report |
+| `redis_memory_bytes` | `INFO memory` → `used_memory` | Prometheus via redis_exporter |
+| `redis_keys_total{prefix}` | `SCAN` + pattern count | Prometheus |
+
+Storage cost estimate (cloud): `pg_table_bytes × Aurora_GB_month_price + redis_memory × ElastiCache_GB_month_price`. Refreshed nightly as a background job.
+
+#### Evaluation Pipeline Flow
+
+```
+Offline Eval:
+  POST /v1/evaluate/run
+      │  body: { corpus_id, k, model_tier, search_type, baseline_run_id? }
+      │
+      └── Publish EvalJob → knowledge:eval Redis stream
+              │
+              └── Evaluation Worker (knowledge/evaluation/runner.py)
+                      ├── Load GoldSamples for corpus from DB
+                      ├── For each sample (concurrently, semaphore-limited):
+                      │   ├── retriever.retrieve(query, k)        → SearchResult[]
+                      │   ├── metrics.retrieval.*                 → hit_rate, mrr, ndcg, p@k, r@k
+                      │   ├── agent.run(query, context)           → answer, token counts, latency
+                      │   ├── metrics.faithfulness.*              → faithfulness score
+                      │   ├── metrics.answer_relevance.*          → relevance score
+                      │   ├── metrics.correctness.*               → BLEU/ROUGE/METEOR/BERTScore (if GT)
+                      │   └── metrics.performance.*               → latency spans, token costs
+                      ├── INSERT eval_results rows
+                      ├── UPDATE eval_runs SET status='completed'
+                      ├── reporter.generate_report()              → regression diff vs baseline_run_id
+                      └── Publish EvalCompleteEvent → knowledge:events
+
+Online Feedback:
+  POST /v1/feedback
+      └── INSERT user_feedback (async background task)
+      └── Publish FeedbackEvent → knowledge:events stream
+              └── Online metrics worker
+                      ├── Increment Redis counters:
+                      │   cache:feedback:{corpus_id}:thumbs_up   INCR
+                      │   cache:feedback:{corpus_id}:thumbs_down INCR
+                      │   cache:feedback:{corpus_id}:rating_sum  INCRBY rating
+                      └── Flush aggregated rows → user_feedback table every 60 s
+
+Implicit Signals:
+  Client SDK / middleware emits:
+      POST /v1/signals (internal, service token)
+      └── INSERT implicit_signals (fire-and-forget)
+```
+
+#### Regression Detection (`reporter.py`)
+
+When `baseline_run_id` is provided, `reporter.generate_report()` computes delta for every metric:
+
+```python
+delta = current_metric - baseline_metric
+regression = delta < -REGRESSION_TOLERANCE[metric]
+```
+
+Default tolerances:
+
+| Metric | Tolerance |
+|--------|-----------|
+| Hit Rate@k | -0.05 (5 pp) |
+| MRR@k | -0.05 |
+| NDCG@k | -0.05 |
+| Faithfulness | -0.05 |
+| Answer Relevance | -0.05 |
+| ROUGE-L-F | -0.03 |
+| P95 Latency | +200 ms |
+| Estimated cost/query | +20% |
+
+Report emitted as:
+- JSON to `eval_runs.report_json` column
+- Markdown summary posted as GitHub PR comment (CI integration)
+- Prometheus gauge: `eval_metric{metric, corpus, run_id}` — enables Grafana trend charts
+
+#### CI Integration
+
+Add to GitHub Actions workflow (after unit tests, before staging deploy):
+
+```yaml
+- name: Offline eval
+  run: |
+    python -m knowledge.evaluation.runner \
+      --corpus-id $EVAL_CORPUS_ID \
+      --baseline-run-id $BASELINE_RUN_ID \
+      --fail-on-regression
+  env:
+    DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+    # ...
+```
+
+`--fail-on-regression` exits non-zero if any metric crosses its tolerance → blocks merge.
+
+#### API Endpoints (additions to API Layer)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/evaluate/run` | `admin` | Trigger offline eval run; returns `run_id` |
+| `GET`  | `/v1/evaluate/run/{id}` | `admin` | Poll run status + aggregated results |
+| `GET`  | `/v1/evaluate/run/{id}/results` | `admin` | Per-sample results (paginated) |
+| `GET`  | `/v1/evaluate/compare?a={id}&b={id}` | `admin` | Regression diff between two runs |
+| `POST` | `/v1/feedback` | `reader` | Submit explicit user feedback |
+| `POST` | `/v1/signals` | `service` | Submit implicit behavioural signal |
+| `GET`  | `/v1/metrics/satisfaction` | `admin` | Rolling satisfaction scores per corpus |
+| `GET`  | `/v1/metrics/cost` | `admin` | Token + storage cost breakdown |
+
+#### Prometheus Metrics (additions)
+
+```
+# Retrieval quality (updated per eval run)
+eval_hit_rate{corpus, run_id}
+eval_mrr{corpus, run_id}
+eval_ndcg{corpus, run_id}
+
+# Generation quality
+eval_faithfulness{corpus, run_id}
+eval_answer_relevance{corpus, run_id}
+
+# Latency (production, rolling)
+request_latency_seconds{stage, corpus}      # histogram; stages: embed, retrieve, rerank, llm
+request_total_ms{corpus, tier, cache_hit}   # histogram
+
+# Token & cost
+llm_tokens_total{tier, model, corpus, type} # counter; type=prompt|completion|cached
+llm_cost_usd_total{tier, model, corpus}     # counter
+
+# Online feedback
+feedback_rating_total{corpus}               # counter (sum of all ratings)
+feedback_count_total{corpus, sentiment}     # counter; sentiment=positive|negative|neutral
+implicit_signals_total{corpus, signal_type} # counter
+
+# Storage
+pg_table_bytes{table}                       # gauge (via pg_exporter)
+redis_memory_bytes                          # gauge (via redis_exporter)
+```
+
+#### Grafana Dashboard Panels (suggested layout)
+
+**Row 1 — Retrieval Quality Trends**
+- Line chart: Hit Rate@5 over last 30 eval runs, per corpus
+- Line chart: MRR@5 + NDCG@5 over last 30 runs
+- Stat panels: current Hit Rate, MRR, NDCG vs baseline delta (red/green)
+
+**Row 2 — Generation Quality**
+- Line chart: faithfulness + answer relevance over eval runs
+- Stat: % queries with faithfulness < 0.7 (hallucination risk)
+
+**Row 3 — Answer Correctness**
+- Line chart: ROUGE-L-F + semantic similarity over eval runs (when GT available)
+
+**Row 4 — Latency Breakdown**
+- Heatmap: `request_latency_seconds` by stage
+- Line chart: P50 / P95 / P99 total_ms, by model tier
+- Stat: SLA compliance (% requests < 2 s)
+
+**Row 5 — Cost**
+- Bar chart: daily token usage by model tier
+- Line chart: daily estimated cost by corpus
+- Stat: cost per 1 000 queries (rolling 7-day average)
+
+**Row 6 — Online Feedback**
+- Time series: rolling 7-day satisfaction score per corpus
+- Bar: feedback tag distribution (hallucinated / irrelevant / incomplete / correct)
+- Table: top-10 lowest-rated request IDs (link to Langfuse trace)
+
+**Row 7 — Storage**
+- Area chart: `pg_table_bytes` by table over time
+- Stat: Redis memory used vs limit; eviction count
+
+---
+
 ### Docling-Graph Evaluation Checklist
 
 Before committing to full integration, validate these items in a spike branch:
@@ -752,6 +1288,22 @@ Before committing to full integration, validate these items in a spike branch:
 - [ ] GitHub Actions CI workflow (test → build → push → staging deploy)
 - [ ] Terraform module for Aurora PG + ElastiCache Redis (or Pulumi, TBD)
 - [ ] Secrets Manager integration (CSI driver + projected volumes)
+
+#### Phase J — Evaluation System
+- [ ] Define `GoldSample` format + load initial NeuralFlow gold dataset (JSONL in `knowledge/evaluation/data/`)
+- [ ] Implement `metrics/retrieval.py` — HitRate, MRR, NDCG, Precision, Recall (port from existing `test_retrieval_metrics.py`)
+- [ ] Implement `metrics/performance.py` — latency span recording, token counting, cost estimation
+- [ ] Implement `metrics/faithfulness.py` — claim decomposition + NLI verification via nano model
+- [ ] Implement `metrics/answer_relevance.py` — reverse-question generation + embedding similarity
+- [ ] Implement `metrics/correctness.py` — BLEU, ROUGE, METEOR via `nltk`; BERTScore via `bert-score`
+- [ ] Implement `runner.py` — publishes to `knowledge:eval` Redis stream; eval worker consumes
+- [ ] Create DB migration for `gold_samples`, `eval_runs`, `eval_results`, `user_feedback`, `implicit_signals`, `token_usage`
+- [ ] Add `POST /v1/evaluate/run`, `GET /v1/evaluate/run/{id}`, compare endpoint to API
+- [ ] Add `POST /v1/feedback` + `POST /v1/signals` endpoints
+- [ ] Implement `reporter.py` — regression detection + Markdown CI report
+- [ ] Add `eval-worker` service to Docker Compose
+- [ ] Wire regression check into GitHub Actions CI (block merge on regression)
+- [ ] Add all eval Prometheus metrics + 7-row Grafana dashboard
 
 ---
 
