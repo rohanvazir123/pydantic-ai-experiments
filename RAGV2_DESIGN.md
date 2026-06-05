@@ -14,6 +14,7 @@
   - [Confidence-Aware Pipeline](#confidence-aware-pipeline)
   - [Model Tiering](#model-tiering)
   - [Query Validation & Hook System](#query-validation--hook-system)
+  - [Guardrail Architecture — Key Principles](#guardrail-architecture--key-principles)
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
   - [API Layer](#api-layer)
   - [Docker Compose — Local Dev](#docker-compose--local-dev)
@@ -762,6 +763,21 @@ class HookRegistry:
 - `pii_redact_hook` at `POST_RETRIEVE` — placeholder for PII scrubbing before LLM sees context
 - `response_filter_hook` at `POST_LLM` — placeholder for output filtering
 - `metrics_hook` at every point — Prometheus counter increment (this one is real from Phase G)
+
+---
+
+### Guardrail Architecture — Key Principles
+
+- **Layer 1 — Input guardrails** block ~90% of bad queries using cheap classifiers (nano model, regex, embedding-sim) before any retrieval or LLM call. Reject fast; pay the compute only on clean requests.
+- **Layer 2 — Tool argument validation** checks tool call arguments, corpus permissions, and request scope before execution. No tool fires against a corpus the caller is not authorised to read.
+- **Layer 3 — Execution monitoring** tracks agentic loop iteration counts, total tool calls per request, and access to sensitive resources (PII-tagged corpora, audit tables). Hard limits abort runaway loops before they cause damage or rack up cost.
+- **Layer 4 — Output guardrails** check the generated response for toxicity, PII leakage, and factual grounding before it is returned to the client. Tied to the citation gate (Layer 2 of the Confidence-Aware Pipeline) and the judge gate (Layer 3).
+- **Placement is a trade-off**: put expensive checks (LLM classifiers) late; put cheap checks (regex, schema validation, RBAC) early. Misplacing a slow guard on the hot path can add hundreds of milliseconds per request.
+- **Multi-layer impact**: the combined approach targets ≥ 99% safe-output rate while reducing wasted compute by ~15% versus a single late-stage check — early rejection means no embedding call, no retrieval, no LLM invocation for invalid queries.
+- **Measure before optimising**: always capture latency (per span), cost (tokens + infra), and quality (faithfulness, abstention rate) for each guard layer. Do not tighten or relax thresholds without a before/after eval run against the gold dataset.
+- **Architecture and orchestration first**: the 4-layer guard structure, the Redis Streams worker model, and the confidence-aware pipeline matter more than the specific model selected at each tier. Swapping `qwen2.5:0.5b` for a different nano model should not require touching pipeline logic.
+- **Production numbers matter**: target concrete SLAs — Layer 1 classifier < 50 ms P95, total validation chain < 100 ms P95, end-to-end search < 2 000 ms P95. Cite specific numbers in design reviews and postmortems; vague claims ("it's fast") are not actionable.
+- **Ship a structured pipeline**: the deliverable is a complete, observable pipeline — architecture (module layout, data schemas), orchestration (worker lifecycle, hook system, confidence gates), and observability (Prometheus metrics, Langfuse traces, Grafana dashboards) — not just a working chat endpoint.
 
 ---
 
