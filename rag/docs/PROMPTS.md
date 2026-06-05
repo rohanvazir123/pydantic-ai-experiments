@@ -1,15 +1,15 @@
 # Prompts Reference
 
-This document covers every prompt in the RAG system: where it lives, what it does, how to tune it, and what to watch for.
+Every prompt in the RAG system: where it lives, what it does, and how to tune it.
 
 ---
 
 ## Table of Contents
 
 1. [Main System Prompt](#1-main-system-prompt)
-2. [Tool Docstrings as Prompts](#2-tool-docstrings-as-prompts)
-3. [LLM Reranker Prompt](#3-llm-reranker-prompt)
-4. [KG Extraction Prompts](#4-kg-extraction-prompts)
+2. [Corpus-Specific Prompts](#2-corpus-specific-prompts)
+3. [Tool Docstrings as Prompts](#3-tool-docstrings-as-prompts)
+4. [LLM Reranker Prompt](#4-llm-reranker-prompt)
 5. [Tuning Guidelines](#5-tuning-guidelines)
 6. [Prompt Injection Defence](#6-prompt-injection-defence)
 
@@ -22,93 +22,78 @@ This document covers every prompt in the RAG system: where it lives, what it doe
 
 ### What it does
 
-Defines the agent's persona, the three available tools, when to use each, how to combine them, citation rules, and Cypher writing constraints.
+General-purpose knowledge base assistant prompt. Defines the agent's behaviour, when to call `search_knowledge_base`, mandatory citation rules, and uncertainty handling. Domain-agnostic — works with any ingested corpus.
 
 ### Key sections
 
 | Section | Purpose |
 |---------|---------|
-| Persona | "Legal Contract Assistant with access to 509 CUAD contracts" |
-| Tool routing | Tells the model when to use `search_knowledge_base` vs. `search_knowledge_graph` vs. `run_graph_query` |
-| KG schema | Entity types + relationship types — must stay in sync with `kg/legal/common/cuad_ontology.py` |
-| Tool combination strategy | Instructs the model to combine graph + text for most questions |
-| Citation rules | `[Source: contract_title]` and `[KG: entity_type]` — enforced in the prompt, not in code |
-| Cypher rules | MATCH/RETURN only, always include LIMIT, use `toLower()` |
-
-### Full text
-
-```
-You are a Legal Contract Assistant with access to 509 CUAD legal contracts.
-You have three tools and must choose the right one — or combine them — for each question.
-...
-```
-
-See `rag/agent/prompts.py` for the full current text.
+| Tool routing | When to call `search_knowledge_base` (always before answering facts) |
+| Citation rules | `[Source: document_title, chunk_id]` — enforced in prompt, not in code |
+| Uncertainty rules | Instructs the model to say "I don't have that information" rather than hallucinate |
+| When NOT to search | Greetings and follow-ups on already-retrieved context |
 
 ### Tuning notes
 
-- **Routing failures** (model uses wrong tool): add a negative example to the "Example triggers" list of the correct tool, and add "NOT for: ..." to the wrong tool's description.
-- **Hallucinations**: tighten the citation rules section. Add: "If you are not certain a fact came from a retrieved result, say so."
-- **Verbose answers**: add "Be concise. Aim for 3-5 sentences unless the user asks for detail."
-- **Model swap**: if you switch from Llama to a non-instruction-tuned model, you may need to replace the `##` markdown headers with plain text separators — smaller models ignore markdown.
+- **Model ignores citation rule:** move the citation section to the *end* of the prompt — recency bias helps small models.
+- **Model answers without searching:** strengthen "Always search first" with a negative example: "Do not answer from memory — call the tool."
+- **Verbose answers:** add "Be concise. Aim for 3–5 sentences unless the user asks for detail."
+- **Small models:** replace `##` markdown headers with plain text separators — sub-8B models often ignore markdown structure.
 
 ---
 
-## 2. Tool Docstrings as Prompts
+## 2. Corpus-Specific Prompts
 
-Pydantic AI passes the Python docstring of each `@agent.tool` function to the model as the tool description. These are **prompts**, not just documentation.
+When the agent is configured for a specific corpus, swap `MAIN_SYSTEM_PROMPT` for a corpus-specific prompt.
+
+### LEGAL_CONTRACT_SYSTEM_PROMPT
+
+**File:** `rag/agent/prompts.py` → `LEGAL_CONTRACT_SYSTEM_PROMPT`  
+**Corpus:** CUAD legal contracts (moved to `misc/kg_legal_cuad/`)
+
+Used when the agent is configured with the CUAD corpus and the Apache AGE knowledge graph. Extends the base prompt with:
+- Descriptions of all five tools including the four KG tools
+- KG entity/relationship schema (must stay in sync with `misc/kg_legal_cuad/kg_legal/common/cuad_ontology.py`)
+- Tool combination strategy (graph lookup → text retrieval)
+- Cypher writing rules (MATCH/RETURN only, always LIMIT, toLower for names)
+
+To activate:
+```python
+# rag/agent/rag_agent.py
+from rag.agent.prompts import LEGAL_CONTRACT_SYSTEM_PROMPT
+agent = PydanticAgent(get_llm_model(), system_prompt=LEGAL_CONTRACT_SYSTEM_PROMPT, ...)
+```
+
+---
+
+## 3. Tool Docstrings as Prompts
+
+Pydantic AI passes the Python docstring of each `@agent.tool` function to the model as the tool description. These are **prompts**, not just documentation — change them carefully.
 
 ### `search_knowledge_base`
 
 **File:** `rag/agent/rag_agent.py:247`
 
-```python
-async def search_knowledge_base(
-    ctx,
-    query: str,
-    match_count: int | None = 5,
-    search_type: str | None = "hybrid",
-    document_source: str | None = None,
-    metadata_filters: dict[str, str] | None = None,
-) -> str:
-    """
-    Search the knowledge base for relevant information.
-    ...
-    document_source: Restrict search to a specific document by its source path
-        (e.g. "rag/documents/benefits.md"). Leave None to search all documents.
-    metadata_filters: Key-value pairs to filter chunks by metadata fields
-        (e.g. {"doc_type": "policy", "category": "hr"}). Leave None for no filter.
-    """
-```
+The docstring describes the parameters the model can pass, including `document_source` and `metadata_filters`. The descriptions of these parameters directly control when the model uses metadata filtering — if the description is vague, the model will rarely use them.
 
-**What the model sees:** the full docstring including parameter descriptions. The descriptions of `document_source` and `metadata_filters` directly control when the model uses metadata filtering.
+**Tuning:** if the model never uses `document_source`, make the example more concrete: `"e.g. 'rag/documents/benefits.md' to restrict to that file"`.
 
-**Tuning:** if the model rarely uses `document_source`, make the example more concrete: `"e.g. 'rag/documents/legal/Amazon_contract.md' to search only that file"`.
+### KG tools (`search_knowledge_graph`, `search_hybrid_kg`, `run_graph_query`, `nl_graph_query`)
 
-### `search_knowledge_graph`
-
-Queries the Apache AGE graph for entity/relationship lookups.
-
-**Tuning:** if the model uses graph search for questions that should be text-only, add to the system prompt: "Do NOT use `search_knowledge_graph` for questions about clause language or specific contract text."
-
-### `run_graph_query`
-
-Executes raw openCypher against Apache AGE.
-
-**Safety note:** the tool itself enforces read-only (MATCH/RETURN only) — see `kg/legal/retrieval/cli.py`. The system prompt reinforces this but the code is the real guard.
+These four tools are corpus-specific (CUAD legal contracts + Apache AGE graph). Their docstrings describe the KG schema and query patterns. When using a general corpus without a knowledge graph, these tools are registered but will return empty results — the model will learn not to call them if the system prompt doesn't mention them.
 
 ---
 
-## 3. LLM Reranker Prompt
+## 4. LLM Reranker Prompt
 
 **File:** `rag/retrieval/rerankers.py` → `LLMReranker`  
-**Activated by:** `reranker_enabled: True`, `reranker_type: "llm"` in settings
+**Activated by:** `reranker_enabled = True`, `reranker_type = "llm"` in settings (both off by default)
 
 ### What it does
 
-After the hybrid search returns N candidates, the reranker calls the LLM once per chunk (in parallel) asking it to score relevance 0–10, then re-sorts.
+After hybrid search returns N candidates, the reranker calls the LLM once per chunk in parallel asking for a 0–10 relevance score, then re-sorts and trims to `match_count`.
 
-### Typical prompt shape
+### Prompt shape
 
 ```
 Score the relevance of the following passage to the query on a scale of 0-10.
@@ -123,46 +108,9 @@ Score:
 
 ### Tuning notes
 
-- **Slow reranking:** reduce `reranker_overfetch_factor` (default 3) — fewer candidates to score.
-- **Bad scores:** add "A score of 10 means the passage directly and completely answers the query. A score of 0 means it is completely unrelated." to the prompt.
-- **Cross-encoder alternative:** set `reranker_type: "cross_encoder"` — no LLM call, uses a local bi-encoder model (`BAAI/bge-reranker-base`), much faster.
-
----
-
-## 4. KG Extraction Prompts
-
-**File:** `kg/legal/ingestion/extraction_pipeline.py`  
-**Used during:** one-time KG ingestion (not at query time)
-
-### Bronze pass — raw extraction
-
-Prompt instructs the model to extract entities and relationships from a contract chunk as JSON. Strict JSON-only output format.
-
-```
-Extract all entities and relationships from the following legal contract text.
-Return a JSON object with keys "entities" and "relationships".
-
-Entity format: {"name": str, "type": str, "confidence": float}
-Relationship format: {"source": str, "relation": str, "target": str, "confidence": float}
-
-Valid entity types: {VALID_LABELS}
-Valid relationship types: {VALID_REL_TYPES}
-
-Text:
-{chunk_text}
-
-JSON:
-```
-
-### Silver pass — validation and deduplication
-
-A second prompt validates Bronze entities, normalises names, and merges duplicates. See `extraction_pipeline.py` for the full prompt.
-
-### Tuning notes
-
-- **JSON parse failures:** add `"Return ONLY the JSON object. No explanation, no markdown code fences."` to the prompt end.
-- **Wrong entity types:** add more few-shot examples showing the correct type for edge cases.
-- **Low confidence scores:** the model often assigns 0.9+ to everything; add calibration guidance: "Only assign 0.9+ when the entity or relationship is unambiguous."
+- **Slow reranking:** lower `reranker_overfetch_factor` (default 3) — fewer candidates to score.
+- **Model assigns 10/10 to everything:** add calibration: "A score of 10 means the passage directly and completely answers the query. A score of 0 means it is completely unrelated."
+- **Speed over accuracy:** switch to `reranker_type = "cross_encoder"` — local `BAAI/bge-reranker-base` via `sentence-transformers`, no LLM call, much faster.
 
 ---
 
@@ -170,21 +118,21 @@ A second prompt validates Bronze entities, normalises names, and merges duplicat
 
 ### General principles
 
-1. **One change at a time.** The system prompt, tool docstrings, HyDE prompt, and reranker prompt all affect retrieval quality independently. Change one, evaluate, then change the next.
+1. **One change at a time.** `MAIN_SYSTEM_PROMPT`, tool docstrings, and the reranker prompt all affect answer quality independently. Change one, evaluate, then the next.
 
-2. **Measure before tuning.** Run `python -m pytest rag/tests/retrieval/ -v` (or `kg/tests/`) to get a Hit Rate / MRR baseline before any prompt change.
+2. **Measure before tuning.** Run `python -m pytest rag/tests/retrieval/ -v` to get a Hit Rate / MRR baseline before any prompt change.
 
 3. **Small models need more structure.** Llama 3.1 8B needs explicit "Return ONLY JSON" and clear section separators. Larger models (70B+) tolerate more natural prose.
 
-4. **Citation rules degrade over long context.** If the model starts dropping `[Source: ...]` citations on long answers, move the citation rule to the *end* of the system prompt (recency bias helps).
+4. **Citation rules degrade over long context.** If the model drops `[Source: ...]` on long answers, move the citation rule to the *end* of the system prompt.
 
 ### Common failure modes
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Model calls wrong tool | Ambiguous tool descriptions | Sharpen "Example triggers" and "NOT for:" |
+| Model answers without searching | "Always search" rule not prominent enough | Move it to the first line of the prompt |
+| Wrong tool called | Ambiguous tool descriptions | Sharpen "Example triggers" and add "NOT for:" |
 | No citations | Citation rule buried in prompt | Move citation section to end of system prompt |
-| HyDE hallucinations passed to embedder | Query not factual | Add "Base the passage strictly on legal contract conventions" |
 | Reranker assigns 10/10 to everything | Calibration missing | Add explicit 0/10 and 10/10 examples |
 | KG extraction returns empty `[]` | Model ignores JSON schema | Add `"If no entities found, return {\"entities\": [], \"relationships\": []}"` |
 
@@ -196,17 +144,18 @@ User queries reach the LLM via `search_knowledge_base` — the query is embedded
 
 ### Current mitigations
 
-- The system prompt uses a dedicated persona with explicit output constraints (citations, Cypher-only).
+- The system prompt uses a dedicated persona with explicit output constraints (citations, uncertainty rules).
 - The `run_graph_query` tool enforces read-only Cypher at the code level regardless of what the prompt says.
 - Pydantic AI's structured output mode (when used) prevents free-form instruction override.
 
-### Planned mitigations (see TODO.md)
+### Planned mitigations (see RAGV2_DESIGN.md — Query Validation & Hook System)
 
-- Input validation layer on `/v1/chat` to detect and reject prompt injection patterns before the query reaches the agent.
-- Query length cap (`max_query_length` setting) to prevent context flooding.
+- V4 prompt injection detector: regex + embedding similarity against known attack patterns, fires before any LLM call.
+- V5 content policy classifier (nano model): rejects off-topic and inappropriate queries.
+- Query length cap (`MAX_QUERY_CHARS = 4096`) to prevent context flooding.
 
 ### What to watch for
 
 - Queries containing `"Ignore previous instructions"`, `"You are now"`, `"Forget your system prompt"`.
 - Queries that look like Cypher or SQL (`MATCH`, `SELECT`, `DROP TABLE`).
-- Unusually long queries (>500 chars) — potential context stuffing.
+- Unusually long queries (> 500 chars) — potential context stuffing.
