@@ -18,6 +18,7 @@
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
   - [API Layer](#api-layer)
   - [Docker Compose — Local Dev](#docker-compose--local-dev)
+  - [Packaging & Developer Install](#packaging--developer-install)
   - [Cloud Deployment — Production](#cloud-deployment--production)
   - [Evaluation System — Offline & Online Metrics](#evaluation-system--offline--online-metrics)
   - [Docling-Graph Evaluation Checklist](#docling-graph-evaluation-checklist)
@@ -955,6 +956,106 @@ volumes:
 **Profiles**:
 - `docker compose up` — core services (api, workers, postgres, redis, ollama, nginx)
 - `docker compose --profile observability up` — adds Langfuse, Prometheus, Grafana
+
+---
+
+### Packaging & Developer Install
+
+The `knowledge/` module (and the current `rag/` module it replaces) is packaged as a standard Python project using **uv** and **hatchling**. The goal is a single command from a clean machine to a running system.
+
+#### Package Manager — uv
+
+uv replaces pip + virtualenv in one tool. Key commands:
+
+```bash
+uv sync                    # create .venv, install core deps from uv.lock
+uv sync --extra all        # install every optional feature
+uv sync --extra ingestion  # core + Docling ingestion only
+uv run python -m rag.main  # run inside the managed venv (no activate needed)
+```
+
+The `uv.lock` file is committed to the repo. It pins every transitive dependency so any developer gets an identical environment regardless of when they clone.
+
+#### Optional Extras Architecture
+
+Core dependencies (always installed): Pydantic AI, asyncpg, pgvector, FastAPI, httpx. Heavy or optional features are gated behind named extras so a CI container or production image can install only what it needs.
+
+| Extra | Key packages | When to include |
+|-------|-------------|-----------------|
+| `ingestion` | `docling`, `transformers` | Any node that runs `--ingest` |
+| `audio` | `openai-whisper` | Audio ingestion only; also needs FFmpeg in PATH |
+| `ui` | `streamlit` | Developer workstations + Streamlit deployments |
+| `observability` | `langfuse` | Staging + production; not needed in CI unit tests |
+| `mcp` | `mcp` | MCP server deployments only |
+| `reranker` | `sentence-transformers` | API pods when `reranker_enabled = True` |
+| `mem0` | `mem0ai` | API pods when `mem0_enabled = True` |
+| `nl2sql` | `sqlglot` | NL-to-SQL service pods |
+| `all` | everything | Local development (default) |
+
+In Docker images, use targeted extras to keep image size down:
+
+```dockerfile
+# API image — no UI, no audio
+RUN uv sync --extra ingestion --extra observability --extra reranker --extra mcp --no-dev
+
+# Ingest-worker image
+RUN uv sync --extra ingestion --extra audio --extra observability --no-dev
+```
+
+#### Install Script
+
+Two scripts cover all platforms. Both do the same thing: install uv if missing, scaffold `.env`, run `uv sync --extra all`, and start the pgvector container.
+
+```powershell
+# Windows (PowerShell)
+.\install.ps1
+
+# Linux / macOS (Bash)
+chmod +x install.sh && ./install.sh
+```
+
+After the script completes:
+1. Edit `.env` — set `DATABASE_URL`, `LLM_*`, `EMBEDDING_*`
+2. `ollama serve` — start Ollama
+3. `ollama pull llama3.1:8b && ollama pull nomic-embed-text`
+4. `uv run python -m rag.main --validate` — smoke-test the connection
+5. `uv run python -m rag.main --ingest --documents rag/documents`
+
+#### Latency & Safety at Install Time
+
+- **Guardrails and observability are off by default** (`langfuse_enabled = False`, `reranker_enabled = False`, `mem0_enabled = False`). Turn each on explicitly in `.env` once the required service is running. This prevents the install script from failing if Langfuse or a reranker endpoint isn't up yet.
+- **Always measure before optimising**: run `uv run pytest rag/tests/core/ -v` first (no external deps, < 5 s). Only then run the integration suite once PostgreSQL and Ollama are confirmed healthy.
+- **Specific numbers to target out of the box**: `uv sync --extra all` < 3 min on a fresh machine (dominated by Docling + Whisper downloads); `--validate` round-trip < 500 ms; first `--ingest` on the sample docs < 60 s on CPU-only Ollama.
+
+#### pyproject.toml Key Fields (reference)
+
+```toml
+[project]
+name = "rag-agent"
+requires-python = ">=3.13"
+# core deps here — see pyproject.toml for full list
+
+[project.optional-dependencies]
+ingestion    = ["docling>=2.14.0", "docling-core>=2.4.0", "transformers>=4.47.0"]
+audio        = ["openai-whisper>=20240930"]
+ui           = ["streamlit>=1.40.0"]
+observability = ["langfuse>=2.0.0"]
+mcp          = ["mcp>=1.0.0"]
+reranker     = ["sentence-transformers>=3.0.0"]
+mem0         = ["mem0ai>=0.1.0"]
+nl2sql       = ["sqlglot>=25.0.0"]
+all          = ["rag-agent[ingestion,audio,ui,observability,mcp,reranker,mem0,nl2sql]"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rag", "kg", "nl2sql"]
+
+[tool.uv]
+dev-dependencies = ["pytest>=8.3.0", "pytest-asyncio>=0.24.0", "ruff>=0.8.0", "mypy>=1.11.0"]
+```
 
 ---
 
