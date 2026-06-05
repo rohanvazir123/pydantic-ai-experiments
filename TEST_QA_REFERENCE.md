@@ -18,7 +18,7 @@ python -m pytest rag/tests/ -m "not integration" -q
 
 ## 1. NeuralFlow AI Retrieval Tests
 
-**File**: `rag/tests/test_rag_agent.py` — `TestRetrieverQueries`
+**File**: `rag/tests/agent/test_rag_agent.py` — `TestRetrieverQueries`
 
 These verify that the hybrid retriever (BM25 + vector + RRF) surfaces the correct documents.
 
@@ -33,7 +33,7 @@ These verify that the hybrid retriever (BM25 + vector + RRF) surfaces the correc
 
 ## 2. NeuralFlow AI Gold Dataset — Retrieval Metrics
 
-**File**: `rag/tests/test_retrieval_metrics.py` — `TestRetrievalMetrics`
+**File**: `rag/tests/retrieval/test_retrieval_metrics.py` — `TestRetrievalMetrics`
 
 Measures Hit Rate, MRR, Precision, Recall, NDCG at K∈{1,3,5} against a 10-query gold set.
 
@@ -66,7 +66,7 @@ Measures Hit Rate, MRR, Precision, Recall, NDCG at K∈{1,3,5} against a 10-quer
 
 ## 3. RAG Agent Integration Tests
 
-**File**: `rag/tests/test_rag_agent.py` — `TestRAGAgentIntegration`
+**File**: `rag/tests/agent/test_rag_agent.py` — `TestRAGAgentIntegration`
 
 These run the full Pydantic AI agent (LLM + tool calls) and verify the response content.
 
@@ -83,7 +83,7 @@ These run the full Pydantic AI agent (LLM + tool calls) and verify the response 
 
 ## 4. Search Result Quality Tests
 
-**File**: `rag/tests/test_rag_agent.py` — `TestSearchResultQuality`
+**File**: `rag/tests/agent/test_rag_agent.py` — `TestSearchResultQuality`
 
 | Test | Query | Expected behavior |
 |------|-------|------------------|
@@ -94,7 +94,7 @@ These run the full Pydantic AI agent (LLM + tool calls) and verify the response 
 
 ## 5. Audio Transcription Retrieval Tests
 
-**File**: `rag/tests/test_rag_agent.py` — `TestAudioTranscription`
+**File**: `rag/tests/agent/test_rag_agent.py` — `TestAudioTranscription`
 
 Tests verify that Whisper-transcribed audio recordings are indexed and retrievable.
 
@@ -109,7 +109,7 @@ Tests verify that Whisper-transcribed audio recordings are indexed and retrievab
 
 ## 6. Legal Corpus — Contract Type Retrieval
 
-**File**: `rag/tests/test_legal_retrieval.py` — `TestLegalRetrievalMetrics`, `TestLegalSpotChecks`
+**File**: `rag/tests/retrieval/test_legal_retrieval.py` — `TestLegalRetrievalMetrics`, `TestLegalSpotChecks`
 
 Tests against 509 CUAD contracts. Relevance is determined by whether the result's `document_source` path contains the expected contract-type string.
 
@@ -150,7 +150,7 @@ Tests against 509 CUAD contracts. Relevance is determined by whether the result'
 
 ## 7. Corpus Isolation Tests
 
-**File**: `rag/tests/test_legal_retrieval.py` — `TestCorpusIsolation`
+**File**: `rag/tests/retrieval/test_legal_retrieval.py` — `TestCorpusIsolation`
 
 Verify that queries surface the right document corpus, not cross-contaminate.
 
@@ -164,7 +164,7 @@ Verify that queries surface the right document corpus, not cross-contaminate.
 
 ## 8. Search Type Comparison Tests
 
-**File**: `rag/tests/test_legal_retrieval.py` — `TestLegalSearchTypes`
+**File**: `rag/tests/retrieval/test_legal_retrieval.py` — `TestLegalSearchTypes`
 
 | Test | What it checks |
 |------|---------------|
@@ -175,7 +175,7 @@ Verify that queries surface the right document corpus, not cross-contaminate.
 
 ## 9. Agent Flow Tests
 
-**File**: `rag/tests/test_agent_flow.py` — `TestAgentFlow`
+**File**: `rag/tests/agent/test_agent_flow.py` — `TestAgentFlow`
 
 End-to-end tests that stream through the full Pydantic AI agent flow (UserPromptNode → ModelRequestNode → CallToolsNode).
 
@@ -190,15 +190,14 @@ End-to-end tests that stream through the full Pydantic AI agent flow (UserPrompt
 
 ### Hybrid KG Q&A results
 ```bash
-python -m pytest rag/tests/test_hybrid_kg_retrieval.py -m integration \
-    --record-answers -v
-# Writes: docs/qa_results/hybrid_kg_results.json
+# NOTE: test_hybrid_kg_retrieval.py was moved to misc/kg_legal_cuad/tests/kg/
+# python -m pytest misc/kg_legal_cuad/tests/kg/test_hybrid_kg_retrieval.py -m integration -v
 ```
 
 ### General integration test output
 ```bash
 # Run with -s to see full log output including queries and results
-python -m pytest rag/tests/test_rag_agent.py -m integration -v -s \
+python -m pytest rag/tests/agent/test_rag_agent.py -m integration -v -s \
     --log-cli-level=INFO
 ```
 

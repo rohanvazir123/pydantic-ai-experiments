@@ -1,79 +1,20 @@
-# Copyright 2024 The Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """
-Knowledge Graph module for RAG.
+Knowledge Graph module.
 
-Apache AGE-backed knowledge graph built from CUAD legal contract annotations.
+Core graph store backed by Apache AGE.
 
----
-EXTRACTION  (populates the graph — uses LLM)
----
-    AgeGraphStore      — Apache AGE Cypher graph
-    build_cuad_kg()    — fast ingest from cuad_eval.json CUAD annotations
-    ExtractionPipeline — Bronze → Silver → Gold medallion pipeline
-                         Bronze: immutable JSONB per chunk + JSON to kg/evals/jsons/
-                         Silver: deduplicated canonical tables in PostgreSQL
-                         Gold:   distinct vertex labels projected into AGE
-    RiskGraphBuilder   — rule-based risk inference (no LLM); runs after Gold
+    AgeGraphStore  — Apache AGE / Cypher graph store
+    create_kg_store() — factory; returns AgeGraphStore
 
----
-RETRIEVAL  (queries the graph — no LLM, deterministic)
----
-    GraphType           — enum: ENTITY, HIERARCHY, LINEAGE, RISK
-    GraphRouter         — regex router: question → list[GraphType]
-    get_schema()        — compact schema string for selected graph types
-    IntentParser        — regex parser: question → IntentMatch(intent, params)
-    QUERY_CAPABILITIES  — registry: intent name → Cypher builder function
-    NL2CypherConverter  — orchestrator: IntentParser + QUERY_CAPABILITIES → Cypher
-                          No LLM calls; no prompt injection surface.
-
----
-Ontology constants (single source of truth)
----
-    VALID_LABELS, VALID_REL_TYPES, ENTITY_TYPE_MAP, RELATIONSHIP_MAP,
-    entity_type_for(), relationship_type_for()
-
-Usage:
-    from kg import create_kg_store, NL2CypherConverter
-
-    store     = create_kg_store()
-    converter = NL2CypherConverter()
-    await store.initialize()
-
-    cypher = await converter.convert("Which parties indemnify each other?")
-    result = await store.run_cypher_query(cypher)
-    await store.close()
+NOTE: The CUAD legal ingestion and retrieval modules (ExtractionPipeline,
+build_cuad_kg, NL2CypherConverter, GraphRouter, IntentParser, etc.) were moved
+to misc/kg_legal_cuad/kg_legal/. They are no longer importable from kg.*
+The nl_graph_query tool in rag/agent/rag_agent.py will fail at call time
+until those imports are updated or the tool is removed.
 """
 
 from kg.age_graph_store import AgeGraphStore
-from kg.legal.ingestion.cuad_kg_ingest import build_cuad_kg
-from kg.legal.ingestion.extraction_pipeline import ExtractionPipeline
-from kg.legal.ingestion.risk_graph_builder import RiskGraphBuilder
-from kg.legal.common.cuad_ontology import (
-    VALID_LABELS,
-    VALID_REL_TYPES,
-    ENTITY_TYPE_MAP,
-    RELATIONSHIP_MAP,
-    entity_type_for,
-    relationship_type_for,
-)
-from kg.legal.retrieval.schemas import GraphType, get_schema
-from kg.legal.retrieval.graph_router import GraphRouter
-from kg.legal.retrieval.intent_parser import IntentParser, IntentMatch
-from kg.legal.retrieval.query_builder import QUERY_CAPABILITIES
-from kg.legal.retrieval.nl2cypher import NL2CypherConverter
+from kg.entity_index import EntityIndex
 
 
 def create_kg_store() -> AgeGraphStore:
@@ -83,21 +24,6 @@ def create_kg_store() -> AgeGraphStore:
 
 __all__ = [
     "AgeGraphStore",
-    "build_cuad_kg",
-    "ExtractionPipeline",
+    "EntityIndex",
     "create_kg_store",
-    "GraphType",
-    "GraphRouter",
-    "get_schema",
-    "IntentParser",
-    "IntentMatch",
-    "QUERY_CAPABILITIES",
-    "NL2CypherConverter",
-    "RiskGraphBuilder",
-    "VALID_LABELS",
-    "VALID_REL_TYPES",
-    "ENTITY_TYPE_MAP",
-    "RELATIONSHIP_MAP",
-    "entity_type_for",
-    "relationship_type_for",
 ]

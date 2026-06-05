@@ -611,9 +611,17 @@ async def nl_graph_query(
     Returns:
         Pipe-separated table of results, or an error message.
     """
-    from kg.legal.retrieval.graph_router import GraphRouter
-    from kg.legal.retrieval.nl2cypher import NL2CypherConverter
-    from kg.legal.retrieval.schemas import get_schema
+    # kg.legal.* was moved to misc/kg_legal_cuad/ — these imports will fail until
+    # the nl_graph_query tool is ported to the new knowledge/ module (RAGV2_DESIGN.md Phase D)
+    try:
+        from kg.legal.retrieval.graph_router import GraphRouter
+        from kg.legal.retrieval.nl2cypher import NL2CypherConverter
+        from kg.legal.retrieval.schemas import get_schema
+    except ImportError:
+        return (
+            "nl_graph_query is unavailable: the legal KG retrieval modules were moved to "
+            "misc/kg_legal_cuad/. This tool will be re-implemented in the knowledge/ module."
+        )
 
     deps = ctx.deps
     state = deps if isinstance(deps, RAGState) else getattr(deps, "state", None)
