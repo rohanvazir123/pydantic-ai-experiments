@@ -130,24 +130,29 @@ Each type is stored differently, decays at a different rate, and has a different
 
 ### Context assembly — how all tiers feed into every request
 
-Every LLM call draws from all five tiers simultaneously. Tier 1 (working memory) is the composition of the others, not a separate store. Priority order inside the token budget (highest priority first — never trimmed before lower-priority items):
+Every LLM call draws from all five tiers simultaneously. **Tier 1 (working memory) is the output of this assembly** — the bounded context window handed to the LLM, composed from the other four tiers. Priority order inside the token budget (highest priority — never trimmed before lower-priority items):
 
 1. **System prompt** — Tier 5 (procedural)
 2. **User memory context** — Tier 3 (top-3 relevant facts, hybrid tsvector + cosine search)
 3. **Active conversation turns** — Tier 2 (last 8 turns, or summary + last 8 for long threads)
 4. **Retrieved chunks** — Tier 4 (top-K, confidence-filtered via CrossEncoder)
 5. **Current query** — always present, never trimmed
+6. **→ Tier 1** (working memory) — the assembled, token-bounded context passed to the LLM
 
 ```python
-context = assemble(
-    system_prompt,                                      # Tier 5 — procedural
+# Inputs: Tiers 2, 3, 4, 5
+# Output: Tier 1 — the assembled context window
+tier1_context = assemble(
+    system_prompt,                                                   # Tier 5 — procedural
     user_memories=memory_store.hybrid_search(query, user_id, k=3),  # Tier 3 — semantic/user
     history=conversation_store.load_active_window(session_id),       # Tier 2 — episodic
-    chunks=retriever.retrieve(query, corpus_ids),       # Tier 4 — semantic/world
+    chunks=retriever.retrieve(query, corpus_ids),                    # Tier 4 — semantic/world
 )
-if count_tokens(context) > budget:
-    context = trim_to_budget(context)     # drops lowest-priority items first (chunks → turns → memories)
-    response["context_truncated"] = True  # never silent
+if count_tokens(tier1_context) > budget:
+    tier1_context = trim_to_budget(tier1_context)  # drops lowest-priority items first (chunks → turns → memories)
+    response["context_truncated"] = True           # never silent
+
+llm_response = await agent.run(query, context=tier1_context)  # Tier 1 consumed here
 ```
 
 Token budget: 8,192 input tokens by default. See [Token Budget Management](#token-budget-management) for the full trim algorithm.
