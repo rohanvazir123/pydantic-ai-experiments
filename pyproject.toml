@@ -78,4 +78,57 @@ dev-dependencies = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "mypy>=1.11.0",
+    "types-redis>=4.6.0",
+    "types-aiofiles>=24.1.0",
+    "types-PyYAML>=6.0.0",
 ]
+
+# ── mypy ──────────────────────────────────────────────────────────────────────
+# Strict only for backend/knowledge/ — everything else is ignored or permissive.
+# Run with: mypy backend/knowledge/
+[tool.mypy]
+python_version = "3.13"
+explicit_package_bases = true   # resolves backend/knowledge/ as "knowledge" package
+mypy_path = "backend"           # so `import knowledge.x` resolves correctly
+
+# Defaults for anything not covered by an override — permissive for legacy code
+ignore_missing_imports = true
+follow_imports = "silent"
+
+# Strict block for the v2 module
+[[tool.mypy.overrides]]
+module = "knowledge.*"
+# Annotation completeness
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+# No silent Any leakage
+warn_return_any = true
+no_implicit_optional = true
+# Keeps # type: ignore honest — errors if the ignore is no longer needed
+warn_unused_ignores = true
+# Misc correctness
+strict_equality = true
+extra_checks = true
+# Don't require explicit Any — too noisy at the start; revisit after first pass
+disallow_any_generics = false
+
+# Third-party stubs we don't have — silence rather than error
+[[tool.mypy.overrides]]
+module = [
+    "asyncpg.*",
+    "pgvector.*",
+    "docling.*",
+    "langfuse.*",
+    "sentence_transformers.*",
+    "mem0.*",
+    "APScheduler.*",
+    "apscheduler.*",
+    "croniter.*",
+    "joserfc.*",
+    "msgpack.*",
+    "prometheus_client.*",
+    "slowapi.*",
+    "whisper.*",
+]
+ignore_missing_imports = true

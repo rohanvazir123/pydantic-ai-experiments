@@ -1,4 +1,5 @@
-.PHONY: lint format check fix clean install dev test run validate ingest
+.PHONY: lint format check fix clean install dev test run validate ingest \
+        v2-lint v2-format v2-fix v2-typecheck v2-check
 
 # Ruff linting and formatting (targets rag/ directory)
 lint:
@@ -48,6 +49,26 @@ clean:
 	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 
+# ── RAG v2 (backend/knowledge/) ──────────────────────────────────────────────
+
+v2-lint:
+	ruff check backend/knowledge/
+
+v2-format:
+	ruff format backend/knowledge/
+
+v2-fix:
+	ruff check --fix backend/knowledge/
+	ruff format backend/knowledge/
+
+v2-typecheck:
+	mypy backend/knowledge/
+
+# Full quality gate — run this before committing v2 code
+v2-check: v2-fix v2-typecheck
+
+# ── Help ─────────────────────────────────────────────────────────────────────
+
 # Help
 help:
 	@echo "Available targets:"
@@ -64,3 +85,10 @@ help:
 	@echo "  ingest-no-clean - Ingest without cleaning existing data"
 	@echo "  test          - Run tests"
 	@echo "  clean         - Remove cache files"
+	@echo ""
+	@echo "RAG v2 (backend/knowledge/):"
+	@echo "  v2-lint       - Ruff lint check"
+	@echo "  v2-format     - Ruff format"
+	@echo "  v2-fix        - Ruff fix + format"
+	@echo "  v2-typecheck  - mypy strict type check"
+	@echo "  v2-check      - Full quality gate (fix + typecheck)"

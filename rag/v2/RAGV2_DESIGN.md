@@ -73,7 +73,7 @@ Two load-bearing workloads with fundamentally different SLA profiles: **retrieva
 |---|---|---|
 | L2 Redis exact match | ~10% | identical query + corpus within TTL (5 min) |
 | L3 semantic cache (cosine ≥ 0.95) | ~30% | near-paraphrase of a recent popular query |
-| **Combined cache bypass** | **~60%** | 30,000 queries/day reach the LLM |
+| **Queries reaching LLM (cache bypass)** | **~60%** | 30,000 queries/day reach the LLM; 40% served from cache (10% L2 + ~30% of remaining 90% via L3 ≈ 10% + 27% = 37%; rounded to ~40% for planning) |
 
 The 0.95 semantic threshold is strict by design — serving a wrong cached answer is worse than a cache miss. Tune down to 0.92 per corpus once confidence distributions are measured.
 
@@ -81,7 +81,7 @@ The 0.95 semantic threshold is strict by design — serving a wrong cached answe
 
 #### Retrieval — SLA
 
-Four distinct paths, each with its own latency contract. SLAs are end-to-end wall-clock from request receipt to first byte of response body.
+Six distinct paths, each with its own latency contract. SLAs are end-to-end wall-clock from request receipt to first byte of response body.
 
 | Path | P50 | P95 | P99 |
 |---|---|---|---|
@@ -323,10 +323,17 @@ knowledge/
 │   ├── app.py                   # FastAPI factory (lifespan, middleware stack)
 │   ├── auth.py                  # JWT decode + RBAC dependency; JWE encrypt/decrypt helpers
 │   ├── middleware.py            # CorrelationID, structured-log, audit-event emission
+│   ├── quota.py                 # enforce_quota(): per-tenant rate limiting + budget enforcement
+│   ├── timeout.py               # TimeoutBudget dataclass + per-stage sub-deadline helpers
 │   ├── routes/
+│   │   ├── auth.py              # POST /v1/auth/token, POST /v1/auth/refresh
 │   │   ├── ingest.py            # POST /v1/ingest → publish job; GET /v1/ingest/{job_id}/status
 │   │   ├── search.py            # POST /v1/search (sync fast path) + async via Redis
-│   │   ├── chat.py              # POST /v1/chat, GET /v1/chat/stream (SSE)
+│   │   ├── chat.py              # POST /v1/chat, POST /v1/chat/stream (SSE — POST, not GET)
+│   │   ├── corpus.py            # GET /v1/corpus, POST /v1/corpus/{id}/cache/invalidate
+│   │   ├── evaluate.py          # POST /v1/evaluate/run, GET /v1/evaluate/run/{id}
+│   │   ├── feedback.py          # POST /v1/feedback, POST /v1/signals
+│   │   ├── scheduler.py         # CRUD for scheduled ingestion jobs
 │   │   └── health.py            # GET /health (pool stats, Redis ping, worker heartbeat)
 │   └── schemas.py               # Pydantic request/response models (versioned)
 ├── bus/
@@ -349,16 +356,26 @@ knowledge/
 │   ├── worker.py                # Redis consumer → retrieval pipeline (for async search requests)
 │   ├── retriever.py             # hybrid retriever: vector + text + optional graph traversal
 │   ├── graph_retriever.py       # NL→Cypher query against AgeGraphStore
-│   ├── fusion.py                # Reciprocal Rank Fusion + optional LLM re-ranker
+│   ├── fusion.py                # CrossEncoder reranker (default, always-on) + RRF fusion; optional LLM re-ranker
 │   └── semantic_cache.py        # L3 semantic cache: pgvector cosine-sim lookup before LLM call
 ├── agent/
-│   ├── agent.py                 # Pydantic AI agent; tools: search_knowledge_base, search_graph
+│   ├── pipeline.py              # ConfidenceAwarePipeline: 3-layer gate orchestrator (retrieval → citation → judge)
+│   ├── agent.py                 # Pydantic AI agent; tools: search_knowledge_base, search_knowledge_graph, search_hybrid_kg, run_graph_query, nl_graph_query
+│   ├── judge.py                 # LLMJudge: JudgeResult(verdict, confidence, reasoning); nano model with small escalation
+│   ├── cost_guard.py            # check_cost_circuit_breaker(): tenant + system monthly budget enforcement
 │   ├── model_router.py          # QueryRouter (nano model) → RoutingDecision
 │   └── prompts.py
 ├── memory/
 │   └── mem0_store.py            # Mem0Store (pgvector-backed per-user memory)
 ├── corpus/
 │   └── registry.py              # CorpusRegistry: load corpus configs, enforce RBAC at query time
+├── billing/
+│   ├── metering.py              # BillingEvent emit + nightly Stripe flush cron
+│   └── provisioner.py           # TenantProvisioner: onboard, offboard, GDPR erase
+├── scheduler/
+│   ├── job_store.py             # ScheduledJob CRUD in PostgreSQL (scheduled_jobs table)
+│   ├── runner.py                # APScheduler integration: cron + interval triggers
+│   └── schemas.py               # ScheduledJob, JobTrigger, JobStatus Pydantic models
 ├── hooks/
 │   ├── registry.py              # HookRegistry, HookPoint enum, Hook type alias
 │   ├── context.py               # HookContext dataclass
@@ -376,6 +393,8 @@ knowledge/
 │       ├── faithfulness.py      # claim extraction + NLI check (nano model)
 │       ├── answer_relevance.py  # reverse-question embedding similarity (nano model)
 │       ├── correctness.py       # BLEU-4, ROUGE-1/2/L, METEOR, BERTScore, semantic-sim
+│       ├── performance.py       # latency span recording, token counting, cost estimation
+│       ├── pipeline.py          # abstention rate, false abstention rate, per-layer share
 │       └── online.py            # user feedback aggregation + implicit signal processing
 └── observability/
     ├── langfuse.py              # Langfuse trace + span helpers
@@ -587,7 +606,7 @@ Citation model:
         chunk_id: UUID
         document_title: str
         document_source: str      # file path or URL
-        relevance_score: float    # post-rerank score (confidence, 0-1)
+        relevance_score: float    # = SearchResult.confidence (post-rerank sigmoid score, 0-1); never raw_score
         excerpt: str              # ≤ 200 chars of the supporting chunk
 ```
 
@@ -630,6 +649,10 @@ class SearchResult(BaseModel):
     # Calibrated confidence — populated after reranking; None until then
     # Always 0-1; comparable across search types and corpus sizes
     confidence: float | None = None
+
+# NOTE: SearchResult and Citation are defined in knowledge/ingestion/models.py for
+# historical reasons (matching v1 layout). They are shared across ingestion, retrieval,
+# agent, and API layers. If circular imports arise, move them to knowledge/models.py (root).
 ```
 
 `Citation.relevance_score` maps to `confidence`, never `raw_score`. The agent and the API response only expose `confidence`.
@@ -718,6 +741,9 @@ The confidence-aware pipeline wraps the retriever, generator, and judge into a s
 Reference design (Microsoft Tech Community — "Confidence-Aware RAG: Teaching Your AI Pipeline to Acknowledge Uncertainty"):
 
 ```python
+# NOTE: This is a synchronous reference sketch from an external source.
+# The actual implementation — ConfidenceAwarePipeline — is fully async.
+# See knowledge/agent/pipeline.py.
 def confidence_aware_rag(user_query: str) -> dict:
     # Layer 1 — retrieve with confidence gating
     results = retrieve_with_confidence(user_query, threshold=1.5)
@@ -971,7 +997,7 @@ model_routing_timeout_s: float = 3.0
 
 All validation runs **before** the router and before any LLM or DB call. Reject fast.
 
-#### Validation Pipeline (`knowledge/api/validation.py`)
+#### Validation Pipeline (`knowledge/validation/pipeline.py`)
 
 ```
 incoming request body
@@ -1280,7 +1306,9 @@ def exponential_backoff(
     jitter_factor: float = 0.15,
 ) -> float:
     """
-    Backoff with full jitter to prevent thundering herd.
+    Backoff with partial jitter (15% of raw delay) to prevent thundering herd.
+    Note: "full jitter" would be uniform(0, raw); this uses a smaller jitter window
+    to bound worst-case delay while still preventing synchronised retry storms.
     attempt=1 → ~5s, attempt=2 → ~10s, attempt=3 → ~20s (capped at max_s).
     Jitter = uniform(0, jitter_factor × raw_backoff).
     """
@@ -1487,18 +1515,31 @@ Emit from `knowledge/api/middleware.py` as a background task (non-blocking, fire
 
 ### API Layer
 
-**Base URL**: `/api/v1`
+**Base URL**: `/api/v1` — all routes below are relative to this prefix (full path: `/api/v1/ingest`, `/api/v1/chat`, etc.)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| `POST` | `/v1/auth/token` | none | Issue JWT access + refresh tokens |
+| `POST` | `/v1/auth/refresh` | none | Rotate refresh token; return new access token |
 | `POST` | `/v1/ingest` | `writer` | Submit ingest job; returns `job_id` |
 | `GET`  | `/v1/ingest/{job_id}/status` | `writer` | Poll job status |
 | `GET`  | `/v1/ingest/{job_id}/stream` | `writer` | SSE job progress stream |
 | `POST` | `/v1/search` | `reader` | Synchronous hybrid search (< 200 ms fast path) |
 | `POST` | `/v1/chat` | `reader` | Agent chat (blocking) |
-| `GET`  | `/v1/chat/stream` | `reader` | Agent chat with SSE streaming |
-| `GET`  | `/v1/corpus` | `admin` | List registered corpora |
+| `POST` | `/v1/chat/stream` | `reader` | Agent chat with SSE streaming (**POST**, not GET — body carries corpus_ids + message_history) |
+| `GET`  | `/v1/corpus` | `reader` | List corpora accessible to JWT role |
 | `POST` | `/v1/corpus/{id}/cache/invalidate` | `admin` | Flush L2+L3 caches for corpus |
+| `GET`  | `/v1/scheduler/jobs` | `writer` | List scheduled ingestion jobs |
+| `POST` | `/v1/scheduler/jobs` | `writer` | Create scheduled job |
+| `PATCH`| `/v1/scheduler/jobs/{id}` | `writer` | Update trigger or source |
+| `DELETE`| `/v1/scheduler/jobs/{id}` | `writer` | Cancel job |
+| `POST` | `/v1/scheduler/jobs/{id}/run-now` | `writer` | Trigger immediate one-off run |
+| `POST` | `/v1/evaluate/run` | `admin` | Trigger offline eval run |
+| `GET`  | `/v1/evaluate/run/{id}` | `admin` | Poll run status + aggregated metrics |
+| `GET`  | `/v1/evaluate/run/{id}/results` | `admin` | Per-sample results (paginated) |
+| `GET`  | `/v1/evaluate/compare` | `admin` | Regression diff: `?a={id}&b={id}` |
+| `POST` | `/v1/feedback` | `reader` | Submit explicit user feedback |
+| `POST` | `/v1/signals` | `service` | Submit implicit behavioural signal |
 | `GET`  | `/health` | none | Liveness + readiness (pool, Redis, worker heartbeats) |
 | `GET`  | `/metrics` | `service` | Prometheus metrics endpoint |
 
@@ -1518,7 +1559,12 @@ Emit from `knowledge/api/middleware.py` as a background task (non-blocking, fire
 
 ### Docker Compose — Local Dev
 
+> **File:** `backend/docker-compose.yml` — this is the backend-only compose file. A top-level `docker-compose.yml` at the repo root extends it to add the `frontend` service. See TODO_implementation.md Phase 13 for the full file content.
+>
+> **Note on the `postgres` image:** `apache/age:latest` bundles Apache AGE but does **not** automatically include pgvector. Verify the image includes pgvector before using it, or use a custom image that installs both extensions. The existing `docker-compose.yml` at repo root maps AGE to port 5433; this design uses port 5432 — adjust if running both side by side.
+
 ```yaml
+# backend/docker-compose.yml
 services:
   nginx:
     image: nginx:alpine
@@ -1655,8 +1701,8 @@ After the script completes:
 1. Edit `.env` — set `DATABASE_URL`, `LLM_*`, `EMBEDDING_*`
 2. `ollama serve` — start Ollama
 3. `ollama pull llama3.1:8b && ollama pull nomic-embed-text`
-4. `uv run python -m rag.main --validate` — smoke-test the connection
-5. `uv run python -m rag.main --ingest --documents rag/documents`
+4. `uv run python -m rag.main --validate` — smoke-test the connection (v1 entrypoint; use `python -m knowledge.main --validate` once v2 is complete)
+5. `uv run python -m rag.main --ingest --documents rag/documents` (v1 entrypoint; v2 uses the ingest worker via Redis)
 
 #### Latency & Safety at Install Time
 
@@ -1688,7 +1734,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["rag", "kg", "nl2sql"]
+# During migration: include both v1 (rag, kg) and v2 (knowledge) packages.
+# After v2 reaches feature parity and v1 is retired: packages = ["knowledge", "nl2sql"]
+packages = ["rag", "kg", "knowledge", "nl2sql"]
 
 [tool.uv]
 dev-dependencies = ["pytest>=8.3.0", "pytest-asyncio>=0.24.0", "ruff>=0.8.0", "mypy>=1.11.0"]
@@ -1861,9 +1909,10 @@ Quota is enforced in Redis on the hot path. PostgreSQL is the audit trail — ne
 # knowledge/api/quota.py
 async def enforce_quota(tenant_id: str, request_type: str) -> None:
     """Check and increment quota counters. Raises QuotaExceeded on breach."""
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    month = datetime.utcnow().strftime("%Y-%m")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    month = datetime.now(UTC).strftime("%Y-%m")
     minute_key = f"quota:{tenant_id}:rpm:{int(time.time() // 60)}"
+    # NOTE: use datetime.now(UTC) not datetime.utcnow() — utcnow() is deprecated in Python 3.12+
 
     pipe = redis.pipeline()
     pipe.incr(f"quota:{tenant_id}:queries:{today}")
@@ -1953,6 +2002,11 @@ async def delete_tenant(tenant_id: str) -> None:
     # 2. Cascade delete all PostgreSQL data (FK cascade handles chunks, eval_results, etc.)
     await conn.execute("DELETE FROM documents WHERE tenant_id = $1", tenant_id)
     await conn.execute("DELETE FROM gold_samples WHERE corpus_id LIKE $1", f"{tenant_id}:%")
+    # semantic_cache uses corpus_ids TEXT[] (array, no FK) — must be deleted explicitly
+    await conn.execute("DELETE FROM semantic_cache WHERE corpus_ids && ARRAY(SELECT id FROM corpora WHERE tenant_id = $1)", tenant_id)
+    # billing_events and token_usage have no FK cascade — delete explicitly
+    await conn.execute("DELETE FROM billing_events WHERE tenant_id = $1", tenant_id)
+    await conn.execute("DELETE FROM token_usage WHERE tenant_id = $1", tenant_id)
     await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
 
     # 3. Delete from Apache AGE (separate connection, graph vertices/edges)
@@ -2026,6 +2080,22 @@ CREATE TABLE billing_events (
 );
 CREATE INDEX ON billing_events (tenant_id, timestamp DESC);
 CREATE INDEX ON billing_events (timestamp DESC);   -- for daily flush job
+
+-- Per-LLM-call token tracking (source of truth for cost; retained 7 years)
+CREATE TABLE token_usage (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id        UUID NOT NULL,
+    corpus_id         TEXT NOT NULL,
+    tenant_id         TEXT NOT NULL,
+    model_tier        TEXT NOT NULL,     -- "nano" | "small" | "large"
+    model_id          TEXT NOT NULL,     -- exact model name
+    prompt_tokens     INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    cached_tokens     INTEGER NOT NULL DEFAULT 0,  -- provider-level prompt cache hits
+    timestamp         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON token_usage (tenant_id, timestamp DESC);
+CREATE INDEX ON token_usage (corpus_id, timestamp DESC);
 ```
 
 ---
@@ -2165,7 +2235,8 @@ CREATE TABLE eval_runs (
     completed_at    TIMESTAMPTZ,
     status          TEXT NOT NULL DEFAULT 'queued',
     sample_count    INT DEFAULT 0,
-    baseline_run_id UUID REFERENCES eval_runs(id)
+    baseline_run_id UUID REFERENCES eval_runs(id),
+    report_json     JSONB          -- regression diff + per-metric deltas written by reporter.py
 );
 CREATE INDEX ON eval_runs (corpus_id, started_at DESC);
 
@@ -2196,7 +2267,19 @@ CREATE TABLE eval_results (
     completion_tokens   INT,
     total_tokens        INT,
     estimated_cost_usd  FLOAT,
-    cache_tier_hit      TEXT
+    cache_tier_hit      TEXT,
+    -- Confidence scoring fields (from Confidence-Based Scoring section)
+    mean_confidence     FLOAT,      -- mean post-rerank confidence across top-K
+    min_confidence      FLOAT,      -- lowest confidence chunk used
+    low_confidence_flag BOOLEAN DEFAULT FALSE,
+    -- Confidence-aware pipeline fields (from Confidence-Aware Pipeline section)
+    pipeline_status             TEXT,   -- answered | abstained_retrieval | abstained_citation | abstained_judge
+    abstention_layer            INT,    -- 1, 2, or 3 (NULL if answered)
+    retrieval_aggregate_confidence FLOAT,
+    citation_trustworthy        BOOLEAN,
+    judge_verdict               TEXT,
+    judge_confidence            FLOAT,
+    false_abstention            BOOLEAN DEFAULT FALSE  -- abstained on a gold query with a known GT answer
 );
 CREATE INDEX ON eval_results (run_id);
 
@@ -2699,6 +2782,24 @@ Before committing to full integration, validate these items in a spike branch:
 
 ### Implementation Phases
 
+> **Phase naming note:** The phases below use letter labels (A–L). The `TODO_implementation.md` file uses numbered phases (0–16) which cover the same work at higher granularity. Cross-reference:
+>
+> | Design phase | TODO phase | Description |
+> |---|---|---|
+> | A | 0 | Housekeeping |
+> | B | In Progress section | Rate limiting, timeouts, retries |
+> | C | 1 + 3 | Module skeleton, config, bus |
+> | C2 | 7 | Validation + hooks |
+> | D | 4 | Ingestion pipeline |
+> | E | 5 | Retrieval + caching |
+> | F | 9 | Security layer |
+> | G | 8 | API routes |
+> | H | 13 | Docker Compose + infra |
+> | I | 15 | Cloud IaC (CI/CD, Helm, Terraform) |
+> | J | 12 | Evaluation system |
+> | K | (embedded in 5 + 6) | Confidence-based scoring |
+> | L | 6 | Confidence-aware pipeline |
+
 #### Phase A — Housekeeping (no new features, before any refactor)
 - [x] Move `kg/legal/` → `misc/kg_legal_cuad/` (done)
 - [x] Move `rag/legal/` → `misc/kg_legal_cuad/rag_data/` (done)
@@ -2709,7 +2810,7 @@ Before committing to full integration, validate these items in a spike branch:
 - [ ] Run `python -m pytest rag/tests/ -m "not integration" -v` — confirm no regressions after moves
 
 #### Phase B — Rate Limiting, Timeouts, Retries (in-progress, see section below)
-- Complete existing 4-step plan before starting module restructure
+- Complete existing 4-step plan (see "In Progress — Rate Limiting, Timeouts & Retries" section at the bottom of this document) before starting module restructure
 
 #### Phase C — Module Skeleton
 - [ ] Create `knowledge/` package with empty modules (no logic yet)
@@ -2801,7 +2902,7 @@ Before committing to full integration, validate these items in a spike branch:
 - [ ] Add `retrieval_confidence_threshold`, `judge_confidence_threshold`, `judge_k` to `settings.py`
 - [ ] Wire all 3 gate outcomes into `HookRegistry` (`ON_VALIDATION_FAIL` for abstentions, `POST_LLM` for passes)
 - [ ] Update `EvalResult` — add `pipeline_status`, `abstention_layer`, `retrieval_aggregate_confidence`, `citation_trustworthy`, `judge_verdict`, `judge_confidence`, `false_abstention`
-- [ ] Add `metrics/pipeline.py` — abstention rate, false abstention rate, per-layer abstention share, partial answer rate
+- [ ] Add `knowledge/evaluation/metrics/pipeline.py` — abstention rate, false abstention rate, per-layer abstention share, partial answer rate
 - [ ] Implement threshold calibration script: sweep `retrieval_confidence_threshold` 0.5→3.0 and `judge_confidence_threshold` 0.4→0.8 over gold dataset; output knee-point recommendations
 - [ ] Add abstention rate + false abstention rate panels to Grafana dashboard
 
