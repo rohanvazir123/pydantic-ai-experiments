@@ -599,7 +599,7 @@ value = row["name"].strip('"')  # '"Acme Corp"' → 'Acme Corp'
 | `knowledge:ingest` | `ingest-workers` | `bus/publisher.py` | `ingestion/worker.py` (N replicas) |
 | `knowledge:search` | `retrieval-workers` | `bus/publisher.py` | `retrieval/worker.py` (M replicas) |
 | `knowledge:eval` | `eval-workers` | `bus/publisher.py` | `evaluation/runner.py` |
-| `knowledge:events` | — (pub/sub style) | workers | API SSE streams, monitoring |
+| `knowledge:events` | Stream (XADD polled, no consumer group) | workers | API SSE job-progress endpoints filter by job_id |
 | `knowledge:ingest:dlq` | — | `bus/consumer.py` | human review |
 | `knowledge:search:dlq` | — | `bus/consumer.py` | human review |
 

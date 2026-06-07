@@ -10,7 +10,7 @@
   - [Module Layout](#module-layout)
   - [Knowledge Layer — Multi-Corpus Design](#knowledge-layer--multi-corpus-design)
   - [Ingestion Pipeline — Docling-Graph Parallel Paths](#ingestion-pipeline--docling-graph-parallel-paths)
-  - [Redis Pub/Sub + Async Worker Model](#redis-pubsub--async-worker-model)
+  - [Redis Streams + Async Worker Model](#redis-streams--async-worker-model)
   - [Caching Architecture](#caching-architecture)
   - [Retrieval Pipeline](#retrieval-pipeline)
   - [Confidence-Based Scoring](#confidence-based-scoring)
@@ -505,7 +505,7 @@ USER TYPES A QUERY AND HITS SEND
 1. Single `knowledge/` module replacing `rag/` + domain-specific KG code.
 2. Multi-corpus ingestion: any folder on disk (or remote source) becomes a corpus namespace.
 3. Docling-graph integration: chunking and KG extraction run as parallel async tasks per document.
-4. Redis pub/sub + async workers for all heavyweight I/O (ingestion, retrieval, LLM calls).
+4. Redis Streams + async workers for all heavyweight I/O (ingestion, retrieval, LLM calls).
 5. Multi-level caching: in-process LRU → Redis → semantic similarity cache.
 6. Enterprise security baseline: JWT auth, JWE payload encryption, TLS 1.3, RBAC, audit log.
 7. Docker Compose for local development; cloud-native deployment (K8s + managed services) for production.
@@ -801,7 +801,7 @@ knowledge/
 │   │   └── health.py            # GET /health (pool stats, Redis ping, worker heartbeat)
 │   └── schemas.py               # Pydantic request/response models (versioned)
 ├── bus/
-│   ├── publisher.py             # async Redis pub/sub + Redis Streams publisher
+│   ├── publisher.py             # async Redis Streams publisher
 │   ├── consumer.py              # base async consumer loop (ack, dead-letter, backoff)
 │   └── schemas.py               # IngestJob, SearchRequest, WorkerEvent message models
 ├── ingestion/
@@ -1404,7 +1404,7 @@ On upload, the API:
 
 ---
 
-### Redis Pub/Sub + Async Worker Model
+### Redis Streams + Async Worker Model
 
 **Message bus** uses Redis Streams (`XADD` / `XREADGROUP`) rather than plain pub/sub — streams give persistent delivery, consumer groups, and dead-letter via `XPENDING`.
 

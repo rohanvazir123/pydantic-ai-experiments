@@ -34,7 +34,7 @@ The async message bus built on Redis Streams. Decouples the API (which publishes
 | `knowledge:ingest` | `ingest-workers` | Ingestion jobs |
 | `knowledge:search` | `retrieval-workers` | Async search batches |
 | `knowledge:eval` | `eval-workers` | Offline evaluation runs |
-| `knowledge:events` | — (pub/sub) | Worker heartbeats, job completions |
+| `knowledge:events` | Stream (polled, no consumer group) | Worker heartbeats; API SSE endpoints filter by job_id |
 | `knowledge:ingest:dlq` | — | Dead-letter: jobs that failed MAX_RETRIES times |
 
 ---
