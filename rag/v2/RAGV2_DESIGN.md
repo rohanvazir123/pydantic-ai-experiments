@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [System Diagram](#system-diagram)
+- [User Query Data Flow](#user-query-data-flow)
 - [Architecture Proposal — Enterprise RAG v2](#architecture-proposal--enterprise-rag-v2)
   - [Goals](#goals)
   - [System Design Constraints](#system-design-constraints)
@@ -226,6 +227,273 @@
 │  L2  Redis cache:search:*   5min TTL                 exact query cache      │
 │  L3  PostgreSQL semantic_cache  60min TTL cosine≥0.95  JWE-encrypted answer │
 └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## User Query Data Flow
+
+Step-by-step trace of a single chat request from browser keypress to rendered response.
+Each box is a component; arrows show what data moves between them; ✗ branches are abstention exits.
+
+```
+USER TYPES A QUERY AND HITS SEND
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  Browser (React)
+  │  chatStore.sendMessage(query, session_id, corpus_ids, model_tier)
+  │  api.ts: POST /api/v1/chat/stream   { query, session_id, corpus_ids }
+  │          Authorization: Bearer <access_token>
+  ▼
+
+  Nginx (port 443)
+  │  /api/v1/* → proxy_pass api:8000
+  │  proxy_buffering off  (SSE route)
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  API  (knowledge/api/routes/chat.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  ① Auth & quota
+  │  require_jwt()           → extracts user_id, tenant_id, roles from JWT
+  │  enforce_quota()         → Redis INCR daily counter + RPM sliding window
+  │                            → 429 if limit hit
+  ▼
+
+  ② Load memory (background-parallel with validation)
+  │  conversation_store.load_active_window(session_id)
+  │    → SELECT last 8 messages WHERE conversation_id = ...   [Tier 2: PostgreSQL]
+  │    → if turn_count > 20: prepend conversations.summary
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Validation Pipeline  (knowledge/validation/pipeline.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  V1  Schema check         Pydantic model — rejects malformed body → 400
+  │
+  V2  Length guard         len(query) > MAX_QUERY_CHARS → 422
+  │
+  V3  Language detect      optional — 422 if not in allowed_languages
+  │
+  V4  Injection detector   regex + embedding-sim against known attack patterns → 422
+  │
+  V5  Content policy       nano model (qwen2.5:0.5b)
+  │   ContentPolicyResult { verdict, confidence, reason }
+  │   on_topic   → continue
+  │   off_topic  → 422
+  │   inappropriate → 400 + audit flag
+  │
+  V6  RBAC check           JWT roles vs CorpusConfig.allowed_roles → 403
+  │
+  ▼  all pass
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Model Router  (knowledge/agent/model_router.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  nano model → RoutingDecision
+  │  complexity: simple | moderate | complex
+  │  requires_graph: bool
+  │  model_tier: nano | small | large
+  │  (3s timeout → default small)
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  PRE_LLM hook → Cost guard  (knowledge/agent/cost_guard.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  Redis INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}
+  │  ≥ tenant_budget  → 402 TenantBudgetExceeded
+  │  system breach    → 503 SystemBudgetExceeded
+  ▼  within budget
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  PRE_RETRIEVE hook → Inject user memories  (knowledge/memory/mem0_store.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  hybrid_search(query, user_id, k=3)
+  │  tsvector BM25 + pgvector cosine → RRF(k=60)   [user_memories table]
+  │  top-3 facts prepended to system prompt
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Retrieval Pipeline  (knowledge/retrieval/retriever.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  ③ L2 cache check
+  │  Redis GET cache:search:{sha256(query+corpus+filters)}
+  │  HIT  → skip retrieval, skip LLM → return cached RAGResponse
+  │  MISS ↓
+
+  ④ Embed query
+  │  AsyncOpenAI (nomic-embed-text) → vector(768)
+  │  L1 lru_cache hit → skip embed call
+
+  ⑤ L3 semantic cache check
+  │  SELECT … WHERE query_emb <=> $vec ORDER BY cosine LIMIT 1
+  │  cosine ≥ 0.95 and not expired
+  │  HIT  → decrypt JWE → return cached answer + citations
+  │  MISS ↓
+
+  ⑥ Hybrid retrieval  (asyncio.gather — all three in parallel)
+  │  ├── semantic_search()   pgvector HNSW  embedding <=> query_emb
+  │  ├── text_search()       tsvector GIN   content_tsv @@ websearch_to_tsquery
+  │  └── graph_retrieval()   AGE Cypher     [if requires_graph, circuit-broken]
+  │
+  ⑦ RRF fusion  score = Σ 1/(60 + rank_i)  across search legs
+  │
+  ⑧ CrossEncoder rerank
+  │  BAAI/bge-reranker-base (local)
+  │  confidence = sigmoid(cross_encoder_logit)   ← calibrated 0–1
+  │
+  ⑨ Confidence filter
+  │  drop results where confidence < min_confidence_score (default 0.10)
+  │
+  ⑩ Populate L2 Redis cache (async, non-blocking)
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  LAYER 1 GATE  (knowledge/agent/pipeline.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  aggregate = Σ confidence for top-K results
+  │
+  aggregate < retrieval_confidence_threshold (default 1.5)
+  │   ✗ → status = "abstained_retrieval"
+  │         return RAGResponse immediately  (no LLM call)
+  │
+  ▼  pass
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Assemble working memory  (knowledge/memory/working_memory.py)  [Tier 1]
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  system_prompt          [Tier 5 — from system_prompts table or prompts.py]
+  + user_memory_context  [Tier 3 — top-3 facts from PRE_RETRIEVE]
+  + conversation_history [Tier 2 — last 8 turns or summary + last 8]
+  + retrieved_chunks     [Tier 4 — top-K confidence-filtered chunks with [chunk_id]]
+  + current_query
+  ↓
+  trim_to_budget(8192 tokens)
+  drop order: lowest-confidence chunks → oldest turns → user memories
+  set context_truncated: true if trimming was needed
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  RAG Agent  (knowledge/agent/agent.py)   model tier from router
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  agent.run(query, message_history=history, deps=state)
+  │
+  │  LLM may call tools (each is a round-trip to the model):
+  │  ├── search_knowledge_base()   → retriever.retrieve()  [additional searches]
+  │  ├── search_knowledge_graph()  → AgeGraphStore entity search
+  │  ├── search_hybrid_kg()        → parallel semantic + graph, then fuse
+  │  ├── run_graph_query()         → direct Cypher MATCH → AGE
+  │  └── nl_graph_query()          → NL→Cypher (small model) → AGE
+  │
+  │  Returns GenerationResult:
+  │  { answer: str,
+  │    citations: list[Citation],       ← each has chunk_id, relevance_score
+  │    citation_check: CitationCheck }  ← is_trustworthy, uncited_claims
+  │
+  │  token usage: result.usage()  ← Pydantic AI built-in, no manual counting
+  ▼
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  LAYER 2 GATE — Citation check
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  citation_check.is_trustworthy == False  (any claim lacks a [chunk_id])
+  │   ✗ → status = "abstained_citation"
+  │         return RAGResponse immediately
+  │
+  ▼  pass
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  LAYER 3 GATE — LLM Judge  (knowledge/agent/judge.py)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  nano model sees:  query + retrieved passages + answer  (NO chunk_ids)
+  JudgeResult { verdict, confidence, reasoning }
+  │
+  ├── verdict = "unsupported"               → status = "abstained_judge"
+  ├── confidence < judge_confidence_threshold → status = "abstained_judge"
+  ├── verdict = "partial"                   → status = "answered"
+  │                                           + append uncertainty note
+  └── verdict = "supported"                 → status = "answered"
+  │
+  nano confidence < 0.5  → escalate to small model (one retry)
+  ▼  answered
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  POST_LLM hook — async background tasks  (asyncio.create_task — non-blocking)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  ┌── Populate L3 semantic cache
+  │     JWE-encrypt RAGResponse → INSERT INTO semantic_cache (expires 60min)
+  │
+  ├── Store episodic turn  [Tier 2]
+  │     INSERT INTO messages (conversation_id, role='assistant', content, citations, ...)
+  │     UPDATE conversations SET turn_count++, last_turn_at=NOW()
+  │     IF turn_count == 20: trigger summarizer (nano model, background)
+  │
+  ├── Extract user memories  [Tier 3]
+  │     nano model: extract_facts(query, answer, recent_turns)
+  │     Mem0.add(facts, user_id)  ← dedup + contradiction resolution
+  │
+  └── Record token usage + billing
+        INSERT INTO token_usage (prompt_tokens, completion_tokens, model_id, ...)
+        INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  RAGResponse returned to API route
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  {
+    answer:              str,
+    status:              "answered" | "abstained_retrieval" | "abstained_citation" | "abstained_judge",
+    citations:           list[Citation],     ← chunk_id, document_title, relevance_score, excerpt
+    confidence:          float,              ← judge confidence
+    low_confidence_warning: bool,            ← True when verdict = "partial"
+    pipeline_latency_ms: { retrieval, rerank, generation, judge },
+    estimated_cost_usd:  float,
+    model_tier_used:     str,
+    cache_hit:           "l2" | "l3" | null,
+    request_id:          UUID,              ← links to logs + Langfuse trace
+    trace_url:           str | null         ← Langfuse trace URL
+  }
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Nginx → Browser
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  Streaming path  (POST /chat/stream):
+    data: {"delta": "The PTO policy"}
+    data: {"delta": " allows 15 days"}
+    ...
+    data: {"citations": [...], "done": true}
+
+  Blocking path  (POST /chat):
+    200 OK  application/json   { "request_id": ..., "data": RAGResponse }
+
+─────────────────────────────────────────────────────────────────────────────────────────
+  Browser (React)
+─────────────────────────────────────────────────────────────────────────────────────────
+
+  Streaming: sse.ts yields events → useChat.appendToken() per delta
+             final "done" event  → useChat.setCitations()
+
+  Blocking:  api.ts returns RAGResponse → useChat stores in chatStore
+
+  UI updates:
+  ├── MessageBubble renders answer (markdown)
+  ├── CitationPanel populates with Citations + ConfidenceBadge
+  ├── CostBadge shows: $0.0007 · 1,637 tok · small · 843ms
+  ├── PipelineStatusBadge: "Answered" | "Abstained — retrieval gap"
+  └── DebugPanel (if ?debug=1): latency breakdown, model tier, cache hit, trace link
 ```
 
 ---
