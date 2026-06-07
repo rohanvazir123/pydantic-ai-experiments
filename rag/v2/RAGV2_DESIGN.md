@@ -366,7 +366,11 @@ knowledge/
 │   ├── model_router.py          # QueryRouter (nano model) → RoutingDecision
 │   └── prompts.py
 ├── memory/
-│   └── mem0_store.py            # Mem0Store (pgvector-backed per-user memory)
+│   ├── mem0_store.py            # Tier 3: Mem0-backed user semantic memory (extraction, dedup, cosine search)
+│   ├── conversation_store.py    # Tier 2: episodic — conversation + message CRUD; active window loader
+│   ├── summarizer.py            # Tier 2: auto-summarize when turn_count > 20 (nano model)
+│   ├── working_memory.py        # Tier 1: context assembly + token-budget trim (drop lowest confidence first)
+│   └── pruning.py               # Background jobs: TTL eviction, LRU eviction, memory compaction
 ├── corpus/
 │   └── registry.py              # CorpusRegistry: load corpus configs, enforce RBAC at query time
 ├── billing/
@@ -1994,6 +1998,143 @@ Emit from `knowledge/api/middleware.py` as a background task (non-blocking, fire
 
 ---
 
+### Memory Architecture
+
+The system uses five distinct memory tiers mapping to cognitive science memory types. Full design details and pruning/eviction strategy are in `basics/rag/memory/MEMORY_DESIGN.md` — this section captures the decisions that affect the module layout, database schema, and API.
+
+#### Five Memory Tiers
+
+| Cognitive type | Tier | Storage | Lifespan |
+|----------------|------|---------|----------|
+| **Short-term / Working** | 1 | RAM (context window) | Per request |
+| **Episodic** | 2 | PostgreSQL `conversations` + `messages` | 90 days (configurable) |
+| **Semantic — user** | 3 | PostgreSQL + pgvector `user_memories` | Indefinite; user-controlled |
+| **Semantic — world** | 4 | PostgreSQL + pgvector + Apache AGE | Until deleted |
+| **Procedural** | 5 | Files + DB `system_prompts` | Indefinite; versioned |
+
+#### Critical design decision: server-side conversation history
+
+The current `ChatRequest` contains `message_history: list | None`. **This is wrong for production.** Passing history as a request field means multi-device fails, history is lost on tab close, and 30-turn conversations send 30× the payload.
+
+```
+Wrong:  ChatRequest { query, session_id, message_history: [...] }
+Correct: ChatRequest { query, session_id }
+         → server loads history from DB by session_id
+```
+
+`message_history` is removed from `ChatRequest`. The server loads the last 8 turns (or `summary + last 8` for long conversations) from the `messages` table on every request.
+
+#### Module additions to knowledge/memory/
+
+```
+knowledge/memory/
+├── __init__.py
+├── mem0_store.py          # Tier 3: Mem0-backed user semantic memory (EXISTING — port from rag/)
+├── conversation_store.py  # Tier 2: episodic conversation + message CRUD
+├── summarizer.py          # Tier 2: auto-summarization trigger + nano model call
+├── working_memory.py      # Tier 1: context assembly + token-budget trim logic
+└── pruning.py             # Background jobs: Tier 2 TTL eviction, Tier 3 LRU + compaction
+```
+
+#### Schema additions (migration 008_memory.sql)
+
+```sql
+CREATE TABLE conversations (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id      TEXT NOT NULL UNIQUE,
+    tenant_id       TEXT NOT NULL,
+    user_id         TEXT NOT NULL,            -- SHA-256(sub + tenant_salt)
+    corpus_ids      TEXT[] NOT NULL,
+    title           TEXT,
+    summary         TEXT,                     -- auto-set when turn_count > 20
+    turn_count      INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    last_turn_at    TIMESTAMPTZ DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ,
+    deleted_at      TIMESTAMPTZ
+);
+CREATE INDEX ON conversations (user_id, last_turn_at DESC);
+
+CREATE TABLE messages (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id   UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role              TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content           TEXT NOT NULL,
+    citations         JSONB,
+    pipeline_status   TEXT,
+    confidence        FLOAT,
+    model_tier        TEXT,
+    prompt_tokens     INT,
+    completion_tokens INT,
+    cost_usd          FLOAT,
+    cache_hit         TEXT,
+    request_id        UUID,
+    created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ON messages (conversation_id, created_at);
+
+CREATE TABLE user_memories (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             TEXT NOT NULL,         -- SHA-256(sub + tenant_salt)
+    tenant_id           TEXT NOT NULL,
+    content             TEXT NOT NULL,
+    embedding           vector(768),
+    source_message_id   UUID,
+    last_retrieved_at   TIMESTAMPTZ,           -- for LRU eviction
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ON user_memories (user_id, tenant_id);
+CREATE INDEX ON user_memories USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE system_prompts (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    version     INT NOT NULL DEFAULT 1,
+    active      BOOLEAN NOT NULL DEFAULT FALSE,
+    corpus_id   TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    created_by  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX ON system_prompts (name, version);
+```
+
+#### Token budget trim order (Tier 1)
+
+When assembled context exceeds 8,192 tokens, trim in this order — lower-priority items dropped first:
+
+1. Drop lowest-confidence retrieved chunks (Tier 4)
+2. Replace oldest message turns with conversation summary (Tier 2)
+3. Reduce user memories to top-1 (Tier 3)
+4. Emit `context_truncated: true` — never fail silently
+
+Never trim: system prompt (Tier 5), current query.
+
+#### Pruning, eviction, and compaction
+
+Full algorithm in `basics/rag/memory/MEMORY_DESIGN.md §Memory Pruning`. Summary:
+
+| Tier | Mechanism | Trigger |
+|------|-----------|---------|
+| 2 (Episodic) | TTL eviction: `DELETE WHERE expires_at < NOW()` | Nightly job |
+| 2 (Episodic) | Compaction: summarize turns 1→(N-8), delete raw rows | When `turn_count > 20` |
+| 3 (Semantic/user) | LRU eviction: drop memories not retrieved in 60 days | When count > 200 (hard cap) |
+| 3 (Semantic/user) | Contradiction resolution | Mem0 on every `add()` |
+| 3 (Semantic/user) | Compaction: merge similar memories (cosine ≥ 0.85) | Weekly background job |
+| 4 (Knowledge) | Incremental delete by document_id | On re-ingest |
+| 4 (Knowledge) | HNSW index rebuild | After > 20% of corpus deleted |
+
+#### Framework: Mem0 for Tier 3 only
+
+Mem0 (open-source, pgvector-backed) handles user semantic memory extraction, deduplication, contradiction resolution, and cosine retrieval. No other external memory framework is needed:
+
+- **Zep** would handle Tier 2 but adds a service dependency — PostgreSQL is sufficient
+- **Letta/MemGPT** is designed for autonomous agents, not RAG systems
+- **LangMem** requires LangChain; not compatible with Pydantic AI stack
+
+---
+
 ### API Layer
 
 **Base URL**: `/api/v1` — all routes below are relative to this prefix (full path: `/api/v1/ingest`, `/api/v1/chat`, etc.)
@@ -2021,6 +2162,15 @@ Emit from `knowledge/api/middleware.py` as a background task (non-blocking, fire
 | `GET`  | `/v1/evaluate/compare` | `admin` | Regression diff: `?a={id}&b={id}` |
 | `POST` | `/v1/feedback` | `reader` | Submit explicit user feedback |
 | `POST` | `/v1/signals` | `service` | Submit implicit behavioural signal |
+| `GET`  | `/v1/conversations` | `reader` | List conversations for current user (newest first, paginated) |
+| `GET`  | `/v1/conversations/{id}` | `reader` | Get conversation + messages |
+| `DELETE` | `/v1/conversations/{id}` | `reader` | Delete conversation (GDPR erasure) |
+| `GET`  | `/v1/memories` | `reader` | List user memories |
+| `POST` | `/v1/memories` | `reader` | Manually add a memory |
+| `DELETE` | `/v1/memories/{id}` | `reader` | Delete one memory |
+| `DELETE` | `/v1/memories` | `reader` | Delete ALL memories (right to erasure) |
+| `GET`  | `/v1/admin/system-prompts` | `admin` | List system prompt versions |
+| `POST` | `/v1/admin/system-prompts` | `admin` | Create / activate a prompt version |
 | `GET`  | `/health` | none | Liveness + readiness (pool, Redis, worker heartbeats) |
 | `GET`  | `/metrics` | `service` | Prometheus metrics endpoint |
 

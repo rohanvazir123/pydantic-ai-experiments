@@ -23,6 +23,7 @@
 - [Phase 8 — API Layer](#phase-8--api-layer)
 - [Phase 9 — Security Layer](#phase-9--security-layer)
 - [Phase 10 — Ingestion Scheduler](#phase-10--ingestion-scheduler)
+- [Phase 10.5 — Memory System](#phase-105--memory-system)
 - [Phase 11 — Observability](#phase-11--observability)
 - [Phase 12 — Evaluation System](#phase-12--evaluation-system)
 - [Phase 13 — Docker Compose & Infra](#phase-13--docker-compose--infra)
@@ -172,7 +173,8 @@ backend/
 │   ├── 004_evaluation.sql                # gold_samples, eval_runs, eval_results
 │   ├── 005_feedback.sql                  # user_feedback, implicit_signals, token_usage
 │   ├── 006_billing.sql                   # tenants, tenant_quotas, billing_events
-│   └── 007_scheduler.sql                 # scheduled_jobs table
+│   ├── 007_scheduler.sql                 # scheduled_jobs table
+│   └── 008_memory.sql                    # conversations, messages, user_memories, system_prompts
 ├── tests/
 │   ├── unit/
 │   │   ├── test_backoff.py
@@ -234,6 +236,8 @@ frontend/
 │   │   │   └── page.tsx                  # evaluation runs + metrics dashboard
 │   │   ├── logs/
 │   │   │   └── page.tsx                  # on-demand log viewer (admin role only); links to Langfuse traces
+│   │   ├── memories/
+│   │   │   └── page.tsx                  # user memory manager: view, add, delete memories
 │   │   └── admin/
 │   │       └── page.tsx                  # tenant + quota management (admin role only)
 │   ├── components/
@@ -529,6 +533,7 @@ frontend/
 - [ ] `005_feedback.sql` — `user_feedback`, `implicit_signals`, `token_usage`
 - [ ] `006_billing.sql` — `tenants`, `tenant_quotas`, `billing_events`
 - [ ] `007_scheduler.sql` — `scheduled_jobs` table (id, name, source_config, corpus_id, cron_expr, mode, next_run_at, last_run_at, status)
+- [ ] `008_memory.sql` — `conversations`, `messages`, `user_memories` (with HNSW index on `embedding`), `system_prompts`; see `RAGV2_DESIGN.md §Memory Architecture` for DDL
 - [ ] Add `Makefile` target: `make migrate` runs all migration files in order against `DATABASE_URL`
 - [ ] Verify RLS: connect as application user, `SET LOCAL app.tenant_id = 'x'` — confirm rows from other tenants invisible
 
@@ -1198,6 +1203,98 @@ Wraps `agent.run()` with the 3-layer gate. The streaming path (`agent.run_stream
 
 ---
 
+## Phase 10.5 — Memory System
+
+> Gate: all five memory tiers wired; conversation history loaded server-side; user memories extracted and retrieved; pruning jobs run without error.
+>
+> Full design: `basics/rag/memory/MEMORY_DESIGN.md`. This phase implements that design.
+
+### 10.5.1 Tier 2 — Episodic Memory (`knowledge/memory/conversation_store.py`)
+
+- [ ] `ConversationStore` — asyncpg-backed; uses main PostgreSQL (`DATABASE_URL`, not AGE)
+- [ ] `async def get_or_create_conversation(session_id, tenant_id, user_id, corpus_ids) → Conversation`
+- [ ] `async def append_message(conversation_id, role, content, **metadata) → Message`
+- [ ] `async def load_active_window(session_id) → list[Message]`:
+  - If `turn_count ≤ 20`: return last 20 messages
+  - If `turn_count > 20`: return `[SummaryMessage(conversations.summary)] + last 8 messages`
+- [ ] `async def increment_turn_count(conversation_id) → int` — returns new count; triggers summarization if count == 20
+- [ ] `async def list_conversations(user_id, tenant_id, limit, cursor) → list[Conversation]`
+- [ ] `async def delete_conversation(conversation_id, user_id) → None` — verify ownership before delete
+
+### 10.5.2 Tier 2 — Auto-Summarization (`knowledge/memory/summarizer.py`)
+
+- [ ] `async def summarize_if_needed(conversation_id) → None` — triggered when `turn_count == 20`; called as `asyncio.create_task()` (non-blocking)
+- [ ] Load all messages for the conversation (up to turn 12 for the first summary)
+- [ ] Call nano model with summarization prompt; store result in `conversations.summary`
+- [ ] Re-summarize when `turn_count` doubles beyond the last summarization (e.g., next trigger at 40)
+- [ ] Write unit test: mock nano model; verify summary stored; verify re-trigger logic
+
+### 10.5.3 Tier 3 — User Semantic Memory (`knowledge/memory/mem0_store.py`)
+
+Port from `rag/memory/mem0_store.py` with these v2 additions:
+
+- [ ] `async def extract_and_store(query, answer, recent_turns, user_id, tenant_id) → None` — non-blocking background task; calls nano model to extract user facts; calls `mem0.add()` which handles dedup/contradiction resolution
+- [ ] `async def search(query, user_id, tenant_id, limit=3) → list[str]` — cosine search; updates `last_retrieved_at` on every hit (for LRU eviction)
+- [ ] Extract only when `pipeline_status == "answered"` — no extraction on abstentions
+- [ ] Write unit tests: mock nano model + mem0 client; verify extraction skipped on abstention
+
+### 10.5.4 Tier 1 — Working Memory Assembly (`knowledge/memory/working_memory.py`)
+
+- [ ] `async def assemble(system_prompt, user_memories, history, chunks, query, budget) → AssembledContext`
+- [ ] `trim_to_budget(parts, budget) → AssembledContext` — trim order:
+  1. Drop lowest-confidence chunks
+  2. Replace oldest turns with `[Summary: ...] + last 4 turns`
+  3. Reduce user_memories to top-1
+  4. Set `context_truncated=True`, log warning
+  5. Never trim system prompt or query
+- [ ] `count_tokens(text) → int` — use the same tokenizer as the embedder (`AutoTokenizer`)
+- [ ] Write unit tests: verify trim order; verify `context_truncated` set correctly
+
+### 10.5.5 Tier 5 — Procedural Memory (`knowledge/memory/` + routes)
+
+- [ ] `system_prompts` table managed via admin API (`GET/POST /v1/admin/system-prompts`)
+- [ ] On app startup: load active system prompt from DB if `SYSTEM_PROMPT_DB_ENABLED=true`; fall back to `knowledge/agent/prompts.py` hardcoded value
+- [ ] Version bump: when admin activates a new prompt version, old active is deactivated; eval run is auto-triggered to compare regression
+
+### 10.5.6 Pruning Background Jobs (`knowledge/memory/pruning.py`)
+
+Run via APScheduler (same instance as the ingestion scheduler in Phase 10):
+
+- [ ] **Tier 2 TTL eviction** (nightly): `UPDATE conversations SET deleted_at=NOW() WHERE expires_at < NOW()` → after 7-day grace: `DELETE WHERE deleted_at < NOW() - 7 days`
+- [ ] **Tier 2 compaction** (on-demand, after summarization): delete raw turns older than `(last 8)` after summary is stored
+- [ ] **Tier 3 LRU eviction** (nightly): when `user_memories count > 200`, delete where `last_retrieved_at < NOW() - 60 days AND created_at < NOW() - 90 days LIMIT 20`
+- [ ] **Tier 3 compaction** (weekly): cluster memories by embedding cosine ≥ 0.85; merge clusters of ≥ 3 via nano model; replace with single merged memory
+- [ ] **Tier 4 HNSW rebuild** (triggered): after any operation deleting > 20% of a corpus: `REINDEX INDEX CONCURRENTLY chunks_embedding_idx`
+- [ ] Write unit tests: mock DB; verify eviction only fires when count > threshold; verify HNSW rebuild threshold
+
+### 10.5.7 Memory API Routes (`knowledge/api/routes/memory.py`)
+
+- [ ] `GET /v1/conversations` — paginated, keyed on `user_id` from JWT, newest first
+- [ ] `GET /v1/conversations/{id}` — verify user owns conversation; return messages
+- [ ] `DELETE /v1/conversations/{id}` — soft delete immediately; hard delete via nightly job
+- [ ] `GET /v1/memories` — list all memories for current user
+- [ ] `POST /v1/memories` — manual memory add; embed and store; dedup via Mem0
+- [ ] `DELETE /v1/memories/{id}` — verify ownership; hard delete immediately (GDPR)
+- [ ] `DELETE /v1/memories` — delete ALL; hard delete immediately; return count deleted
+
+### 10.5.8 Wire memory into request pipeline
+
+- [ ] Remove `message_history` from `ChatRequest` schema (Phase 8 change — update routes/chat.py)
+- [ ] `POST /v1/chat`: load `active_window = await conversation_store.load_active_window(session_id)` before calling `ConfidenceAwarePipeline.run()`; pass as `message_history`
+- [ ] After response: `asyncio.create_task(conversation_store.append_message(...))` — non-blocking
+- [ ] After response: `asyncio.create_task(mem0_store.extract_and_store(...))` — non-blocking
+- [ ] `PRE_RETRIEVE` hook: inject user memories into system prompt prefix
+
+**Test gate:**
+- `tests/integration/test_memory.py`:
+  - Two-turn conversation: second turn receives first turn in history (loaded from DB)
+  - Long conversation: turn 21 triggers summarization; turn 22 receives summary + last 8
+  - User memory extracted after answered turn; not extracted after abstention
+  - Memory injection affects retrieved context (user with "works in compliance" domain gets compliance chunks)
+  - All pruning jobs: verify eviction thresholds; verify compaction count drops correctly
+
+---
+
 ## Phase 11 — Observability
 
 > Gate: Prometheus scrape returns all defined metrics; Langfuse trace appears for each LLM call; alert email sends on circuit open.
@@ -1700,7 +1797,20 @@ http {
 - [ ] `RegressionDiff.tsx` — side-by-side diff of all metrics; highlight regressions
 - [ ] `LatencyHeatmap.tsx` — recharts Heatmap of stage × percentile
 
-### 14.8 Log Viewer (`/logs` — admin role only)
+### 14.8 Memory Manager (`/memories` — all authenticated users)
+
+- [ ] `MemoryPage.tsx` — full memory management page at `/memories`; redirect unauthenticated users to `/login`
+- [ ] `MemoryList.tsx` — list of user memories from `GET /v1/memories`; shows content, source conversation link, creation date
+- [ ] `MemoryCard.tsx` — single memory card with [🗑 Delete] button; clicking source opens that conversation
+- [ ] `AddMemoryModal.tsx` — `POST /v1/memories`; textarea for memory text; submit stores and embeds
+- [ ] `DeleteAllMemoriesConfirm.tsx` — confirmation dialog before `DELETE /v1/memories`; shows count of memories to be deleted
+- [ ] `useMemories.ts` — fetch, add, delete; optimistic delete (remove from UI immediately)
+
+Conversation history is already in `ConversationSidebar.tsx` — it just needs to fetch from `GET /v1/conversations` (server-side) instead of reading from Zustand. Changes needed:
+- [ ] `ConversationSidebar.tsx` — `useConversations.ts` hook replaces local Zustand store; fetches from API; handles pagination; shows "summarized" badge when `summary != null`; shows expiry warning badge
+- [ ] `useConversations.ts` — `GET /v1/conversations` with cursor-based pagination; `DELETE /v1/conversations/{id}` with optimistic removal
+
+### 14.9 Log Viewer (`/logs` — admin role only)
 
 - [ ] `LogViewerPage.tsx` — full-page log browser; accessible at `/logs`; redirects non-admin users to `/chat`
 - [ ] `LogFilterBar.tsx` — filter controls: level dropdown (DEBUG/INFO/WARNING/ERROR), service multi-select, corpus_id input, request_id search input, time range picker (last 1h / 6h / 24h); [Refresh] button
@@ -1911,6 +2021,7 @@ Phase 0 (scaffold)
                                             └── Phase 8 (API)
                                                   ├── Phase 9 (security)
                                                   ├── Phase 10 (scheduler)
+                                                  ├── Phase 10.5 (memory system)
                                                   └── Phase 11 (observability)
                                                         └── Phase 12 (evaluation)
                                                               └── Phase 13 (docker + infra)
