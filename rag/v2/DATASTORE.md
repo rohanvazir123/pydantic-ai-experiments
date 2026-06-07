@@ -575,22 +575,45 @@ value = row["name"].strip('"')  # '"Acme Corp"' → 'Acme Corp'
 
 ### 5.2 Key patterns
 
-| Pattern | Data structure | TTL | Purpose |
-|---------|---------------|-----|---------|
-| `cache:embed:{sha256(text)}` | String (msgpack) | 24h | L2 embedding dedup — avoids round-trips to Ollama |
-| `cache:search:{sha256(query+corpus+filters)}` | String (msgpack) | 5min | L2 search result cache — identical query short-circuit |
-| `cache:doc_fingerprint:{sha256(file_content)}` | String `"1"` | 7d | Skip re-ingesting unchanged files |
-| `cache:health:{service}` | String (JSON) | 30s | Avoid DB health checks on every probe |
-| `quota:{tenant_id}:queries:{YYYY-MM-DD}` | String (counter) | 25h | Daily query count |
-| `quota:{tenant_id}:rpm:{minute_bucket}` | String (counter) | 2min | Sliding RPM window |
-| `quota:{tenant_id}:cost_usd:{YYYY-MM}` | String (float) | monthly | Monthly LLM spend |
-| `cb:{service}:state` | String | — | Circuit breaker state: `CLOSED`/`OPEN`/`HALF-OPEN` |
-| `cb:{service}:failures` | String (counter) | 60s | Failure count in current window |
-| `cb:{service}:opened_at` | String (timestamp) | — | When circuit opened (for probe timer) |
-| `job:{job_id}` | Hash | 48h | Ingest job status: status, progress, error, corpus_id |
-| `worker:{id}:heartbeat` | String | 30s | Worker liveness (set every 10s) |
-| `knowledge:logs:recent` | List (LPUSH + LTRIM 0 4999) | 24h | Log ring buffer for `/v1/logs` endpoint |
-| `rt:{jti}` | String (user_id) | 7d | Refresh token server-side store |
+The table below uses `{placeholders}` to show where a runtime value is substituted to form the actual Redis key. These are **naming templates, not wildcard queries**. Each `{…}` segment is replaced at runtime with a specific value, producing one concrete key per entry.
+
+For example, `cache:embed:{sha256(text)}` becomes an actual key like:
+```
+cache:embed:a3f4b2c1d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2
+```
+
+To inspect all keys matching a pattern in Redis (for debugging — never in production hot path):
+```bash
+redis-cli SCAN 0 MATCH "cache:embed:*" COUNT 100
+redis-cli SCAN 0 MATCH "quota:acme-corp:*" COUNT 100
+```
+
+**Key naming conventions:**
+
+- `cache:*` — all L2 cache entries (embedding, search result, document fingerprint, health)
+- `quota:*` — per-tenant rate limiting and cost counters
+- `cb:*` — circuit breaker state per external service
+- `job:*` — ingest job status hashes
+- `worker:*` — worker liveness heartbeats
+- `knowledge:*` — Redis Streams (see §5.3) and the log ring buffer
+- `rt:*` — refresh token server-side store
+
+| Key template | Actual key example | Data structure | TTL | Purpose |
+|-------------|-------------------|---------------|-----|---------|
+| `cache:embed:{sha256(text)}` | `cache:embed:a3f4b2c1…` | String (msgpack vector) | 24h | L2 embedding dedup — avoids round-trips to Ollama; one key per unique input text |
+| `cache:search:{sha256(query+corpus+filters)}` | `cache:search:b9d1e7f3…` | String (msgpack SearchResult list) | 5min | L2 search result cache — identical query+corpus short-circuit |
+| `cache:doc_fingerprint:{sha256(file_content)}` | `cache:doc_fingerprint:c4a2b8f0…` | String `"1"` | 7d | Skip re-ingesting unchanged files on incremental ingest |
+| `cache:health:{service}` | `cache:health:postgres` | String (JSON) | 30s | Cache health check results; one key per service name |
+| `quota:{tenant_id}:queries:{YYYY-MM-DD}` | `quota:acme-corp:queries:2026-06-07` | String (integer counter) | 25h | Daily query count per tenant; one key per tenant per calendar day |
+| `quota:{tenant_id}:rpm:{minute_bucket}` | `quota:acme-corp:rpm:28543920` | String (integer counter) | 2min | Sliding RPM window; bucket = `int(time.time() // 60)` |
+| `quota:{tenant_id}:cost_usd:{YYYY-MM}` | `quota:acme-corp:cost_usd:2026-06` | String (float via INCRBYFLOAT) | monthly | Monthly LLM spend; reset at month boundary |
+| `cb:{service}:state` | `cb:age_graph:state` | String | — | Circuit breaker state: `CLOSED`/`OPEN`/`HALF-OPEN`; one key per external service |
+| `cb:{service}:failures` | `cb:age_graph:failures` | String (integer counter) | 60s | Failure count in current window; expires to reset automatically |
+| `cb:{service}:opened_at` | `cb:age_graph:opened_at` | String (Unix timestamp) | — | When circuit opened; used to compute probe interval |
+| `job:{job_id}` | `job:550e8400-e29b-41d4-a716-446655440000` | Hash | 48h | Ingest job status: `status`, `progress`, `error`, `corpus_id`; one hash per job |
+| `worker:{worker_id}:heartbeat` | `worker:ingest-worker-1:heartbeat` | String | 30s | Worker liveness; set every 10s; absence = worker dead |
+| `knowledge:logs:recent` | `knowledge:logs:recent` | List (capped at 5,000 via LTRIM) | 24h | Log ring buffer; powers `GET /v1/logs`; single global key |
+| `rt:{jti}` | `rt:7f3a9c2e-1b4d-4e8f-a2c6-9d5e0f1a3b7c` | String (user_id) | 7d | Refresh token server-side store; keyed by JWT `jti` claim |
 
 ### 5.3 Streams and consumer groups
 
