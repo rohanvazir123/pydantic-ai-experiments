@@ -44,41 +44,47 @@
 ║                              RAG v2 — System Overview                                    ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════╝
 
- Browser / API Client
+ Browser
        │
-       │  HTTPS (TLS 1.3)  JWT Bearer
+       │  HTTPS (TLS 1.3)  — two types of requests, same origin:
+       │  ①  /*           page load (HTML, JS bundle, assets)
+       │  ②  /api/v1/*   REST + SSE calls from browser JS (Authorization: Bearer)
        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Nginx  (port 443)                                                          │
-│  ├── /api/v1/*        → proxy_pass api:8000                                 │
-│  └── /                → proxy_pass frontend:3000  (SSE: proxy_buffering off)│
-└───────────────────────────┬────────────────────────────┬────────────────────┘
-                            │ /api/v1/*                  │ /*
-                            ▼                            ▼
-             ┌──────────────────────────┐   ┌────────────────────────────────────┐
-             │  API (Gunicorn +         │   │  Frontend  (Next.js 15, port 3000) │
-             │  UvicornWorker)          │   │                                    │
-             │  knowledge.api.app       │   │  src/lib/api.ts                    │
-             │                          │   │    fetch('/api/v1/*')  ← relative  │
-             │  Middleware stack:        │   │    always same-origin              │
-             │  CorrelationID           │   │    adds Authorization: Bearer      │
-             │  AuditEmitter            │   │    auto-refresh on 401             │
-             │  RateLimiter (slowapi)   │   │                                    │
-             │  JWT RBAC                │   │  src/lib/sse.ts                    │
-             │                          │   │    fetch POST + ReadableStream     │
-             │  Routes:                 │   │    NOT EventSource (GET-only)      │
-             │  /auth  /chat  /search   │   │    yields SSE events by type       │
-             │  /ingest  /corpus        │   │                                    │
-             │  /memories  /scheduler   │   │  src/lib/auth.ts                   │
-             │  /evaluate  /logs        │   │    access token → memory only      │
-             └──────────┬───────────────┘   │    refresh token → httpOnly cookie │
-                        │                   │    tryRestoreSession() on load     │
-                        │  ◄────────────────┤                                    │
-                        │  API responses    │  Local dev (npm run dev):          │
-                        │  JSON + SSE       │    next.config.ts rewrites         │
-                        │                   │    /api/v1/* → localhost:8000      │
-                        │                   │    (no CORS, no browser proxy)     │
-                        │                   └────────────────────────────────────┘
+│  ├── /api/v1/*  → proxy_pass api:8000        (② REST + SSE calls)          │
+│  │              SSE routes: proxy_buffering off, proxy_read_timeout 3600s   │
+│  └── /*         → proxy_pass frontend:3000   (① page load only)            │
+└────────────────┬──────────────────────────────────┬────────────────────────┘
+                 │ ①                                │ ②
+                 ▼                                  ▼
+  ┌──────────────────────────────┐    ┌─────────────────────────────────────┐
+  │  Frontend  (Next.js 15)      │    │  API  (Gunicorn + UvicornWorker)    │
+  │  port 3000                   │    │  knowledge.api.app   port 8000      │
+  │                              │    │                                     │
+  │  Serves HTML + JS bundle     │    │  Middleware:                        │
+  │  to the browser once.        │    │  CorrelationID, AuditEmitter,       │
+  │                              │    │  RateLimiter (slowapi), JWT RBAC    │
+  │  After that, ALL API calls   │    │                                     │
+  │  come from browser JS via    │    │  Routes:                            │
+  │  path ② (same origin):       │    │  POST /auth/token  /auth/refresh    │
+  │                              │    │  POST /chat        /chat/stream     │
+  │  src/lib/api.ts              │    │  POST /search      /ingest          │
+  │    fetch('/api/v1/chat')     │───►│  GET  /corpus      /conversations   │
+  │    fetch('/api/v1/search')   │    │  GET  /memories    /scheduler/jobs  │
+  │    fetch('/api/v1/memories') │    │  POST /evaluate/run  /feedback      │
+  │    …all endpoints…           │    │  GET  /logs        /health          │
+  │                              │◄───│                                     │
+  │  src/lib/sse.ts              │    │  Returns:                           │
+  │    POST /chat/stream         │    │  JSON: { request_id, data, error }  │
+  │    → ReadableStream chunks   │    │  SSE:  data: {"delta":"..."}\n\n    │
+  │    yields delta/done/error   │    │        data: {"done":true,...}\n\n  │
+  │                              │    └─────────────────────────────────────┘
+  │  src/lib/auth.ts             │
+  │    access token → memory     │    Local dev only (npm run dev):
+  │    refresh → httpOnly cookie │    next.config.ts rewrites
+  └──────────────────────────────┘    /api/v1/* → localhost:8000
+                                      so browser still calls :3000 (same origin)
                         │
         ┌───────────────┼────────────────────────────────┐
         │               │                                │
