@@ -16,12 +16,16 @@
   - [Model Tiering](#model-tiering)
   - [Query Validation & Hook System](#query-validation--hook-system)
   - [Guardrail Architecture — Key Principles](#guardrail-architecture--key-principles)
+  - [Error Handling Strategy](#error-handling-strategy)
+  - [Retry & Resilience Strategy](#retry--resilience-strategy)
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
   - [API Layer](#api-layer)
   - [Docker Compose — Local Dev](#docker-compose--local-dev)
   - [Packaging & Developer Install](#packaging--developer-install)
   - [Cloud Deployment — Production](#cloud-deployment--production)
+  - [SaaS Deployment Model](#saas-deployment-model)
   - [Evaluation System — Offline & Online Metrics](#evaluation-system--offline--online-metrics)
+  - [Load & Chaos Testing Strategy](#load--chaos-testing-strategy)
   - [Docling-Graph Evaluation Checklist](#docling-graph-evaluation-checklist)
   - [Implementation Phases](#implementation-phases)
 - [In Progress — Rate Limiting, Timeouts & Retries](#in-progress--rate-limiting-timeouts--retries)
@@ -243,6 +247,67 @@ Ingestion cost is ~3% of retrieval cost and is dominated by graph extraction. Di
 | **Cost per query** | **$0.018–$0.041** | **$0.029–$0.037** |
 
 > At 10 K DAU the two paths are cost-comparable. Local GPU wins on cost at high query volume but requires GPU ops expertise. Cloud wins on operational simplicity and latency consistency (no GPU saturation at peak).
+
+---
+
+#### Budget Controls & Cost Circuit Breakers
+
+Cost controls are enforced at two levels: per-tenant soft and hard limits, and system-wide circuit breakers. These are not monitoring dashboards — they are enforcement mechanisms baked into the request path.
+
+**Per-tenant monthly LLM budget** (stored in `TenantQuota.llm_budget_usd_per_month`):
+
+| Budget state | Enforcement action |
+|---|---|
+| `cost < 80% of limit` | Normal operation |
+| `80% ≤ cost < 100%` | Return `X-Budget-Warning: 0.80` header on every response; alert tenant admin |
+| `cost ≥ 100%` | Block LLM calls; serve cache hits and search-only responses; return `402 Payment Required` on generation requests |
+| Admin override | `quota_override: true` in tenant config bypasses limit (enterprise tier) |
+
+Budget is tracked in Redis: `quota:{tenant_id}:cost_usd:{YYYY-MM}` as a `INCRBYFLOAT` counter. Flushed monthly. Authoritative value for billing is `token_usage` table (Redis is the fast-path guard; SQL is the source of truth).
+
+**System-wide cost circuit breaker:**
+
+Triggered when total daily spend across all tenants exceeds `SYSTEM_DAILY_COST_LIMIT_USD` (ops-configured). On breach:
+1. All new cloud-model LLM calls blocked (local Ollama unaffected).
+2. PagerDuty alert fired immediately.
+3. Auto-recovery: circuit resets at midnight UTC.
+
+```python
+# knowledge/agent/cost_guard.py
+async def check_cost_circuit_breaker(tenant_id: str, model_id: str) -> None:
+    """Raise BudgetExceeded if tenant or system budget is exhausted."""
+    # Fast path: check Redis counter
+    monthly_cost = float(await redis.get(f"quota:{tenant_id}:cost_usd:{month}") or 0)
+    tenant_limit = await get_tenant_budget(tenant_id)
+    if tenant_limit > 0 and monthly_cost >= tenant_limit:
+        raise TenantBudgetExceeded(tenant_id=tenant_id, spent=monthly_cost, limit=tenant_limit)
+
+    system_daily = float(await redis.get("system:cost_usd:daily") or 0)
+    if system_daily >= settings.system_daily_cost_limit_usd:
+        raise SystemBudgetExceeded(spent=system_daily, limit=settings.system_daily_cost_limit_usd)
+```
+
+Called at `PRE_LLM` hook point — before every LLM call. Zero cost is incurred on cache hits (neither hook nor circuit breaker fires).
+
+**Token budget per request** (separate from monthly limits):
+
+```python
+max_prompt_tokens: int = 8192    # hard cap per request; Pydantic AI enforces via model_settings
+max_output_tokens: int = 1024    # prevents runaway generation
+```
+
+If a request would exceed `max_prompt_tokens` after context insertion, the retriever trims chunks from lowest-confidence to highest until it fits. Never silently truncate; always log and emit `context_truncated: true` in the response.
+
+**Cost observability additions** (to Prometheus metrics):
+
+```
+cost_budget_utilization{tenant_id, month}       # gauge: 0.0–1.0+ (1.0 = limit reached)
+cost_circuit_breaker_triggered_total{scope}     # counter; scope=tenant|system
+cost_blocked_requests_total{tenant_id}          # counter: LLM calls blocked by budget
+cache_cost_saved_usd_total{corpus, tier}        # counter: cost avoided by cache hits
+```
+
+Cache savings tracking: every L2/L3 hit records `estimated_cost_usd` that would have been spent. This makes cache ROI visible — a cache hit rate drop is both a latency and a cost event.
 
 ---
 
@@ -985,6 +1050,375 @@ class HookRegistry:
 
 ---
 
+### Error Handling Strategy
+
+Error handling is not defensive boilerplate — it is an explicit design decision for every failure mode. Every component in this architecture has a defined failure response that preserves system safety and gives the client actionable information.
+
+#### Error Taxonomy
+
+Errors are classified on two axes: **origin** (who caused it) and **recoverability** (can the system recover automatically).
+
+| Class | Origin | Retriable | Examples |
+|---|---|---|---|
+| `CLIENT_ERROR` | Bad input, auth failure, quota | No | invalid query, expired JWT, budget exhausted |
+| `TRANSIENT_ERROR` | Infrastructure blip | Yes (with backoff) | DB connection drop, Redis timeout, LLM overload (429) |
+| `TIMEOUT_ERROR` | Deadline exceeded | Conditionally | embedding timeout, LLM generation exceeded SLA |
+| `CAPACITY_ERROR` | System overloaded | No (return 503) | all DB pool slots in use, Redis OOM |
+| `VALIDATION_FAILURE` | Policy rejection | No | content policy block, injection detected, RBAC deny |
+| `ABSTENTION` | Deliberate pipeline gate | No | confidence gate, citation gate, judge gate |
+| `PERMANENT_ERROR` | Unrecoverable failure | No (DLQ) | corrupt document, schema parse failure, auth misconfiguration |
+
+#### Structured Error Response Schema
+
+Every non-2xx response uses this envelope. The `error` field is never null on error, and `data` is always null on error.
+
+```python
+class ErrorDetail(BaseModel):
+    code: str                    # machine-readable, SCREAMING_SNAKE_CASE
+    message: str                 # human-readable; safe to show client
+    details: dict[str, Any] = {} # structured context (field path, limit values, etc.)
+    retry_after_s: int | None    # seconds; set only when retry is meaningful
+    doc_url: str | None          # link to error documentation
+
+class APIResponse(BaseModel):
+    request_id: UUID
+    data: Any | None             # None on error
+    error: ErrorDetail | None    # None on success
+    cache_hit: str | None        # "l2" | "l3" | None
+```
+
+**Example responses by error class:**
+
+```json
+// 429 — tenant budget exhausted
+{
+  "request_id": "...",
+  "data": null,
+  "error": {
+    "code": "TENANT_BUDGET_EXHAUSTED",
+    "message": "Monthly LLM budget exceeded. Search-only mode active until budget resets.",
+    "details": { "budget_usd": 500.0, "spent_usd": 501.23, "resets_at": "2026-07-01T00:00:00Z" },
+    "retry_after_s": null,
+    "doc_url": "https://docs.example.com/errors/TENANT_BUDGET_EXHAUSTED"
+  }
+}
+
+// 503 — LLM service unavailable (circuit breaker open)
+{
+  "request_id": "...",
+  "data": null,
+  "error": {
+    "code": "LLM_CIRCUIT_OPEN",
+    "message": "Generation service temporarily unavailable. Search results are still available.",
+    "details": { "degraded_mode": "search_only" },
+    "retry_after_s": 30
+  }
+}
+
+// 422 — content policy rejection
+{
+  "request_id": "...",
+  "data": null,
+  "error": {
+    "code": "CONTENT_POLICY_VIOLATION",
+    "message": "Query was rejected by content policy.",
+    "details": { "verdict": "inappropriate", "corpus_id": "hr-policies" },
+    "retry_after_s": null
+  }
+}
+```
+
+#### HTTP Status Code Policy
+
+| Status | When | Notes |
+|---|---|---|
+| `200` | Successful response, including abstentions | Abstentions are business logic, not errors; status field in body conveys outcome |
+| `400` | Malformed request body (schema validation) | Pydantic `ValidationError` serialised into `error.details` |
+| `401` | Missing or invalid JWT | Always return `WWW-Authenticate: Bearer` header |
+| `403` | Valid JWT but insufficient role for corpus | Distinguish from 401; RBAC failure |
+| `404` | Job ID / corpus ID not found | |
+| `422` | Semantically invalid request (content policy, language mismatch) | Syntactically valid but rejected by policy |
+| `429` | Rate limit or budget limit hit | Always set `Retry-After` and `X-Quota-Reset` headers |
+| `500` | Unhandled exception in API process | Logged with full traceback; generic message to client |
+| `502` | Worker unreachable (Redis Streams stale / worker crashed) | |
+| `503` | Circuit breaker open; overload shed | Set `Retry-After`; specify degraded capability in body |
+| `504` | Upstream timeout (LLM, embedding, DB) | Includes `details.timeout_stage` so client knows which component |
+
+`500` is a bug. Any `500` in production is an incident and fires PagerDuty immediately.
+
+#### Graceful Degradation Matrix
+
+When a component is unavailable, the system degrades to its highest-quality remaining capability rather than failing completely. Degraded mode is declared in the response header `X-Degraded-Mode: <mode>`.
+
+| Component down | Degraded mode | What still works | What fails |
+|---|---|---|---|
+| **Ollama / LLM** | `search_only` | Search, citations, cache hits | Generation, judge, model routing |
+| **Redis** | `no_cache` | All queries served from DB; rate limiting uses DB counter | L2 cache, stream-based async ingest |
+| **PostgreSQL** | `unavailable` | Nothing — primary datastore | Return 503 for all read/write paths |
+| **Apache AGE** | `no_graph` | Vector + text retrieval | NL→Cypher graph traversal |
+| **Embedding service** | `no_new_queries` | L2/L3 cache hits served | Any query requiring fresh embedding |
+| **Reranker (CrossEncoder)** | `rrf_only` | Retrieval via RRF score; no reranking | Confidence-based gating; abstentions skip |
+| **Langfuse** | `no_traces` | All queries served | Trace visibility; eval offline runs paused |
+
+Degradation is detected per circuit breaker state. The health endpoint reports current degraded modes:
+
+```json
+// GET /health
+{
+  "status": "degraded",
+  "degraded_modes": ["no_graph"],
+  "components": {
+    "postgres": "healthy",
+    "redis": "healthy",
+    "ollama": "healthy",
+    "age_graph": "circuit_open",
+    "langfuse": "healthy"
+  }
+}
+```
+
+#### Error Propagation — Worker Pipeline
+
+Worker errors must not be silently swallowed. The propagation contract is:
+
+```
+TRANSIENT_ERROR in worker
+    → retry with backoff (up to MAX_RETRIES)
+    → on final failure: XACK job + publish to DLQ stream + update job hash:
+        HSET job:{id} status "failed" error_code "..." error_msg "..." failed_at "..."
+    → fire ON_ERROR hook → sends alert email + PagerDuty
+
+PERMANENT_ERROR in worker
+    → no retry: XACK + DLQ immediately
+    → same alerting
+
+API reads job hash on GET /v1/ingest/{id}/status
+    → returns structured error in job status response body (not a 5xx — the API call itself succeeded)
+```
+
+Workers never raise unhandled exceptions to the consumer loop. Every `pipeline.run()` call is wrapped in `try/except BaseException` at the harness level — this is the one place where catching `BaseException` is correct, to prevent the consumer from crashing and losing the Redis `XPENDING` entry.
+
+#### Alert Email Configuration
+
+**All warnings and errors send email alerts to `rohan.vazirani@gmail.com`.** This is a mandatory deployment requirement — not optional, not production-only. Local development, staging, and production all alert to this address.
+
+```yaml
+# .env (required; scaffolded by install.sh / install.ps1)
+ALERT_EMAIL=rohan.vazirani@gmail.com
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<sender>
+SMTP_PASSWORD=<app_password>
+SMTP_FROM=alerts@rag-system.local
+```
+
+Alert severity levels and delivery:
+
+| Severity | Trigger | Channel |
+|---|---|---|
+| `CRITICAL` | 500 error, DLQ entry, circuit breaker opens, system budget breach | Email + PagerDuty |
+| `WARNING` | P99 latency breach, cache hit rate < 20%, tenant budget at 80% | Email |
+| `INFO` | Eval regression detected, new tenant provisioned, daily cost summary | Email (digest, 1×/day) |
+
+Email is sent via `knowledge/observability/alerts.py` as a background `asyncio.Task` — never blocking the request path. Template:
+
+```
+Subject: [RAG] CRITICAL — LLM_CIRCUIT_OPEN on corpus hr-policies
+Body:
+  Time:     2026-06-06 14:32:01 UTC
+  Severity: CRITICAL
+  Code:     LLM_CIRCUIT_OPEN
+  Corpus:   hr-policies
+  Tenant:   acme-corp
+  Request:  <request_id>
+  Detail:   5 failures in 60s window. Circuit open. Retry probe in 30s.
+  Trace:    https://langfuse.internal/trace/<trace_id>
+```
+
+Local dev alert delivery: if `SMTP_HOST` is not reachable, alerts are written to `logs/alerts.jsonl` and printed to stderr. Never silently dropped.
+
+---
+
+### Retry & Resilience Strategy
+
+Retries are not a catch-all fallback. Every retry decision is explicit: what is retriable, how many times, with what backoff, and what happens when retries are exhausted.
+
+#### Retriable vs Non-Retriable Classification
+
+| Error | Retriable | Reason |
+|---|---|---|
+| `RateLimitError` (LLM / embedding API) | Yes | Transient; provider will accept request after backoff |
+| `APIConnectionError` / `APITimeoutError` | Yes | Network blip; idempotent read or write |
+| `asyncpg.ConnectionDoesNotExistError` | Yes | Pool connection died; pool will hand new connection |
+| `asyncpg.TooManyConnectionsError` | Yes | Pool exhausted; backoff and retry |
+| `asyncpg.QueryCanceledError` | Conditional | Retry only if `command_timeout` was set (our timeout); not if Postgres cancelled for lock |
+| `redis.ConnectionError` | Yes | Redis transient; up to 3 attempts |
+| `redis.TimeoutError` | Yes | |
+| `AuthenticationError` (LLM / embedding) | No | Permanent misconfiguration; alert and fail |
+| `InvalidRequestError` (bad prompt) | No | Permanent; retrying will produce same error |
+| `ContentPolicyError` | No | Permanent; retrying is futile and wastes tokens |
+| `pydantic.ValidationError` | No | Input data is malformed; retrying won't fix it |
+| `asyncpg.IntegrityConstraintViolationError` | No | Duplicate insert; not a transient failure |
+| `PermissionDeniedError` (RBAC) | No | Permanent |
+| Ingest job — document parse failure (Docling) | No | Corrupt or unsupported file; DLQ immediately |
+| Ingest job — embedding timeout | Yes | Transient; full backoff policy applies |
+| Ingest job — graph extraction failure | Yes | LLM transient; up to 3 attempts; on final failure, skip graph path and proceed with vector-only |
+
+Graph extraction has a dedicated soft-failure policy: after exhausting retries, the document is ingested as vector-only and `graph_extraction_failed: true` is set in chunk metadata. The job is not moved to DLQ — a partial ingest is better than no ingest.
+
+#### Backoff Specification
+
+```python
+# knowledge/bus/backoff.py
+import random
+
+def exponential_backoff(
+    attempt: int,           # 1-indexed
+    base_s: float = 5.0,
+    multiplier: float = 2.0,
+    max_s: float = 125.0,
+    jitter_factor: float = 0.15,
+) -> float:
+    """
+    Backoff with full jitter to prevent thundering herd.
+    attempt=1 → ~5s, attempt=2 → ~10s, attempt=3 → ~20s (capped at max_s).
+    Jitter = uniform(0, jitter_factor × raw_backoff).
+    """
+    raw = min(base_s * (multiplier ** (attempt - 1)), max_s)
+    jitter = random.uniform(0, jitter_factor * raw)
+    return raw + jitter
+```
+
+Default backoff schedule (base=5s, 3 attempts):
+
+| Attempt | Base | With jitter (typical) | Cumulative |
+|---|---|---|---|
+| 1st | 5 s | 5–5.75 s | 5 s |
+| 2nd | 10 s | 10–11.5 s | 15 s |
+| 3rd (final) | 20 s | 20–23 s | 35 s |
+| → DLQ | — | — | — |
+
+Embedding API uses shorter base (1s, max 15s) since it's a fast network call. DB retries use shorter base (0.5s, max 5s) since pool recovery is fast.
+
+#### Circuit Breaker Design
+
+One circuit breaker per external service. Implemented in `knowledge/bus/circuit_breaker.py`.
+
+```
+States:
+  CLOSED   → normal; requests pass through; failure counter maintained
+  OPEN     → all requests blocked immediately; probe timer running
+  HALF-OPEN → one probe request allowed; success → CLOSED; failure → OPEN
+
+Transitions:
+  CLOSED → OPEN:       failure_count >= OPEN_THRESHOLD in last WINDOW_SECONDS
+  OPEN → HALF-OPEN:    PROBE_INTERVAL_S elapsed since circuit opened
+  HALF-OPEN → CLOSED:  CONSECUTIVE_SUCCESS_THRESHOLD successes in half-open
+  HALF-OPEN → OPEN:    any failure in half-open state
+
+Default thresholds:
+  OPEN_THRESHOLD:               5 failures
+  WINDOW_SECONDS:               60
+  PROBE_INTERVAL_S:             30
+  CONSECUTIVE_SUCCESS_THRESHOLD: 2
+```
+
+Circuit breakers are per-service, not per-tenant. A single slow LLM call does not trip the breaker; five failures in a minute does.
+
+```python
+# knowledge/bus/circuit_breaker.py
+class CircuitBreaker:
+    def __init__(self, name: str, redis: Redis, settings: CircuitBreakerSettings): ...
+
+    async def call(self, coro: Awaitable[T]) -> T:
+        state = await self._get_state()
+        if state == "open":
+            raise CircuitOpenError(service=self.name, retry_after_s=self._probe_remaining())
+        try:
+            result = await coro
+            await self._record_success()
+            return result
+        except RETRIABLE_EXCEPTIONS as exc:
+            await self._record_failure()
+            raise
+```
+
+Circuit state is stored in Redis (`cb:{name}:state`, `cb:{name}:failures`, `cb:{name}:opened_at`) so all API pod replicas share the same view. A circuit that opens on one pod is immediately open on all pods.
+
+When a circuit opens, it fires `ON_ERROR` hook → email alert to `rohan.vazirani@gmail.com` + PagerDuty.
+
+#### Idempotency Design
+
+**Ingest jobs**: identified by `sha256(file_content + corpus_id)`. Before processing, the worker checks `cache:doc_fingerprint:{sha256}` in Redis (or `documents.metadata->>'content_hash'` in PostgreSQL on cache miss). If already processed and unchanged, job is ACKed without re-ingestion. This makes ingest retries safe — re-enqueuing a job for a document that already succeeded is a no-op.
+
+**Vector upserts**: `INSERT ... ON CONFLICT (source) DO UPDATE` — idempotent by design. Partial ingestion (worker crash mid-batch) is recovered by re-running; chunks are upserted, not duplicated.
+
+**LLM calls**: not inherently idempotent. For the judge gate, if the LLM call times out, the default is **pessimistic abstention** — treat as `abstained_judge` rather than retrying and potentially returning a different verdict. For generation, the request is retried once within the SLA budget; a second timeout returns `GENERATION_TIMEOUT` to the client.
+
+**Cache writes**: Redis writes use `SET key value EX ttl NX` (set-if-not-exists) where duplicate prevention matters. For L2 search cache, `SET ... NX` prevents two concurrent request completions from overwriting each other.
+
+#### Cascading Timeout Budget
+
+The API request deadline is the parent budget. Each downstream call carves a sub-deadline from the remaining parent budget.
+
+```python
+# knowledge/api/timeout.py
+@dataclass
+class TimeoutBudget:
+    total_s: float = 30.0       # API hard deadline
+
+    validation_s: float = 0.2
+    routing_s: float = 3.0      # includes one retry within budget
+    embedding_s: float = 5.0    # includes one retry within budget
+    retrieval_s: float = 8.0
+    rerank_s: float = 3.0
+    semantic_cache_s: float = 1.0
+    generation_s: float = 15.0  # streaming TTFT must start within this
+    judge_s: float = 5.0
+
+    # Remaining budget is slack / buffer for I/O overhead.
+    # If any stage exceeds its sub-budget, the overall deadline propagates:
+    # asyncio.wait_for(stage_coro, timeout=min(stage_s, remaining_parent_budget))
+```
+
+If `generation_s` is exhausted mid-stream, the SSE connection sends a `data: {"type": "error", "code": "GENERATION_TIMEOUT"}` event and closes. Partial streamed tokens are not truncated — the stream is left open until the budget expires, then closed with the error event.
+
+#### Worker Retry Loop
+
+```python
+# knowledge/bus/consumer.py
+async def consume_loop(stream: str, group: str, worker_id: str, handler: Handler) -> None:
+    while True:
+        messages = await xreadgroup(stream, group, worker_id, count=1, block_ms=5000)
+        for msg_id, payload in messages:
+            job = deserialize(payload)
+            await _execute_with_retry(msg_id, job, handler)
+
+async def _execute_with_retry(msg_id: str, job: Job, handler: Handler) -> None:
+    attempt = job.attempt  # stored in job payload; incremented on re-enqueue
+    try:
+        await asyncio.wait_for(handler(job), timeout=JOB_TIMEOUT_S)
+        await xack(msg_id)                        # success: ACK and done
+    except NON_RETRIABLE_EXCEPTIONS as exc:
+        await xack(msg_id)
+        await move_to_dlq(job, exc, permanent=True)
+        await fire_hook(ON_ERROR, error=exc, job=job)
+    except (RETRIABLE_EXCEPTIONS, asyncio.TimeoutError) as exc:
+        if attempt >= MAX_RETRIES:
+            await xack(msg_id)
+            await move_to_dlq(job, exc, permanent=False)
+            await fire_hook(ON_ERROR, error=exc, job=job)
+        else:
+            backoff_s = exponential_backoff(attempt)
+            await asyncio.sleep(backoff_s)
+            await re_enqueue(job, attempt=attempt + 1)  # new XADD with incremented attempt
+            await xack(msg_id)                          # ACK original; re-enqueued copy takes over
+```
+
+`MAX_RETRIES = 3`. After 3 failures, the job enters DLQ and an alert fires. The DLQ is never silently drained — every DLQ entry is an incident requiring human review.
+
+---
+
 ### Security Layer — JWT, JWE, HTTPS, RBAC
 
 #### Authentication — JWT (RS256)
@@ -1328,6 +1762,270 @@ git push → GitHub Actions
   ├── helm upgrade --install (staging namespace)
   ├── smoke tests against staging
   └── manual approval gate → helm upgrade (production namespace)
+```
+
+---
+
+### SaaS Deployment Model
+
+The cloud deployment section describes infrastructure. This section describes the business model layered on top of it: how tenants are isolated, provisioned, billed, and offboarded. These decisions are architectural — they affect schema design, Redis key namespacing, API auth, and the K8s resource model. They must be resolved before implementation, not bolted on later.
+
+#### Tenant Isolation Model
+
+**Decision: Row-Level Security (RLS) on a shared PostgreSQL cluster.**
+
+Three options considered:
+
+| Model | Isolation | Ops overhead | Data leak risk | Decision |
+|---|---|---|---|---|
+| Separate cluster per tenant | Complete | Very high (N clusters) | None | Enterprise tier only |
+| Schema per tenant | Strong | Medium (N schemas, DDL migrations × N) | Low (Postgres RLS supplements) | Rejected |
+| Shared tables + RLS | Moderate | Low (1 schema, 1 migration) | Low if RLS is correct | **Selected for Pro/Free** |
+
+**RLS implementation:**
+
+```sql
+-- Every data table has tenant_id TEXT NOT NULL
+ALTER TABLE chunks    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
+
+-- Policy: a connection may only see rows matching its set tenant_id
+CREATE POLICY tenant_isolation ON chunks
+    USING (tenant_id = current_setting('app.tenant_id'));
+
+-- API sets before every query (transaction-scoped):
+SET LOCAL app.tenant_id = 'acme-corp';
+```
+
+`corpus_id` format: `{tenant_id}:{corpus_slug}` — tenant is always derivable from corpus_id, giving a second isolation layer without an extra join.
+
+**Enterprise isolation**: dedicated PostgreSQL instance + dedicated Redis namespace. Provisioned via Terraform module; not self-service.
+
+#### SLA Tiers
+
+| Tier | Max users | Queries/day | Rate limit | Max corpora | Storage | LLM budget/month | Price |
+|---|---|---|---|---|---|---|---|
+| **Free** | 5 | 500 | 10 RPM, 100 RPD | 1 | 500 MB | $0 (search-only) | $0 |
+| **Pro** | 100 | 10,000 | 60 RPM, 10K RPD | 5 | 10 GB | $200 | $299/mo |
+| **Enterprise** | Unlimited | Custom | Custom | Unlimited | Custom | Custom | Custom |
+
+Free tier: LLM generation disabled. Search + cache hits only. This controls cost while still providing value.
+
+Tier enforcement at `PRE_VALIDATE` hook:
+```python
+class TenantQuota(BaseModel):
+    tenant_id: str
+    tier: Literal["free", "pro", "enterprise"]
+    max_queries_per_day: int
+    max_queries_per_minute: int
+    max_corpus_count: int
+    max_storage_gb: float
+    llm_enabled: bool                      # False for free tier
+    llm_budget_usd_per_month: float        # 0.0 = unlimited (enterprise with prepaid)
+    max_prompt_tokens_per_request: int = 8192
+    max_output_tokens_per_request: int = 1024
+```
+
+#### Tenant Onboarding Flow
+
+Onboarding is automated end-to-end. No manual provisioning steps.
+
+```
+1. Customer signs up (Stripe checkout)
+   └── Stripe webhook → POST /v1/webhooks/stripe → subscription.created event
+
+2. TenantProvisioner.provision(tenant_id, tier):
+   a. INSERT into tenants table (id, tier, created_at, billing_customer_id)
+   b. INSERT into tenant_quotas (from tier template)
+   c. Generate RS256 keypair → store private key in Secrets Manager
+   d. Register JWKS endpoint: GET /v1/.well-known/jwks/{tenant_id}
+   e. Create default corpus: {tenant_id}:default
+   f. Seed audit_events: action="tenant_provisioned"
+   g. Send welcome email to admin_email (via alerts.py SMTP)
+
+3. Customer receives:
+   - API base URL: https://api.ragv2.com/api/v1
+   - API key (short-lived JWT signed by tenant private key, 90-day TTL)
+   - Corpus ID: {tenant_id}:default
+   - Quickstart documentation link
+```
+
+Provisioning is idempotent: re-running `provision()` for an existing `tenant_id` is a no-op (all steps are `INSERT ... ON CONFLICT DO NOTHING` or check-before-execute).
+
+#### Quota Enforcement
+
+Quota is enforced in Redis on the hot path. PostgreSQL is the audit trail — never the enforcement gate.
+
+```python
+# knowledge/api/quota.py
+async def enforce_quota(tenant_id: str, request_type: str) -> None:
+    """Check and increment quota counters. Raises QuotaExceeded on breach."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    month = datetime.utcnow().strftime("%Y-%m")
+    minute_key = f"quota:{tenant_id}:rpm:{int(time.time() // 60)}"
+
+    pipe = redis.pipeline()
+    pipe.incr(f"quota:{tenant_id}:queries:{today}")
+    pipe.expire(f"quota:{tenant_id}:queries:{today}", 86400 + 3600)  # 25h buffer
+    pipe.incr(minute_key)
+    pipe.expire(minute_key, 120)  # 2 min sliding window
+    daily_count, _, rpm_count, _ = await pipe.execute()
+
+    quota = await get_tenant_quota(tenant_id)  # cached in L1 for 60s
+
+    if daily_count > quota.max_queries_per_day:
+        raise QuotaExceeded(
+            code="DAILY_QUOTA_EXCEEDED",
+            limit=quota.max_queries_per_day,
+            resets_at=next_midnight_utc(),
+        )
+    if rpm_count > quota.max_queries_per_minute:
+        raise QuotaExceeded(
+            code="RATE_LIMIT_EXCEEDED",
+            limit=quota.max_queries_per_minute,
+            retry_after_s=60,
+        )
+    if not quota.llm_enabled and request_type == "chat":
+        raise QuotaExceeded(code="LLM_NOT_ENABLED_ON_FREE_TIER")
+```
+
+Quota headers on every response (even when not exceeded):
+```
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 47
+X-RateLimit-Reset: 1749214680
+X-Quota-Daily-Limit: 10000
+X-Quota-Daily-Used: 3241
+```
+
+#### Billing & Metering
+
+**Billing event** emitted after every successful LLM call (async, non-blocking):
+
+```python
+class BillingEvent(BaseModel):
+    id: UUID
+    tenant_id: str
+    corpus_id: str
+    request_id: UUID
+    model_id: str
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int          # provider-level cache hits (not our L2/L3)
+    cost_usd: float
+    timestamp: datetime
+    cache_hit: str | None       # "l2" | "l3" | None — saves tracking for cost_saved
+```
+
+Stored in `billing_events` table. Stripe usage records created nightly:
+
+```python
+# knowledge/billing/metering.py — runs as a cron job at 00:05 UTC daily
+async def flush_to_stripe(date: date) -> None:
+    rows = await db.fetch(
+        "SELECT tenant_id, SUM(cost_usd) FROM billing_events WHERE DATE(timestamp) = $1 GROUP BY tenant_id",
+        date
+    )
+    for tenant_id, daily_cost in rows:
+        subscription_id = await get_stripe_subscription(tenant_id)
+        if subscription_id:  # Pro/Enterprise tenants only
+            stripe.SubscriptionItem.create_usage_record(
+                subscription_item_id=subscription_id,
+                quantity=int(daily_cost * 100),  # cents
+                timestamp=int(datetime.utcnow().timestamp()),
+            )
+```
+
+Free tier never has `subscription_id` — costs are absorbed or hard-capped at $0 (search-only). Metering events are still written for analytics.
+
+#### Tenant Offboarding & GDPR Compliance
+
+Data deletion is a hard requirement, not an afterthought. The system supports right-to-erasure for any tenant or individual user.
+
+**Tenant deletion** (`DELETE /v1/tenants/{id}` — admin-only):
+
+```python
+async def delete_tenant(tenant_id: str) -> None:
+    # 1. Cancel Stripe subscription immediately
+    await stripe.Subscription.cancel(tenant_subscription_id)
+
+    # 2. Cascade delete all PostgreSQL data (FK cascade handles chunks, eval_results, etc.)
+    await conn.execute("DELETE FROM documents WHERE tenant_id = $1", tenant_id)
+    await conn.execute("DELETE FROM gold_samples WHERE corpus_id LIKE $1", f"{tenant_id}:%")
+    await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+    # 3. Delete from Apache AGE (separate connection, graph vertices/edges)
+    await age_store.delete_tenant_graph(tenant_id)
+
+    # 4. Flush Redis keys for tenant
+    keys = await redis.keys(f"quota:{tenant_id}:*")
+    keys += await redis.keys(f"cache:*:{tenant_id}:*")
+    if keys:
+        await redis.delete(*keys)
+
+    # 5. Rotate and delete JWT private key from Secrets Manager
+    await secrets_manager.delete_secret(f"jwt_private_key/{tenant_id}")
+
+    # 6. Audit event (append-only — this row is never deleted)
+    await conn.execute(
+        "INSERT INTO audit_events (user_id, tenant_id, action) VALUES ($1, $2, 'tenant_deleted')",
+        "system", tenant_id
+    )
+    # 7. Alert
+    await send_alert(severity="INFO", code="TENANT_DELETED", detail={"tenant_id": tenant_id})
+```
+
+Deletion is synchronous for the PostgreSQL cascade. AGE deletion and Redis flush are background tasks with their own retry policy.
+
+**User-level right to erasure** (`POST /v1/users/{id}/erase`):
+
+Individual user data — `audit_events.user_id`, `user_feedback.user_id`, `implicit_signals.user_id` — is stored as `SHA-256(user_id + tenant_salt)`. Erasing a user means replacing the stored hash with `SHA-256("ERASED" + tenant_salt)`. The row structure is preserved for analytics; the user is no longer identifiable.
+
+**Data residency**: `CorpusConfig.data_region: Literal["us", "eu", "apac"]`. Multi-region PostgreSQL routing is a Phase I IaC concern — the schema supports it from day one.
+
+**Retention policy**: `audit_events` rows older than `AUDIT_RETENTION_DAYS` (default 2 years) are pruned by a nightly job. `user_feedback` and `implicit_signals` are retained for 1 year. `token_usage` and `billing_events` are retained for 7 years (financial records).
+
+#### Tenant Database Schema Additions
+
+```sql
+CREATE TABLE tenants (
+    id              TEXT PRIMARY KEY,           -- slug, e.g. "acme-corp"
+    display_name    TEXT NOT NULL,
+    tier            TEXT NOT NULL DEFAULT 'free',
+    admin_email     TEXT NOT NULL,
+    billing_customer_id TEXT,                  -- Stripe customer ID
+    data_region     TEXT NOT NULL DEFAULT 'us',
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ                -- soft delete; hard delete is async
+);
+
+CREATE TABLE tenant_quotas (
+    tenant_id               TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    max_queries_per_day     INTEGER NOT NULL,
+    max_queries_per_minute  INTEGER NOT NULL,
+    max_corpus_count        INTEGER NOT NULL,
+    max_storage_gb          FLOAT NOT NULL,
+    llm_enabled             BOOLEAN NOT NULL DEFAULT false,
+    llm_budget_usd_per_month FLOAT NOT NULL DEFAULT 0.0,
+    updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE billing_events (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       TEXT NOT NULL,
+    corpus_id       TEXT NOT NULL,
+    request_id      UUID NOT NULL,
+    model_id        TEXT NOT NULL,
+    prompt_tokens   INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    cached_tokens   INTEGER NOT NULL DEFAULT 0,
+    cost_usd        FLOAT NOT NULL,
+    cache_hit       TEXT,
+    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON billing_events (tenant_id, timestamp DESC);
+CREATE INDEX ON billing_events (timestamp DESC);   -- for daily flush job
 ```
 
 ---
@@ -1834,6 +2532,152 @@ redis_memory_bytes                          # gauge (via redis_exporter)
 **Row 7 — Storage**
 - Area chart: `pg_table_bytes` by table over time
 - Stat: Redis memory used vs limit; eviction count
+
+---
+
+### Load & Chaos Testing Strategy
+
+The happy path working locally is table stakes. What matters before production is knowing *exactly* what breaks first, at what load, and with what degradation profile. This section is the pre-production test plan that validates the SLAs from [System Design Constraints](#system-design-constraints) and surfaces failure modes before real users hit them.
+
+#### Philosophy
+
+- Every SLA number in this document is a hypothesis. Load testing converts it to a measurement.
+- Break things deliberately, in isolation, before the system breaks in production at the worst time.
+- A test that only validates the happy path is not a test — it is optimism.
+
+#### Phase 1 — Baseline Load (single component, no failures)
+
+Goal: establish real throughput and latency curves before any chaos. Run on staging environment with production-equivalent data (ingested gold dataset, ~5K chunks).
+
+**Tool**: `locust` (Python, async-compatible, Grafana-integrated).
+
+```python
+# tests/load/locustfile.py
+class RAGUser(HttpUser):
+    wait_time = between(0.5, 2)
+
+    @task(5)
+    def search(self):
+        self.client.post("/api/v1/search", json={
+            "query": random.choice(GOLD_QUERIES),
+            "corpus_ids": ["acme-corp:hr-policies"],
+        }, headers={"Authorization": f"Bearer {JWT}"})
+
+    @task(3)
+    def chat(self):
+        self.client.post("/api/v1/chat", json={
+            "query": random.choice(GOLD_QUERIES),
+            "corpus_ids": ["acme-corp:hr-policies"],
+        }, headers={"Authorization": f"Bearer {JWT}"})
+
+    @task(1)
+    def ingest_small_doc(self):
+        self.client.post("/api/v1/ingest", json={
+            "corpus_id": "acme-corp:hr-policies",
+            "document_url": TEST_DOC_URL,
+        }, headers={"Authorization": f"Bearer {JWT}"})
+```
+
+**Test matrix** (run each scenario independently, record P50/P95/P99 and error rate):
+
+| Scenario | RPS | Duration | Pass criteria |
+|---|---|---|---|
+| Baseline — search only | 1 RPS | 5 min | P95 < 600 ms, 0% errors |
+| Baseline — chat (small model) | 1 RPS | 5 min | P95 < 2,000 ms, 0% errors |
+| Ramp — find breaking point | 1→20 RPS over 10 min | 10 min | Record RPS where error rate > 1% |
+| Sustained peak | 5 RPS (design peak) | 30 min | P95 < 2,000 ms, error rate < 0.1% |
+| Burst | 0→15 RPS spike for 60s | 5 min | System recovers within 2 min; no DLQ entries |
+| Cache warmup | 1 RPS, 100 unique queries | 5 min | L2 hit rate reaches > 10% by end |
+| Cache cold | 5 RPS, 1000 unique queries | 10 min | P95 < 2,000 ms (no cache benefit) |
+
+**Deliverable**: Grafana dashboard screenshot + `locust` HTML report committed to `tests/load/results/baseline-{date}.html`. This becomes the regression baseline.
+
+#### Phase 2 — Dependency Failure Injection (chaos)
+
+Goal: verify graceful degradation matrix from [Error Handling Strategy](#error-handling-strategy) holds under load. Each scenario kills one component while load continues at 3 RPS.
+
+**Tool**: `chaos-mesh` (K8s) in staging, or direct `docker compose stop <service>` for local runs. For local runs, the `Makefile` provides targets:
+
+```makefile
+chaos-kill-redis:
+    docker compose stop redis
+    sleep 60
+    docker compose start redis
+
+chaos-kill-ollama:
+    docker compose stop ollama
+    sleep 120
+    docker compose start ollama
+
+chaos-kill-postgres:
+    docker compose stop postgres
+    sleep 30
+    docker compose start postgres
+```
+
+**Chaos scenario matrix:**
+
+| Component killed | Expected degraded mode | Acceptance criteria |
+|---|---|---|
+| **Redis** | `no_cache`; rate limiting falls back to DB counter | No 500s; P95 ≤ 2× baseline; `X-Degraded-Mode: no_cache` header present |
+| **Ollama (LLM)** | `search_only`; generation returns 503 | Search responses succeed; chat returns `503 LLM_CIRCUIT_OPEN`; circuit opens within 60s; alert email sent |
+| **Ollama (recovery)** | Circuit transitions OPEN → HALF-OPEN → CLOSED | Within 90s of Ollama restart, chat requests succeed again |
+| **PostgreSQL** | `unavailable`; all endpoints 503 | No data corruption; all in-flight ingest jobs re-enqueue (not lost); on recovery, job processing resumes |
+| **AGE graph DB** | `no_graph`; vector+text path only | Queries that require graph return results via vector fallback; `graph_unavailable: true` in response |
+| **Ingest worker (all replicas)** | Queue depth grows; jobs stay in stream | No data loss (Redis stream durability); on worker restart, all pending jobs processed |
+| **Network partition (Redis ↔ API)** | Same as Redis kill | Handled identically |
+
+**What must NOT happen in any scenario:**
+- Unhandled Python exceptions returning 500 (all caught, mapped to error codes)
+- Data written to wrong tenant (RLS holds even under degradation)
+- DLQ entries accumulating silently without alert
+- Circuit breaker state lost on API pod restart (state is in Redis, not in-process)
+
+#### Phase 3 — Sustained Load & Resource Exhaustion
+
+Goal: find the resource ceiling before it finds you.
+
+| Test | Scenario | What we're looking for |
+|---|---|---|
+| **DB connection pool exhaustion** | 20 RPS sustained for 10 min (above HPA trigger) | Pool waiters observable in `/health`; requests queue rather than crash; P99 degrades gracefully |
+| **Redis memory ceiling** | Fill semantic cache to `semantic_cache_max_rows` | Pruning job triggers correctly; no OOM; cache hit rate stable |
+| **Embedding API rate limit** | Ingest 500 documents in 10 min | `RateLimitError` triggers backoff; no jobs lost to DLQ; total time < 3h (within P99 SLA) |
+| **LLM context overflow** | Send 50 queries with 8000+ token context | Context trimming fires; `context_truncated: true` in response; no 500s |
+| **DLQ depth** | Inject 20 permanently-failing ingest jobs | DLQ depth gauge increments; alert fires per entry; `/health` shows `dlq_depth > 0` as degraded |
+| **Tenant budget exhaustion** | Exhaust Pro tier LLM budget mid-load-test | Budget guard fires at 100%; chat returns `402`; search continues; alert email sent |
+
+#### Phase 4 — Regression Gate (CI)
+
+Every PR that touches retrieval, generation, or caching runs an automated subset of the load tests:
+
+```yaml
+# .github/workflows/load-test.yml (runs on PR to main)
+- name: Load regression test
+  run: |
+    locust -f tests/load/locustfile.py \
+      --headless --users 5 --spawn-rate 1 --run-time 3m \
+      --host $STAGING_URL \
+      --csv tests/load/results/pr-${{ github.sha }} \
+      --exit-code-on-error 1
+  env:
+    LOCUST_FAIL_ON_ERROR_RATE: "0.01"       # fail if > 1% errors
+    LOCUST_FAIL_ON_P95_MS: "2000"           # fail if P95 > 2s
+```
+
+Result CSV is compared against the baseline; if P95 regresses > 200 ms the PR is blocked (same tolerance as evaluation system regression).
+
+#### Observability During Load Tests
+
+All load tests are run with Langfuse and Prometheus active. Key dashboards to watch:
+
+- **Latency heatmap** by stage — identifies which stage is the bottleneck as load increases
+- **Error rate by error code** — distinguishes infrastructure errors from policy rejections
+- **Circuit breaker state** — monitors CLOSED/OPEN/HALF-OPEN transitions
+- **DLQ depth** — should be zero at all times except during chaos scenarios
+- **Cache hit rate** — should stabilise as the load test warms the cache
+- **DB pool utilisation** — pool_used / pool_max; alert if > 80% sustained
+
+Load test results are stored in `tests/load/results/` (git-ignored for large CSVs; summaries committed). A Markdown summary is posted as a PR comment by the CI workflow.
 
 ---
 
