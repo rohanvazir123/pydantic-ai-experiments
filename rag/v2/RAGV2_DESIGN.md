@@ -19,6 +19,8 @@
   - [Error Handling Strategy](#error-handling-strategy)
   - [Retry & Resilience Strategy](#retry--resilience-strategy)
   - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
+  - [Memory Architecture](#memory-architecture)
+  - [Log Storage](#log-storage)
   - [API Layer](#api-layer)
   - [Docker Compose — Local Dev](#docker-compose--local-dev)
   - [Packaging & Developer Install](#packaging--developer-install)
@@ -2000,7 +2002,9 @@ Emit from `knowledge/api/middleware.py` as a background task (non-blocking, fire
 
 ### Memory Architecture
 
-The system uses five distinct memory tiers mapping to cognitive science memory types. Full design details and pruning/eviction strategy are in `basics/rag/memory/MEMORY_DESIGN.md` — this section captures the decisions that affect the module layout, database schema, and API.
+**Full design reference:** [`basics/rag/memory/MEMORY_DESIGN.md`](../../basics/rag/memory/MEMORY_DESIGN.md) — covers all five cognitive memory types, tsvector + pgvector hybrid search pattern for memory tables, Mem0/Zep/Letta framework assessment, and complete pruning/eviction/compaction algorithms. This section captures only the decisions that affect the module layout, database schema, and API surface of `knowledge/`.
+
+The system uses five distinct memory tiers mapping to cognitive science memory types.
 
 #### Five Memory Tiers
 

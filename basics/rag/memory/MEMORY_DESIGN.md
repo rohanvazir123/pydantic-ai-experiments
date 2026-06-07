@@ -560,7 +560,7 @@ DELETE FROM semantic_cache WHERE corpus_ids @> ARRAY[$1]::text[];
 
 ---
 
-### Does a Standard Framework Cover All of This?
+## Framework Assessment — Build vs Buy
 
 | Framework | Covers | Doesn't cover | Verdict |
 |-----------|--------|--------------|---------|
