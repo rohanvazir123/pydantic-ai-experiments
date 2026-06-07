@@ -1,0 +1,132 @@
+[project]
+name = "knowledge"
+version = "0.1.0"
+description = "RAG v2 — multi-corpus knowledge system with pgvector, Apache AGE, and Pydantic AI"
+requires-python = ">=3.13"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "gunicorn>=23.0",
+    "uvicorn[standard]>=0.32.0",
+    # Async DB and cache
+    "asyncpg>=0.30.0",
+    "pgvector>=0.3.0",
+    "redis>=5.2.0",
+    "msgpack>=1.1.0",
+    # AI / LLM
+    "pydantic-ai>=0.1.0",
+    "openai>=1.58.0",
+    # Data validation
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    # HTTP client
+    "httpx>=0.27.0",
+    # Utilities
+    "python-dotenv>=1.0.1",
+    "structlog>=24.0.0",
+    "croniter>=3.0.0",
+    "apscheduler>=3.10.0",
+    "aiosmtplib>=3.0.0",
+    "joserfc>=1.0.0",
+    "slowapi>=0.1.9",
+    "prometheus-client>=0.21.0",
+    "aiofiles>=24.1.0",
+]
+
+[project.optional-dependencies]
+# Docling document parsing (CPU-bound, sync — offloaded via asyncio.to_thread)
+ingestion = [
+    "docling>=2.14.0",
+    "docling-core>=2.4.0",
+    "docling-graph>=1.5.1",
+    "transformers>=4.47.0",
+]
+# Whisper ASR — also requires FFmpeg in PATH
+audio = [
+    "openai-whisper>=20240930",
+]
+# Langfuse LLM tracing (self-hosted, open-source)
+observability = [
+    "langfuse>=2.0.0",
+]
+# MCP server
+mcp = [
+    "mcp>=1.0.0",
+]
+# CrossEncoder reranker
+reranker = [
+    "sentence-transformers>=3.0.0",
+]
+# Mem0 user memory (pgvector-backed)
+mem0 = [
+    "mem0ai>=0.1.0",
+]
+# Cloud source adapters for scheduler
+scheduler-cloud = [
+    "boto3>=1.35.0",
+    "google-cloud-storage>=2.0.0",
+]
+# Everything — recommended for local development
+all = [
+    "knowledge[ingestion,audio,observability,mcp,reranker,mem0,scheduler-cloud]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["knowledge"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "fakeredis>=2.26.0",
+    "ruff>=0.8.0",
+    "mypy>=1.11.0",
+    "types-redis>=4.6.0",
+    "types-aiofiles>=24.1.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "unit: pure unit test, no external deps",
+    "integration: requires PostgreSQL + Redis",
+    "retrieval: requires PostgreSQL + Ollama + ingested data",
+    "ingestion: requires PostgreSQL + Redis + Ollama",
+    "agent: requires full stack (PostgreSQL + Redis + Ollama)",
+    "api: requires full running API server",
+    "load: load test, run manually only",
+    "chaos: chaos test, run manually only",
+]
+
+[tool.mypy]
+python_version = "3.13"
+explicit_package_bases = true
+mypy_path = "."
+ignore_missing_imports = true
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = "knowledge.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_return_any = true
+no_implicit_optional = true
+warn_unused_ignores = true
+strict_equality = true
+extra_checks = true
+disallow_any_generics = false
+
+[[tool.mypy.overrides]]
+module = [
+    "asyncpg.*", "pgvector.*", "docling.*", "docling_graph.*",
+    "langfuse.*", "sentence_transformers.*", "mem0.*",
+    "APScheduler.*", "apscheduler.*", "croniter.*", "joserfc.*",
+    "msgpack.*", "prometheus_client.*", "slowapi.*", "whisper.*",
+    "aiosmtplib.*",
+]
+ignore_missing_imports = true
