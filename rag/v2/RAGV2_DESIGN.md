@@ -2,6 +2,7 @@
 
 ## Table of Contents
 
+- [System Diagram](#system-diagram)
 - [Architecture Proposal — Enterprise RAG v2](#architecture-proposal--enterprise-rag-v2)
   - [Goals](#goals)
   - [System Design Constraints](#system-design-constraints)
@@ -33,6 +34,186 @@
 - [In Progress — Rate Limiting, Timeouts & Retries](#in-progress--rate-limiting-timeouts--retries)
 - [Queued — Production Hardening](#queued--production-hardening)
 - [Done](#done)
+
+---
+
+## System Diagram
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║                              RAG v2 — System Overview                                    ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+
+ Browser / API Client
+       │
+       │  HTTPS (TLS 1.3)  JWT Bearer
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Nginx  (port 443)                                                          │
+│  ├── /api/v1/*        → proxy_pass api:8000                                 │
+│  └── /                → proxy_pass frontend:3000  (SSE: proxy_buffering off)│
+└───────────────────────────┬────────────────────────────┬────────────────────┘
+                            │                            │
+                            ▼                            ▼
+             ┌──────────────────────────┐   ┌────────────────────────┐
+             │  API (Gunicorn +         │   │  Frontend              │
+             │  UvicornWorker)          │   │  Next.js 15 Node.js    │
+             │  knowledge.api.app       │   │  Tailwind CSS          │
+             │                          │   │  Zustand state         │
+             │  Middleware stack:        │   │  SSE streaming         │
+             │  CorrelationID           │   │  Postman collection    │
+             │  AuditEmitter            │   │  (postman/README.md)   │
+             │  RateLimiter (slowapi)   │   └────────────────────────┘
+             │  JWT RBAC                │
+             │                          │
+             │  Routes:                 │
+             │  /auth  /chat  /search   │
+             │  /ingest  /corpus        │
+             │  /memories  /scheduler   │
+             │  /evaluate  /logs        │
+             └──────────┬───────────────┘
+                        │
+        ┌───────────────┼────────────────────────────────┐
+        │               │                                │
+        ▼               ▼                                ▼
+ ┌────────────┐  ┌────────────────────────┐   ┌──────────────────────┐
+ │  Redis     │  │  Validation Pipeline   │   │  Memory System       │
+ │  Streams   │  │  V1 Schema             │   │  (knowledge/memory/) │
+ │            │  │  V2 Length guard       │   │                      │
+ │  knowledge:│  │  V3 Language detect    │   │  Tier 1: assemble()  │
+ │    :ingest │  │  V4 Injection detect   │   │  Tier 2: conv store  │
+ │    :search │  │  V5 Content policy     │   │  Tier 3: Mem0        │
+ │    :eval   │  │     (nano model)       │   │  Tier 5: sys prompts │
+ │    :events │  │  V6 RBAC check         │   └──────────────────────┘
+ │    :*:dlq  │  └────────────┬───────────┘
+ │            │               │
+ │  L2 Cache: │               ▼
+ │  embed:*   │  ┌────────────────────────┐
+ │  search:*  │  │  Model Router          │
+ │  fingerp:* │  │  (nano: qwen2.5:0.5b) │
+ │            │  │  → RoutingDecision     │
+ │  Quota:    │  │    complexity          │
+ │  quota:*   │  │    requires_graph      │
+ │  cb:*      │  │    model_tier          │
+ │            │  └────────────┬───────────┘
+ │  Job hash: │               │
+ │  job:*     │               ▼
+ │            │  ┌────────────────────────────────────────────────────┐
+ │  Logs:     │  │  Confidence-Aware Pipeline                         │
+ │  logs:*    │  │  (knowledge/agent/pipeline.py)                     │
+ └────────────┘  │                                                    │
+                 │  Layer 1: retrieve_with_confidence()               │
+                 │    └── Σ(confidence top-K) < threshold → ABSTAIN  │
+                 │                                                    │
+                 │  Layer 2: agent.run() → GenerationResult           │
+                 │    └── uncited_claims > 0 → ABSTAIN               │
+                 │                                                    │
+                 │  Layer 3: judge() → JudgeResult                   │
+                 │    └── verdict=unsupported → ABSTAIN              │
+                 │                                                    │
+                 │  → RAGResponse { answer, citations, confidence,   │
+                 │                  cost_usd, trace_url, request_id }│
+                 └────────────┬───────────────────────────────────────┘
+                              │
+           ┌──────────────────┼──────────────────────────┐
+           │                  │                          │
+           ▼                  ▼                          ▼
+  ┌────────────────┐ ┌────────────────────┐  ┌───────────────────────┐
+  │  Retriever     │ │  RAG Agent         │  │  LLM Judge            │
+  │  (retrieval/)  │ │  (agent/agent.py)  │  │  (agent/judge.py)     │
+  │                │ │                    │  │                       │
+  │  L3 semantic   │ │  PydanticAgent     │  │  nano → small         │
+  │  cache check   │ │  5 tools:          │  │  escalation           │
+  │                │ │  search_kb         │  │                       │
+  │  asyncio.gather│ │  search_kg         │  │  JudgeResult:         │
+  │  ├─ vec search │ │  search_hybrid_kg  │  │  supported/partial/   │
+  │  ├─ text search│ │  run_graph_query   │  │  unsupported          │
+  │  └─ graph      │ │  nl_graph_query    │  └───────────────────────┘
+  │                │ │                    │
+  │  CrossEncoder  │ │  result.usage()    │  (token counts — Pydantic AI
+  │  rerank        │ │  → cost tracking   │   built-in, no manual counting)
+  │  → confidence  │ └────────────────────┘
+  └────────────────┘
+           │
+           │  reads from
+           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Storage Layer  (knowledge/store/)                                           │
+│                                                                              │
+│  ┌─────────────────────────────────┐   ┌──────────────────────────────────┐ │
+│  │  Main PostgreSQL  (port 5432)   │   │  Apache AGE  (port 5433)         │ │
+│  │  pgvector/pgvector:pg16         │   │  apache/age:latest               │ │
+│  │                                  │   │                                  │ │
+│  │  documents        (source store) │   │  Per-corpus graphs:              │ │
+│  │  chunks           HNSW + GIN     │   │  kg_{tenant}_{corpus}            │ │
+│  │  kg_entity_index  HNSW + GIN     │   │                                  │ │
+│  │  semantic_cache   HNSW           │   │  Vertices: entity types          │ │
+│  │  audit_events     append-only    │   │  from docling-graph ontology     │ │
+│  │  conversations    (Tier 2)       │   │                                  │ │
+│  │  messages         GIN            │   │  Edges: EMPLOYS, APPLIES_TO,     │ │
+│  │  user_memories    HNSW + GIN     │   │  HAS_MEMBER, etc. from edge()    │ │
+│  │  system_prompts   (Tier 5)       │   │                                  │ │
+│  │  gold_samples     (eval)         │   │  No GIN/HNSW in AGE — use        │ │
+│  │  eval_runs        (eval)         │   │  kg_entity_index for entity      │ │
+│  │  eval_results     (eval)         │   │  search instead                  │ │
+│  │  token_usage      (billing)      │   │                                  │ │
+│  │  tenants/quotas   (billing)      │   │  Cypher via ag_catalog.cypher()  │ │
+│  │  scheduled_jobs   (scheduler)    │   │  SQL wrapper — not raw Cypher    │ │
+│  └─────────────────────────────────┘   └──────────────────────────────────┘ │
+│                                                                              │
+│  RLS: SET LOCAL app.tenant_id before every query                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Ingestion Workers  (knowledge/ingestion/worker.py × N)                      │
+│                                                                              │
+│  Redis XREADGROUP knowledge:ingest                                           │
+│        │                                                                     │
+│        ▼                                                                     │
+│  DoclingProcessor.process(path)    ← asyncio.to_thread (CPU-bound)          │
+│  ├── PDF → _get_pdf_converter()    (VLM optional: PictureDescriptionApiOpts) │
+│  ├── DOCX/MD → _get_standard_converter()                                    │
+│  └── Audio → ASR pipeline (Whisper Turbo via Docling)                       │
+│        │                                                                     │
+│        ▼                                                                     │
+│  asyncio.gather(                                                             │
+│    ├── chunker_task:                                                         │
+│    │     DoclingHybridChunker.chunk_document()   ← contextualize() each chunk│
+│    │     → embedder.embed_batch()               ← AsyncOpenAI, L1 lru_cache │
+│    │     → vector_store.upsert_chunks()                                      │
+│    │                                                                         │
+│    └── graph_task (if enable_graph_extraction):                              │
+│          load_ontology(corpus.graph_ontology_path)  ← LRU-cached            │
+│          run_pipeline(PipelineConfig(template=OntologyClass, ...))           │
+│             ← asyncio.to_thread; docling-graph via LiteLLM → Ollama         │
+│          → PipelineContext.knowledge_graph  (NetworkX DiGraph)               │
+│          → age_store.import_docling_graph()  ← iterates nodes/edges directly │
+│             (NOT CypherExporter — AGE uses SQL wrapper syntax)               │
+│          → entity_index.upsert_batch_from_graph()                           │
+│  )                                                                           │
+│        │                                                                     │
+│        └── Publish IngestCompleteEvent → knowledge:events                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Observability                                                               │
+│                                                                              │
+│  structlog JSON → stdout → Docker logs (docker compose logs -f api)          │
+│  RedisLogProcessor → knowledge:logs:recent (ring buffer, 5k entries, 24h)   │
+│  Langfuse (self-hosted) → LLM traces via @observe decorator                 │
+│  Prometheus → /metrics scrape by Grafana (7-row dashboard)                  │
+│  SMTP alerts → rohan.vazirani@gmail.com on circuit open / DLQ / budget      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Cache Layers                                                                │
+│                                                                              │
+│  L1  functools.lru_cache    in-process per worker   embedding dedup         │
+│  L2  Redis cache:embed:*    24h TTL                  embedding dedup        │
+│  L2  Redis cache:search:*   5min TTL                 exact query cache      │
+│  L3  PostgreSQL semantic_cache  60min TTL cosine≥0.95  JWE-encrypted answer │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
