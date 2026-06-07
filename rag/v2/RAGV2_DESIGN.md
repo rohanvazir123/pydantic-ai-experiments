@@ -414,9 +414,28 @@ class CorpusConfig(BaseModel):
     display_name: str
     source_folders: list[Path]       # local paths scanned on ingest
     allowed_roles: list[str]         # RBAC: which JWT roles can read/write
-    enable_graph_extraction: bool    # toggle docling-graph per corpus
-    graph_extraction_backend: str    # "ollama" | "openai" | "mistral"
     metadata_tags: dict[str, str]    # extra metadata attached to every chunk
+
+    # Knowledge graph extraction (docling-graph)
+    enable_graph_extraction: bool = False
+    # Path to the Pydantic ontology template, relative to knowledge/corpus/ontologies/
+    # If None, uses the generic default template (extracts entities/relations without domain specifics)
+    graph_ontology_path: str | None = None
+    # LLM backend provider — any LiteLLM-compatible provider; "ollama" for local
+    graph_extraction_provider: str = "ollama"
+    # Model for graph extraction (can differ from chat model; smaller is fine for entity extraction)
+    graph_extraction_model: str = "llama3.2:3b"
+    # Extraction contract:
+    #   "direct"  — single LLM call per chunk; fastest; good for large models (≥ 70B)
+    #   "staged"  — multi-pass ID → fill → quality gate; recommended for small models (≤ 8B)
+    #   "delta"   — chunk-by-chunk with merge + dedup resolvers; best for long documents
+    graph_extraction_contract: Literal["direct", "staged", "delta"] = "staged"
+    # Processing mode:
+    #   "many-to-one" — all chunks merged into one graph; best for most docs
+    #   "one-to-one"  — page-by-page; best for forms and complex layouts
+    graph_processing_mode: Literal["many-to-one", "one-to-one"] = "many-to-one"
+    # VLM extraction for scanned/image-heavy PDFs (requires GPU)
+    graph_extraction_backend: Literal["llm", "vlm"] = "llm"
 ```
 
 **Schema change** (additive migration):
@@ -445,9 +464,11 @@ DocumentConverter.convert(path)
      │      → vector_store.upsert_chunks()
      │
      └── graph_task (if corpus.enable_graph_extraction):
-            docling-graph PipelineOrchestrator
-            → LLM/VLM entity + relationship extraction
-            → age_graph_store.upsert_entities()
+            load ontology class from corpus.graph_ontology_path
+            run_pipeline(PipelineConfig(template=OntologyClass, ...))
+            → PipelineContext.knowledge_graph (NetworkX DiGraph)
+            → CypherExporter.export() → Cypher string
+            → age_graph_store.run_cypher(cypher_string)
             → entity_index.upsert()
    )
         │
@@ -455,12 +476,249 @@ DocumentConverter.convert(path)
   publish IngestCompleteEvent to Redis
 ```
 
-**Docling-graph integration notes** (evaluation items below):
-- `PipelineOrchestrator` is sync; wrap in `asyncio.to_thread()` for the worker.
-- Use `mode="api"` so it does not dump intermediate files to disk.
-- Configure LiteLLM backend to point at local Ollama (same model as RAG chat LLM).
-- The `CypherExporter` output can be fed directly to `AgeGraphStore.run_cypher()`.
-- Chunking in docling-graph uses `DocumentChunker` (same HybridChunker under the hood) — configure `chunk_max_tokens` consistently with the embedding model's context window.
+---
+
+### Knowledge Graph Extraction — Ontology and docling-graph API
+
+This section documents exactly how docling-graph is used. Read this before implementing `knowledge/ingestion/graph_extractor.py`.
+
+#### The ontology is a Pydantic template
+
+docling-graph extracts entities and relationships whose shape is defined entirely by a **Pydantic `BaseModel` subclass** (called a "template" in docling-graph terminology). The template IS the ontology — there is no separate schema format.
+
+**Minimal template** (required structure every ontology file must follow):
+
+```python
+# knowledge/corpus/ontologies/my_domain.py
+"""
+HR policy ontology.
+Extracts policies, benefits, people, and departments from HR documents.
+"""
+from typing import Any, List
+from pydantic import BaseModel, ConfigDict, Field
+
+def edge(label: str, **kwargs: Any) -> Any:
+    """Required helper — marks a field as a directed graph edge."""
+    return Field(..., json_schema_extra={"edge_label": label}, **kwargs)
+
+# --- Components (value objects — no stable graph identity) ---
+class ContactInfo(BaseModel):
+    model_config = ConfigDict(is_entity=False)
+    email: str | None = Field(None, description="Email address. LOOK FOR: @ symbol. EXAMPLES: 'hr@company.com'")
+    phone: str | None = Field(None, description="Phone number")
+
+# --- Entities (unique, identifiable — get stable node IDs) ---
+class Person(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["full_name"])   # stable ID from these fields
+    full_name: str = Field(description="Full name. LOOK FOR: Names near job titles. EXAMPLES: 'Jane Smith'")
+    title: str | None = Field(None, description="Job title")
+    contact: ContactInfo | None = Field(None, description="Contact details")
+
+class Department(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["name"])
+    name: str = Field(description="Department name. EXAMPLES: 'Engineering', 'HR'")
+    head: Person | None = edge(label="LED_BY", default=None, description="Department head")
+    members: List[Person] = edge(label="HAS_MEMBER", default_factory=list, description="Staff in dept")
+
+class Policy(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["policy_id"])
+    policy_id: str = Field(description="Policy identifier. EXAMPLES: 'PTO-001', 'REMOTE-002'")
+    title: str = Field(description="Policy title")
+    description: str | None = Field(None, description="Policy text summary")
+    applies_to: List[Department] = edge(label="APPLIES_TO", default_factory=list,
+                                         description="Departments this policy covers")
+
+# --- Root document model (last in file, captures the whole document) ---
+class HRPolicyDocument(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["document_title"])
+    document_title: str = Field(description="Document title. LOOK FOR: Title page heading.")
+    policies: List[Policy] = edge(label="CONTAINS_POLICY", default_factory=list,
+                                   description="Policies described in this document")
+    departments: List[Department] = edge(label="REFERENCES_DEPT", default_factory=list,
+                                          description="Departments mentioned")
+
+HRPolicyDocument.model_rebuild()
+```
+
+**Key rules for every ontology template:**
+1. The `edge()` helper MUST be defined identically in every template file — `Field(..., json_schema_extra={"edge_label": label}, **kwargs)`
+2. **Entities** have `graph_id_fields` in `ConfigDict` — these fields create stable node IDs and enable cross-chunk deduplication
+3. **Components** have `is_entity=False` — they are value objects embedded in entities, deduplicated by content
+4. **List edges** MUST have `default_factory=list`
+5. Field `description` follows `LOOK FOR / EXTRACT / EXAMPLES` pattern — this is the prompt the LLM sees; poor descriptions = poor extraction
+6. The root model (last class in file) is what `PipelineConfig.template` points to
+7. Call `Model.model_rebuild()` at file end when using forward references
+
+#### Entities vs Components — decision rule
+
+| Question | Entity | Component |
+|----------|--------|-----------|
+| Does it need a stable, reusable node ID? | Yes | No |
+| Can two instances be "the same thing"? | Yes (dedup by `graph_id_fields`) | Yes (dedup by content) |
+| Can it appear as a standalone node? | Yes | No — only embedded in entities |
+| Example | Person, Department, Policy | Address, ContactInfo, MonetaryAmount |
+
+#### Extraction contracts — which to use
+
+| Contract | When to use | How it works |
+|----------|-------------|-------------|
+| `"direct"` | Large models (≥ 70B), simple schemas | One LLM call per chunk; fastest |
+| `"staged"` | Small models (≤ 8B like llama3.2:3b), complex nested schemas | Multi-pass: ID discovery → fill pass → quality gate; recommended for Ollama |
+| `"delta"` | Long documents (>50 pages), many entities of the same type | Chunk-by-chunk with incremental merge and semantic deduplication resolvers |
+
+**Default for our system:** `"staged"` — we use `llama3.2:3b` via Ollama for graph extraction. Staged contract breaks complex templates into simpler multi-pass operations that smaller models handle reliably.
+
+#### Actual API call
+
+```python
+# knowledge/ingestion/graph_extractor.py
+import tempfile
+from pathlib import Path
+from docling_graph import PipelineConfig, run_pipeline
+from docling_graph.core.exporters import CypherExporter
+
+async def extract_graph(
+    doc_path: Path,
+    ontology_class: type,          # loaded from corpus.graph_ontology_path
+    corpus_config: CorpusConfig,
+    settings: Settings,
+) -> str | None:
+    """Run docling-graph extraction. Returns Cypher string or None on failure."""
+
+    def _run() -> str:
+        config = PipelineConfig(
+            source=str(doc_path),
+            template=ontology_class,                                  # the Pydantic ontology
+            backend=corpus_config.graph_extraction_backend,           # "llm" | "vlm"
+            inference="local",                                        # always local (Ollama)
+            provider_override=corpus_config.graph_extraction_provider, # "ollama"
+            model_override=corpus_config.graph_extraction_model,      # "llama3.2:3b"
+            processing_mode=corpus_config.graph_processing_mode,      # "many-to-one"
+            extraction_contract=corpus_config.graph_extraction_contract, # "staged"
+            use_chunking=True,
+            chunk_max_tokens=settings.chunk_max_tokens,               # match embedding model window
+            structured_output=True,                                   # schema-enforced JSON output
+            dump_to_disk=False,                                       # API mode — no files written
+        )
+        context = run_pipeline(config)
+
+        # Extract Cypher from the NetworkX graph
+        exporter = CypherExporter()
+        with tempfile.NamedTemporaryFile(suffix=".cypher", delete=False, mode="w") as f:
+            tmp_path = Path(f.name)
+        exporter.export(context.knowledge_graph, tmp_path)
+        cypher = tmp_path.read_text(encoding="utf-8")
+        tmp_path.unlink()
+        return cypher
+
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_run),       # sync docling-graph → offload to threadpool
+            timeout=settings.graph_extraction_timeout_s,
+        )
+    except TimeoutError:
+        logger.warning("Graph extraction timed out for %s", doc_path.name)
+        return None
+    except Exception as exc:
+        logger.error("Graph extraction failed for %s: %s", doc_path.name, exc)
+        return None
+```
+
+Then in the pipeline orchestrator:
+```python
+cypher = await extract_graph(doc_path, ontology_class, corpus_config, settings)
+if cypher:
+    await age_store.run_cypher(cypher)      # feeds directly to Apache AGE
+    await entity_index.upsert_from_cypher(cypher)
+else:
+    # Soft failure: vector path still succeeded
+    chunk_metadata["graph_extraction_failed"] = True
+```
+
+#### Ontology storage and loading (`knowledge/corpus/ontologies/`)
+
+```
+knowledge/corpus/ontologies/
+├── __init__.py
+├── loader.py          # load_ontology(path: str) → type[BaseModel]; LRU-cached
+├── generic.py         # default ontology when no corpus-specific template provided
+├── hr_policy.py       # example domain ontology
+├── legal_contract.py  # example domain ontology
+└── <user-defined>.py  # uploaded by admin via POST /v1/corpus/{id}/ontology
+```
+
+**Generic default ontology** (`generic.py`) — used when `corpus_config.graph_ontology_path is None`. Extracts named entities, organizations, dates, and generic relationships without domain specifics:
+
+```python
+class GenericEntity(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["name"])
+    name: str = Field(description="Entity name. EXTRACT: The most specific identifier. EXAMPLES: 'Apple Inc', 'John Smith', 'ISO 27001'")
+    entity_type: str = Field(description="Type of entity. EXAMPLES: 'Organization', 'Person', 'Location', 'Concept', 'Date', 'Product'")
+    description: str | None = Field(None, description="Brief description from document context")
+    related_to: List["GenericEntity"] = edge(label="RELATED_TO", default_factory=list,
+        description="Entities this one is related to per document context")
+
+class GenericDocument(BaseModel):
+    model_config = ConfigDict(graph_id_fields=["title"])
+    title: str = Field(description="Document title or best identifying label")
+    entities: List[GenericEntity] = edge(label="MENTIONS", default_factory=list,
+        description="All named entities mentioned in the document")
+
+GenericEntity.model_rebuild()
+GenericDocument.model_rebuild()
+```
+
+**Ontology loader** (`loader.py`) — loads a Python file from the ontologies directory and returns the root Pydantic class:
+
+```python
+import importlib.util, functools
+from pathlib import Path
+from pydantic import BaseModel
+
+ONTOLOGIES_DIR = Path(__file__).parent
+
+@functools.lru_cache(maxsize=32)
+def load_ontology(ontology_path: str | None) -> type[BaseModel]:
+    """Load ontology class from path relative to ontologies/. LRU-cached per worker."""
+    if ontology_path is None:
+        from knowledge.corpus.ontologies.generic import GenericDocument
+        return GenericDocument
+
+    full_path = ONTOLOGIES_DIR / ontology_path
+    if not full_path.exists():
+        raise FileNotFoundError(f"Ontology not found: {full_path}")
+
+    spec = importlib.util.spec_from_file_location("_ontology", full_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # executes the Python file
+
+    # Root class = last BaseModel subclass defined in the file (by convention)
+    root_class = None
+    for name in dir(module):
+        obj = getattr(module, name)
+        if isinstance(obj, type) and issubclass(obj, BaseModel) and obj is not BaseModel:
+            root_class = obj  # last one wins
+    if root_class is None:
+        raise ValueError(f"No BaseModel subclass found in {full_path}")
+    return root_class
+```
+
+#### Ontology management API
+
+Admins can upload new ontologies per corpus via the API:
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET`  | `/v1/corpus/{id}/ontology` | `admin` | Get current ontology file for corpus |
+| `POST` | `/v1/corpus/{id}/ontology` | `admin` | Upload Python ontology file; validates it is a valid Pydantic template |
+| `DELETE` | `/v1/corpus/{id}/ontology` | `admin` | Remove custom ontology (reverts to generic default) |
+
+On upload, the API:
+1. Parses the Python file and verifies it contains a root `BaseModel` subclass
+2. Checks the `edge()` helper is defined correctly
+3. Saves to `knowledge/corpus/ontologies/{corpus_id}.py`
+4. Updates `CorpusConfig.graph_ontology_path` in the corpus registry
+5. Clears the `load_ontology` LRU cache so next extraction uses the new template
 
 ---
 
@@ -2958,17 +3216,20 @@ Load test results are stored in `tests/load/results/` (git-ignored for large CSV
 
 ### Docling-Graph Evaluation Checklist
 
-Before committing to full integration, validate these items in a spike branch:
+Validate these items in a spike branch before integrating into the full pipeline. The docling-graph API is `run_pipeline(PipelineConfig(...)) → PipelineContext` — there is no `PipelineOrchestrator` class.
 
-- [ ] **Async wrapper**: confirm `PipelineOrchestrator.run()` can run in `asyncio.to_thread()` without thread-safety issues; measure baseline CPU + memory per document.
-- [ ] **Ollama backend**: verify LiteLLM routes correctly to local Ollama; check JSON schema enforcement works with Llama 3.1/Mistral.
-- [ ] **Chunking parity**: compare `DocumentChunker` output to existing `HybridChunker` usage; confirm `chunk_max_tokens` maps cleanly to `nomic-embed-text` 512-token context.
-- [ ] **Cypher output**: test `CypherExporter` → `AgeGraphStore.run_cypher()` round-trip on 3 sample documents.
-- [ ] **Parallel overhead**: measure wall-clock time for vector path alone vs. vector + graph in parallel on a 50-page PDF; establish acceptable graph-extraction timeout budget.
-- [ ] **Corpus toggle**: confirm `enable_graph_extraction=False` in `CorpusConfig` fully skips graph path with no side-effects.
-- [ ] **VLM fallback**: test `mode=vlm` with Ollama LLaVA for scanned PDFs; measure extraction quality vs. LLM mode.
-- [ ] **Memory footprint**: profile peak RSS when 2 ingest workers run concurrently; ensure fits within 8 GB container limit.
-- [ ] **Graph query latency**: with 50k entities in AGE, measure NL→Cypher retrieval P99.
+- [ ] **Smoke test with generic ontology** — run `run_pipeline(PipelineConfig(source=sample_pdf, template=GenericDocument, backend="llm", inference="local", provider_override="ollama", model_override="llama3.2:3b", dump_to_disk=False))` and verify `context.knowledge_graph.number_of_nodes() > 0`
+- [ ] **Staged contract with small model** — verify `extraction_contract="staged"` with `llama3.2:3b` extracts meaningful entities; compare quality against `extraction_contract="direct"` with the same model; staged should be clearly better
+- [ ] **Async thread safety** — confirm `run_pipeline()` can run concurrently in 2 threads via `asyncio.to_thread()` without shared state corruption; check `PipelineConfig` is instantiated fresh per call (it is not a singleton)
+- [ ] **Cypher round-trip** — run `CypherExporter().export(context.knowledge_graph, tmp_path)` → read Cypher → feed to `AgeGraphStore.run_cypher()` → verify nodes/edges appear in Apache AGE graph
+- [ ] **Ontology loader** — upload a custom domain ontology via `POST /v1/corpus/{id}/ontology`; verify `load_ontology()` returns the correct root class; verify extraction uses domain-specific entity types
+- [ ] **Generic fallback** — set `corpus_config.graph_ontology_path = None`; verify `load_ontology(None)` returns `GenericDocument`; verify graph still populates
+- [ ] **Corpus toggle** — set `enable_graph_extraction=False`; verify `graph_extractor.extract()` returns `None` immediately with no LLM calls
+- [ ] **Soft failure** — kill Ollama mid-extraction; verify vector path still completes; verify `graph_extraction_failed: true` in chunk metadata; verify job does NOT go to DLQ
+- [ ] **Parallel overhead** — measure wall-clock time for vector-only vs. vector+graph in `asyncio.gather()` on a 20-page PDF; confirm graph task does not extend overall ingest latency beyond 2× (both run in parallel)
+- [ ] **VLM extraction** — test `backend="vlm"`, `inference="local"` with a scanned PDF; verify docling's vision pipeline is used; measure extraction quality vs. LLM mode; note VLM requires GPU
+- [ ] **Memory footprint** — profile peak RSS with 2 concurrent ingest workers each running `run_pipeline()`; confirm total RSS < 8 GB (the ingest-worker container limit)
+- [ ] **Graph query latency** — with 50k entities in AGE (ingested from test corpus), measure NL→Cypher retrieval P99 against the graph retriever
 
 ---
 

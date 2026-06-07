@@ -93,7 +93,7 @@ backend/
 │   │   ├── pipeline.py                   # per-document orchestrator: asyncio.gather(chunk+graph)
 │   │   ├── docling_processor.py          # Docling DocumentConverter wrapper (cached instance)
 │   │   ├── chunker.py                    # HybridChunker wrapper → list[ChunkData]
-│   │   ├── graph_extractor.py            # docling-graph PipelineOrchestrator (asyncio.to_thread)
+│   │   ├── graph_extractor.py            # docling-graph run_pipeline() wrapper (asyncio.to_thread)
 │   │   ├── embedder.py                   # async OpenAI-compatible embedder + L1 lru_cache
 │   │   └── models.py                     # ChunkData, SearchResult (with raw_score + confidence)
 │   ├── store/
@@ -119,7 +119,12 @@ backend/
 │   │   └── prompts.py                    # system prompt templates
 │   ├── corpus/
 │   │   ├── __init__.py
-│   │   └── registry.py                   # CorpusRegistry: load configs, enforce RBAC at query time
+│   │   ├── registry.py                   # CorpusRegistry: load configs, enforce RBAC at query time
+│   │   └── ontologies/                   # Pydantic ontology templates for docling-graph extraction
+│   │       ├── __init__.py
+│   │       ├── loader.py                 # load_ontology(path) → type[BaseModel]; LRU-cached per worker
+│   │       ├── generic.py                # default: GenericDocument (no domain; extracts named entities)
+│   │       └── <corpus_id>.py            # user-uploaded domain ontologies (see DESIGN §Knowledge Graph)
 │   ├── scheduler/
 │   │   ├── __init__.py
 │   │   ├── job_store.py                  # ScheduledJob CRUD in PostgreSQL (scheduled_jobs table)
@@ -709,11 +714,68 @@ Port `DoclingHybridChunker` from `rag/ingestion/chunkers/docling.py` with these 
 
 ### 4.4 Graph Extractor (`knowledge/ingestion/graph_extractor.py`)
 
-- [ ] Wrap `docling-graph PipelineOrchestrator` in `asyncio.to_thread`
-- [ ] Configurable timeout: `settings.graph_extraction_timeout_s` (default 90s)
-- [ ] On timeout or transient failure: retry up to 3× (backoff); on final failure, return `None` — soft failure: vector path continues, `graph_extraction_failed: true` in chunk metadata
-- [ ] `async def extract(doc: DoclingDocument, corpus_config: CorpusConfig) → GraphData | None`
-- [ ] Guard: if `corpus_config.enable_graph_extraction is False` → return `None` immediately (no-op, no log spam)
+> Read `RAGV2_DESIGN.md §Knowledge Graph Extraction` before implementing. The correct API is `run_pipeline(PipelineConfig(...)) → PipelineContext` — there is no `PipelineOrchestrator` class.
+
+- [ ] Guard first: if `corpus_config.enable_graph_extraction is False` → return `None` immediately (no LLM call, no log spam)
+
+- [ ] `async def extract_graph(doc_path: Path, corpus_config: CorpusConfig, settings: Settings) → str | None` — returns Cypher string or `None`
+
+  **Implementation:**
+  ```python
+  def _run_sync() -> str:
+      from docling_graph import PipelineConfig, run_pipeline
+      from docling_graph.core.exporters import CypherExporter
+
+      ontology_class = load_ontology(corpus_config.graph_ontology_path)  # LRU-cached
+
+      config = PipelineConfig(
+          source=str(doc_path),
+          template=ontology_class,
+          backend=corpus_config.graph_extraction_backend,         # "llm" | "vlm"
+          inference="local",
+          provider_override=corpus_config.graph_extraction_provider,  # "ollama"
+          model_override=corpus_config.graph_extraction_model,        # "llama3.2:3b"
+          processing_mode=corpus_config.graph_processing_mode,        # "many-to-one"
+          extraction_contract=corpus_config.graph_extraction_contract, # "staged"
+          use_chunking=True,
+          chunk_max_tokens=settings.chunk_max_tokens,
+          structured_output=True,
+          dump_to_disk=False,   # API mode — no files on disk
+      )
+      context = run_pipeline(config)
+
+      # Extract Cypher from the NetworkX graph in PipelineContext
+      exporter = CypherExporter()
+      with tempfile.NamedTemporaryFile(suffix=".cypher", delete=False) as f:
+          tmp = Path(f.name)
+      exporter.export(context.knowledge_graph, tmp)
+      cypher = tmp.read_text(encoding="utf-8")
+      tmp.unlink()
+      return cypher
+
+  return await asyncio.wait_for(
+      asyncio.to_thread(_run_sync),
+      timeout=settings.graph_extraction_timeout_s,   # default 120s
+  )
+  ```
+
+- [ ] Wrap call in `try/except`: timeout → log warning, return `None`; any other exception → log error, return `None` — both are soft failures; vector path continues regardless
+- [ ] On soft failure: set `chunk_metadata["graph_extraction_failed"] = True` on all chunks for this document; do NOT raise; do NOT go to DLQ
+- [ ] `PipelineConfig` is instantiated fresh per call (it is not a singleton — thread-safe)
+
+- [ ] **Ontology loader** (`knowledge/corpus/ontologies/loader.py`):
+  - `@functools.lru_cache(maxsize=32)` on `load_ontology(path: str | None) → type[BaseModel]`
+  - `path=None` → return `GenericDocument` from `generic.py`
+  - Otherwise: `importlib.util.spec_from_file_location()` → exec the Python file → return the last `BaseModel` subclass found (root class convention)
+  - Raise `FileNotFoundError` if ontology file not found (propagates as permanent error → DLQ)
+
+- [ ] **Generic ontology** (`knowledge/corpus/ontologies/generic.py`):
+  - `GenericEntity(BaseModel)` with `graph_id_fields=["name"]`, fields: `name`, `entity_type`, `description`
+  - `GenericDocument(BaseModel)` with `graph_id_fields=["title"]`, edge `"MENTIONS"` → `List[GenericEntity]`
+  - This is the fallback when no domain ontology is configured
+
+- [ ] Add to `pyproject.toml` `ingestion` extra: `"docling-graph>=1.5.1"`
+- [ ] Add `settings.graph_extraction_timeout_s: float = 120.0` to config
 
 ### 4.5 Ingestion Pipeline Orchestrator (`knowledge/ingestion/pipeline.py`)
 
@@ -1022,6 +1084,9 @@ Wraps `agent.run()` with the 3-layer gate. The streaming path (`agent.run_stream
 - [ ] **`routes/corpus.py`**:
   - `GET /v1/corpus` → list corpora from `CorpusRegistry` (filtered by JWT roles)
   - `POST /v1/corpus/{id}/cache/invalidate` → flush L2+L3 for corpus
+  - `GET /v1/corpus/{id}/ontology` → return current ontology Python source for corpus (admin)
+  - `POST /v1/corpus/{id}/ontology` → upload new Python ontology file (admin); validate it contains a root `BaseModel` subclass and the `edge()` helper; save to `knowledge/corpus/ontologies/{corpus_id}.py`; clear `load_ontology` LRU cache
+  - `DELETE /v1/corpus/{id}/ontology` → remove custom ontology; revert to generic default
 - [ ] **`routes/evaluate.py`**:
   - `POST /v1/evaluate/run` → publish `EvalJob`; return `run_id`
   - `GET /v1/evaluate/run/{id}` → poll status + aggregated metrics
@@ -1586,6 +1651,13 @@ http {
 - [ ] `CorpusList.tsx` — fetch `/v1/corpus`; render `CorpusCard[]` in grid
 - [ ] `CorpusCard.tsx` — display chunk count, last ingest, graph toggle, invalidate cache button
 - [ ] `CorpusCreateModal.tsx` — name, source folders, graph toggle; submits to create flow
+- [ ] `OntologyUploader.tsx` — visible only when graph extraction is enabled for the corpus:
+  - Displays current ontology filename (or "Generic default" if none set)
+  - File upload button accepting `.py` files only; rejects anything else
+  - On upload: calls `POST /v1/corpus/{id}/ontology`; shows validation errors if the file is not a valid template (missing `edge()`, no root `BaseModel`, etc.)
+  - [Remove] button calls `DELETE /v1/corpus/{id}/ontology` and reverts to generic
+  - [View] button opens current ontology source in a read-only code modal (`<pre>` block)
+  - Tooltip explains: "An ontology defines the entity types and relationships docling-graph will extract. Without one, a generic entity extractor is used."
 
 ### 14.7 Eval Components
 
