@@ -233,6 +233,10 @@
 
 ## User Query Data Flow
 
+**Quick reference:**
+
+> ① Auth + quota → V1–V6 validation → model router → cost guard → PRE\_RETRIEVE (user memories) → retrieval (L2 cache → embed → L3 cache → parallel hybrid search → RRF → CrossEncoder → confidence filter) → Layer 1 gate → working memory assembly (all five tiers) → RAG agent (with tool calls) → Layer 2 gate (citation check) → judge (nano→small escalation) → async background tasks (L3 cache, episodic storage, memory extraction, billing) → RAGResponse → browser (SSE deltas or blocking JSON) → UI (MessageBubble, CitationPanel, CostBadge, DebugPanel)
+
 Step-by-step trace of a single chat request from browser keypress to rendered response.
 Each box is a component; arrows show what data moves between them; ✗ branches are abstention exits.
 
