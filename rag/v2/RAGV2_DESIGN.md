@@ -467,9 +467,10 @@ DocumentConverter.convert(path)
             load ontology class from corpus.graph_ontology_path
             run_pipeline(PipelineConfig(template=OntologyClass, ...))
             → PipelineContext.knowledge_graph (NetworkX DiGraph)
-            → CypherExporter.export() → Cypher string
-            → age_graph_store.run_cypher(cypher_string)
-            → entity_index.upsert()
+            → age_graph_store.import_docling_graph(context, corpus_id, doc_id)
+               ├── iterate graph.nodes(data=True) → upsert_vertex() per node
+               └── iterate graph.edges(data=True) → add_edge() per edge
+            → entity_index.upsert_batch(vertices)
    )
         │
         ▼
@@ -572,48 +573,43 @@ HRPolicyDocument.model_rebuild()
 
 ```python
 # knowledge/ingestion/graph_extractor.py
-import tempfile
 from pathlib import Path
 from docling_graph import PipelineConfig, run_pipeline
-from docling_graph.core.exporters import CypherExporter
+from docling_graph.pipeline.context import PipelineContext
 
 async def extract_graph(
     doc_path: Path,
     ontology_class: type,          # loaded from corpus.graph_ontology_path
     corpus_config: CorpusConfig,
     settings: Settings,
-) -> str | None:
-    """Run docling-graph extraction. Returns Cypher string or None on failure."""
+) -> PipelineContext | None:
+    """Run docling-graph extraction. Returns PipelineContext or None on failure.
 
-    def _run() -> str:
+    NOTE: Do NOT use CypherExporter. AGE uses ag_catalog.cypher() SQL wrapper
+    syntax — not Neo4j-compatible raw Cypher. Feed the NetworkX DiGraph directly
+    to AgeGraphStore.import_docling_graph() instead.
+    """
+
+    def _run_sync() -> PipelineContext:
         config = PipelineConfig(
             source=str(doc_path),
-            template=ontology_class,                                  # the Pydantic ontology
+            template=ontology_class,
             backend=corpus_config.graph_extraction_backend,           # "llm" | "vlm"
-            inference="local",                                        # always local (Ollama)
+            inference="local",
             provider_override=corpus_config.graph_extraction_provider, # "ollama"
-            model_override=corpus_config.graph_extraction_model,      # "llama3.2:3b"
-            processing_mode=corpus_config.graph_processing_mode,      # "many-to-one"
+            model_override=corpus_config.graph_extraction_model,       # "llama3.2:3b"
+            processing_mode=corpus_config.graph_processing_mode,       # "many-to-one"
             extraction_contract=corpus_config.graph_extraction_contract, # "staged"
             use_chunking=True,
-            chunk_max_tokens=settings.chunk_max_tokens,               # match embedding model window
-            structured_output=True,                                   # schema-enforced JSON output
-            dump_to_disk=False,                                       # API mode — no files written
+            chunk_max_tokens=settings.chunk_max_tokens,
+            structured_output=True,
+            dump_to_disk=False,    # API mode — no files on disk
         )
-        context = run_pipeline(config)
-
-        # Extract Cypher from the NetworkX graph
-        exporter = CypherExporter()
-        with tempfile.NamedTemporaryFile(suffix=".cypher", delete=False, mode="w") as f:
-            tmp_path = Path(f.name)
-        exporter.export(context.knowledge_graph, tmp_path)
-        cypher = tmp_path.read_text(encoding="utf-8")
-        tmp_path.unlink()
-        return cypher
+        return run_pipeline(config)   # returns PipelineContext, not a string
 
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_run),       # sync docling-graph → offload to threadpool
+            asyncio.to_thread(_run_sync),
             timeout=settings.graph_extraction_timeout_s,
         )
     except TimeoutError:
@@ -626,13 +622,231 @@ async def extract_graph(
 
 Then in the pipeline orchestrator:
 ```python
-cypher = await extract_graph(doc_path, ontology_class, corpus_config, settings)
-if cypher:
-    await age_store.run_cypher(cypher)      # feeds directly to Apache AGE
-    await entity_index.upsert_from_cypher(cypher)
+context = await extract_graph(doc_path, ontology_class, corpus_config, settings)
+if context:
+    node_count, edge_count = await age_store.import_docling_graph(
+        context, corpus_id=corpus_config.id, document_id=document_id
+    )
+    await entity_index.upsert_batch_from_graph(context.knowledge_graph, document_id)
 else:
-    # Soft failure: vector path still succeeded
     chunk_metadata["graph_extraction_failed"] = True
+```
+
+---
+
+### Apache AGE — Graph Store Design (`knowledge/store/graph.py`)
+
+The v2 `AgeGraphStore` is a rewrite of `kg/age_graph_store.py` adapted for multi-corpus, multi-tenant use. The v1 implementation is hardwired to the CUAD legal ontology (label allowlist from `cuad_ontology.py`); v2 accepts any labels from the user's docling-graph template.
+
+#### How AGE works with asyncpg
+
+Apache AGE adds openCypher graph queries to PostgreSQL via a SQL function wrapper. Every Cypher statement must be wrapped:
+
+```sql
+SELECT * FROM ag_catalog.cypher('graph_name', $$
+    MATCH (n:Person) RETURN n.name, n.uuid
+$$) AS (name agtype, uuid agtype)
+```
+
+`agtype` columns are returned as strings by asyncpg (they look like `"Acme Corp"` with surrounding quotes). Strip with `s[1:-1]` if starts/ends with `"`.
+
+Every connection must run two setup statements before any Cypher:
+```python
+await conn.execute("LOAD 'age'")
+await conn.execute("SET search_path = ag_catalog, \"$user\", public")
+```
+
+Register this as an asyncpg pool `init` callback — AGE state is connection-local and gets reset by `RESET ALL` when connections return to the pool.
+
+#### Graph name per corpus
+
+Each corpus gets its own AGE graph: `f"{tenant_id}_{corpus_id}"` (e.g. `"acme_corp_hr_policies"`). This gives hard isolation — queries against one corpus never touch another's graph. The graph is created on first ingest:
+
+```python
+await conn.execute(f"SELECT create_graph('{graph_name}')")
+```
+
+Use `try/except` around creation — AGE raises `InvalidSchemaNameError` if the graph already exists.
+
+#### Key method: `import_docling_graph()`
+
+This is the primary write path from docling-graph. It iterates the NetworkX DiGraph from `PipelineContext` directly — **not** `CypherExporter`. AGE uses a SQL wrapper syntax that is incompatible with the raw Cypher `CREATE` statements that `CypherExporter` generates for Neo4j.
+
+```python
+async def import_docling_graph(
+    self,
+    context: "PipelineContext",   # from docling_graph.pipeline.context
+    corpus_id: str,
+    document_id: str,
+) -> tuple[int, int]:
+    """Import a docling-graph PipelineContext into Apache AGE.
+
+    Iterates context.knowledge_graph (NetworkX DiGraph) directly.
+    Do NOT use CypherExporter — its output is Neo4j syntax, incompatible with AGE.
+
+    Returns (node_count, edge_count).
+    """
+    graph = context.knowledge_graph     # networkx.DiGraph
+    graph_name = self._graph_name(corpus_id)
+
+    node_id_map: dict[str, str] = {}    # NetworkX node_id → AGE vertex uuid
+
+    # 1. Upsert all vertices
+    for nx_id, attrs in graph.nodes(data=True):
+        label = _sanitize_label(attrs.get("label", "Entity"))
+        name  = str(attrs.get("name") or attrs.get("id") or nx_id)
+        props = {k: str(v) for k, v in attrs.items()
+                 if k not in ("label",) and v is not None}
+        props["corpus_id"]   = corpus_id
+        props["document_id"] = document_id
+
+        uuid = await self._upsert_vertex(graph_name, nx_id, label, name, props)
+        node_id_map[str(nx_id)] = uuid
+
+    # 2. Upsert all edges
+    edge_count = 0
+    for src_nx, tgt_nx, edge_attrs in graph.edges(data=True):
+        rel_type = _sanitize_rel_type(edge_attrs.get("label", "RELATED_TO"))
+        src_uuid = node_id_map.get(str(src_nx))
+        tgt_uuid = node_id_map.get(str(tgt_nx))
+        if src_uuid and tgt_uuid:
+            await self._add_edge(graph_name, src_uuid, tgt_uuid, rel_type,
+                                  {"corpus_id": corpus_id, "document_id": document_id})
+            edge_count += 1
+
+    return len(graph.nodes), edge_count
+```
+
+#### Label and relationship-type sanitization (v2 — no hardcoded allowlist)
+
+v1 validated labels against a hardcoded CUAD list. v2 accepts any label from the user's ontology template, only sanitizing characters:
+
+```python
+import re
+
+def _sanitize_label(label: str) -> str:
+    """Strip non-alphanumeric characters; ensure starts with uppercase letter."""
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", label)
+    if not cleaned:
+        return "Entity"
+    return cleaned[0].upper() + cleaned[1:]
+
+def _sanitize_rel_type(rel_type: str) -> str:
+    """Uppercase + strip non-alphanumeric except underscore."""
+    cleaned = re.sub(r"[^A-Z0-9_]", "", rel_type.upper())
+    return cleaned or "RELATED_TO"
+```
+
+#### Vertex upsert (MERGE pattern)
+
+```python
+async def _upsert_vertex(
+    self, graph_name: str, nx_id: str, label: str, name: str, props: dict
+) -> str:
+    """MERGE vertex by (nx_id, corpus_id); return AGE uuid."""
+    vertex_uuid = str(uuid.uuid4())
+    name_esc = name.replace('"', '\\"')
+    nx_id_esc = str(nx_id).replace('"', '\\"')
+    corpus_esc = props.get("corpus_id", "").replace('"', '\\"')
+
+    # MERGE on stable identity: the docling-graph node ID + corpus
+    cypher = (
+        f'MERGE (v:{label} {{nx_id: "{nx_id_esc}", corpus_id: "{corpus_esc}"}}) '
+        f'SET v.uuid = COALESCE(v.uuid, "{vertex_uuid}"), '
+        f'v.name = "{name_esc}", '
+        f'v.label = "{label}" '
+        f'RETURN v.uuid'
+    )
+    async with self._conn() as conn:
+        rows = await conn.fetch(
+            f"SELECT * FROM ag_catalog.cypher('{graph_name}', $${cypher}$$) AS (uuid agtype)"
+        )
+    return _unquote_agtype(rows[0]["uuid"]) if rows else vertex_uuid
+```
+
+#### Read-only query (for the graph retriever)
+
+```python
+async def run_cypher_query(self, cypher: str, corpus_id: str) -> str:
+    """Execute a read-only MATCH query scoped to corpus_id's graph."""
+    if re.search(r"\b(CREATE|MERGE|SET|DELETE|DROP|DETACH|FOREACH)\b", cypher, re.I):
+        return "Error: only MATCH queries are permitted."
+
+    graph_name = self._graph_name(corpus_id)
+    aliases = _parse_return_aliases(cypher)   # from v1; infer column names from RETURN clause
+    as_clause = ", ".join(f"c{i} agtype" for i in range(len(aliases)))
+
+    async with self._conn() as conn:
+        try:
+            rows = await conn.fetch(
+                f"SELECT * FROM ag_catalog.cypher('{graph_name}', $${cypher}$$) AS ({as_clause})"
+            )
+        except Exception as exc:
+            return f"Cypher error: {exc}"
+
+    if not rows:
+        return "No results."
+    header = " | ".join(aliases)
+    lines = [header, "-" * len(header)]
+    for row in rows:
+        lines.append(" | ".join(_unquote_agtype(row[f"c{i}"]) for i in range(len(aliases))))
+    lines.append(f"\n({len(rows)} row{'s' if len(rows) != 1 else ''})")
+    return "\n".join(lines)
+```
+
+#### Corpus-scoped delete (tenant offboarding)
+
+```python
+async def delete_corpus_graph(self, corpus_id: str) -> None:
+    """Drop the entire AGE graph for a corpus — all vertices and edges."""
+    graph_name = self._graph_name(corpus_id)
+    async with self._conn() as conn:
+        await conn.execute(f"SELECT drop_graph('{graph_name}', true)")
+
+async def delete_document_vertices(self, corpus_id: str, document_id: str) -> None:
+    """Remove all vertices (and their edges) for one document from a corpus graph."""
+    graph_name = self._graph_name(corpus_id)
+    cypher = f'MATCH (v {{document_id: "{document_id}"}}) DETACH DELETE v'
+    async with self._conn() as conn:
+        await conn.execute(
+            f"SELECT * FROM ag_catalog.cypher('{graph_name}', $${cypher}$$) AS (r agtype)"
+        )
+```
+
+#### Entity index (shadow table in main PostgreSQL)
+
+AGE does not support `tsvector` GIN indexes or `pgvector` — all CONTAINS scans in AGE are O(n). The `knowledge/store/entity_index.py` (ported from `kg/entity_index.py`) maintains a `kg_entity_index` shadow table in the main PostgreSQL database with:
+- `age_uuid TEXT PRIMARY KEY` — maps back to the AGE vertex
+- `name TEXT` + `name_tsv tsvector GENERATED` — GIN-indexed for BM25 search
+- `label TEXT` — B-tree indexed for label filtering
+- `corpus_id TEXT` + `document_id TEXT` — for scoped deletes
+- `embedding vector(768)` — HNSW-indexed for semantic entity search
+
+After each `import_docling_graph()`, call `entity_index.upsert_batch_from_graph(graph, document_id, corpus_id)` to sync vertex names into the shadow table.
+
+#### Docker Compose — AGE runs separately from the main PostgreSQL
+
+AGE cannot run in the same container as the main pgvector database (different extension sets, potential version conflicts). Use two separate PostgreSQL instances:
+
+```yaml
+postgres:
+  image: pgvector/pgvector:pg16    # main DB: pgvector for vector search
+  ports: ["5432:5432"]
+
+age:
+  image: apache/age:latest         # graph DB: Apache AGE for Cypher queries
+  ports: ["5433:5432"]             # mapped to 5433 on host to avoid conflict
+  environment:
+    POSTGRES_DB: age_graph
+    POSTGRES_USER: age
+    POSTGRES_PASSWORD: ${AGE_DB_PASSWORD}
+```
+
+Settings:
+```python
+database_url: str         # main PostgreSQL (pgvector) — port 5432
+age_database_url: str     # AGE PostgreSQL — port 5433
+age_graph_prefix: str = "kg"  # graph names: f"{prefix}_{tenant_id}_{corpus_id}"
 ```
 
 #### Ontology storage and loading (`knowledge/corpus/ontologies/`)
@@ -3221,7 +3435,7 @@ Validate these items in a spike branch before integrating into the full pipeline
 - [ ] **Smoke test with generic ontology** — run `run_pipeline(PipelineConfig(source=sample_pdf, template=GenericDocument, backend="llm", inference="local", provider_override="ollama", model_override="llama3.2:3b", dump_to_disk=False))` and verify `context.knowledge_graph.number_of_nodes() > 0`
 - [ ] **Staged contract with small model** — verify `extraction_contract="staged"` with `llama3.2:3b` extracts meaningful entities; compare quality against `extraction_contract="direct"` with the same model; staged should be clearly better
 - [ ] **Async thread safety** — confirm `run_pipeline()` can run concurrently in 2 threads via `asyncio.to_thread()` without shared state corruption; check `PipelineConfig` is instantiated fresh per call (it is not a singleton)
-- [ ] **Cypher round-trip** — run `CypherExporter().export(context.knowledge_graph, tmp_path)` → read Cypher → feed to `AgeGraphStore.run_cypher()` → verify nodes/edges appear in Apache AGE graph
+- [ ] **AGE import round-trip** — call `age_store.import_docling_graph(context, corpus_id, document_id)` → verify `node_count > 0`; run `run_cypher_query("MATCH (n) RETURN n.name LIMIT 5", corpus_id)` → verify results; confirm **do NOT** use `CypherExporter` (it generates Neo4j syntax incompatible with AGE's `ag_catalog.cypher()` wrapper)
 - [ ] **Ontology loader** — upload a custom domain ontology via `POST /v1/corpus/{id}/ontology`; verify `load_ontology()` returns the correct root class; verify extraction uses domain-specific entity types
 - [ ] **Generic fallback** — set `corpus_config.graph_ontology_path = None`; verify `load_ontology(None)` returns `GenericDocument`; verify graph still populates
 - [ ] **Corpus toggle** — set `enable_graph_extraction=False`; verify `graph_extractor.extract()` returns `None` immediately with no LLM calls

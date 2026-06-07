@@ -507,6 +507,7 @@ frontend/
 
 - [ ] Port all fields from `rag/config/settings.py`
 - [ ] Add: `redis_url`, `redis_max_connections`
+- [ ] Add: `age_database_url` (PostgreSQL connection string for AGE container, port 5433), `age_graph_prefix: str = "kg"` (graph names: `f"{prefix}_{tenant_id}_{corpus_id}"`)
 - [ ] Add: `corpus_configs: list[CorpusConfig]` (parsed from `CORPUS_CONFIGS_JSON` env)
 - [ ] Add: JWT fields — `jwt_algorithm`, `jwt_public_key_path`, `jwks_cache_ttl_s`
 - [ ] Add: JWE fields — `jwe_algorithm`, `jwe_content_encryption`
@@ -550,10 +551,35 @@ frontend/
 
 ### 2.2 Graph Store (`knowledge/store/graph.py`)
 
-- [ ] Port `AgeGraphStore` from `kg/age_graph_store.py`
-- [ ] Add tenant-namespaced graph names (`{tenant_id}_{corpus_id}`)
-- [ ] Expose `upsert_entities`, `upsert_edges`, `run_cypher`, `delete_tenant_graph`
-- [ ] Write integration tests (mock AGE socket if AGE container not running)
+Port from `kg/age_graph_store.py` with these important v2 changes — read `RAGV2_DESIGN.md §Apache AGE` before implementing.
+
+**Critical differences from v1:**
+- v1 validates labels against a hardcoded CUAD allowlist; v2 accepts any label from the user's ontology (sanitize only — no allowlist)
+- v1 uses a single AGE graph for everything; v2 uses per-corpus graphs: `f"{settings.age_graph_prefix}_{tenant_id}_{corpus_id}"`
+- v1 has no `import_docling_graph()`; v2 adds it as the primary write path
+- Do NOT use `CypherExporter` — its output is Neo4j-syntax, incompatible with AGE's `ag_catalog.cypher()` SQL wrapper
+
+**Connection setup (carry from v1 verbatim):**
+- [ ] asyncpg pool with `init=_age_init` callback: runs `LOAD 'age'` and `SET search_path = ag_catalog, "$user", public` on every new connection
+- [ ] `_conn()` context manager: re-applies both AGE setup statements on every `pool.acquire()` (AGE resets on connection return)
+- [ ] `_unquote_agtype(value)` helper: strips surrounding `"` from AGE string results
+
+**Label sanitization (v2 — no hardcoded allowlist):**
+- [ ] `_sanitize_label(label: str) → str` — strip non-alphanumeric; capitalize first letter; default `"Entity"`
+- [ ] `_sanitize_rel_type(rel_type: str) → str` — uppercase + strip non-alphanumeric except `_`; default `"RELATED_TO"`
+
+**Core methods:**
+- [ ] `async def initialize(corpus_id: str, tenant_id: str) → None` — create AGE graph `f"{prefix}_{tenant_id}_{corpus_id}"` if not exists; call once per corpus
+- [ ] `async def import_docling_graph(context: PipelineContext, corpus_id: str, document_id: str) → tuple[int, int]` — iterate `context.knowledge_graph.nodes(data=True)` → `_upsert_vertex()` per node; iterate `context.knowledge_graph.edges(data=True)` → `_add_edge()` per edge; return `(node_count, edge_count)`
+- [ ] `async def _upsert_vertex(graph_name, nx_id, label, name, props) → str` — `MERGE (v:Label {nx_id: ..., corpus_id: ...}) SET v.uuid = COALESCE(v.uuid, ...) RETURN v.uuid` wrapped in `ag_catalog.cypher()`
+- [ ] `async def _add_edge(graph_name, src_uuid, tgt_uuid, rel_type, props) → None` — `MATCH (s {uuid: ...}), (t {uuid: ...}) CREATE (s)-[:REL]->(t)` wrapped in `ag_catalog.cypher()`
+- [ ] `async def run_cypher_query(cypher: str, corpus_id: str) → str` — read-only MATCH only; block CREATE/MERGE/SET/DELETE/DROP; wrap in `ag_catalog.cypher()`; return pipe-delimited table string (carry `_parse_return_aliases()` from v1)
+- [ ] `async def search_as_context(query: str, corpus_id: str, limit: int) → str` — entity + relationship search; return LLM-ready context string
+- [ ] `async def search_entities(query: str, corpus_id: str, entity_type: str | None, limit: int) → list[dict]` — use `entity_index.hybrid_search()` first; fall back to AGE `CONTAINS` scan
+- [ ] `async def delete_corpus_graph(corpus_id: str) → None` — `SELECT drop_graph('{graph_name}', true)` — called on corpus deletion and tenant offboarding
+- [ ] `async def delete_document_vertices(corpus_id: str, document_id: str) → None` — `MATCH (v {document_id: ...}) DETACH DELETE v` — called on incremental ingest when a document is replaced
+- [ ] `async def get_graph_stats(corpus_id: str) → dict` — vertex/edge counts by type (carry from v1)
+- [ ] Write integration tests (require AGE container on port 5433; auto-skip if not running)
 
 ### 2.3 Entity Index (`knowledge/store/entity_index.py`)
 
@@ -718,40 +744,33 @@ Port `DoclingHybridChunker` from `rag/ingestion/chunkers/docling.py` with these 
 
 - [ ] Guard first: if `corpus_config.enable_graph_extraction is False` → return `None` immediately (no LLM call, no log spam)
 
-- [ ] `async def extract_graph(doc_path: Path, corpus_config: CorpusConfig, settings: Settings) → str | None` — returns Cypher string or `None`
+- [ ] `async def extract_graph(doc_path: Path, corpus_config: CorpusConfig, settings: Settings) → PipelineContext | None` — returns `PipelineContext` (with `.knowledge_graph` NetworkX DiGraph) or `None` on failure. **Do NOT return a Cypher string** — `CypherExporter` generates Neo4j syntax incompatible with AGE.
 
   **Implementation:**
   ```python
-  def _run_sync() -> str:
+  def _run_sync() -> "PipelineContext":
       from docling_graph import PipelineConfig, run_pipeline
-      from docling_graph.core.exporters import CypherExporter
+      # Do NOT import CypherExporter — AGE uses ag_catalog.cypher() SQL wrapper,
+      # not raw Neo4j Cypher. Import the PipelineContext into AGE via
+      # age_store.import_docling_graph(context, ...) which iterates NetworkX directly.
 
       ontology_class = load_ontology(corpus_config.graph_ontology_path)  # LRU-cached
 
       config = PipelineConfig(
           source=str(doc_path),
           template=ontology_class,
-          backend=corpus_config.graph_extraction_backend,         # "llm" | "vlm"
+          backend=corpus_config.graph_extraction_backend,           # "llm" | "vlm"
           inference="local",
-          provider_override=corpus_config.graph_extraction_provider,  # "ollama"
-          model_override=corpus_config.graph_extraction_model,        # "llama3.2:3b"
-          processing_mode=corpus_config.graph_processing_mode,        # "many-to-one"
-          extraction_contract=corpus_config.graph_extraction_contract, # "staged"
+          provider_override=corpus_config.graph_extraction_provider, # "ollama"
+          model_override=corpus_config.graph_extraction_model,       # "llama3.2:3b"
+          processing_mode=corpus_config.graph_processing_mode,       # "many-to-one"
+          extraction_contract=corpus_config.graph_extraction_contract,# "staged"
           use_chunking=True,
           chunk_max_tokens=settings.chunk_max_tokens,
           structured_output=True,
           dump_to_disk=False,   # API mode — no files on disk
       )
-      context = run_pipeline(config)
-
-      # Extract Cypher from the NetworkX graph in PipelineContext
-      exporter = CypherExporter()
-      with tempfile.NamedTemporaryFile(suffix=".cypher", delete=False) as f:
-          tmp = Path(f.name)
-      exporter.export(context.knowledge_graph, tmp)
-      cypher = tmp.read_text(encoding="utf-8")
-      tmp.unlink()
-      return cypher
+      return run_pipeline(config)   # PipelineContext with .knowledge_graph (NetworkX)
 
   return await asyncio.wait_for(
       asyncio.to_thread(_run_sync),
@@ -805,7 +824,7 @@ Mirrors v1 `DocumentIngestionPipeline` but adapted for the Redis worker model an
   3. Incremental hash check (skip if unchanged)
   4. `asyncio.gather(chunker_task, graph_task)` — parallel
      - chunker_task: `chunker.chunk_document(...)` → `embedder.embed_batch(chunks)` → `vector_store.upsert_chunks(corpus_id, tenant_id)`
-     - graph_task (if `enable_graph_extraction`): `graph_extractor.extract(docling_doc)` → `graph_store.upsert_entities()` → `entity_index.upsert()`
+     - graph_task (if `enable_graph_extraction`): `graph_extractor.extract_graph(doc_path, corpus_config, settings)` → `PipelineContext` → `age_store.import_docling_graph(context, corpus_id, document_id)` → `entity_index.upsert_batch_from_graph(context.knowledge_graph, document_id, corpus_id)`
   5. Set Redis fingerprint cache
   6. Publish `IngestCompleteEvent` to `knowledge:events`
   7. Update job hash: `HSET job:{id} status "completed" chunks_ingested ... completed_at ...`
@@ -816,7 +835,7 @@ Mirrors v1 `DocumentIngestionPipeline` but adapted for the Redis worker model an
 
 ### 4.6 Ingestion Worker Entrypoint (`knowledge/ingestion/worker.py`)
 
-- [ ] Instantiate `DoclingProcessor` (singleton — converters are expensive to init), `DoclingHybridChunker`, `Embedder`, `PostgresHybridStore`, `AgeGraphStore`, `RedisCache` at startup
+- [ ] Instantiate `DoclingProcessor` (singleton — converters are expensive to init), `DoclingHybridChunker`, `Embedder`, `PostgresHybridStore`, `AgeGraphStore` (connects to AGE on port 5433, separate from main PG), `RedisCache` at startup
 - [ ] Connect all stores, create Redis consumer group, start `consume_loop`
 - [ ] `python -m knowledge.ingestion.worker` is the Docker CMD
 - [ ] Graceful shutdown on `SIGTERM`: drain current job, stop accepting new messages, close all connections
@@ -1408,7 +1427,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: apache/age:latest          # pgvector + Apache AGE
+    image: pgvector/pgvector:pg16     # main DB: pgvector for vector + text search
     environment:
       POSTGRES_DB: ragv2
       POSTGRES_USER: ragv2
@@ -1417,6 +1436,19 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     # no published port — only API and workers reach it internally
+
+  age:
+    image: apache/age:latest          # graph DB: Apache AGE for Cypher queries
+    environment:
+      POSTGRES_DB: age_graph
+      POSTGRES_USER: age
+      POSTGRES_PASSWORD: ${AGE_DB_PASSWORD}
+    volumes:
+      - agedata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"                   # exposed on host port 5433 to avoid conflict with postgres:5432
+    restart: unless-stopped
+    # Note: apache/age:latest does NOT include pgvector — that's why we use a separate postgres service
 
   redis:
     image: redis:7-alpine
@@ -1451,6 +1483,7 @@ services:
 
 volumes:
   pgdata:
+  agedata:
   redisdata:
   ollamamodels:
 ```
