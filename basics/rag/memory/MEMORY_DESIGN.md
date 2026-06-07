@@ -6,6 +6,8 @@
 
 ## Table of Contents
 
+- [tsvector + pgvector: the Search Pattern Used Throughout](#tsvector--pgvector-the-search-pattern-used-throughout)
+  - [Where tsvector + pgvector applies in memory tiers](#where-tsvector--pgvector-applies-in-memory-tiers)
 - [Cognitive Memory Types — The Framework](#cognitive-memory-types--the-framework)
 - [Mapping Cognitive Types to Implementation Tiers](#mapping-cognitive-types-to-implementation-tiers)
 - [Tier 1 — Short-Term / Working Memory](#tier-1--short-term--working-memory-per-request)
@@ -25,6 +27,77 @@
 - [Frontend Memory Management](#frontend-memory-management)
 - [GDPR and Right to Erasure](#gdpr-and-right-to-erasure)
 - [Quick Reference](#quick-reference)
+
+---
+
+## tsvector + pgvector: the Search Pattern Used Throughout
+
+Before diving into memory tiers, understand the search pattern the system uses everywhere. It is important that memory tiers follow the same pattern for consistency and performance.
+
+### The pattern: hybrid BM25 + cosine with RRF
+
+The system already uses this pattern in two places:
+- **`chunks.content_tsv`** — full-text search on document chunks (Tier 4)
+- **`kg_entity_index.name_tsv`** — entity name search for the AGE knowledge graph (Tier 4)
+
+Both use the same structure: a `tsvector` column (GIN-indexed for BM25) alongside a `vector(768)` column (HNSW-indexed for cosine ANN), combined at query time with Reciprocal Rank Fusion (RRF, k=60).
+
+```sql
+-- The template applied to every searchable memory column
+column_tsv  tsvector GENERATED ALWAYS AS (to_tsvector('english', column_text)) STORED
+embedding   vector(768)
+
+CREATE INDEX ON table USING GIN (column_tsv);
+CREATE INDEX ON table USING hnsw (embedding vector_cosine_ops);
+```
+
+```sql
+-- Hybrid search query (RRF k=60) — identical structure used for chunks, entities, and memories
+WITH
+text_ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY ts_rank(column_tsv, websearch_to_tsquery('english', $1)) DESC) AS rn
+    FROM table
+    WHERE column_tsv @@ websearch_to_tsquery('english', $1)
+),
+vec_ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector ASC) AS rn
+    FROM table
+    WHERE embedding IS NOT NULL
+    LIMIT 60
+),
+rrf AS (
+    SELECT COALESCE(t.id, v.id) AS id,
+           (COALESCE(1.0 / (60.0 + t.rn), 0) + COALESCE(1.0 / (60.0 + v.rn), 0)) AS score
+    FROM text_ranked t
+    FULL OUTER JOIN vec_ranked v ON t.id = v.id
+)
+SELECT r.id, e.content, r.score
+FROM rrf r JOIN table e ON e.id = r.id
+ORDER BY r.score DESC LIMIT $3;
+```
+
+**Why both?** Each leg captures different signals:
+
+| Signal | When it wins | When it loses |
+|--------|-------------|---------------|
+| **tsvector / BM25** | Exact keyword match ("GDPR Article 17"), proper nouns, technical terms | Paraphrases, synonyms, conceptual similarity |
+| **pgvector / cosine** | Semantic similarity, paraphrases ("data deletion rights" ≈ "right to erasure") | Rare proper nouns, exact IDs, short queries |
+| **RRF combined** | Always at least as good as the better of the two legs | Slightly slower than either alone |
+
+The fallback: if `tsvector` matches nothing (e.g., a query of pure stopwords), the search degrades gracefully to vector-only. If `embedding` is NULL, degrades to text-only.
+
+### Where tsvector + pgvector applies in memory tiers
+
+| Tier | Table | tsvector column | embedding column | Notes |
+|------|-------|----------------|-----------------|-------|
+| 2 (Episodic) | `messages` | `content_tsv` | — (optional) | Enables "search within conversation history" |
+| 3 (Semantic/user) | `user_memories` | `content_tsv` | `embedding vector(768)` | Same RRF hybrid as entity_index |
+| 4 (Semantic/world) | `chunks` | `content_tsv` | `embedding vector(768)` | Already implemented |
+| 4 (Semantic/world) | `kg_entity_index` | `name_tsv` | `embedding vector(768)` | Already implemented |
+
+Tier 1 (working memory) and Tier 5 (procedural) do not need search indexes — they are loaded directly, not retrieved by similarity.
 
 ---
 
@@ -294,11 +367,11 @@ async def extract_and_store(
 
 ## Mem0 Read Path — When Memories Are Injected
 
-Fires at `PRE_RETRIEVE` hook — before retrieval, so user context can shift embedding relevance.
+Fires at `PRE_RETRIEVE` hook — before retrieval, so user context shifts embedding relevance before the main retrieval runs.
 
 ```python
-# Prepend to system prompt:
-user_context = await mem0_client.search(
+# Hybrid search on user_memories: tsvector BM25 + pgvector cosine combined with RRF (k=60)
+# Same pattern as kg/entity_index.py hybrid_search() — see tsvector + pgvector section
     query=current_query,
     user_id=hash_user_id(user_id, tenant_id),
     limit=3,
@@ -542,6 +615,9 @@ CREATE TABLE messages (
     conversation_id   UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role              TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content           TEXT NOT NULL,
+    -- tsvector for full-text search within conversation history (no embedding needed -
+    -- scope is already user+conversation so cosine ANN adds no precision benefit)
+    content_tsv       tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
     -- Assistant-only fields (NULL on user rows)
     citations         JSONB,
     pipeline_status   TEXT,
@@ -555,6 +631,7 @@ CREATE TABLE messages (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX ON messages (conversation_id, created_at);
+CREATE INDEX ON messages USING GIN (content_tsv);  -- "find when I asked about X" feature
 
 -- ── Tier 3: Semantic user memory ─────────────────────────────────────────────
 
@@ -563,15 +640,24 @@ CREATE TABLE user_memories (
     user_id             TEXT NOT NULL,         -- SHA-256(jwt_sub + tenant_salt)
     tenant_id           TEXT NOT NULL,
     content             TEXT NOT NULL,         -- extracted fact sentence
-    embedding           vector(768),           -- for cosine retrieval
+    -- tsvector for keyword-exact memory retrieval alongside pgvector cosine (same RRF pattern as entity_index)
+    content_tsv         tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+    embedding           vector(768),           -- for cosine ANN (HNSW); combined with content_tsv via RRF
     source_message_id   UUID,                  -- message that triggered extraction
     last_retrieved_at   TIMESTAMPTZ,           -- updated on every search hit (for LRU eviction)
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX ON user_memories (user_id, tenant_id);
+CREATE INDEX ON user_memories USING GIN (content_tsv);   -- BM25 leg of hybrid search
 CREATE INDEX ON user_memories USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
+-- Hybrid search query for user_memories (same RRF k=60 pattern as kg/entity_index.py):
+-- 1. text_ranked: ts_rank on content_tsv @@ websearch_to_tsquery(query)
+-- 2. vec_ranked:  embedding <=> embed(query) ANN LIMIT 60
+-- 3. rrf:         COALESCE(1/(60+t.rn), 0) + COALESCE(1/(60+v.rn), 0)
+-- Falls back to vector-only if tsvector has no hits (e.g. pure stopword query).
+-- Falls back to text-only if embedding is NULL (shouldn't happen; embed on every add).
 
 -- ── Tier 5: Procedural memory ────────────────────────────────────────────────
 

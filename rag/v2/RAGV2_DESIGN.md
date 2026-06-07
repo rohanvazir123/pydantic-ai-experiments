@@ -2058,6 +2058,7 @@ CREATE INDEX ON conversations (user_id, last_turn_at DESC);
 CREATE TABLE messages (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id   UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    content_tsv       tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
     role              TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     content           TEXT NOT NULL,
     citations         JSONB,
@@ -2072,12 +2073,14 @@ CREATE TABLE messages (
     created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX ON messages (conversation_id, created_at);
+CREATE INDEX ON messages USING GIN (content_tsv);  -- full-text search within conversation history
 
 CREATE TABLE user_memories (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id             TEXT NOT NULL,         -- SHA-256(sub + tenant_salt)
     tenant_id           TEXT NOT NULL,
     content             TEXT NOT NULL,
+    content_tsv         tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
     embedding           vector(768),
     source_message_id   UUID,
     last_retrieved_at   TIMESTAMPTZ,           -- for LRU eviction
@@ -2086,6 +2089,7 @@ CREATE TABLE user_memories (
 );
 CREATE INDEX ON user_memories (user_id, tenant_id);
 CREATE INDEX ON user_memories USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX ON user_memories USING GIN (content_tsv);   -- BM25 leg of hybrid search (same RRF pattern as chunks + entity_index)
 
 CREATE TABLE system_prompts (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
