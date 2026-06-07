@@ -10,8 +10,8 @@
   - [Where tsvector + pgvector applies in memory tiers](#where-tsvector--pgvector-applies-in-memory-tiers)
 - [Cognitive Memory Types — The Framework](#cognitive-memory-types--the-framework)
 - [Mapping Cognitive Types to Implementation Tiers](#mapping-cognitive-types-to-implementation-tiers)
-  - [Context assembly — how all tiers feed into every request](#context-assembly--how-all-tiers-feed-into-every-request)
 - [Tier 1 — Short-Term / Working Memory](#tier-1--short-term--working-memory-per-request)
+  - [Context assembly — how all tiers feed into Tier 1](#context-assembly--how-all-tiers-feed-into-tier-1)
 - [Tier 2 — Episodic Memory](#tier-2--episodic-memory-per-session-server-side)
 - [Tier 3 — Semantic Memory (User)](#tier-3--semantic-memory-user-cross-session)
 - [Tier 4 — Semantic Memory (Knowledge Corpus)](#tier-4--semantic-memory-knowledge-corpus-shared)
@@ -128,16 +128,24 @@ Each type is stored differently, decays at a different rate, and has a different
 | Semantic (world) | **Tier 4** | PostgreSQL + pgvector + Apache AGE | Until deleted | Ingestion pipeline | Retriever |
 | Procedural | **Tier 5** | Files + DB (`system_prompts`, `tool_configs`) | Indefinite (versioned) | Human-written / admin-updated | App startup, per-request |
 
-### Context assembly — how all tiers feed into every request
+---
 
-Every LLM call draws from all five tiers simultaneously. **Tier 1 (working memory) is the output of this assembly** — the bounded context window handed to the LLM, composed from the other four tiers. Priority order inside the token budget (highest priority — never trimmed before lower-priority items):
+## Tier 1 — Short-Term / Working Memory (per-request)
+
+**Cognitive parallel:** what you can hold in mind right now. Limited capacity; everything that doesn't fit must be retrieved from longer-term storage.
+
+**What it is:** The assembled context window for a single LLM inference call — a composition of the other four tiers, assembled fresh per request and never persisted. It has no storage of its own; its content is entirely derived from Tiers 2–5.
+
+### Context assembly — how all tiers feed into Tier 1
+
+Every LLM call draws from all five tiers simultaneously. **Tier 1 is the output** — the token-bounded context window handed to the LLM. Priority order inside the budget (highest priority — never trimmed before lower-priority items):
 
 1. **System prompt** — Tier 5 (procedural)
 2. **User memory context** — Tier 3 (top-3 relevant facts, hybrid tsvector + cosine search)
 3. **Active conversation turns** — Tier 2 (last 8 turns, or summary + last 8 for long threads)
 4. **Retrieved chunks** — Tier 4 (top-K, confidence-filtered via CrossEncoder)
 5. **Current query** — always present, never trimmed
-6. **→ Tier 1** (working memory) — the assembled, token-bounded context passed to the LLM
+6. **→ Tier 1** — the assembled, token-bounded context passed to the LLM
 
 ```python
 # Inputs: Tiers 2, 3, 4, 5
@@ -155,17 +163,7 @@ if count_tokens(tier1_context) > budget:
 llm_response = await agent.run(query, context=tier1_context)  # Tier 1 consumed here
 ```
 
-Token budget: 8,192 input tokens by default. See [Token Budget Management](#token-budget-management) for the full trim algorithm.
-
----
-
-## Tier 1 — Short-Term / Working Memory (per-request)
-
-**Cognitive parallel:** what you can hold in mind right now. Limited capacity; everything that doesn't fit must be retrieved from longer-term storage.
-
-**What it is:** The assembled context window for a single LLM inference call — a composition of the other four tiers, assembled fresh per request and never persisted. It has no storage of its own; its content is entirely derived from Tiers 2–5.
-
-**Token budget:** 8,192 input tokens by default. When the assembled context exceeds this, items are trimmed in priority order — see [Token Budget Management](#token-budget-management).
+**Token budget:** 8,192 input tokens by default. See [Token Budget Management](#token-budget-management) for the full trim algorithm.
 
 ---
 
