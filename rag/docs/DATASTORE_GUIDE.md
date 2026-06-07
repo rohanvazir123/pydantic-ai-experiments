@@ -152,9 +152,9 @@ CREATE TABLE chunks (
 #### Indexes
 
 ```sql
--- Vector similarity (IVFFlat, cosine distance)
+-- Vector similarity (HNSW, cosine distance)
 CREATE INDEX chunks_embedding_idx ON chunks
-    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
 -- Full-text search (GIN over generated tsvector column)
 CREATE INDEX chunks_content_tsv_idx ON chunks USING GIN(content_tsv);
@@ -168,7 +168,7 @@ CREATE INDEX documents_source_idx ON documents(source);
 
 ```
 
-> **IVFFlat auto-reindex:** After each `add()` call, the store checks if the total chunk count has grown beyond 3× the count at last index build time. If so, it issues `REINDEX INDEX CONCURRENTLY chunks_embedding_idx` automatically to maintain recall quality.
+> **HNSW incremental updates:** HNSW wires new vectors into the proximity graph on every INSERT — no rebuild required. Recall is maintained as the corpus grows without any manual intervention.
 
 ### 3.2 Search Operations
 
@@ -189,7 +189,7 @@ ORDER BY c.embedding <=> $1::vector
 LIMIT $2;
 ```
 
-`ivfflat.probes` is set to `10` per connection to improve recall beyond the default of `1`.
+`hnsw.ef_search` is set to `40` per query to balance recall and latency (default is 40).
 
 #### Full-Text Search (tsvector / ts_rank)
 
@@ -567,20 +567,17 @@ ORDER BY c.chunk_index;
 
 | Index name | Table | Type | Columns | Purpose |
 |------------|-------|------|---------|---------|
-| `chunks_embedding_idx` | `chunks` | IVFFlat | `embedding vector_cosine_ops` | ANN vector search (cosine distance) |
+| `chunks_embedding_idx` | `chunks` | HNSW | `embedding vector_cosine_ops` | ANN vector search (cosine distance) |
 | `chunks_content_tsv_idx` | `chunks` | GIN | `content_tsv` | Full-text search (`@@` operator) |
 | `chunks_content_trgm_idx` | `chunks` | GIN | `content gin_trgm_ops` | Trigram fuzzy search (`word_similarity`) |
 | `chunks_document_id_idx` | `chunks` | B-tree | `document_id` | Efficient JOIN to `documents` |
 | `documents_source_idx` | `documents` | B-tree | `source` | Lookup / dedup by file path |
 
-**IVFFlat `lists` parameter:** defaults to `100` (good up to ~1 M rows). Tune with:
-```
-lists ≈ sqrt(total_rows)   -- rule of thumb
-```
+**HNSW `m` parameter:** defaults to `16`. Increase to `32–64` for corpora above 100K chunks to maintain recall.
 
-**Probes at query time:** `SET ivfflat.probes = 10` per connection. Higher probes = better recall, slower query. The store sets this in the pool `init` callback so every connection has it.
+**HNSW `ef_construction`:** defaults to `64`. Higher values improve build quality at the cost of index build time. Changing requires dropping and recreating the index.
 
-**Auto-reindex trigger:** after each `add()` the store checks if `total_chunks > 3 × chunks_at_last_build`. If true it issues `REINDEX INDEX CONCURRENTLY chunks_embedding_idx` to keep recall quality as the dataset grows.
+**`hnsw.ef_search` at query time:** set to `40` per query. Higher = better recall, slower traversal. Raise to `100` for near-exact recall; lower to `20` for faster queries on small corpora.
 
 ```sql
 -- Check index sizes

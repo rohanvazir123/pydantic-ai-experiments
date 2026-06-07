@@ -149,7 +149,7 @@ The database tables and indexes are created automatically by `PostgresHybridStor
 2. Tables are created automatically: `documents` and `chunks`
 
 3. Indexes created automatically:
-   - **IVFFlat vector index** on `chunks.embedding` for cosine similarity search
+   - **HNSW vector index** on `chunks.embedding` for cosine similarity search
    - **GIN index** on `chunks.content_tsv` for full-text search
    - **B-tree indexes** on `chunks.document_id` and `documents.source`
 

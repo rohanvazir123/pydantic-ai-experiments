@@ -203,7 +203,7 @@ Agentic RAG over PostgreSQL/pgvector. A Pydantic AI agent orchestrates hybrid re
   ├── id           UUID PK
   ├── document_id  UUID FK → documents CASCADE
   ├── content      TEXT
-  ├── embedding    vector(768)      ← IVFFlat index (cosine)
+  ├── embedding    vector(768)      ← HNSW index (cosine)
   ├── chunk_index  INTEGER
   ├── metadata     JSONB
   ├── token_count  INTEGER

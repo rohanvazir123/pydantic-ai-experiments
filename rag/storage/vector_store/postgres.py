@@ -115,16 +115,12 @@ logger = logging.getLogger(__name__)
 class PostgresHybridStore:
     """PostgreSQL implementation with hybrid vector + text search using pgvector."""
 
-    # Reindex when chunk count exceeds this multiple of the count at index build time
-    _IVFFLAT_REINDEX_FACTOR = 3
-
     def __init__(self):
         """Initialize PostgreSQL connection."""
         self.settings = load_settings()
         self.pool: asyncpg.Pool | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
-        self._ivfflat_index_build_count: int = 0  # chunk count when IVFFlat was last built
 
     async def initialize(self) -> None:
         """Initialize PostgreSQL connection and create tables/indexes."""
@@ -193,8 +189,8 @@ class PostgresHybridStore:
                 await conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS chunks_embedding_idx
                     ON {self.settings.postgres_table_chunks}
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
+                    USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
                 """)
 
                 await conn.execute(f"""
@@ -230,13 +226,6 @@ class PostgresHybridStore:
                     CREATE INDEX IF NOT EXISTS documents_source_idx
                     ON {self.settings.postgres_table_documents}(source)
                 """)
-
-            # Record chunk count at index build time for IVFFlat reindex trigger
-            async with self.pool.acquire() as count_conn:
-                row = await count_conn.fetchrow(
-                    f"SELECT COUNT(*) as n FROM {self.settings.postgres_table_chunks}"
-                )
-                self._ivfflat_index_build_count = row["n"]
 
             logger.info("Connected to PostgreSQL and initialized tables")
             self._initialized = True
@@ -284,25 +273,6 @@ class PostgresHybridStore:
             )
 
             logger.info(f"Inserted {len(chunks)} chunks for document {document_id}")
-
-            # Check if IVFFlat index needs rebuilding due to data growth.
-            # IVFFlat centroids are fixed at build time; recall degrades when the
-            # chunk count grows beyond ~3x the count at index creation.
-            row = await conn.fetchrow(
-                f"SELECT COUNT(*) as n FROM {self.settings.postgres_table_chunks}"
-            )
-            current_count = row["n"]
-            threshold = self._ivfflat_index_build_count * self._IVFFLAT_REINDEX_FACTOR
-            if self._ivfflat_index_build_count > 0 and current_count >= threshold:
-                logger.info(
-                    f"IVFFlat reindex triggered: {current_count} chunks "
-                    f"(threshold {threshold}, built at {self._ivfflat_index_build_count})"
-                )
-                await conn.execute(
-                    "REINDEX INDEX CONCURRENTLY chunks_embedding_idx"
-                )
-                self._ivfflat_index_build_count = current_count
-                logger.info("IVFFlat index rebuilt successfully")
 
     def _build_filter_clause(
         self,
@@ -388,8 +358,8 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
-                # Set IVF probes for better recall (default is 1, we use 10)
-                await conn.execute("SET ivfflat.probes = 10")
+                # Increase ef_search for better HNSW recall at query time (default is 40)
+                await conn.execute("SET hnsw.ef_search = 40")
 
                 # Build optional WHERE clause from metadata filter.
                 # $1 = query_embedding, $2 = match_count; filter params start at $3.
@@ -402,7 +372,7 @@ class PostgresHybridStore:
 
                 # <=> is pgvector cosine distance (0=identical, 2=opposite).
                 # 1 - distance converts it to similarity (1=identical, -1=opposite).
-                # IVFFlat index with probes=10 trades recall for speed vs exact scan.
+                # HNSW index with ef_search=40 balances recall vs speed.
                 rows = await conn.fetch(
                     f"""
                     SELECT

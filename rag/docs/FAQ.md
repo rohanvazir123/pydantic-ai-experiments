@@ -34,7 +34,7 @@ Code references: line numbers point to files under `rag/` in this repo.
 
 ### PostgreSQL & Vector Storage
 - [Q13. Why PostgreSQL over a dedicated vector DB?](#q13)
-- [Q14. What is IVFFlat and how does it trade accuracy for speed?](#q14)
+- [Q14. What is HNSW and how does it trade accuracy for speed?](#q14)
 - [Q15. What does `register_vector` do and why in `init=`?](#q15)
 - [Q16. Why `executemany` for batch inserts?](#q16)
 - [Q17. `ON DELETE CASCADE` — what does it do and why is it critical?](#q17)
@@ -449,12 +449,12 @@ Semantic search. It handles the majority of query types (conceptual, paraphrased
 <a id="q13"></a>
 **Q13. Why PostgreSQL over a dedicated vector DB?**
 
-This system already needs PostgreSQL for relational data (documents, chunks, metadata, Mem0 memory). Adding a separate vector DB means two infrastructure components to manage, two connection pools, and a JOIN across network boundaries to correlate chunks with document metadata. PostgreSQL + pgvector handles both in a single query with a JOIN. The trade-off is that pgvector's IVFFlat index is less scalable than purpose-built ANN indexes (HNSW in Pinecone/Weaviate) at hundreds of millions of vectors, but for RAG workloads in the tens-of-thousands range it is entirely adequate.
+This system already needs PostgreSQL for relational data (documents, chunks, metadata, Mem0 memory). Adding a separate vector DB means two infrastructure components to manage, two connection pools, and a JOIN across network boundaries to correlate chunks with document metadata. PostgreSQL + pgvector handles both in a single query with a JOIN. The trade-off is that pgvector's HNSW index is comparable to purpose-built ANN indexes at typical RAG scales (tens-of-thousands to low-millions of vectors), though purpose-built vector DBs (Pinecone, Weaviate) add managed horizontal sharding at hundreds of millions of vectors.
 
 <a id="q14"></a>
-**Q14. What is IVFFlat and how does it trade accuracy for speed?**
+**Q14. What is HNSW and how does it trade accuracy for speed?**
 
-IVFFlat (Inverted File Flat) divides the vector space into `lists` Voronoi cells. At index time, each vector is assigned to its nearest centroid. At query time, only `probes` cells are searched rather than the full table. This reduces the search space from O(n) to O(n/lists × probes) but may miss true nearest neighbours that fall in unprobed cells (approximate, not exact). `lists = sqrt(n_rows)` is the standard recommendation. Increasing `probes` raises recall but also latency.
+HNSW (Hierarchical Navigable Small World) builds a multi-layer proximity graph over the vectors. At query time it performs a greedy graph traversal starting from a random entry point in the top layer, moving to closer neighbours at each layer until reaching the bottom. `m` controls the number of bidirectional links per node (higher = better recall, more memory); `ef_construction` controls the search beam width during index build (higher = better recall, slower build). At query time, `hnsw.ef_search` (default 40 in this project) controls the beam width — raising it trades latency for recall. Unlike IVFFlat, HNSW supports incremental insertions without rebuilding; new vectors are wired into the graph on insert, maintaining recall as the corpus grows.
 
 <a id="q15"></a>
 **Q15. What does `register_vector` do and why in `init=`?**
@@ -598,7 +598,7 @@ Extensions are enabled automatically by `PostgresHybridStore.initialize()` on fi
 
 | Extension | Container | Status | Purpose |
 |-----------|-----------|--------|---------|
-| `vector` (pgvector) | `pgvector` | Always enabled | Dense vector storage + IVFFlat/HNSW ANN search |
+| `vector` (pgvector) | `pgvector` | Always enabled | Dense vector storage + HNSW ANN search |
 | `pg_trgm` | `pgvector` | Always enabled | Trigram similarity — fuzzy matching, `LIKE`/`ILIKE` acceleration |
 | `age` | `age` | Pre-installed in image | openCypher graph queries (`MATCH`, `MERGE`, `CREATE`) |
 
@@ -764,7 +764,7 @@ The cache key is the query string (exact text match). This is appropriate for th
 
 - `EMBEDDING_DIMENSION=1536` in `.env`
 - Drop and recreate the `chunks` table (column type changes: `vector(768)` → `vector(1536)`)
-- Recreate the IVFFlat index with the new dimension
+- Recreate the HNSW index with the new dimension
 - Re-ingest all documents (old embeddings are incompatible)
 - Update `EMBEDDING_MODEL` and `EMBEDDING_BASE_URL` / `EMBEDDING_PROVIDER`
 - The `register_vector` call handles any dimension, so no code change there
@@ -1587,7 +1587,7 @@ Storing full document content in every chunk row would be massive redundancy (a 
 <a id="q76"></a>
 **Q76. Scale to 10M documents — what breaks first?**
 
-1. **IVFFlat vector index** — at 10M rows with 768-dim vectors, IVFFlat recall degrades unless `lists` is tuned to ~3162 (sqrt of 10M) and `probes` increased. Switch to HNSW (supported in pgvector ≥0.5) which maintains recall at scale.
+1. **HNSW vector index** — already in use. At 10M rows memory footprint grows (~2–4× raw vector data). Tune `m` upward (32–64) and raise `hnsw.ef_search` to maintain recall; consider partitioning the `chunks` table by `document_id` range to keep index size per partition manageable.
 2. **Ingestion throughput** — `DocumentConverter` is single-threaded and CPU-bound. A single process cannot ingest fast enough. Need a message queue (Kafka/SQS) + worker pool.
 3. **PostgreSQL write throughput** — 10M documents × ~20 chunks × 3KB embeddings ≈ 600GB. Need table partitioning, read replicas, and potentially a separate vector store.
 
@@ -1650,7 +1650,7 @@ Changes needed in this codebase:
 - `PostgresHybridStore.semantic_search()` / `text_search()` — set `app.tenant_id` on the connection before querying (RLS handles the rest automatically)
 - `RAGState` — carry `tenant_id` alongside `user_id`, pass it into the store
 - Ingestion pipeline — accept `tenant_id` as a parameter and write it to every document/chunk row
-- IVFFlat index — may need `lists` retuning since the effective index size per tenant is smaller than the full table
+- HNSW index — `ef_search` may need tuning; smaller per-tenant data means the graph traversal is cheaper, so lower `ef_search` values still achieve high recall
 
 **RLS caveat with connection pools:** asyncpg reuses connections. `SET LOCAL` resets at transaction end, but `SET` persists for the connection lifetime. Always use `SET LOCAL` (transaction-scoped) or reset after use to prevent tenant leakage across pooled connections.
 
@@ -1951,7 +1951,7 @@ With overlap=0: fewer total chunks (no duplicated content at boundaries), cleane
 
 At 1M documents the system hits three hard limits:
 
-1. **IVFFlat index accuracy degrades** — IVFFlat partitions vectors into `lists` clusters and searches only `probes` clusters at query time. With 1M vectors, the default `lists=100` is grossly under-partitioned (pgvector recommends `lists ≈ sqrt(rows)`  → ~1000 for 1M rows). With too few lists, each cluster is huge and `probes` must be increased to maintain recall — but that defeats the speed benefit. Fix: rebuild the index with `lists=1000`, tune `probes` to balance recall vs latency, or migrate to HNSW which scales better.
+1. **HNSW memory footprint** — HNSW uses ~2–4× the raw vector data in memory for the graph structure. At 1M chunks × 768-dim float32 = ~3GB raw vectors → ~6–12GB for the HNSW graph. Tune `m` upward (32–64) to maintain recall; consider table partitioning by `document_id` to split the index across partitions.
 
 2. **PostgreSQL table scan for text search** — GIN index on `content_tsv` scales well to millions of rows, but the `ts_rank` scoring function re-scores every matched row. At 1M chunks, a broad query like "company policy" may match 100K rows that all need ranking. Fix: limit via metadata filters (tenant_id, date range) before full-text scoring.
 
@@ -1989,7 +1989,7 @@ Current retrieval path latency breakdown (approximate, local Ollama):
 | Step | Latency | Notes |
 |---|---|---|
 | Embed query | 20–50ms | HTTP to local Ollama embedding endpoint |
-| Semantic search (IVFFlat) | 5–20ms | PostgreSQL vector scan |
+| Semantic search (HNSW) | 5–20ms | PostgreSQL vector scan |
 | Text search (GIN) | 2–10ms | PostgreSQL tsvector scan |
 | RRF merge (Python) | <1ms | Pure in-memory |
 | HyDE LLM call (if enabled) | 500–2000ms | Full LLM generation — dominant cost |
@@ -1999,7 +1999,7 @@ Current retrieval path latency breakdown (approximate, local Ollama):
 1. **Disable HyDE and reranker** — both are off by default. Retrieval without them is already ~30–80ms.
 2. **Cache embeddings** — the embedder has an in-memory cache keyed on query text. Repeated queries return instantly.
 3. **Cache retrieval results** — `_result_cache` (LRU+TTL) returns cached results for identical queries.
-4. **Switch IVFFlat → HNSW** — HNSW has lower query latency at high recall. Trade-off: more memory (~2–3× IVFFlat) and slower index build.
+4. **Tune `hnsw.ef_search`** — already on HNSW. Lowering `ef_search` from 40 to 20 cuts graph traversal time ~30% with minimal recall loss at small corpus sizes.
 5. **Use a faster embedding model** — smaller models (e.g. `nomic-embed-text` at 768-dim is already fast; `all-MiniLM-L6-v2` at 384-dim is faster but lower quality).
 6. **Connection pooling** — asyncpg pool avoids TCP handshake + SSL per query. Already in place.
 7. **Co-locate** — run PostgreSQL and the app on the same machine or in the same datacenter to cut network RTT.
@@ -2095,7 +2095,7 @@ Precision can be improved at three stages — embedding, reranking, and generati
 | `bge-large-en-v1.5` (BAAI) | 1024 | Open source, strong MTEB scores | Larger than nomic, needs more RAM |
 | `e5-mistral-7b-instruct` | 4096 | Instruction-tuned, best open-source quality | 7B params — slow without GPU |
 
-Switching model requires: (1) update `EMBEDDING_MODEL` + `EMBEDDING_DIMENSION` in `.env`, (2) drop and recreate the IVFFlat index with the new dimension, (3) re-ingest all documents (old vectors are incompatible).
+Switching model requires: (1) update `EMBEDDING_MODEL` + `EMBEDDING_DIMENSION` in `.env`, (2) drop and recreate the HNSW index with the new dimension, (3) re-ingest all documents (old vectors are incompatible).
 
 **Reranking models (affects precision@K after retrieval):**
 
@@ -2257,7 +2257,7 @@ Both `tsvector` and BM25 drop stop words and use stemming — so "PTO" → `'pto
 | `pg_trgm` | **Yes** | Trigram similarity — splits text into 3-char grams, supports fuzzy `%` and `<->` operators | Typo tolerance, fuzzy matching, `LIKE`/`ILIKE` acceleration |
 | `pg_textsearch` (Timescale) | No | BM25 ranking via `bm25` index + `<@>` operator, Block-Max WAND top-k | Better ranking quality than `ts_rank`, faster top-k at scale |
 | `pg_search` (ParadeDB) | **Yes** | BM25 via `bm25` index + `@@@` operator, also supports fuzzy, phrase, boost queries | Full Elasticsearch-like search inside PostgreSQL |
-| `pgvector` | **Yes** | Dense vector storage + IVFFlat/HNSW ANN search | Semantic/embedding-based retrieval |
+| `pgvector` | **Yes** | Dense vector storage + HNSW ANN search | Semantic/embedding-based retrieval |
 
 ---
 
@@ -2368,7 +2368,7 @@ The following indexes are active in the local PostgreSQL database. Each serves a
 |---|---|---|---|
 | `chunks_pkey` | btree (unique) | `id` | Primary key lookups |
 | `chunks_document_id_idx` | btree | `document_id` | JOIN to `documents`, cascade deletes |
-| `chunks_embedding_idx` | ivfflat (cosine) | `embedding` | Semantic search (`semantic_search`) |
+| `chunks_embedding_idx` | hnsw (cosine) | `embedding` | Semantic search (`semantic_search`) |
 | `chunks_content_tsv_idx` | GIN | `content_tsv` | Full-text search (`text_search`) |
 | `chunks_content_trgm_idx` | GIN (trigram) | `content` | Fuzzy search (`fuzzy_search`) |
 
@@ -2377,22 +2377,13 @@ All three search indexes feed into `hybrid_search` via parallel `asyncio.gather`
 <a id="q116d"></a>
 **Q116d. How does re-indexing happen on the fly?**
 
-All indexes except IVFFlat are maintained automatically by PostgreSQL on every `INSERT` — no manual step needed:
+All indexes are maintained automatically by PostgreSQL on every `INSERT` — no manual step needed:
 
 - **btree** indexes update instantly on insert.
 - **GIN tsvector** (`content_tsv`) is a generated column — PostgreSQL recomputes and indexes it automatically on every insert/update.
 - **GIN trigram** (`content gin_trgm_ops`) — new content trigrams are added to the inverted index on insert.
 - **BM25** (`pg_search`) — uses a memtable architecture: new rows land in an in-memory inverted index first, then spill to disk automatically.
-
-**IVFFlat is the exception.** Its Voronoi centroids are fixed at build time. New vectors are assigned to the nearest existing centroid, which works fine for small growth — but if the chunk count grows significantly beyond what the index was built at, recall degrades because the centroid layout no longer reflects the data distribution.
-
-This project handles it automatically: after every `add()` call, `PostgresHybridStore` checks if the total chunk count has reached 3× the count recorded at index build time. If so, it runs:
-
-```sql
-REINDEX INDEX CONCURRENTLY chunks_embedding_idx
-```
-
-`CONCURRENTLY` means the rebuild happens without locking reads or writes — queries continue uninterrupted during the reindex. After completion, `_ivfflat_index_build_count` is reset to the new count, restarting the 3× window.
+- **HNSW** (`chunks_embedding_idx`) — new vectors are wired into the proximity graph on insert. Unlike IVFFlat (which has fixed centroids and degrades with growth), HNSW maintains recall incrementally with no rebuild required. The graph may become slightly suboptimal at extreme data scales, but this is not a concern until tens of millions of rows.
 
 <a id="q116e"></a>
 **Q116e. How are new documents auto-ingested and re-indexed?**
@@ -2401,8 +2392,7 @@ New documents flow through the same pipeline as the initial ingest — no specia
 
 1. **Ingest** — `DocumentIngestionPipeline.ingest_document()` converts the file (Docling), chunks it, generates embeddings, and calls `PostgresHybridStore.add()`.
 2. **Insert** — `add()` runs `executemany` to batch-insert all chunks into the `chunks` table.
-3. **Auto-index** — PostgreSQL automatically updates all five indexes (btree, GIN tsvector, GIN trigram, BM25, IVFFlat) on insert.
-4. **IVFFlat growth check** — after the insert, `add()` checks if the 3× threshold has been crossed and triggers `REINDEX CONCURRENTLY` if needed.
+3. **Auto-index** — PostgreSQL automatically updates all five indexes (btree, GIN tsvector, GIN trigram, BM25, HNSW) on insert. No manual reindex step is needed.
 5. **Duplicate detection** — `ingest_document()` hashes the file content and skips re-ingestion if the hash matches what's already stored (`get_document_hash()`). Only changed or new documents are processed.
 
 The result: pointing the pipeline at a folder of new or updated documents is all that's required. Retrieval immediately reflects the new content.
@@ -2555,7 +2545,7 @@ This shows which chunks match a fuzzy query and their similarity scores — exac
 └──────────────┴──────────────────────────────────────┘
 
 Indexes:
-  chunks_embedding_idx    USING ivfflat (embedding vector_cosine_ops)  lists=100
+  chunks_embedding_idx    USING hnsw (embedding vector_cosine_ops)  m=16, ef_construction=64
   chunks_content_tsv_idx  USING GIN (content_tsv)
   chunks_document_id_idx  USING btree (document_id)
   documents_source_idx    USING btree (source)
@@ -3636,12 +3626,12 @@ The current codebase is a well-structured prototype — async throughout, typed,
 
 ### 5. Database
 
-**Current state:** Single asyncpg pool, `pool_min=1 / pool_max=10`, IVFFlat index with `lists=100`, no migrations, no connection SSL enforcement.
+**Current state:** Single asyncpg pool, `pool_min=1 / pool_max=10`, HNSW index with `m=16, ef_construction=64, ef_search=40`, no migrations, no connection SSL enforcement.
 
 | Change | Detail |
 |---|---|
 | Schema migrations | Alembic — version-controlled DDL changes; never `CREATE TABLE IF NOT EXISTS` in application code in prod |
-| IVFFlat → HNSW | Better query latency at scale; tune `m` and `ef_construction` for recall/speed trade-off |
+| HNSW tuning | Already in use. Raise `m` (32–64) and `ef_search` for higher recall at scale; lower `ef_search` (20) for faster queries at small corpus |
 | Connection SSL | Enforce `sslmode=require` in `DATABASE_URL`; already supported by asyncpg |
 | Pool tuning | `pool_min` = number of worker processes; `pool_max` = based on PostgreSQL `max_connections` limit |
 | Read replica | Route `semantic_search` and `text_search` to a read replica; writes go to primary |
@@ -3750,7 +3740,7 @@ Phase 3 — Make it reliable:
   Retries + circuit breakers → Background ingestion queue → Alembic migrations → Monitoring + alerts
 
 Phase 4 — Make it scalable:
-  IVFFlat → HNSW → Read replica → Connection pooler → Load testing → HPA
+  HNSW tuning → Read replica → Connection pooler → Load testing → HPA
 ```
 
 ---
@@ -3917,49 +3907,43 @@ Must be changed together. Changing the model after ingestion requires a full re-
 
 ### 3. Vector Index (pgvector)
 
-**`ivfflat.lists`** — `postgres.py:187`, default `100`
+**`hnsw.m`** — `postgres.py` DDL, default `16`
 
-Number of Voronoi cells the IVFFlat index partitions vectors into. pgvector recommendation: `lists ≈ rows / 1000` for up to 1M rows, `sqrt(rows)` beyond that.
+Number of bidirectional links per node in the HNSW graph. Higher `m` → better recall + higher memory usage + slower builds.
 
-| Corpus size | Recommended lists |
+| Corpus size | Recommended m |
 |---|---|
-| < 10,000 chunks | 10–50 |
-| 10,000–100,000 chunks | 100 (current default is fine) |
-| 100,000–1,000,000 chunks | 300–1000 |
-| > 1,000,000 chunks | Migrate to HNSW |
+| < 100,000 chunks | 16 (current default is fine) |
+| 100,000–1,000,000 chunks | 24–32 |
+| > 1,000,000 chunks | 32–64 |
 
-Changing `lists` requires dropping and recreating the index (`CREATE INDEX ... USING ivfflat`).
+Changing `m` requires dropping and recreating the index (`CREATE INDEX ... USING hnsw`).
 
 ---
 
-**`ivfflat.probes`** — `postgres.py:275`, default `10` (set per-query via `SET LOCAL`)
+**`hnsw.ef_construction`** — `postgres.py` DDL, default `64`
 
-Number of cells inspected during a query. More probes → higher recall, higher latency.
+Beam width during index build. Higher → better graph quality and recall, slower build. No effect at query time.
 
-| probes | Recall | Latency |
+| Value | Build quality | Build time |
 |---|---|---|
-| 1 | ~70–80% | Fastest |
-| 10 (current) | ~95% | Good balance |
-| lists (= full scan) | 100% | Same as no index |
-
-**Rule:** set `probes` to ~1% of `lists` for fast approximate search, up to 10% for near-exact results.
+| 32 | Fast, lower recall | Minimal |
+| 64 (current) | Good balance | Moderate |
+| 128 | Near-exact | 2–3× longer |
 
 ---
 
-**IVFFlat → HNSW migration**
+**`hnsw.ef_search`** — `postgres.py:semantic_search`, default `40` (set per-query via `SET`)
 
-For corpora above ~500K chunks or when P99 latency matters more than build time:
+Beam width during query graph traversal. More → higher recall, higher latency.
 
-```sql
-DROP INDEX chunks_embedding_idx;
-CREATE INDEX chunks_embedding_hnsw_idx ON chunks
-  USING hnsw (embedding vector_cosine_ops)
-  WITH (m=16, ef_construction=64);
--- At query time, set ef_search for recall/speed trade-off:
-SET hnsw.ef_search = 40;
-```
+| ef_search | Recall | Latency |
+|---|---|---|
+| 20 | ~90% | Fastest |
+| 40 (current) | ~97% | Good balance |
+| 100 | ~99% | Near-exact |
 
-HNSW is faster at query time and does not require `lists` tuning, but uses 2–3× more memory and takes longer to build.
+**Rule:** lower `ef_search` for latency-sensitive small corpora; raise for large corpora or when precision@1 matters.
 
 ---
 
@@ -4101,8 +4085,9 @@ For RAG specifically, a smaller model is often sufficient — the LLM is summari
 | `merge_peers` | True | docling.py | Chunk granularity | False for maximum granularity |
 | `embedding_model` | nomic-embed-text | settings | Semantic quality | When NDCG@5 evaluation shows room for improvement |
 | `embedding_dimension` | 768 | settings | Storage / speed | Must match model |
-| `ivfflat.lists` | 100 | postgres.py | Index recall/speed | rows/1000 for < 1M chunks |
-| `ivfflat.probes` | 10 | postgres.py | Query recall/speed | 1–10% of lists |
+| `hnsw.m` | 16 | postgres.py | Index recall/memory | 24–32 for > 100K chunks |
+| `hnsw.ef_construction` | 64 | postgres.py | Build quality | 128 for near-exact; 64 is fine at this scale |
+| `hnsw.ef_search` | 40 | postgres.py | Query recall/speed | 20 for speed, 100 for near-exact |
 | `default_match_count` | 10 | settings | Recall vs cost | Lower for speed, higher for complex queries |
 | `rrf_k` | 60 | postgres.py | RRF score distribution | Leave at 60 unless evaluation says otherwise |
 | `default_text_weight` | 0.3 | settings | Text vs semantic balance | Increase for keyword-heavy queries |

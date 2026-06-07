@@ -38,7 +38,7 @@ rag/main.py:main()                                                L100
               │           ├── CREATE EXTENSION IF NOT EXISTS vector
               │           ├── CREATE TABLE documents
               │           ├── CREATE TABLE chunks (embedding vector(768))
-              │           └── CREATE INDEX (IVFFlat, GIN, B-tree)
+              │           └── CREATE INDEX (HNSW, GIN, B-tree)
               ├── ingest_documents(progress_callback)              L479
               │     ├── store.clean_collections()
               │     ├── _find_document_files()
@@ -142,7 +142,7 @@ Retriever.retrieve(query, match_count, search_type, use_cache)    L234
   │                 │     │                               so any failing leg returns [] and is skipped
   │                 │     ├── semantic_search(query_embedding, fetch_count×2)
   │                 │     │     └── pgvector <=> cosine distance; catches synonyms + paraphrasing
-  │                 │     │         IVFFlat index, probes=10; similarity = 1 − distance
+  │                 │     │         HNSW index, ef_search=40; similarity = 1 − distance
   │                 │     ├── text_search(query, fetch_count×2)
   │                 │     │     └── tsvector GIN index + plainto_tsquery (stems + ANDs terms)
   │                 │     │         ts_rank scores by term frequency / doc length
