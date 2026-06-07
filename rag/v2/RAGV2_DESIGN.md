@@ -53,25 +53,32 @@
 │  ├── /api/v1/*        → proxy_pass api:8000                                 │
 │  └── /                → proxy_pass frontend:3000  (SSE: proxy_buffering off)│
 └───────────────────────────┬────────────────────────────┬────────────────────┘
-                            │                            │
+                            │ /api/v1/*                  │ /*
                             ▼                            ▼
-             ┌──────────────────────────┐   ┌────────────────────────┐
-             │  API (Gunicorn +         │   │  Frontend              │
-             │  UvicornWorker)          │   │  Next.js 15 Node.js    │
-             │  knowledge.api.app       │   │  Tailwind CSS          │
-             │                          │   │  Zustand state         │
-             │  Middleware stack:        │   │  SSE streaming         │
-             │  CorrelationID           │   │  Postman collection    │
-             │  AuditEmitter            │   │  (postman/README.md)   │
-             │  RateLimiter (slowapi)   │   └────────────────────────┘
-             │  JWT RBAC                │
-             │                          │
-             │  Routes:                 │
-             │  /auth  /chat  /search   │
-             │  /ingest  /corpus        │
-             │  /memories  /scheduler   │
-             │  /evaluate  /logs        │
-             └──────────┬───────────────┘
+             ┌──────────────────────────┐   ┌────────────────────────────────────┐
+             │  API (Gunicorn +         │   │  Frontend  (Next.js 15, port 3000) │
+             │  UvicornWorker)          │   │                                    │
+             │  knowledge.api.app       │   │  src/lib/api.ts                    │
+             │                          │   │    fetch('/api/v1/*')  ← relative  │
+             │  Middleware stack:        │   │    always same-origin              │
+             │  CorrelationID           │   │    adds Authorization: Bearer      │
+             │  AuditEmitter            │   │    auto-refresh on 401             │
+             │  RateLimiter (slowapi)   │   │                                    │
+             │  JWT RBAC                │   │  src/lib/sse.ts                    │
+             │                          │   │    fetch POST + ReadableStream     │
+             │  Routes:                 │   │    NOT EventSource (GET-only)      │
+             │  /auth  /chat  /search   │   │    yields SSE events by type       │
+             │  /ingest  /corpus        │   │                                    │
+             │  /memories  /scheduler   │   │  src/lib/auth.ts                   │
+             │  /evaluate  /logs        │   │    access token → memory only      │
+             └──────────┬───────────────┘   │    refresh token → httpOnly cookie │
+                        │                   │    tryRestoreSession() on load     │
+                        │  ◄────────────────┤                                    │
+                        │  API responses    │  Local dev (npm run dev):          │
+                        │  JSON + SSE       │    next.config.ts rewrites         │
+                        │                   │    /api/v1/* → localhost:8000      │
+                        │                   │    (no CORS, no browser proxy)     │
+                        │                   └────────────────────────────────────┘
                         │
         ┌───────────────┼────────────────────────────────┐
         │               │                                │
