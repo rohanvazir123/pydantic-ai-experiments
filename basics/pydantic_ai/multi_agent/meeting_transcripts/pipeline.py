@@ -5,10 +5,14 @@ Production-Ready Meeting Transcript Multi-Agent Pipeline
 Four-agent async pipeline that extracts insights and validated action items
 from raw meeting transcripts.
 
-  1. PreProcessing  — clean and label transcript turns
-  2. Extraction     — insights (sentiment, pain points, competitors) + search tool
+  1. PreProcessing  — clean and label transcript turns (deterministic, no LLM)
+  2. Extraction     — insights (sentiment, pain points, competitors)
   3. Commitments    — action items with strict Literal guardrails
   4. Validation     — critic that drops hallucinated or withdrawn items
+
+Stages 2+3 are submitted concurrently via asyncio.gather.  Note that local
+Ollama serialises GPU requests, so on a single-GPU machine the gather produces
+no wall-clock speedup — effective total is the sum of all LLM call durations.
 
 Production features
 -------------------
@@ -19,10 +23,27 @@ Production features
   Audit log           Per-meeting JSONL with stage, timestamps, token counts, latencies
   Safety checks       Input size limits, speaker count cap, content length guard,
                       Pydantic field validators on output models
-  Tool                search_transcript on extraction agent for targeted keyword lookup
   Memory              ~/.meeting_pipeline/history.json tracks all processed meetings
   Structured logging  Python logging throughout; --debug for verbose output
   Retries             3x per stage; Pydantic AI sends validation errors back to LLM
+
+Latency breakdown (qwen2.5:14b on local Ollama, ~50 tok/s, single GPU)
+------------------------------------------------------------------------
+  Stage           LLM calls   Approx tokens in   Approx time
+  ─────────────────────────────────────────────────────────────
+  preprocessing   0           —                  ~0s   (deterministic)
+  extraction      1           ~2 k               ~40s  (single-pass; full transcript in ctx)
+  commitments     1           ~2 k               ~40s  (same transcript, action items only)
+  validation      1           ~0.5 k             ~15s  (items only; transcript not resent)
+  ─────────────────────────────────────────────────────────────
+  Total (serial)  3                              ~95s  (single GPU; gather adds no speedup)
+
+  Previous run 2 was 176s because extraction made 2 LLM calls (the
+  search_transcript tool triggered a round trip: search → result → record pass).
+  Removing search_transcript and trimming validation context cut ~80s.
+
+  To get true parallelism: run two Ollama instances on separate GPUs and point
+  extraction / commitments at different base URLs via OLLAMA_BASE_URL_2.
 
 Run
 ---
@@ -49,7 +70,6 @@ from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities.hooks import Hooks
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +82,6 @@ logger = logging.getLogger(__name__)
 
 _run_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("run_id", default="--------")
 _stage_var: contextvars.ContextVar[str] = contextvars.ContextVar("stage", default="init")
-_call_t0_var: contextvars.ContextVar[float] = contextvars.ContextVar("call_t0", default=0.0)
 
 
 class _CorrelationFormatter(logging.Formatter):
@@ -80,115 +99,14 @@ class _CorrelationFormatter(logging.Formatter):
 
 
 # ---------------------------------------------------------------------------
-# Global tracing hooks — attached to every agent so all LLM calls are logged.
-# The hooks read run_id / stage from contextvars at fire time.
+# Note: pydantic_ai ≥ 1.30 removed the Hooks/capabilities API.
+# Per-LLM-call and per-tool timing is now done at the stage level inside
+# _run_tool_stage (time.perf_counter around agent.run).
 #
-# Production hook inventory (all wired; stubs marked TODO for external systems):
-#   before_model_request   — log call start, record t0
-#   after_model_request    — log latency                 [metric stub]
-#   model_request_error    — log LLM API error           [metric + alert stub]
-#   output_validate_error  — log schema validation fail  [metric + Sentry stub]
-#   after_tool_execute     — log tool name + latency     [metric stub]
-#   tool_execute_error     — log tool exception          [DLQ stub]
-#   run_error              — log terminal run failure    [PagerDuty stub]
+# For production observability wire in OpenTelemetry via:
+#   Agent(..., instrument=True)   # emits spans for each model request + tool call
+# and configure an OTLP exporter (Langfuse, Grafana, etc.) via env vars.
 # ---------------------------------------------------------------------------
-
-_tracing_hooks: Hooks = Hooks()
-_tool_t0_var: contextvars.ContextVar[float] = contextvars.ContextVar("tool_t0", default=0.0)
-
-
-# -- LLM call lifecycle -----------------------------------------------------
-
-@_tracing_hooks.on.before_model_request
-async def _log_llm_request(ctx: RunContext, request_context) -> object:
-    _call_t0_var.set(time.perf_counter())
-    logger.debug(
-        "llm_call=START  msgs=%d attempt=%d",
-        len(request_context.messages),
-        getattr(ctx, "run_step", 0),
-    )
-    return request_context
-
-
-@_tracing_hooks.on.after_model_request
-async def _log_llm_response(ctx: RunContext, *, request_context, response) -> object:
-    latency = time.perf_counter() - _call_t0_var.get()
-    logger.info(
-        "llm_call=DONE   latency=%.2fs attempt=%d",
-        latency, getattr(ctx, "run_step", 0),
-    )
-    # TODO: prometheus_client.Histogram('pipeline_llm_latency_seconds',
-    #           labelnames=['stage','model']).observe(latency)
-    return response
-
-
-@_tracing_hooks.on.model_request_error
-async def _on_model_error(ctx: RunContext, *, request_context, error: Exception) -> object:
-    logger.error(
-        "llm_call=ERROR  attempt=%d error=%s",
-        getattr(ctx, "run_step", 0), error,
-    )
-    # TODO: prometheus_client.Counter('pipeline_llm_errors_total',
-    #           labelnames=['stage','error_type']).inc()
-    # TODO: if consecutive_errors > 3: pagerduty_alert(run_id, stage, error)
-    raise error
-
-
-# -- Output validation lifecycle --------------------------------------------
-
-@_tracing_hooks.on.output_validate_error
-async def _on_validate_error(
-    ctx: RunContext, *, output_context, output, error: Exception
-) -> object:
-    logger.warning(
-        "output_validate=FAIL attempt=%d — LLM will retry with error feedback. error=%s",
-        getattr(ctx, "run_step", 0), error,
-    )
-    # TODO: prometheus_client.Counter('pipeline_validation_retries_total',
-    #           labelnames=['stage']).inc()
-    # TODO: if retry_count >= max_retries: sentry_sdk.capture_exception(error)
-    raise error
-
-
-# -- Tool call lifecycle ----------------------------------------------------
-
-@_tracing_hooks.on.before_tool_execute
-async def _before_tool(ctx: RunContext, *, call, tool_def, args) -> object:
-    _tool_t0_var.set(time.perf_counter())
-    logger.debug("tool=%-20s event=START args=%s", tool_def.name, args)
-    return args
-
-
-@_tracing_hooks.on.after_tool_execute
-async def _after_tool(ctx: RunContext, *, call, tool_def, args, result) -> object:
-    latency = time.perf_counter() - _tool_t0_var.get()
-    logger.info(
-        "tool=%-20s event=DONE  latency=%.3fs",
-        tool_def.name, latency,
-    )
-    # TODO: prometheus_client.Histogram('pipeline_tool_latency_seconds',
-    #           labelnames=['stage','tool']).observe(latency)
-    return result
-
-
-@_tracing_hooks.on.tool_execute_error
-async def _on_tool_error(
-    ctx: RunContext, *, call, tool_def, args, error: Exception
-) -> object:
-    logger.error("tool=%-20s event=ERROR error=%s", tool_def.name, error)
-    # TODO: dead_letter_queue.publish(run_id=_run_id_var.get(),
-    #           stage=_stage_var.get(), tool=tool_def.name, error=str(error))
-    raise error
-
-
-# -- Run lifecycle ----------------------------------------------------------
-
-@_tracing_hooks.on.run_error
-async def _on_run_error(ctx: RunContext, *, error: BaseException) -> object:
-    logger.critical("run=FAILED  terminal error, no more retries. error=%s", error)
-    # TODO: pagerduty_alert(run_id=_run_id_var.get(), stage=_stage_var.get(), error=error)
-    # TODO: slack_notify(f"Pipeline FAILED run={_run_id_var.get()} stage={_stage_var.get()}")
-    raise error
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +249,6 @@ MAX_TOOL_CALLS_PER_STAGE: int = int(os.getenv("MAX_TOOL_CALLS", "30"))
 
 @dataclass
 class ExtractionState:
-    transcript_lines: list[str]
     sentiment_shifts: list[SentimentShift] = field(default_factory=list)
     pain_points: list[str] = field(default_factory=list)
     competitor_mentions: list[str] = field(default_factory=list)
@@ -360,7 +277,6 @@ class CommitmentsState:
 
 @dataclass
 class ValidationState:
-    transcript: str
     action_items: list[ActionItem]
     validated: list[ValidatedActionItem] = field(default_factory=list)
     _validated_indices: set[int] = field(default_factory=set, repr=False)
@@ -594,29 +510,18 @@ def preprocess_transcript(pipeline_input: PipelineInput) -> CleanTranscript:
 extraction_agent: Agent[ExtractionState, str] = Agent(
     "ollama:qwen2.5:14b",
     deps_type=ExtractionState,
-    capabilities=[_tracing_hooks],
     instructions=(
-        "You are a meeting analyst. Extract all insights from the transcript using the record tools.\n\n"
+        "You are a meeting analyst. Read the transcript in the user message and extract all insights.\n\n"
         "Workflow:\n"
-        "  1. Call search_transcript to find relevant segments\n"
-        "  2. Call record_sentiment_shift for every speaker sentiment change\n"
-        "  3. Call record_pain_point for every customer or team problem\n"
-        "  4. Call record_competitor for every competitor mention\n"
-        "  5. When done, reply with a one-line English summary.\n\n"
+        "  1. Call record_sentiment_shift for every speaker sentiment change you find\n"
+        "  2. Call record_pain_point for every customer or team problem\n"
+        "  3. Call record_competitor for every competitor mention\n"
+        "  4. When done, reply with a one-line English summary.\n\n"
         "polarity argument must be one of: positive, negative, neutral, mixed\n"
         "Call each record tool once per finding. Do not call the same tool with identical args twice."
         + _ENGLISH_JSON_GUARD
     ),
 )
-
-
-@extraction_agent.tool
-def search_transcript(ctx: RunContext[ExtractionState], keyword: str) -> str:
-    """Search the meeting transcript for lines containing keyword. Returns up to 10 matches."""
-    ctx.deps._check_budget("search_transcript")
-    kw = keyword.lower()
-    hits = [line for line in ctx.deps.transcript_lines if kw in line.lower()]
-    return "\n".join(hits[:10]) if hits else f"No lines found for '{keyword}'."
 
 
 @extraction_agent.tool
@@ -662,7 +567,6 @@ def record_competitor(ctx: RunContext[ExtractionState], name: str) -> str:
 commitments_agent: Agent[CommitmentsState, str] = Agent(
     "ollama:qwen2.5:14b",
     deps_type=CommitmentsState,
-    capabilities=[_tracing_hooks],
     instructions=(
         "Extract every explicit and implicit action item from the transcript using record_action_item.\n"
         "Look for conditional verbs (will, should, need to) and timeline markers (by Friday, tomorrow).\n"
@@ -697,7 +601,6 @@ def record_action_item(
 validation_agent: Agent[ValidationState, str] = Agent(
     "ollama:qwen2.5:14b",
     deps_type=ValidationState,
-    capabilities=[_tracing_hooks],
     instructions=(
         "You are a validation critic. For each numbered action item, call validate_action_item.\n"
         "verdict must be 'valid' if clearly agreed upon, 'invalid' if rejected or hypothetical.\n"
@@ -713,7 +616,7 @@ def _inject_items_for_validation(ctx: RunContext[ValidationState]) -> str:
         f"[{i+1}] Owner: {item.owner} | Action: {item.action} | Deadline: {item.deadline}"
         for i, item in enumerate(ctx.deps.action_items)
     )
-    return f"TRANSCRIPT:\n{ctx.deps.transcript}\n\nACTION ITEMS TO VALIDATE:\n{items}"
+    return f"ACTION ITEMS TO VALIDATE:\n{items}"
 
 
 @validation_agent.tool
@@ -938,7 +841,6 @@ async def run_pipeline(
         f"[{e.time:.1f}s] {e.speaker_name}: {e.sentence}"
         for e in entries
     )
-    transcript_lines = raw_text.splitlines()
 
     prior = get_history(meeting_id)
     print(f"\nMeeting : {info.title}")
@@ -960,9 +862,11 @@ async def run_pipeline(
     )
     transcript_text = cap_context("\n".join(clean.turns))
 
-    # Stages 2 + 3 in parallel (tool-call pattern)
-    print("[2/3] Extracting insights and commitments (parallel, tool calls)...")
-    extraction_state = ExtractionState(transcript_lines=transcript_lines)
+    # Stages 2 + 3 submitted concurrently (tool-call pattern)
+    # Note: local Ollama serialises GPU requests, so on a single GPU there is no
+    # wall-clock speedup — both tasks queue behind each other.
+    print("[2+3/4] Extracting insights and commitments (concurrent submission)...")
+    extraction_state = ExtractionState()
     commitments_state = CommitmentsState()
 
     insight, commitments = await asyncio.gather(
@@ -989,11 +893,8 @@ async def run_pipeline(
     )
 
     # Stage 4: Validation (tool-call pattern)
-    print("[3/3] Validating action items (tool calls)...")
-    validation_state = ValidationState(
-        transcript=cap_context(transcript_text),
-        action_items=commitments.action_items,
-    )
+    print("[4/4] Validating action items (tool calls)...")
+    validation_state = ValidationState(action_items=commitments.action_items)
     items_prompt = "\n".join(
         f"[{i+1}] Owner: {item.owner} | Action: {item.action} | Deadline: {item.deadline}"
         for i, item in enumerate(commitments.action_items)
@@ -1007,7 +908,7 @@ async def run_pipeline(
         ValidationResult, force,
     )
 
-    print("[3/3] Done.\n")
+    print("[4/4] Done.\n")
 
     output = PipelineOutput(
         meeting_title=clean.meeting_title,

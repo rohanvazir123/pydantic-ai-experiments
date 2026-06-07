@@ -1,5 +1,19 @@
 # Meeting Transcript Pipeline — TODO
 
+## Table of Contents
+
+1. [Completed](#completed)
+2. [Documentation (initial)](#documentation-create-before-further-implementation)
+3. [Code Changes](#code-changes)
+4. [Testing](#testing)
+5. [Automated Ingestion](#automated-ingestion)
+6. [Observability & Production Hooks](#observability--production-hooks)
+7. [Guardrails & Stability](#guardrails--stability)
+8. [Latency](#latency)
+9. [Documentation (outstanding)](#documentation)
+
+---
+
 ## Completed
 - [x] Build 4-agent async pipeline (PreProcessing → Extraction → Commitments → Validation)
 - [x] Use local Ollama model (qwen2.5:14b / llama3.1:8b switchable)
@@ -80,6 +94,50 @@
       and needs no LLM (saves ~120s per run, eliminates one failure mode)
 - [ ] **Add `max_retries` env var** (default 3) so operators can tune retry budget without
       code changes
+
+## Latency
+
+**Baseline (run 2, qwen2.5:14b, single GPU):**
+
+| Stage | Status | Wall-clock | LLM calls | Input tokens | Output tokens |
+|---|---|---|---|---|---|
+| preprocessing | deterministic | 0.0s | 0 | 0 | 0 |
+| extraction | done | 90.89s | 2 | 4,296 | 125 |
+| commitments | done (parallel) | 42.84s | 1 | 1,968 | 106 |
+| validation | done | 43.02s | 1 | 2,095 | 191 |
+| **Total wall-clock** | | **~176s** | **4** | **8,359** | **422** |
+
+**Root cause of 176s:** `asyncio.gather` submits extraction and commitments concurrently but local Ollama serialises GPU requests — effective total is the sum of all LLM call durations, not the max. Extraction's second LLM call was caused by the `search_transcript` tool forcing a round trip (search → result → record pass) despite the full transcript already being in context.
+
+**Fixes applied (2026-06-06):**
+- Removed `search_transcript` tool — extraction drops from 2 LLM calls to 1 (~45s saved)
+- Removed full transcript from `_inject_items_for_validation` — validation input tokens cut by ~1–2k (~10s saved)
+- Removed `ValidationState.transcript` (unused after above)
+- Fixed stage print labels (`[2/3]`/`[3/3]` → `[2+3/4]`/`[4/4]`)
+- Fixed `pydantic_ai.capabilities.hooks.Hooks` import (removed in pydantic-ai ≥ 1.30); replaced with stage-level timing and OTel note
+- Fixed stale test imports (`ExtractionDeps`/`ValidationDeps` → `ExtractionState`/`ValidationState`)
+
+**Projected after fixes (~103s, still on single GPU):**
+
+| Stage | LLM calls | Approx time |
+|---|---|---|
+| preprocessing | 0 | ~0s |
+| extraction | 1 | ~45s |
+| commitments | 1 | ~43s |
+| validation | 1 | ~15s |
+| **Total (serial on 1 GPU)** | **3** | **~103s** |
+
+**Outstanding remedies to get below 100s:**
+
+- [ ] **Downsize to `qwen2.5:7b`** — ~2× throughput on same GPU, cuts total to ~50s. Biggest single win; quality for structured tool-calling is comparable.
+- [ ] **Merge extraction + commitments into one agent** — eliminates one LLM round trip (~43s). Both agents receive the same transcript; a single `combined_agent` with all 4 record tools runs in one pass.
+- [ ] **Skip validation for small meetings** — if `len(action_items) <= 3`, bypass validation stage entirely. Saves ~15s for the majority of short standups.
+- [ ] **Two Ollama instances for true parallelism** — point extraction and commitments at separate Ollama processes (different ports) so `asyncio.gather` gives real speedup: `max(extraction, commitments) + validation` ≈ 25 + 12 = ~37s.
+- [ ] **Tighten `MAX_AGENT_CONTEXT_CHARS`** — current 50k chars (~12k tokens); reducing to 15k chars (~3.5k tokens) halves prefill time without quality loss for typical meeting lengths.
+
+**Realistic combined target:** ~25s (single GPU, qwen2.5:7b, merged extraction+commitments, validation gated on item count).
+
+---
 
 ## Documentation
 - [ ] Update `README.md` production features table with new hooks and timeout config
