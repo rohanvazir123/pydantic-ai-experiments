@@ -23,9 +23,10 @@ from starlette.responses import Response
 logger = logging.getLogger(__name__)
 
 # Per-request context variables — safe for concurrent async requests
-_request_id_var: ContextVar[str] = ContextVar("request_id", default="")
-_user_id_var:    ContextVar[str] = ContextVar("user_id",    default="")
-_tenant_id_var:  ContextVar[str] = ContextVar("tenant_id",  default="")
+_request_id_var:  ContextVar[str] = ContextVar("request_id",  default="")
+_user_id_var:     ContextVar[str] = ContextVar("user_id",      default="")
+_tenant_id_var:   ContextVar[str] = ContextVar("tenant_id",    default="")
+_session_id_var:  ContextVar[str] = ContextVar("session_id",   default="")
 
 
 def get_request_id() -> str:
@@ -38,6 +39,25 @@ def get_user_id() -> str:
 
 def get_tenant_id() -> str:
     return _tenant_id_var.get()
+
+
+def get_session_id() -> str:
+    return _session_id_var.get()
+
+
+def set_session_id(session_id: str) -> None:
+    """Called by chat/search route handlers after parsing the request body."""
+    _session_id_var.set(session_id)
+
+
+def set_tenant_id(tenant_id: str) -> None:
+    """Called by JWT auth dependency (Phase 9) or route handlers for dev stubs."""
+    _tenant_id_var.set(tenant_id)
+
+
+def set_user_id(user_id: str) -> None:
+    """Called by JWT auth dependency (Phase 9) after token decode."""
+    _user_id_var.set(user_id)
 
 
 class CorrelationIDMiddleware(BaseHTTPMiddleware):
@@ -65,6 +85,7 @@ class StructuredLogMiddleware(BaseHTTPMiddleware):
             "request",
             extra={
                 "request_id": get_request_id(),
+                "session_id": get_session_id() or None,   # set by route handler from ChatRequest body
                 "user_id":    get_user_id() or None,
                 "tenant_id":  get_tenant_id() or None,
                 "method":     request.method,

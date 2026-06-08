@@ -13,7 +13,10 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from knowledge.api.middleware import get_request_id, get_tenant_id, get_user_id
+from knowledge.api.middleware import (
+    get_request_id, get_tenant_id, get_user_id,
+    set_session_id, set_tenant_id,
+)
 from knowledge.api.schemas import APIResponse, ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -34,6 +37,11 @@ async def chat(body: ChatRequest, request: Request) -> APIResponse[ChatResponse]
     """
     pipeline   = _get_pipeline(request)
     request_id = get_request_id() or str(uuid.uuid4())
+    set_session_id(body.session_id)   # inject into structlog context for this request
+    # tenant_id will be set by JWT auth dependency in Phase 9;
+    # for now set it from corpus_ids prefix as a dev stub
+    tenant_hint = body.corpus_ids[0].split(":")[0] if body.corpus_ids else "default"
+    set_tenant_id(get_tenant_id() or tenant_hint)
 
     from knowledge.agent.pipeline import RAGResponse as PipelineResponse
     result: PipelineResponse = await pipeline.run(

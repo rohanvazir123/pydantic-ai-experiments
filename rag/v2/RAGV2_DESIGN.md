@@ -2923,9 +2923,9 @@ Three distinct instrumentation layers, each stored differently:
 
 | Layer | Tool | What it captures |
 |-------|------|-----------------|
-| **Structured request logs** | `structlog` (JSON) | Every HTTP request: request_id, user_id, corpus_id, route, latency_ms, status_code, cache_hit |
-| **LLM + agent traces** | Pydantic AI (built-in) + Logfire | Every `agent.run()` / `agent.run_stream()` call: tool calls, token usage, model, latency — captured automatically |
-| **Ingestion / worker logs** | `structlog` (JSON) | Job lifecycle: job_id, corpus_id, stage, duration_ms, chunk_count, error |
+| **Structured request logs** | `structlog` (JSON) | Every HTTP request: request_id, **session_id**, user_id, tenant_id, corpus_id, route, latency_ms, status_code, cache_hit, pipeline_status, cost_usd |
+| **LLM + agent traces** | Pydantic AI (built-in) + Langfuse | Every `agent.run()` / `agent.run_stream()` call: tool calls, token usage, model, latency — session_id passed as Langfuse `session_id` for conversation-level grouping |
+| **Ingestion / worker logs** | `structlog` (JSON) | Job lifecycle: job_id, corpus_id, tenant_id, stage, duration_ms, chunk_count, error |
 | **Alert events** | `knowledge/observability/alerts.py` | SMTP email + JSONL fallback |
 | **Audit trail** | PostgreSQL `audit_events` table | Who queried what corpus when (for compliance; never deleted) |
 
@@ -3035,7 +3035,16 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up lang
 }
 ```
 
-The `request_id` field is the correlation key across logs, Langfuse/Logfire trace, Prometheus labels, and the `audit_events` table. It is returned in every API response as `RAGResponse.request_id` so the client (and the debug UI panel) can link directly to the trace.
+**`session_id` in logs:** The frontend generates one `session_id` UUID per conversation and sends it in every `ChatRequest` body. The chat route handler extracts it and passes it to the pipeline, which injects it into the structlog context via `contextvars` before emitting the log line. It also flows into Langfuse as the `session_id` argument, grouping all traces for one conversation together. Worker and ingestion logs do not carry `session_id` (they are job-scoped, not session-scoped).
+
+**Correlation keys:**
+
+| Key | Scope | Where it appears |
+|-----|-------|-----------------|
+| `request_id` | Single HTTP request | Logs, Langfuse trace, `audit_events`, `RAGResponse.request_id`, `X-Request-ID` header |
+| `session_id` | Conversation thread (N turns) | Logs, Langfuse session grouping, `conversations` table, `messages` table |
+| `user_id` | All requests from one user | Logs (hashed), `audit_events`, `user_memories`, `conversations` |
+| `tenant_id` | All requests from one tenant | Logs, all PostgreSQL tables (RLS), Redis quota keys |
 
 #### `backend/logs/` directory
 
