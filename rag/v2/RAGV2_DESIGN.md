@@ -2,36 +2,58 @@
 
 ## Table of Contents
 
+### Overview
 - [System Diagram](#system-diagram)
 - [User Query Data Flow](#user-query-data-flow)
-- [Architecture Proposal — Enterprise RAG v2](#architecture-proposal--enterprise-rag-v2)
-  - [Goals](#goals)
-  - [System Design Constraints](#system-design-constraints)
-  - [Module Layout](#module-layout)
-  - [Knowledge Layer — Multi-Corpus Design](#knowledge-layer--multi-corpus-design)
-  - [Ingestion Pipeline — Docling-Graph Parallel Paths](#ingestion-pipeline--docling-graph-parallel-paths)
-  - [Redis Streams + Async Worker Model](#redis-streams--async-worker-model)
-  - [Caching Architecture](#caching-architecture)
-  - [Retrieval Pipeline](#retrieval-pipeline)
-  - [Confidence-Based Scoring](#confidence-based-scoring)
-  - [Confidence-Aware Pipeline](#confidence-aware-pipeline)
-  - [Model Tiering](#model-tiering)
-  - [Query Validation & Hook System](#query-validation--hook-system)
-  - [Guardrail Architecture — Key Principles](#guardrail-architecture--key-principles)
-  - [Error Handling Strategy](#error-handling-strategy)
-  - [Retry & Resilience Strategy](#retry--resilience-strategy)
-  - [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
-  - [Memory Architecture](#memory-architecture)
-  - [Log Storage](#log-storage)
-  - [API Layer](#api-layer)
-  - [Docker Compose — Local Dev](#docker-compose--local-dev)
-  - [Packaging & Developer Install](#packaging--developer-install)
-  - [Cloud Deployment — Production](#cloud-deployment--production)
-  - [SaaS Deployment Model](#saas-deployment-model)
-  - [Evaluation System — Offline & Online Metrics](#evaluation-system--offline--online-metrics)
-  - [Load & Chaos Testing Strategy](#load--chaos-testing-strategy)
-  - [Docling-Graph Evaluation Checklist](#docling-graph-evaluation-checklist)
-  - [Implementation Phases](#implementation-phases)
+- [Goals](#goals)
+- [System Design Constraints](#system-design-constraints)
+- [Module Layout](#module-layout)
+
+### Data & Storage
+- [Knowledge Layer — Multi-Corpus Design](#knowledge-layer--multi-corpus-design)
+- [Caching Architecture](#caching-architecture)
+- [Memory Architecture](#memory-architecture)
+- [Log Storage](#log-storage)
+
+### Ingestion
+- [Ingestion Pipeline — Docling-Graph Parallel Paths](#ingestion-pipeline--docling-graph-parallel-paths)
+- [Knowledge Graph Extraction — Ontology and docling-graph API](#knowledge-graph-extraction--ontology-and-docling-graph-api)
+- [Apache AGE — Graph Store Design](#apache-age--graph-store-design-knowledgestoregraphpy)
+- [Docling-Graph Evaluation Checklist](#docling-graph-evaluation-checklist)
+
+### Retrieval & Ranking
+- [Retrieval Pipeline](#retrieval-pipeline)
+- [Confidence-Based Scoring](#confidence-based-scoring)
+
+### Agent & Generation
+- [Confidence-Aware Pipeline](#confidence-aware-pipeline)
+- [Model Tiering](#model-tiering)
+
+### Reliability & Safety
+- [Redis Streams + Async Worker Model](#redis-streams--async-worker-model)
+- [Query Validation & Hook System](#query-validation--hook-system)
+- [Guardrail Architecture — Key Principles](#guardrail-architecture--key-principles)
+- [Error Handling Strategy](#error-handling-strategy)
+- [Retry & Resilience Strategy](#retry--resilience-strategy)
+
+### Security
+- [Security Layer — JWT, JWE, HTTPS, RBAC](#security-layer--jwt-jwe-https-rbac)
+
+### API & Observability
+- [API Layer](#api-layer)
+
+### Deployment
+- [Docker Compose — Local Dev](#docker-compose--local-dev)
+- [Packaging & Developer Install](#packaging--developer-install)
+- [Cloud Deployment — Production](#cloud-deployment--production)
+- [SaaS Deployment Model](#saas-deployment-model)
+
+### Quality & Testing
+- [Evaluation System — Offline & Online Metrics](#evaluation-system--offline--online-metrics)
+- [Load & Chaos Testing Strategy](#load--chaos-testing-strategy)
+
+### Implementation Tracking
+- [Implementation Phases](#implementation-phases)
 - [In Progress — Rate Limiting, Timeouts & Retries](#in-progress--rate-limiting-timeouts--retries)
 - [Queued — Production Hardening](#queued--production-hardening)
 - [Done](#done)
