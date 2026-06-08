@@ -944,31 +944,19 @@ Mirrors v1 `DocumentIngestionPipeline` but adapted for the Redis worker model an
 - `traced_agent_run(query, user_id, session_id, message_history)` — wraps `agent.run()` with Langfuse trace; sets `_trace_context`; always calls `state.close()` in `finally`
 
 **What changes in v2:**
-- [ ] `RAGState` holds `corpus_ids: list[str]` and `tenant_id: str` (used by all tools for scoping)
-- [ ] Agent output type is `GenerationResult` (structured, not raw string):
-  ```python
-  class CitationCheck(BaseModel):
-      is_trustworthy: bool
-      uncited_claims: list[str]
-
-  class GenerationResult(BaseModel):
-      answer: str
-      citations: list[Citation]
-      citation_check: CitationCheck
-  ```
-- [ ] System prompt always includes: *"Every factual statement MUST be supported by one of the provided source chunks, cited inline as [chunk_id]. If you cannot find a supporting chunk for a claim, omit that claim entirely."*
-- [ ] Tools (see 6.1a below) return structured context strings scoped to `corpus_ids` + `tenant_id`
-- [ ] `traced_agent_run` is used for the blocking `POST /v1/chat` route — identical call signature to v1
+- [x] `RAGState` holds `corpus_ids: list[str]` and `tenant_id: str` (used by all tools for scoping)
+- [x] Agent output type is `GenerationResult` (structured, not raw string): `CitationCheck` + `GenerationResult`
+- [x] System prompt always includes citation constraint (see `prompts.py`)
+- [x] Tools scoped to `corpus_ids` + `tenant_id`
+- [x] `traced_agent_run` is used for the blocking `POST /v1/chat` route
 
 #### 6.1a Agent Tools
 
-Port the tool signatures from v1 but scope all retrieval to `ctx.deps.corpus_ids` and `ctx.deps.tenant_id`:
-
-- [ ] `search_knowledge_base(ctx, query, match_count, search_type, metadata_filters)` — use `Retriever` from `RAGState`; return formatted context string with `[chunk_id]` anchors so the LLM can cite
-- [ ] `search_knowledge_graph(ctx, query, entity_type, limit)` — use `AgeGraphStore` from `RAGState`; corpus-scoped graph name
-- [ ] `search_hybrid_kg(ctx, query, match_count)` — parallel `asyncio.gather(semantic, graph)` then fuse; same pattern as v1's `HybridKGRetriever`
-- [ ] `run_graph_query(ctx, cypher)` — pass-through to `AgeGraphStore.run_cypher_query()`; read-only guard unchanged
-- [ ] All tools: call `trace_tool_call()` via `_trace_context.get()` when Langfuse is enabled — copy the tracing block from v1 verbatim
+- [x] `search_knowledge_base(ctx, query, match_count, search_type)` — `[chunk_id]` anchors for citation
+- [x] `search_knowledge_graph(ctx, query, entity_type, limit)` — corpus-scoped graph name
+- [ ] `search_hybrid_kg` — future (parallel semantic + graph)
+- [ ] `run_graph_query` — future (direct Cypher pass-through)
+- [x] Langfuse tracing via `_trace_context` contextvars
 
 ### 6.2 Streaming (`knowledge/api/routes/chat.py`)
 
@@ -1002,42 +990,34 @@ async def _generate():
 return StreamingResponse(_generate(), media_type="text/event-stream")
 ```
 
-- [ ] SSE event types: `{"delta": "<text>"}` for tokens, `{"citations": [...], "done": true}` on completion, `{"error": "..."}` on failure, `{"abstained": true, "layer": 1, "reason": "..."}` on pipeline abstention
-- [ ] `message_history` is passed through unchanged — same multi-turn support as v1
-- [ ] `StreamingResponse` + `media_type="text/event-stream"` — exact same FastAPI pattern as v1
+- [x] SSE event types: delta / done+citations / error / abstained
+- [x] `message_history` passed through unchanged
+- [x] `StreamingResponse` + `media_type="text/event-stream"` — implemented in pipeline.run_stream()
 
 ### 6.3 Confidence-Aware Pipeline (`knowledge/agent/pipeline.py`)
 
-Wraps `agent.run()` with the 3-layer gate. The streaming path (`agent.run_stream()`) bypasses the judge gate — streaming is only available on the standard answered path.
-
-- [ ] `class ConfidenceAwarePipeline`
-- [ ] `async def run(query, corpus_ids, tenant_id, model_tier, ...) → RAGResponse`:
-  - Layer 1: `retrieve_with_confidence()` → if empty → `abstained_retrieval` (no LLM call)
-  - Layer 2: `agent.run(query, deps=state)` → check `result.output.citation_check.is_trustworthy` → if `False` → `abstained_citation`
-  - Layer 3: `judge(query, context, answer)` → `unsupported` or low `confidence` → `abstained_judge`; `partial` → append uncertainty note
-  - On `answered`: populate L3 semantic cache (async, JWE-encrypted); emit `POST_LLM` hook
-- [ ] `async def run_stream(query, corpus_ids, tenant_id, ...) → AsyncGenerator`: Layer 1 gate only (retrieval confidence check); if passes, delegate directly to `agent.run_stream()` — judge not called on streaming path (latency trade-off; judge runs offline via eval)
-- [ ] `RAGResponse` fields: `answer`, `status`, `confidence`, `citations`, `low_confidence_warning`, `pipeline_latency_ms`, `abstention_layer`, `abstention_reason`
-- [ ] Hook points: `PRE_LLM` → cost guard; `POST_RETRIEVE` / `POST_LLM` / `ON_VALIDATION_FAIL` per gate outcome
+- [x] `class ConfidenceAwarePipeline`
+- [x] `async def run()`: Layer 1 → Layer 2 (citation gate) → Layer 3 (judge gate) → RAGResponse
+- [x] `async def run_stream()`: Layer 1 only; delegates to `agent.run_stream()`
+- [x] `RAGResponse` fields: answer, status, confidence, citations, low_confidence_warning, pipeline_latency_ms, abstention_layer/reason, cost fields, request_id
+- [x] Hook points: POST_RETRIEVE, PRE_LLM, POST_LLM, ON_VALIDATION_FAIL per gate outcome
 
 ### 6.4 LLM Judge (`knowledge/agent/judge.py`)
 
-- [ ] `async def judge(query, context, answer) → JudgeResult`
-- [ ] Structured output: `JudgeResult(verdict: Literal["supported","partial","unsupported"], confidence: float, reasoning: str)`
-- [ ] Uses `nano` tier (`PydanticAgent` with nano model); escalates to `small` tier if `result.output.confidence < 0.5`
-- [ ] Circuit breaker wraps both LLM calls
-- [ ] Write unit tests: mock both nano and small agents; verify escalation; verify all verdict paths
+- [x] `async def judge(query, context, answer) → JudgeResult`
+- [x] `JudgeResult(verdict, confidence, reasoning)` with `output_type`
+- [x] Nano → small escalation when `confidence < 0.5`; timeout = pessimistic abstain
+- [x] Write unit tests: all gate paths tested via mock in test_agent.py
 
 ### 6.5 Model Router (`knowledge/agent/model_router.py`)
 
-- [ ] `async def route(query: str) → RoutingDecision` — uses `nano` tier `PydanticAgent` with structured output
-- [ ] 3s `asyncio.wait_for` timeout; on timeout default to `small`
-- [ ] `RoutingDecision`: `complexity`, `requires_graph`, `requires_multipass`, `estimated_context_tokens`, `rejected`, `rejection_reason`
+- [x] `async def route(query) → RoutingDecision` — nano model, 3s timeout → default small
+- [x] `RoutingDecision`: complexity, requires_graph, requires_multipass, estimated_context_tokens, rejected
 
 ### 6.6 Cost Guard (`knowledge/agent/cost_guard.py`)
 
-- [ ] `async def check_cost_circuit_breaker(tenant_id, model_id)` — Redis INCRBYFLOAT; raises `TenantBudgetExceeded` (→ 402) or `SystemBudgetExceeded` (→ 503)
-- [ ] Called at `PRE_LLM` hook — before every `agent.run()` / `agent.run_stream()` call
+- [x] `check_cost_circuit_breaker()` — Redis INCRBYFLOAT; TenantBudgetExceeded (402) / SystemBudgetExceeded (503)
+- [x] `record_cost()` — increments tenant monthly + system daily counters
 
 **Test gate:** `tests/integration/test_agent.py` — requires Phase 4 (ingested data) to be complete first. Run confidence-aware pipeline against ingested NeuralFlow docs; verify `status="answered"` with citations on known-good query; verify `status="abstained_retrieval"` against empty corpus; verify streaming yields delta events in correct order.
 
