@@ -505,6 +505,88 @@ frontend/
 
 ---
 
+## Phase 0.5 — Seed Data & Dev Bootstrap
+
+> Gate: `make seed` runs end-to-end without errors; the system comes up with a working default tenant, default corpus, and sample documents ingested so Phase 5+ tests have data to query.
+>
+> **Design refs:** [DATASTORE.md §3.17–3.18 tenants/quotas](DATASTORE.md#317-table-tenants) · [Knowledge Layer — Multi-Corpus Design](RAGV2_DESIGN.md#knowledge-layer--multi-corpus-design)
+
+### What is already seeded (in migrations)
+
+| Object | Where | Details |
+|--------|-------|---------|
+| Default tenant | `006_billing.sql` | `id='default'`, tier='free', admin='admin@localhost' |
+| Default tenant quotas | `006_billing.sql` | 500 queries/day, 10 RPM, LLM disabled (free tier) |
+| Default system prompt | `008_memory.sql` | `rag_agent_v1`, active=true |
+
+### What is missing and must be seeded
+
+- [ ] **Default dev user credentials** — a local test API token so `make seed` can call `POST /auth/token` without a real identity provider. Write to `.env` as `DEV_USER_EMAIL` + `DEV_USER_PASSWORD`.
+- [ ] **Default corpus config** — set `CORPUS_CONFIGS_JSON` in `.env` to include a `default:neuralflow` corpus pointing to `../../rag/documents/`. This is the NeuralFlow AI sample document set used by all retrieval quality tests.
+- [ ] **Sample document ingestion** — ingest `../../rag/documents/` (15 files: MD, PDF, DOCX, MP3) into `default:neuralflow` corpus. Must complete without errors; verify chunk count > 0 after.
+- [ ] **`make seed` Makefile target** — runs all of the above in order; idempotent (safe to run twice).
+- [ ] **`make dev-reset` Makefile target** — drops all data and re-seeds (useful after schema changes). Asks for confirmation before destructive step.
+- [ ] **`scripts/seed.py`** — Python script that:
+  1. Checks DB + Redis + Ollama connectivity (fails fast with clear error if any is down)
+  2. Runs all migrations (`psql $DATABASE_URL -f migrations/*.sql` in order)
+  3. Updates `.env` with default corpus config if `CORPUS_CONFIGS_JSON` is empty
+  4. Runs `DocumentIngestionPipeline` directly (bypassing Redis worker) on `../../rag/documents/`
+  5. Prints summary: `✓ N chunks ingested across M documents`
+
+### Default corpus config (for `.env`)
+
+```json
+[{
+  "id": "neuralflow",
+  "display_name": "NeuralFlow AI Docs",
+  "source_folders": ["../../rag/documents"],
+  "allowed_roles": ["reader", "writer", "admin"],
+  "enable_graph_extraction": false,
+  "metadata_tags": {"corpus": "neuralflow", "env": "dev"}
+}]
+```
+
+`corpus_id` used throughout: `default:neuralflow` (tenant `default` + corpus `neuralflow`).
+
+### Sample documents (`../../rag/documents/`)
+
+| File | Type | Used by |
+|------|------|---------|
+| `company-overview.md` | Markdown | Gold dataset queries: company info |
+| `mission-and-goals.md` | Markdown | Gold dataset queries: mission/vision |
+| `team-handbook.md` | Markdown | Gold dataset queries: PTO, benefits, headcount |
+| `implementation-playbook.md` | Markdown | Gold dataset queries: methodology |
+| `q4-2024-business-review.pdf` | PDF | Gold dataset queries: Q4 results |
+| `client-review-globalfinance.pdf` | PDF | Gold dataset queries: success stories |
+| `Recording1–4.mp3` | Audio (Whisper) | Transcription pipeline tests |
+| `meeting-notes-*.docx` | DOCX | Standard converter path tests |
+| `*_paper.pdf` | PDF | BIS/CLIP/RAG academic PDFs |
+
+**Test gate:**
+```bash
+make seed
+# Verify:
+python -c "
+import asyncio
+from knowledge.store.vector import PostgresHybridStore
+from knowledge.config.settings import load_settings
+
+async def check():
+    s = load_settings()
+    store = PostgresHybridStore(settings=s)
+    await store.initialize()
+    count = await store.get_chunk_count('neuralflow', 'default')
+    print(f'Chunk count: {count}')
+    assert count > 50, f'Expected > 50 chunks, got {count}'
+    await store.close()
+    print('✓ Seed verified')
+
+asyncio.run(check())
+"
+```
+
+---
+
 ## Phase 1 — Foundation: Config, Migrations, DB Schema
 
 > Gate: settings load cleanly; all migrations run on a blank DB; RLS enforced.

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-obs migrate test test-unit lint fix typecheck check \
+.PHONY: help dev dev-obs migrate seed dev-reset test test-unit lint fix typecheck check \
         pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres
 
 # ── Development ───────────────────────────────────────────────────────────────
@@ -17,6 +17,21 @@ migrate:
 		psql "$$DATABASE_URL" -f "$$f"; \
 	done
 	@echo "All migrations complete."
+
+# ── Seed / bootstrap ─────────────────────────────────────────────────────────
+
+seed:
+	@echo "Running migrations..."
+	@$(MAKE) migrate
+	@echo "Seeding default tenant, corpus, and sample documents..."
+	uv run python scripts/seed.py
+	@echo "Seed complete. Run 'make test-unit' to verify."
+
+dev-reset:
+	@echo "WARNING: This will drop all data and re-seed."
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
+	psql "$$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	@$(MAKE) seed
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
@@ -70,4 +85,5 @@ help:
 	@echo "Testing:        make test | make test-unit | make test-integration"
 	@echo "Code quality:   make fix | make typecheck | make check"
 	@echo "Models:         make pull-models"
+	@echo "Seed:           make seed | make dev-reset"
 	@echo "Chaos:          make chaos-kill-redis | chaos-kill-ollama | chaos-kill-postgres"
