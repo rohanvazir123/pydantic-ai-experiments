@@ -1051,21 +1051,21 @@ Wraps `agent.run()` with the 3-layer gate. The streaming path (`agent.run_stream
 
 ### 7.1 Hook System (`knowledge/hooks/`)
 
-- [ ] `HookRegistry`, `HookPoint` enum (all 13 points), `Hook` type alias
-- [ ] `HookContext` dataclass: query, corpus_id, user_id, routing_decision, retrieved_chunks, llm_response, error
-- [ ] `fire(point, ctx) → ctx` — runs hooks in priority order; stops on `HookAbort`
-- [ ] Register placeholder hooks at app startup: `audit_log_hook`, `pii_redact_hook`, `response_filter_hook`, `metrics_hook`
-- [ ] Write unit tests: `tests/unit/test_hooks.py` — verify priority ordering; verify `HookAbort` stops chain
+- [x] `HookRegistry`, `HookPoint` enum (all 13 points), `Hook` type alias
+- [x] `HookContext` dataclass: query, corpus_id, user_id, routing_decision, retrieved_chunks, llm_response, error
+- [x] `fire(point, ctx) → ctx` — runs hooks in priority order; stops on `HookAbort`
+- [x] Register placeholder hooks at app startup: `audit_log_hook`, `pii_redact_hook`, `response_filter_hook`, `metrics_hook`
+- [x] Write unit tests: `tests/unit/test_hooks_and_validation.py` — verify priority ordering; verify `HookAbort` stops chain
 
 ### 7.2 Validation Pipeline (`knowledge/validation/pipeline.py`)
 
-- [ ] V1: Pydantic schema validation (handled by FastAPI automatically; this step fires the hook)
-- [ ] V2: Length guard — reject if `len(query) > settings.max_query_chars`
+- [x] V1: Pydantic schema validation (handled by FastAPI automatically; this step fires the hook)
+- [x] V2: Length guard — reject if `len(query) > settings.max_query_chars`
 - [ ] V3: Language detection (optional; skip if `allowed_languages` is `*`)
-- [ ] V4: Prompt injection detector — regex patterns + embedding-similarity against known attack patterns
-- [ ] V5: Content policy check — nano model, structured output `ContentPolicyResult(verdict, confidence, reason)`
-- [ ] V6: Corpus access check — JWT roles vs. `CorpusConfig.allowed_roles`; checked before any DB I/O
-- [ ] Write unit tests: `tests/unit/test_validation.py` — test each layer independently; stub V5 model
+- [x] V4: Prompt injection detector — regex patterns + embedding-similarity against known attack patterns
+- [x] V5: Content policy check — nano model, structured output `ContentPolicyResult(verdict, confidence, reason)`
+- [x] V6: Corpus access check — JWT roles vs. `CorpusConfig.allowed_roles`; checked before any DB I/O
+- [x] Write unit tests: `tests/unit/test_hooks_and_validation.py` — test each layer independently; stub V5 model
 
 **Test gate:** end-to-end request through validation + hook + router returns correct 422/400/403 for each failure mode.
 
