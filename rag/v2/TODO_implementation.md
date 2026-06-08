@@ -489,6 +489,8 @@ frontend/
 ## Phase 0 — Housekeeping & Pre-Flight
 
 > Gate: all existing tests pass; clean slate for new modules.
+>
+> **Design refs:** [Implementation Phases](RAGV2_DESIGN.md#implementation-phases) (Phase A checklist)
 
 - [ ] Run `python -m pytest rag/tests/ -m "not integration" -v` — confirm 0 failures after the housekeeping moves from RAGV2_DESIGN.md Phase A: `kg/legal/` → `misc/kg_legal_cuad/`, `rag/legal/` → `misc/kg_legal_cuad/rag_data/`, `rag/ingestion/cuad_ingestion.py` → `misc/kg_legal_cuad/`, `rag/tests/knowledge_graph/` → `misc/kg_legal_cuad/tests/kg/`
 - [ ] Verify `ruff check rag/ && ruff format rag/` clean
@@ -506,6 +508,8 @@ frontend/
 ## Phase 1 — Foundation: Config, Migrations, DB Schema
 
 > Gate: settings load cleanly; all migrations run on a blank DB; RLS enforced.
+>
+> **Design refs:** [Module Layout](RAGV2_DESIGN.md#module-layout) · [Knowledge Layer — Multi-Corpus Design](RAGV2_DESIGN.md#knowledge-layer--multi-corpus-design) · [DATASTORE.md](DATASTORE.md) (full schema reference)
 
 ### 1.1 Settings (`knowledge/config/settings.py`)
 
@@ -544,6 +548,8 @@ frontend/
 ## Phase 2 — Storage Layer
 
 > Gate: each store can connect, write, read, and close without leaking connections. No ingestion yet.
+>
+> **Design refs:** [Caching Architecture](RAGV2_DESIGN.md#caching-architecture) · [Apache AGE — Graph Store Design](RAGV2_DESIGN.md#apache-age--graph-store-design-knowledgestoregraphpy) · [DATASTORE.md §3 PostgreSQL](DATASTORE.md#3-main-postgresql-database) · [DATASTORE.md §4 AGE](DATASTORE.md#4-apache-age-graph-database) · [DATASTORE.md §5 Redis](DATASTORE.md#5-redis)
 
 ### 2.1 Vector Store (`knowledge/store/vector.py`)
 
@@ -606,6 +612,8 @@ Port from `kg/age_graph_store.py` with these important v2 changes — read `RAGV
 ## Phase 3 — Message Bus (Redis Streams)
 
 > Gate: a job can be published, consumed, retried, and dead-lettered. Circuit breaker state shared across multiple consumer instances.
+>
+> **Design refs:** [Redis Streams + Async Worker Model](RAGV2_DESIGN.md#redis-streams--async-worker-model) · [Retry & Resilience Strategy](RAGV2_DESIGN.md#retry--resilience-strategy) · [DATASTORE.md §5.3 Streams](DATASTORE.md#53-streams-and-consumer-groups)
 
 ### 3.1 Backoff (`knowledge/bus/backoff.py`)
 
@@ -650,6 +658,8 @@ Port from `kg/age_graph_store.py` with these important v2 changes — read `RAGV
 ## Phase 4 — Ingestion Pipeline
 
 > Gate: a single document can be ingested end-to-end (Docling → chunks → embeddings → vector store) via the worker. No API or retrieval needed yet.
+>
+> **Design refs:** [Ingestion Pipeline — Docling-Graph Parallel Paths](RAGV2_DESIGN.md#ingestion-pipeline--docling-graph-parallel-paths) · [Knowledge Graph Extraction — Ontology and docling-graph API](RAGV2_DESIGN.md#knowledge-graph-extraction--ontology-and-docling-graph-api) · [Docling-Graph Evaluation Checklist](RAGV2_DESIGN.md#docling-graph-evaluation-checklist)
 >
 > **Architecture anchor:** v2 carries forward the same Docling integration patterns as v1 (`rag/ingestion/pipeline.py` + `rag/ingestion/chunkers/docling.py`). The core logic is not rewritten — it is lifted and adapted for async workers, corpus scoping, and Redis caching. Read those files before implementing each section below.
 >
@@ -870,6 +880,8 @@ Mirrors v1 `DocumentIngestionPipeline` but adapted for the Redis worker model an
 ## Phase 5 — Retrieval Pipeline
 
 > Gate: a query returns ranked, confidence-scored results from the vector store with all 3 cache layers wired.
+>
+> **Design refs:** [Retrieval Pipeline](RAGV2_DESIGN.md#retrieval-pipeline) · [Confidence-Based Scoring](RAGV2_DESIGN.md#confidence-based-scoring) · [Caching Architecture](RAGV2_DESIGN.md#caching-architecture) · [User Query Data Flow](RAGV2_DESIGN.md#user-query-data-flow) · [PROMPTS.md §5 LLM Judge](PROMPTS.md#5-llm-judge)
 
 ### 5.1 Semantic Cache (`knowledge/retrieval/semantic_cache.py`)
 
@@ -931,6 +943,8 @@ Mirrors v1 `DocumentIngestionPipeline` but adapted for the Redis worker model an
 ## Phase 6 — Agent & Confidence-Aware Pipeline
 
 > Gate: the 3-layer gate orchestrator correctly abstains or answers; streaming SSE works end-to-end in the browser.
+>
+> **Design refs:** [Confidence-Aware Pipeline](RAGV2_DESIGN.md#confidence-aware-pipeline) · [Model Tiering](RAGV2_DESIGN.md#model-tiering) · [User Query Data Flow](RAGV2_DESIGN.md#user-query-data-flow) · [PROMPTS.md](PROMPTS.md) (all agent prompts, judge, router, fact extractor)
 >
 > **Architecture anchor:** copy `rag/agent/rag_agent.py` and `rag/api/app.py` as the starting point. The Pydantic AI patterns — `PydanticAgent` singleton, `RAGState` lazy init with `asyncio.Lock`, `@agent.tool` async functions, `contextvars.ContextVar` for per-coroutine tracing, `agent.run()` / `agent.run_stream()` — are all carried forward unchanged. Only the tool implementations and the structured output model change.
 
@@ -1027,6 +1041,8 @@ return StreamingResponse(_generate(), media_type="text/event-stream")
 
 > Gate: all validation steps fire in correct order; hooks can intercept pipeline; bad queries are rejected before any DB or LLM call.
 >
+> **Design refs:** [Query Validation & Hook System](RAGV2_DESIGN.md#query-validation--hook-system) · [Guardrail Architecture — Key Principles](RAGV2_DESIGN.md#guardrail-architecture--key-principles) · [PROMPTS.md §2 V5 Content Policy](PROMPTS.md#2-v5--content-policy-classifier)
+>
 > **Note:** the Model Router (`knowledge/agent/model_router.py`) is implemented in Phase 6 because it is used inside the agent pipeline. Phase 7 covers only the input validation chain and hook system.
 
 ### 7.1 Hook System (`knowledge/hooks/`)
@@ -1054,6 +1070,8 @@ return StreamingResponse(_generate(), media_type="text/event-stream")
 ## Phase 8 — API Layer
 
 > Gate: all REST endpoints return correct status codes and response envelopes; streaming SSE works in browser.
+>
+> **Design refs:** [API Layer](RAGV2_DESIGN.md#api-layer) · [Error Handling Strategy](RAGV2_DESIGN.md#error-handling-strategy) · [System Diagram](RAGV2_DESIGN.md#system-diagram) · [Log Storage](RAGV2_DESIGN.md#log-storage)
 
 ### 8.1 FastAPI App Factory (`knowledge/api/app.py`)
 
@@ -1107,6 +1125,8 @@ return StreamingResponse(_generate(), media_type="text/event-stream")
 ## Phase 9 — Security Layer
 
 > Gate: JWT auth rejects invalid tokens; RBAC denies cross-corpus access; JWE round-trip works; rate limiting returns 429.
+>
+> **Design refs:** [Security Layer — JWT, JWE, HTTPS, RBAC](RAGV2_DESIGN.md#security-layer--jwt-jwe-https-rbac) · [SaaS Deployment Model](RAGV2_DESIGN.md#saas-deployment-model) (tenant quota enforcement)
 
 ### 9.1 JWT Auth (`knowledge/api/auth.py`)
 
@@ -1143,6 +1163,8 @@ return StreamingResponse(_generate(), media_type="text/event-stream")
 ## Phase 10 — Ingestion Scheduler
 
 > Gate: a scheduled job fires at its configured cron time, triggers an ingestion job, and updates `next_run_at`; incremental mode skips unchanged files.
+>
+> **Design refs:** [Module Layout — knowledge/scheduler/](RAGV2_DESIGN.md#module-layout) · [DATASTORE.md §3.20 scheduled\_jobs](DATASTORE.md#320-table-scheduled_jobs)
 
 ### 10.1 Job Store (`knowledge/scheduler/job_store.py`)
 
@@ -1174,7 +1196,7 @@ return StreamingResponse(_generate(), media_type="text/event-stream")
 
 > Gate: all five memory tiers wired; conversation history loaded server-side; user memories extracted and retrieved; pruning jobs run without error.
 >
-> Full design: `basics/rag/memory/MEMORY_DESIGN.md`. This phase implements that design.
+> **Design refs:** [Memory Architecture](RAGV2_DESIGN.md#memory-architecture) · [basics/rag/memory/MEMORY_DESIGN.md](../../basics/rag/memory/MEMORY_DESIGN.md) (full 5-tier design, pruning/eviction, framework assessment) · [DATASTORE.md §3.7–3.10](DATASTORE.md#37-table-conversations) (conversations, messages, user\_memories, system\_prompts)
 
 ### 10.5.1 Tier 2 — Episodic Memory (`knowledge/memory/conversation_store.py`)
 
@@ -1265,6 +1287,8 @@ Run via APScheduler (same instance as the ingestion scheduler in Phase 10):
 ## Phase 11 — Observability
 
 > Gate: Prometheus scrape returns all defined metrics; Langfuse trace appears for each LLM call; alert email sends on circuit open.
+>
+> **Design refs:** [Log Storage](RAGV2_DESIGN.md#log-storage) (structlog ring buffer, Langfuse, per-environment storage) · [Cloud Deployment — Observability Stack](RAGV2_DESIGN.md#cloud-deployment--production)
 
 ### 11.1 Prometheus Metrics (`knowledge/observability/metrics.py`)
 
@@ -1305,6 +1329,8 @@ Run via APScheduler (same instance as the ingestion scheduler in Phase 10):
 ## Phase 12 — Evaluation System
 
 > Gate: offline eval run completes end-to-end; regression detection fires correctly; CI blocks on metric regression.
+>
+> **Design refs:** [Evaluation System — Offline & Online Metrics](RAGV2_DESIGN.md#evaluation-system--offline--online-metrics) · [TEST_QA_REFERENCE.md](TEST_QA_REFERENCE.md) (metric formulas, thresholds, regression tolerances) · [TESTS.md §8 Evaluation System](TESTS.md#8-evaluation-system-tests)
 
 ### 12.1 Gold Dataset (`knowledge/evaluation/datasets.py` + `data/`)
 
@@ -1361,6 +1387,8 @@ Run via APScheduler (same instance as the ingestion scheduler in Phase 10):
 ## Phase 13 — Docker Compose & Infra
 
 > Gate: `docker compose up` brings up all core services; `docker compose --profile observability up` adds monitoring.
+>
+> **Design refs:** [Docker Compose — Local Dev](RAGV2_DESIGN.md#docker-compose--local-dev) · [Packaging & Developer Install](RAGV2_DESIGN.md#packaging--developer-install) · [infra/nginx/README.md](infra/nginx/README.md) · [infra/grafana/README.md](infra/grafana/README.md)
 
 ### 13.1 Dockerfile (`backend/Dockerfile`)
 
@@ -1691,6 +1719,8 @@ http {
 ## Phase 14 — Frontend
 
 > Gate: chat UI works end-to-end in browser (SSE streaming, citations, feedback); ingestion panel submits jobs and shows SSE progress; scheduled jobs CRUD works.
+>
+> **Design refs:** [System Diagram](RAGV2_DESIGN.md#system-diagram) (frontend→Nginx→API connection) · [frontend/README.md](frontend/README.md) (connection architecture, SSE pattern, auth flow) · [UI Design](TODO_implementation.md#ui-design) (wireframes, design tokens, responsive behaviour)
 
 ### 14.1 Project Setup
 
@@ -1808,6 +1838,8 @@ Conversation history is already in `ConversationSidebar.tsx` — it just needs t
 ## Phase 15 — CI/CD & Cloud IaC
 
 > Gate: GitHub Actions pipeline runs full test suite on every PR; staging deploy triggered on main merge; Helm chart deploys API + workers to K8s.
+>
+> **Design refs:** [Cloud Deployment — Production](RAGV2_DESIGN.md#cloud-deployment--production) · [TESTS.md §12 CI Integration](TESTS.md#12-ci-integration)
 
 ### 15.0 Frontend Deployment — Docker / Node.js (primary)
 
@@ -1929,6 +1961,8 @@ Enable `output: "standalone"` in `next.config.ts` — produces a self-contained 
 ## Phase 16 — Load & Chaos Testing
 
 > Gate: all Phase 1 SLA numbers are validated as measurements, not hypotheses. Every chaos scenario passes its acceptance criteria.
+>
+> **Design refs:** [Load & Chaos Testing Strategy](RAGV2_DESIGN.md#load--chaos-testing-strategy) · [TEST_QA_REFERENCE.md §6 Scale Test Plan](TEST_QA_REFERENCE.md#6-scale-test-plan) · [TEST_QA_REFERENCE.md §7 Chaos](TEST_QA_REFERENCE.md#7-chaos-and-resilience-test-plan) · [TESTS.md §9–10](TESTS.md#9-load-tests)
 
 ### 16.1 Locust Setup (`tests/load/locustfile.py`)
 
