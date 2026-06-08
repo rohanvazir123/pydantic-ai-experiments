@@ -132,7 +132,7 @@ def ensure_corpus_config() -> None:
 
 # ── Step 3: ingest sample documents ──────────────────────────────────────────
 
-async def ingest_sample_docs() -> int:
+async def ingest_sample_docs(force: bool = False) -> int:
     """Run DocumentIngestionPipeline directly (no Redis worker needed).
 
     Deduplication — a file is ingested at most once per content hash:
@@ -169,11 +169,12 @@ async def ingest_sample_docs() -> int:
         cache=cache,
     )
 
+    ingest_mode = "full" if force else "incremental"
     job = IngestJob(
         tenant_id=TENANT_ID,
         corpus_id=CORPUS_ID,
         source_path=str(SAMPLE_DOCS),
-        mode="incremental",          # idempotent — skips unchanged files
+        mode=ingest_mode,   # incremental: skip unchanged; full: process all
         enable_graph_extraction=False,
     )
 
@@ -216,8 +217,10 @@ async def verify_seed() -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-async def main() -> None:
+async def main(force: bool = False) -> None:
     print("\n=== RAG v2 Seed ===\n")
+    if force:
+        print("  --force mode: ingestion will use mode=full (bypasses incremental check)\n")
 
     print("1/4  Connectivity checks")
     await check_postgres()
@@ -228,11 +231,11 @@ async def main() -> None:
     ensure_corpus_config()
 
     # Reload settings now that CORPUS_CONFIGS_JSON is in env
-    from knowledge.config.settings import load_settings, Settings
+    from knowledge.config.settings import load_settings
     load_settings.cache_clear()
 
     print("\n3/4  Sample document ingestion")
-    await ingest_sample_docs()
+    await ingest_sample_docs(force=force)
 
     print("\n4/4  Verification")
     await verify_seed()
@@ -247,4 +250,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+    parser = argparse.ArgumentParser(description="Seed the default corpus")
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Force full re-ingestion even if files are unchanged (mode=full)"
+    )
+    args = parser.parse_args()
+    asyncio.run(main(force=args.force))

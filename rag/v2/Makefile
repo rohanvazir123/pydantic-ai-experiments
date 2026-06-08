@@ -1,4 +1,4 @@
-.PHONY: help dev dev-obs migrate seed dev-reset test test-unit lint fix typecheck check \
+.PHONY: help dev dev-obs migrate seed dev-reset purge-corpus test test-unit lint fix typecheck check \
         pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres
 
 # ── Development ───────────────────────────────────────────────────────────────
@@ -32,6 +32,13 @@ dev-reset:
 	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
 	psql "$$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 	@$(MAKE) seed
+
+purge-corpus:
+	@echo "Purging default corpus content (documents, chunks, entity index, semantic cache)..."
+	uv run python scripts/purge.py
+	@echo "Running full re-ingestion of default document folder..."
+	uv run python scripts/seed.py --force
+	@echo "Done. Use 'make test-integration' to verify."
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 
@@ -85,5 +92,5 @@ help:
 	@echo "Testing:        make test | make test-unit | make test-integration"
 	@echo "Code quality:   make fix | make typecheck | make check"
 	@echo "Models:         make pull-models"
-	@echo "Seed:           make seed | make dev-reset"
+	@echo "Seed:           make seed | make dev-reset | make purge-corpus"
 	@echo "Chaos:          make chaos-kill-redis | chaos-kill-ollama | chaos-kill-postgres"
