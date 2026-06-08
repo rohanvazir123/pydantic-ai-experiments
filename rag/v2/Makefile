@@ -84,6 +84,34 @@ chaos-kill-ollama:
 chaos-kill-postgres:
 	docker compose stop postgres && sleep 30 && docker compose start postgres
 
+# ── Latency monitoring ────────────────────────────────────────────────────────
+# Watch live latency from docker compose logs.
+# Both ingestion and retrieval stage latencies are emitted as structlog JSON.
+
+watch-latency-retrieval:
+	docker compose logs -f api | grep --line-buffered '"stage"' | \
+	  python3 -c "import sys,json; [print(f'{e[\"stage\"]:<20} {e[\"duration_ms\"]}ms') for line in sys.stdin for e in [json.loads(line)] if 'duration_ms' in e]"
+
+watch-latency-ingestion:
+	docker compose logs -f ingest-worker | grep --line-buffered '"stage"' | \
+	  python3 -c "import sys,json; [print(f'{e[\"stage\"]:<20} {e[\"duration_ms\"]}ms') for line in sys.stdin for e in [json.loads(line)] if 'duration_ms' in e]"
+
+watch-errors:
+	docker compose logs -f 2>&1 | grep --line-buffered '"level":"ERROR"'
+
+load-baseline:
+	locust -f tests/load/locustfile.py \
+	  --headless --users 1 --spawn-rate 1 --run-time 5m \
+	  --host http://localhost:8000 \
+	  --csv tests/load/results/baseline-$$(date +%F)
+
+load-peak:
+	locust -f tests/load/locustfile.py \
+	  --headless --users 5 --spawn-rate 1 --run-time 30m \
+	  --host http://localhost:8000 \
+	  --csv tests/load/results/peak-$$(date +%F) \
+	  --exit-code-on-error 1
+
 # ── Help ──────────────────────────────────────────────────────────────────────
 
 help:
@@ -93,4 +121,6 @@ help:
 	@echo "Code quality:   make fix | make typecheck | make check"
 	@echo "Models:         make pull-models"
 	@echo "Seed:           make seed | make dev-reset | make purge-corpus"
+	@echo "Latency:        make watch-latency-retrieval | watch-latency-ingestion | watch-errors"
+	@echo "Load:           make load-baseline | make load-peak"
 	@echo "Chaos:          make chaos-kill-redis | chaos-kill-ollama | chaos-kill-postgres"
