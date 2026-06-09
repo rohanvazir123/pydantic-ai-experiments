@@ -1,4 +1,4 @@
-# rovaz — pydantic-ai-experiments
+# pydantic-ai-experiments
 
 ## Table of Contents
 
@@ -14,10 +14,10 @@
 
 Experiments and production systems built on top of [Pydantic AI](https://ai.pydantic.dev). The main deliverable is a multi-corpus RAG system in two generations:
 
-| Generation | Directory | Status | Stack |
-|------------|-----------|--------|-------|
-| **RAG v1** | [`rag/`](rag/) | Production-ready (used in prod) | pgvector · Pydantic AI · Ollama · FastAPI |
-| **RAG v2** | [`rag/v2/`](rag/v2/) | In active development | v1 + Apache AGE · Redis Streams · docling-graph · Next.js |
+| Generation | Directory | Stack |
+|------------|-----------|-------|
+| **RAG v1** | [`rag/`](rag/) | pgvector · Pydantic AI · Ollama · FastAPI |
+| **RAG v2** | [`rag/v2/`](rag/v2/) | v1 + Apache AGE · Redis Streams · docling-graph · Next.js |
 
 ---
 
