@@ -15,7 +15,6 @@ Redis keys (all scoped to `name`):
     cb:{name}:half_successes — integer counter (consecutive successes in HALF-OPEN)
 """
 
-import asyncio
 import logging
 import time
 from typing import Awaitable, TypeVar

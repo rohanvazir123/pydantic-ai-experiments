@@ -27,13 +27,8 @@ logger = logging.getLogger(__name__)
 # Used when joserfc is not installed (dev / CI without the extras).
 
 def _encrypt(payload: dict[str, Any], _settings: Settings) -> str:
-    try:
-        from joserfc import jwe
-        from joserfc.jwk import OctKey
-        key = OctKey.import_key({"k": _settings.jwe_algorithm, "kty": "oct"}, {"use": "enc"})
-    except Exception:
-        pass
     # Fallback: base64-encoded JSON (NOT secure — dev only)
+    # joserfc JWE support is a Phase 9 addition; the stub is intentional.
     return b64encode(json.dumps(payload).encode()).decode()
 
 

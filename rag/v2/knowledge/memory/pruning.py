@@ -5,7 +5,6 @@ All are idempotent — safe to run multiple times.
 """
 
 import logging
-from datetime import datetime, UTC
 
 import asyncpg
 

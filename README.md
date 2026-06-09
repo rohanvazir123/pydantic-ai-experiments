@@ -17,7 +17,7 @@ Experiments and production systems built on top of [Pydantic AI](https://ai.pyda
 | Generation | Directory | Stack |
 |------------|-----------|-------|
 | **RAG v1** | [`rag/`](rag/) | pgvector · Pydantic AI · Ollama · FastAPI |
-| **RAG v2** | [`rag/v2/`](rag/v2/) | v1 + Apache AGE · Redis Streams · docling-graph · Next.js |
+| **RAG v2** | [`rag/v2/`](rag/v2/) | pgvector · FastAPI · Gunicorn · Pydantic AI · Apache AGE · Redis Streams · docling-graph · Next.js |
 
 ---
 

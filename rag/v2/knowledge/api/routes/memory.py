@@ -10,7 +10,6 @@ from knowledge.api.schemas import (
     AddMemoryRequest,
     ConversationSummary,
     MemoryItem,
-    MessageItem,
 )
 
 router = APIRouter(tags=["memory"])

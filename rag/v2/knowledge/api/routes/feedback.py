@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Request
 
-from knowledge.api.middleware import get_request_id, get_tenant_id, get_user_id
+from knowledge.api.middleware import get_request_id
 from knowledge.api.schemas import APIResponse, FeedbackRequest, SignalRequest
 
 router = APIRouter(tags=["feedback"])

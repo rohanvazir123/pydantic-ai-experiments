@@ -14,10 +14,8 @@ inside asyncio.to_thread(). Embedding and DB writes are fully async.
 """
 
 import asyncio
-import glob
 import hashlib
 import logging
-import os
 import yaml
 from datetime import datetime, UTC
 from pathlib import Path
@@ -114,7 +112,6 @@ class DocumentIngestionPipeline:
         self._publisher    = publisher
         self._corpus_config = corpus_config
 
-        chunking_config = ChunkingConfig(max_tokens=self._settings.chunk_max_tokens)
         self._processor = DoclingProcessor(settings=self._settings)
         self._embedder   = Embedder(settings=self._settings)
 

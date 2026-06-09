@@ -1,9 +1,7 @@
 """Gold dataset loader — JSONL files + PostgreSQL mirror."""
 
-import json
 import logging
 from pathlib import Path
-from uuid import UUID
 
 from knowledge.evaluation.schemas import GoldSample
 

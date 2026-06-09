@@ -80,11 +80,14 @@ def _parse_return_aliases(cypher: str) -> list[str]:
     current: list[str] = []
     for ch in body:
         if ch == "(":
-            depth += 1; current.append(ch)
+            depth += 1
+            current.append(ch)
         elif ch == ")":
-            depth -= 1; current.append(ch)
+            depth -= 1
+            current.append(ch)
         elif ch == "," and depth == 0:
-            parts.append("".join(current).strip()); current = []
+            parts.append("".join(current).strip())
+            current = []
         else:
             current.append(ch)
     if current:

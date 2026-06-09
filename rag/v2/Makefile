@@ -1,4 +1,4 @@
-.PHONY: help dev dev-obs migrate seed dev-reset purge-corpus test test-unit lint fix typecheck check \
+.PHONY: help dev dev-obs migrate seed dev-reset purge-corpus test test-unit lint fix ruff typecheck mypy check \
         pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres
 
 # ── Development ───────────────────────────────────────────────────────────────
@@ -60,8 +60,12 @@ fix:
 	uv run ruff check --fix knowledge/ tests/
 	uv run ruff format knowledge/ tests/
 
+ruff: fix
+
 typecheck:
 	uv run mypy knowledge/
+
+mypy: typecheck
 
 check: fix typecheck
 
@@ -118,7 +122,7 @@ help:
 	@echo "Development:    make dev | make dev-obs"
 	@echo "Database:       make migrate"
 	@echo "Testing:        make test | make test-unit | make test-integration"
-	@echo "Code quality:   make fix | make typecheck | make check"
+	@echo "Code quality:   make ruff | make mypy | make check (ruff+mypy)"
 	@echo "Models:         make pull-models"
 	@echo "Seed:           make seed | make dev-reset | make purge-corpus"
 	@echo "Latency:        make watch-latency-retrieval | watch-latency-ingestion | watch-errors"

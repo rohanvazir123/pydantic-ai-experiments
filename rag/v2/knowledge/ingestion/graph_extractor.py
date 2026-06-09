@@ -22,7 +22,7 @@ from knowledge.config.settings import Settings, load_settings
 from knowledge.corpus.ontologies.loader import load_ontology
 
 if TYPE_CHECKING:
-    from knowledge.corpus.registry import CorpusConfig
+    pass
 
 logger = logging.getLogger(__name__)
 

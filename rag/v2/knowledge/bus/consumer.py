@@ -25,7 +25,7 @@ from typing import Any, TypeVar
 import redis.asyncio as aioredis
 
 from knowledge.bus.backoff import exponential_backoff
-from knowledge.bus.schemas import IngestJob, WorkerEvent
+from knowledge.bus.schemas import WorkerEvent
 
 logger = logging.getLogger(__name__)
 

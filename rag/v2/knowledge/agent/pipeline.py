@@ -17,7 +17,6 @@ token-by-token streaming. Judge runs offline via eval.
 Every gate fires the appropriate hook point.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -27,7 +26,6 @@ from typing import Any, AsyncGenerator
 from pydantic import BaseModel
 
 from knowledge.agent.agent import (
-    CitationCheck,
     GenerationResult,
     RAGState,
     agent,

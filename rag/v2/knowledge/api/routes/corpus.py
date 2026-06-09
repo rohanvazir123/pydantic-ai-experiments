@@ -1,7 +1,6 @@
 """Corpus management routes."""
 
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
@@ -36,7 +35,6 @@ async def list_corpora(request: Request) -> APIResponse[list[CorpusInfo]]:
 async def invalidate_cache(corpus_id: str, request: Request) -> APIResponse[dict]:
     """Flush L2 + L3 cache entries for a corpus."""
     cache      = getattr(request.app.state, "cache", None)
-    pg_cache   = getattr(request.app.state, "vector_store", None)
     request_id = get_request_id() or str(uuid.uuid4())
 
     deleted = 0

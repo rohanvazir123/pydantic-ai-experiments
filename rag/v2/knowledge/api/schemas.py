@@ -8,7 +8,6 @@ Never return a bare string or untyped dict — always use this envelope.
 """
 
 from typing import Any, Generic, Literal, TypeVar
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 

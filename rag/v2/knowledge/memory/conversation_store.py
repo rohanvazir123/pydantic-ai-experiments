@@ -10,7 +10,6 @@ Active window policy:
 
 import logging
 import uuid as _uuid
-from datetime import datetime, UTC
 from typing import Any
 
 import asyncpg

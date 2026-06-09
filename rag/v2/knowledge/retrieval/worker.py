@@ -16,7 +16,6 @@ import sys
 import redis.asyncio as aioredis
 
 from knowledge.bus.consumer import consume_loop
-from knowledge.bus.publisher import Publisher
 from knowledge.bus.schemas import SearchRequest
 from knowledge.config.settings import load_settings
 from knowledge.ingestion.embedder import Embedder
@@ -47,7 +46,6 @@ async def _main() -> None:
     await vector_store.initialize()
     await cache.connect()
 
-    publisher = Publisher(redis_client)
     retriever = Retriever(
         vector_store=vector_store,
         embedder=embedder,

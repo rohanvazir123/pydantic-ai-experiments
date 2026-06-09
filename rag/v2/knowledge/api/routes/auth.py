@@ -7,7 +7,7 @@ Phase 9 is complete.
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 
 from knowledge.api.schemas import APIResponse, RefreshResponse, TokenRequest, TokenResponse
 from knowledge.api.middleware import get_request_id

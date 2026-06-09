@@ -13,7 +13,6 @@ Serialisation: msgpack (faster than JSON for binary float arrays).
 
 import hashlib
 import logging
-from collections.abc import Sequence
 from typing import Any
 
 import msgpack

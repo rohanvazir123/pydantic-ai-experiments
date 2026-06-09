@@ -196,7 +196,6 @@ async def traced_agent_run(
     if settings.langfuse_enabled:
         try:
             from langfuse import Langfuse
-            from langfuse.decorators import langfuse_context
             lf = Langfuse()
             langfuse_ctx = lf.trace(
                 name="rag_agent_run",
