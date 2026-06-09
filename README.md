@@ -111,6 +111,31 @@ rag/v2/
 
 ---
 
+## What Changed from v1 to v2
+
+| Capability | RAG v1 | RAG v2 |
+|------------|--------|--------|
+| **Corpus support** | Single corpus, single tenant | Multi-corpus, multi-tenant with RLS isolation |
+| **Knowledge graph** | Apache AGE (legal CUAD only) | Per-corpus AGE graphs; docling-graph ontology extraction for any domain |
+| **Graph schema** | Hardcoded CUAD label allowlist | User-uploaded Pydantic ontology templates; generic fallback |
+| **Ingestion** | Sync, blocking in API process | Async Redis Streams workers; `asyncio.gather` chunk + graph in parallel |
+| **Retrieval** | Vector + text search | Hybrid RRF + CrossEncoder reranker → calibrated `confidence` score |
+| **Answer quality** | Single LLM call | 3-layer confidence-aware pipeline: retrieval gate → citation gate → LLM judge |
+| **Caching** | None | L1 in-process LRU + L2 Redis (embed/search/fingerprint) + L3 pgvector semantic cache (JWE) |
+| **Memory** | `message_history` in request body | 5-tier memory: working / episodic (server-side) / semantic-user (Mem0) / semantic-world / procedural |
+| **Conversation history** | Client-side (lost on refresh) | Server-side PostgreSQL; loaded by `session_id`; auto-summarised at 20 turns |
+| **Scheduler** | Manual `--ingest` CLI | APScheduler periodic jobs with cron + incremental SHA-256 dedup |
+| **Security** | No auth | JWT RS256 + RBAC + JWE payload encryption + rate limiting |
+| **API** | 3 endpoints (chat, ingest, health) | 30+ endpoints across auth / chat / search / ingest / corpus / scheduler / eval / memory / logs |
+| **Frontend** | Streamlit (dev only) | Next.js 15 + Tailwind CSS; SSE streaming; cost badge; per-stage latency debug panel |
+| **Observability** | Basic logging | Prometheus metrics + Langfuse LLM traces + Redis log ring buffer + SMTP alerts |
+| **Deployment** | uvicorn + `.env` | Gunicorn + UvicornWorker; Docker Compose (Nginx + API + 3 workers + PG + AGE + Redis + Ollama) |
+| **Testing** | ~100 unit tests | 251 unit tests; load tests (Locust); chaos tests (Makefile targets) |
+
+**In short:** v2 is v1 with production hardening, multi-tenancy, graph extraction, a confidence-aware pipeline, full memory system, and a proper frontend. v1 remains the simpler, dependency-lighter system for use cases that don't need the full stack.
+
+---
+
 ## Other Modules
 
 | Directory | Purpose |
