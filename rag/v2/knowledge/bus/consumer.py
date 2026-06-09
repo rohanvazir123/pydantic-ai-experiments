@@ -20,7 +20,9 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
+
+from pydantic import BaseModel
 
 import redis.asyncio as aioredis
 
@@ -107,7 +109,7 @@ async def _execute_with_retry(
     stream: str,
     msg_id: bytes,
     payload_raw: str,
-    job_model: type,
+    job_model: type[BaseModel],
     handler: Handler,
     job_timeout_s: float,
     max_retries: int = MAX_RETRIES,
@@ -121,7 +123,7 @@ async def _execute_with_retry(
         await _move_to_dlq(redis, stream, "unknown", payload_raw, exc, permanent=True)
         return
 
-    job_id  = getattr(job, "job_id", None) or getattr(job, "run_id", "unknown")
+    job_id: str = str(getattr(job, "job_id", None) or getattr(job, "run_id", "unknown"))
     attempt = getattr(job, "attempt", 1)
 
     try:
@@ -171,7 +173,7 @@ async def consume_loop(
     stream: str,
     group: str,
     worker_id: str,
-    job_model: type,
+    job_model: type[BaseModel],
     handler: Handler,
     job_timeout_s: float = 300.0,
     max_retries: int = MAX_RETRIES,
@@ -213,9 +215,11 @@ async def consume_loop(
         if not messages:
             continue
 
-        for _stream_name, entries in messages:
+        # xreadgroup returns a heterogeneous nested structure; cast to known shape
+        typed = cast(list[tuple[Any, list[tuple[bytes, dict[bytes, bytes]]]]], messages)
+        for _stream_name, entries in typed:
             for msg_id, fields in entries:
-                payload_raw = fields.get(b"payload", b"{}").decode()
+                payload_raw: str = fields.get(b"payload", b"{}").decode()
                 await _execute_with_retry(
                     redis, stream, msg_id, payload_raw,
                     job_model, handler, job_timeout_s, max_retries,

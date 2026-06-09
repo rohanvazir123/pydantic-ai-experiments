@@ -93,7 +93,9 @@ class CircuitBreaker:
 
     async def _get_state(self) -> str:
         raw = await self._redis.get(self._state_key)
-        return raw.decode() if raw else _STATE_CLOSED
+        if not raw:
+            return _STATE_CLOSED
+        return raw.decode() if isinstance(raw, bytes) else str(raw)
 
     async def _set_state(self, state: str) -> None:
         await self._redis.set(self._state_key, state)

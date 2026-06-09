@@ -48,7 +48,9 @@ def load_ontology(ontology_path: str | None) -> type[BaseModel]:
         raise ValueError(f"Cannot load spec from {full_path}")
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)   # type: ignore[union-attr]
+    if spec.loader is None:
+        raise ValueError(f"No loader for spec at {full_path}")
+    spec.loader.exec_module(module)
 
     # Root class = last BaseModel subclass defined (by file convention)
     root_class: type[BaseModel] | None = None

@@ -42,7 +42,7 @@ class CorpusConfig:
         "data_region",
     )
 
-    def __init__(self, data: dict) -> None:  # type: ignore[type-arg]
+    def __init__(self, data: dict) -> None:  # noqa: ANN401
         self.id: str = data["id"]
         self.display_name: str = data.get("display_name", self.id)
         self.source_folders: list[Path] = [
@@ -247,4 +247,4 @@ def load_settings() -> Settings:
     Call once at app startup. Tests should instantiate Settings directly
     (bypassing the cache) to avoid cross-test pollution.
     """
-    return Settings()
+    return Settings()  # type: ignore[call-arg]  # pydantic-settings loads from env vars

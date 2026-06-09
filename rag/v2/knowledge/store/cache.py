@@ -88,7 +88,7 @@ class RedisCache:
             raw = await self._client.get(_embed_key(text))
             if raw is None:
                 return None
-            return msgpack.unpackb(raw, raw=False)
+            return list(msgpack.unpackb(raw, raw=False))
         except Exception as exc:
             logger.warning("RedisCache.get_embedding failed: %s", exc)
             return None
@@ -121,7 +121,7 @@ class RedisCache:
             raw = await self._client.get(_search_key(query, corpus_ids, filters))
             if raw is None:
                 return None
-            return msgpack.unpackb(raw, raw=False)
+            return list(msgpack.unpackb(raw, raw=False))
         except Exception as exc:
             logger.warning("RedisCache.get_search failed: %s", exc)
             return None
