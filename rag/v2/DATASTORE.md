@@ -443,7 +443,7 @@ One row per triggered evaluation run.
 
 Per-sample results. Join with `eval_runs` for context.
 
-Key columns (see `migrations/004_evaluation.sql` for full DDL):
+Key columns (see `schema/004_evaluation.sql` for full DDL):
 
 | Group | Columns |
 |-------|---------|
@@ -458,7 +458,7 @@ Key columns (see `migrations/004_evaluation.sql` for full DDL):
 
 ### 3.14–3.20 Other Tables
 
-See `migrations/005_feedback.sql` through `migrations/007_scheduler.sql` for full DDL of:
+See `schema/005_feedback.sql` through `schema/007_scheduler.sql` for full DDL of:
 `user_feedback`, `implicit_signals`, `token_usage`, `tenants`, `tenant_quotas`, `billing_events`, `scheduled_jobs`.
 
 ---

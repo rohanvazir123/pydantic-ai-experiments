@@ -1,12 +1,14 @@
-# Migrations
+# schema/
+
+> **Why "schema" not "migrations"?** The term *migrations* comes from ORMs (Django, Rails, Alembic) where each file represents an incremental *change* to an existing schema. Here, every file uses `IF NOT EXISTS` and `ON CONFLICT DO NOTHING` — you can run them against a blank database and get a complete, working schema in one shot. That's a *schema definition*, not an incremental migration. The folder is named accordingly.
 
 ## Table of Contents
 
-- [What Migrations Are](#what-migrations-are)
+- [What Schema Files Are](#what-migrations-are)
 - [How They Work](#how-they-work)
-- [Running Migrations](#running-migrations)
-- [Migration Files](#migration-files)
-- [Adding a New Migration](#adding-a-new-migration)
+- [Running Schema Setup](#running-migrations)
+- [Schema Files](#migration-files)
+- [Adding a New Schema File](#adding-a-new-migration)
 - [Which Database](#which-database)
 
 ---
@@ -35,12 +37,12 @@ They are **not** application code — no Python, no Pydantic, no FastAPI. Just S
 cd rag/v2
 make migrate
 # equivalent to:
-for f in migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+for f in schema/*.sql; do psql "$DATABASE_URL" -f "$f"; done
 ```
 
 **Single file (for debugging):**
 ```bash
-psql "$DATABASE_URL" -f migrations/003_semantic_cache.sql
+psql "$DATABASE_URL" -f schema/003_semantic_cache.sql
 ```
 
 **Verify tables were created:**
@@ -81,10 +83,10 @@ PostgreSQL then enforces the `tenant_isolation` policy automatically — rows fr
 
 ## Adding a New Migration
 
-1. Create `migrations/009_your_feature.sql` (next number in sequence).
+1. Create `schema/009_your_feature.sql` (next number in sequence).
 2. Use `IF NOT EXISTS` on all `CREATE` statements.
 3. Use `ON CONFLICT DO NOTHING` on all `INSERT` seed data.
-4. Test it on a blank database: `psql "$DATABASE_URL" -f migrations/009_your_feature.sql`.
+4. Test it on a blank database: `psql "$DATABASE_URL" -f schema/009_your_feature.sql`.
 5. Run the full suite to verify idempotency: `make migrate && make migrate` (second run should produce no errors).
 6. Add a row to the table in this README.
 

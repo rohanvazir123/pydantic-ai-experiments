@@ -12,7 +12,7 @@ dev-obs:
 # ── Database ──────────────────────────────────────────────────────────────────
 
 migrate:
-	@for f in migrations/*.sql; do \
+	@for f in schema/*.sql; do \
 		echo "Running $$f ..."; \
 		psql "$$DATABASE_URL" -f "$$f"; \
 	done

@@ -166,7 +166,7 @@ backend/
 │       ├── metrics.py                    # Prometheus counters/histograms via prometheus-client
 │       ├── langfuse.py                   # Langfuse trace + span helpers
 │       └── alerts.py                     # email alert sender (SMTP async, DLQ/circuit/budget events)
-├── migrations/
+├── schema/
 │   ├── 001_initial_schema.sql            # documents, chunks, audit_events
 │   ├── 002_corpus_tenant.sql             # corpus_id, tenant_id columns + RLS policies
 │   ├── 003_semantic_cache.sql            # semantic_cache table + HNSW index
@@ -528,7 +528,7 @@ frontend/
 - [ ] **`make dev-reset` Makefile target** — drops all data and re-seeds (useful after schema changes). Asks for confirmation before destructive step.
 - [ ] **`scripts/seed.py`** — Python script that:
   1. Checks DB + Redis + Ollama connectivity (fails fast with clear error if any is down)
-  2. Runs all migrations (`psql $DATABASE_URL -f migrations/*.sql` in order)
+  2. Runs all migrations (`psql $DATABASE_URL -f schema/*.sql` in order)
   3. Updates `.env` with default corpus config if `CORPUS_CONFIGS_JSON` is empty
   4. Runs `DocumentIngestionPipeline` directly (bypassing Redis worker) on `../../rag/documents/`
   5. Prints summary: `✓ N chunks ingested across M documents`
@@ -610,7 +610,7 @@ asyncio.run(check())
 - [ ] Add: scheduler fields — `scheduler_enabled`, `scheduler_max_concurrent_jobs`
 - [ ] Write unit tests: `tests/unit/test_settings.py` — load from `.env.example`, validate credential masking
 
-### 1.2 Database Migrations (`migrations/`)
+### 1.2 Database Migrations (`schema/`)
 
 - [ ] `001_initial_schema.sql` — `documents`, `chunks` (without `corpus_id`/`tenant_id` yet — those are added additively in 002), `audit_events`; pgvector + AGE extensions; HNSW on `chunks.embedding`; GIN on `chunks.content_tsv`
 - [ ] `002_corpus_tenant.sql` — additive migration: `ALTER TABLE documents ADD COLUMN corpus_id TEXT NOT NULL DEFAULT 'default'`, same for `chunks`; then `ALTER TABLE … ALTER COLUMN … DROP DEFAULT`; `ALTER TABLE … ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'`; B-tree indexes on both; RLS policies (`CREATE POLICY tenant_isolation ON … USING (tenant_id = current_setting('app.tenant_id'))`)
@@ -1784,7 +1784,7 @@ http {
 
 - [ ] `make dev` — `docker compose up --build`
 - [ ] `make dev-obs` — `docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build`
-- [ ] `make migrate` — run all SQL files in `migrations/` in order against `DATABASE_URL`
+- [ ] `make migrate` — run all SQL files in `schema/` in order against `DATABASE_URL`
 - [ ] `make test` — `pytest tests/unit/ tests/integration/ -v`
 - [ ] `make test-unit` — `pytest tests/unit/ -v` (no external deps)
 - [ ] `make lint` — `ruff check --fix && ruff format knowledge/`

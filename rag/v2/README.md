@@ -26,7 +26,7 @@ This directory contains both the **design documents** and the **implementation**
 | `TESTS.md` | Test plan — categories, requirements, per-phase gates |
 | `TEST_QA_REFERENCE.md` | QA reference — metric formulas, thresholds, load model |
 | `knowledge/` | Main Python package — all backend logic |
-| `migrations/` | SQL files that build the PostgreSQL schema |
+| `schema/` | SQL files that build the PostgreSQL schema |
 | `tests/` | Pytest test suite |
 | `postman/` | Postman collection for manual API testing |
 | `infra/` | Nginx config, Grafana dashboards |
