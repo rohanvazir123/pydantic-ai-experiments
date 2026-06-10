@@ -7,6 +7,9 @@
 - [RAG v2](#rag-v2--ragv2)
 - [Other Modules](#other-modules)
 - [Quick Start](#quick-start)
+- [E2E Manual Testing](#e2e-manual-testing)
+  - [v1 E2E](#v1-e2e)
+  - [v2 E2E](#v2-e2e)
 
 ---
 
@@ -169,4 +172,195 @@ ollama serve && ollama pull llama3.1:8b nomic-embed-text
 python -m rag.main --validate
 python -m rag.main --ingest --documents rag/documents
 uvicorn rag.api.app:app --reload
+```
+
+---
+
+## E2E Manual Testing
+
+Step-by-step setup → ingest → tests → manual smoke for both generations.
+
+---
+
+### v1 E2E
+
+**Prerequisites:** Python 3.13, PostgreSQL with pgvector extension, Ollama
+
+#### 1. Install
+
+```bash
+pip install -e ".[all]"
+```
+
+#### 2. Configure
+
+```bash
+cp .env.example .env   # if present, or create manually
+# Set in .env:
+#   DATABASE_URL=postgresql://user:pass@localhost/ragdb
+#   LLM_MODEL=llama3.1:8b
+#   EMBEDDING_MODEL=nomic-embed-text:latest
+```
+
+#### 3. Start Ollama and pull models
+
+```bash
+ollama serve
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text:latest
+```
+
+#### 4. Validate config
+
+```bash
+python -m rag.main --validate
+# Expected: "Configuration is valid" with no errors
+```
+
+#### 5. Ingest sample documents
+
+```bash
+python -m rag.main --ingest --documents rag/documents
+# Expected: chunks created and embeddings stored in PostgreSQL
+```
+
+#### 6. Run automated tests
+
+```bash
+# Fast unit tests — no external deps (~12 + ~34 tests, <10 s)
+python -m pytest rag/tests/core/ -v
+
+# DB-layer tests — requires PostgreSQL (~46 tests)
+python -m pytest rag/tests/storage/test_postgres_store.py -v
+
+# Retrieval quality + agent — requires PostgreSQL + Ollama (~28 + 25 tests, 2-5 min)
+python -m pytest rag/tests/retrieval/ rag/tests/agent/test_rag_agent.py -v --tb=short
+
+# API + MCP mocked tests — no external deps (14 + 21 tests)
+python -m pytest rag/tests/agent/test_api.py rag/tests/agent/test_mcp_server.py -v
+```
+
+#### 7. Start the API
+
+```bash
+uvicorn rag.api.app:app --reload --port 8000
+```
+
+#### 8. Manual smoke tests
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Chat query
+curl -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is the PTO policy?"}'
+
+# Streaming chat
+curl -X POST http://localhost:8000/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What technologies does the company use?"}'
+```
+
+---
+
+### v2 E2E
+
+**Prerequisites:** Python 3.13, Docker, [uv](https://docs.astral.sh/uv/), Ollama
+
+```bash
+cd rag/v2
+```
+
+#### 1. Install Python deps
+
+```bash
+uv sync --extra all
+```
+
+#### 2. Configure
+
+```bash
+cp .env.example .env
+# Set in .env:
+#   DATABASE_URL=postgresql://user:pass@localhost:5432/ragv2
+#   AGE_DATABASE_URL=postgresql://user:pass@localhost:5433/age_db
+#   REDIS_URL=redis://localhost:6379
+#   LLM_MODEL=llama3.2:3b
+#   EMBEDDING_MODEL=nomic-embed-text:latest
+```
+
+#### 3. Start infrastructure
+
+```bash
+docker compose up -d postgres age redis ollama
+# Wait ~10 s for services to be healthy
+docker compose ps   # all services should show "healthy" or "running"
+```
+
+#### 4. Pull Ollama models
+
+```bash
+make pull-models
+# Pulls: llama3.2:3b, nomic-embed-text, qwen2.5:0.5b
+```
+
+#### 5. Set up schema and ingest sample docs
+
+```bash
+make seed
+# Runs migrations, creates default tenant/corpus, ingests NeuralFlow AI docs
+```
+
+#### 6. Run automated tests
+
+```bash
+# Unit tests — no external deps (251 tests, <30 s)
+make test-unit
+
+# Integration + retrieval + agent + API (requires full stack, 5-15 min)
+make test-integration
+
+# All tests
+make test
+```
+
+#### 7. Start the API
+
+```bash
+uv run uvicorn knowledge.api.app:app --reload --port 8001
+```
+
+#### 8. Manual smoke tests
+
+```bash
+# Health check
+curl http://localhost:8001/health
+
+# Chat query (requires JWT — see rag/v2/README.md for token setup)
+curl -X POST http://localhost:8001/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"query": "What is the PTO policy?", "session_id": "test-session"}'
+
+# Search endpoint
+curl -X POST http://localhost:8001/v1/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"query": "employee benefits", "corpus_id": "default"}'
+```
+
+**Postman:** import `rag/v2/postman/RAG_v2.postman_collection.json` + `RAG_v2_local.postman_environment.json` to hit all 30+ endpoints with pre-configured auth.
+
+#### 9. Optional: chaos and load tests
+
+```bash
+# Chaos — kill a dependency and verify graceful degradation
+make chaos-kill-redis       # Redis gone; should fall back to in-process cache
+make chaos-kill-ollama      # Ollama gone; should return 503 with circuit-breaker message
+make chaos-kill-postgres    # DB gone; should return 503
+
+# Load — baseline at 10 RPS for 60 s
+make load-baseline          # requires locust: pip install locust
 ```

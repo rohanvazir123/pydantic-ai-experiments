@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag/v2
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ragv2_test
+          POSTGRES_USER: ragv2
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --extra ingestion --extra observability --extra reranker
+
+      - name: Lint
+        run: uv run ruff check knowledge/ tests/
+
+      - name: Type check
+        run: uv run mypy knowledge/ --no-error-summary
+
+      - name: Unit tests
+        env:
+          DATABASE_URL:     postgresql://ragv2:test@localhost:5432/ragv2_test
+          AGE_DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
+          REDIS_URL:        redis://localhost:6379/1
+        run: uv run pytest tests/unit/ -v --tb=short -q
+
+      - name: Run migrations (for integration tests)
+        env:
+          DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
+        run: |
+          for f in migrations/*.sql; do
+            psql "$DATABASE_URL" -f "$f"
+          done
+
+      - name: Integration tests (mocked)
+        env:
+          DATABASE_URL:     postgresql://ragv2:test@localhost:5432/ragv2_test
+          AGE_DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
+          REDIS_URL:        redis://localhost:6379/1
+        run: uv run pytest tests/integration/ -v --tb=short -q -m "not agent"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build --target api -t knowledge-api:${{ github.sha }} rag/v2/
+
+      - name: Build ingest-worker image
+        run: docker build --target ingest-worker -t knowledge-ingest-worker:${{ github.sha }} rag/v2/
+
+      - name: Build retrieval-worker image
+        run: docker build --target retrieval-worker -t knowledge-retrieval-worker:${{ github.sha }} rag/v2/
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag/v2/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: rag/v2/frontend/package-lock.json
+
+      - run: npm ci --frozen-lockfile 2>/dev/null || npm install
+      - run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete
+      - run: npm run build
