@@ -20,7 +20,6 @@ exclude = [
 ]
 
 [lint]
-# Base rules — apply to rag/ and legacy code
 select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
@@ -30,12 +29,20 @@ select = [
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "RUF",    # Ruff-specific rules
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PIE",    # flake8-pie
+    "PERF",   # perflint
+    "PL",     # pylint
+    "TRY",    # tryceratops
 ]
 
 ignore = [
-    "E501",   # line too long (formatter handles this)
-    "B008",   # function calls in argument defaults (FastAPI Depends pattern)
-    "B905",   # zip without explicit strict
+    "E501",    # line too long (formatter handles this)
+    "B008",    # function calls in argument defaults (FastAPI Depends pattern)
+    "B905",    # zip without explicit strict
+    "TRY003",  # long exception messages are fine
+    "PLR0913", # too many arguments — common in async pipelines
 ]
 
 fixable = ["ALL"]
@@ -44,29 +51,12 @@ unfixable = []
 [lint.isort]
 known-first-party = ["rag", "kg", "nl2sql", "knowledge"]
 
+[lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+"rag/v2/tests/**" = ["S101", "PLR2004"]
+
 [format]
 quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
-
-# ── Stricter rules for backend/knowledge/ (RAG v2) ───────────────────────────
-[lint.per-file-ignores]
-# Tests: allow assert statements and magic values
-"backend/knowledge/tests/**" = ["S101", "PLR2004"]
-
-[[lint.extend-per-file-ignores]]
-# Apply additional rule sets only to the v2 module
-files = ["backend/knowledge/**/*.py"]
-extend-select = [
-    "SIM",    # flake8-simplify: simplifiable conditions / returns
-    "TCH",    # flake8-type-checking: move typing-only imports into TYPE_CHECKING
-    "PIE",    # flake8-pie: misc cleanups (unnecessary pass, prefer list literal, etc.)
-    "PERF",   # perflint: avoid unnecessary list/dict/set casts in loops
-    "PL",     # pylint rules (subset Ruff supports)
-    "TRY",    # tryceratops: exception handling hygiene
-]
-extend-ignore = [
-    "TRY003", # long exception messages are fine
-    "PLR0913",# too many arguments — common in async pipelines
-]
