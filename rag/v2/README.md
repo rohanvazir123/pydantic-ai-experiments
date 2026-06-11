@@ -51,7 +51,7 @@ cp .env.example .env
 # 3. Start services
 docker compose up -d postgres age redis ollama
 
-# 4. Run migrations
+# 4. Apply database schemas
 make databaseschemas
 
 # 5. Seed default tenant, corpus, and sample documents

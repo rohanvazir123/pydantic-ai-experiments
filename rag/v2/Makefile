@@ -21,7 +21,7 @@ databaseschemas:
 # ── Seed / bootstrap ─────────────────────────────────────────────────────────
 
 seed:
-	@echo "Running migrations..."
+	@echo "Applying database schemas..."
 	@$(MAKE) databaseschemas
 	@echo "Seeding default tenant, corpus, and sample documents..."
 	uv run python scripts/seed.py
