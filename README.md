@@ -99,7 +99,7 @@ cd frontend && npm install && npm run dev
 ```
 rag/v2/
 ├── knowledge/          Python backend package
-├── schema/             PostgreSQL schema files (run with make migrate / make seed)
+├── schema/             PostgreSQL schema files (run with make databaseschemas / make seed)
 ├── tests/              Pytest test suite (251 unit tests)
 ├── frontend/           Next.js 15 + Tailwind CSS chat UI
 ├── postman/            Postman collection (import to test APIs manually)

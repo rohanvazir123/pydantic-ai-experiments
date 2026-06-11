@@ -1,4 +1,4 @@
-.PHONY: help dev dev-obs migrate seed dev-reset purge-corpus test test-unit lint fix ruff typecheck mypy check \
+.PHONY: help dev dev-obs databaseschemas seed dev-reset purge-corpus test test-unit lint fix ruff typecheck mypy check \
         pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres
 
 # ── Development ───────────────────────────────────────────────────────────────
@@ -11,7 +11,7 @@ dev-obs:
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
-migrate:
+databaseschemas:
 	@for f in schema/*.sql; do \
 		echo "Running $$f ..."; \
 		psql "$$DATABASE_URL" -f "$$f"; \
@@ -22,7 +22,7 @@ migrate:
 
 seed:
 	@echo "Running migrations..."
-	@$(MAKE) migrate
+	@$(MAKE) databaseschemas
 	@echo "Seeding default tenant, corpus, and sample documents..."
 	uv run python scripts/seed.py
 	@echo "Seed complete. Run 'make test-unit' to verify."
@@ -31,7 +31,7 @@ dev-reset:
 	@echo "WARNING: This will drop all data and re-seed."
 	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
 	psql "$$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-	@$(MAKE) seed
+	@$(MAKE) databaseschemas seed
 
 purge-corpus:
 	@echo "Purging default corpus content (documents, chunks, entity index, semantic cache)..."
@@ -120,7 +120,7 @@ load-peak:
 
 help:
 	@echo "Development:    make dev | make dev-obs"
-	@echo "Database:       make migrate"
+	@echo "Database:       make databaseschemas | make seed"
 	@echo "Testing:        make test | make test-unit | make test-integration"
 	@echo "Code quality:   make ruff | make mypy | make check (ruff+mypy)"
 	@echo "Models:         make pull-models"

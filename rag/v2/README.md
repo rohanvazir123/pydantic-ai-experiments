@@ -52,15 +52,18 @@ cp .env.example .env
 docker compose up -d postgres age redis ollama
 
 # 4. Run migrations
-make migrate
+make databaseschemas
 
-# 5. Pull Ollama models
+# 5. Seed default tenant, corpus, and sample documents
+make seed
+
+# 6. Pull Ollama models
 make pull-models
 
-# 6. Run unit tests (no services needed)
+# 7. Run unit tests (no services needed)
 make test-unit
 
-# 7. Start the API
+# 8. Start the API
 uv run uvicorn knowledge.api.app:app --reload
 ```
 
