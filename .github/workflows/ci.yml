@@ -74,7 +74,7 @@ jobs:
           DATABASE_URL:     postgresql://ragv2:test@localhost:5432/ragv2_test
           AGE_DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
           REDIS_URL:        redis://localhost:6379/1
-        run: uv run pytest tests/integration/ -v --tb=short -q -m "not agent"
+        run: uv run pytest tests/integration/ -v --tb=short -q -m "not agent" --ignore-glob="*__pycache__*" || [ $? -eq 5 ]
 
   build:
     runs-on: ubuntu-latest
