@@ -1,4 +1,4 @@
-# PostgreSQL RAG Agent Development Instructions
+# RAG v2 Development Instructions
 
 ## Table of Contents
 
@@ -7,7 +7,7 @@
 - [Core Principles](#core-principles)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
-- [CLI Usage](#cli-usage)
+- [Key Commands](#key-commands)
 - [Testing](#testing)
 - [Code Quality](#code-quality)
 - [Architecture](#architecture)
@@ -19,22 +19,43 @@
 
 ## Project Overview
 
-Agentic RAG system combining PostgreSQL/pgvector with Pydantic AI for intelligent document retrieval. Uses Docling for multi-format ingestion (PDF, DOCX, audio via Whisper ASR), async PostgreSQL operations, and hybrid search (vector + text with RRF). Built with Python 3.13, Ollama for local LLM/embeddings, and type-safe Pydantic models.
+**Active system: `rag/v2/`** — multi-tenant, multi-corpus RAG backend built on the `knowledge/` Python package. Uses FastAPI, asyncpg/pgvector, Apache AGE, Redis Streams, Docling, and Pydantic AI. Supports hybrid search (vector + full-text + RRF), a 3-layer cache (in-process LRU → Redis → pgvector semantic), JWT RS256 auth, APScheduler-based ingestion, and Prometheus observability.
+
+**Legacy system: `rag/`** — the original v1 single-tenant RAG agent. Still present but not actively developed. Imports from the now-moved `kg/` module will be broken.
+
+---
 
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install -e .
+cd rag/v2
 
-# Validate configuration
-python -m rag.main --validate
+# Copy env and fill in values
+cp .env.example .env
 
-# Ingest documents
-python -m rag.main --ingest --documents rag/documents
+# Install deps (uv)
+uv sync
 
-# Run tests
-python -m pytest rag/tests/ -v
+# Start services (PostgreSQL + Apache AGE + Redis)
+docker compose up -d postgres age redis
+
+# Apply DB schemas (idempotent)
+make databaseschemas
+
+# Seed default tenant, corpus, and sample docs
+make seed
+
+# Pull Ollama models
+make pull-models
+
+# Start the API (auto-reload)
+uv run uvicorn knowledge.api.app:app --reload --port 8001
+
+# Health check
+curl http://localhost:8001/health
+
+# Run smoke tests (no services needed, <1 s)
+make test-unit
 ```
 
 ## Core Principles
@@ -46,11 +67,11 @@ python -m pytest rag/tests/ -v
 
 2. **KISS** (Keep It Simple, Stupid)
    - Prefer simple, readable solutions over clever abstractions
-   - Trust PostgreSQL RRF - no manual score combination
+   - Trust PostgreSQL RRF — no manual score combination
 
 3. **ASYNC ALL THE WAY**
-   - All I/O operations MUST be async (PostgreSQL, embeddings, LLM calls)
-   - Use `asyncio` for concurrent operations
+   - All I/O operations MUST be async (PostgreSQL, Redis, embeddings, LLM calls)
+   - Use `asyncio` for concurrent operations; CPU-bound libs via `asyncio.to_thread()`
 
 ---
 
@@ -58,74 +79,116 @@ python -m pytest rag/tests/ -v
 
 ```
 rag/
-├── config/
-│   └── settings.py              # Pydantic Settings configuration
-├── ingestion/
-│   ├── pipeline.py               # Document ingestion pipeline
-│   ├── embedder.py               # Embedding generation (OpenAI-compatible)
-│   ├── models.py                 # Data models (ChunkData, SearchResult, etc.)
-│   └── chunkers/
-│       └── docling.py            # Docling HybridChunker integration
-├── storage/
-│   └── vector_store/
-│       └── postgres.py           # PostgresHybridStore (vector + text search via pgvector)
-├── retrieval/
-│   └── retriever.py              # Search orchestrator
-├── agent/
-│   ├── rag_agent.py              # Pydantic AI agent (5 tools: search_knowledge_base, search_knowledge_graph, search_hybrid_kg, run_graph_query, nl_graph_query)
-│   └── prompts.py                # System prompts
-├── api/
-│   └── app.py                    # FastAPI REST API (GET /health, POST /v1/chat, /v1/chat/stream, /v1/ingest)
-├── mcp/
-│   └── server.py                 # MCP server (FastMCP, stdio transport)
-kg/                               # Knowledge graph (top-level module, separate from rag/)
-├── __init__.py                   # create_kg_store() factory (reads KG_BACKEND env var)
-├── age_graph_store.py            # AgeGraphStore: Apache AGE / Cypher (Docker port 5433)
-└── entity_index.py               # Entity indexing utilities
-# NOTE: kg/legal/ was moved to misc/kg_legal_cuad/kg_legal/ (CUAD legal use case)
-├── memory/
-│   └── mem0_store.py             # Mem0Store (pgvector-backed user memory)
-├── documents/                    # Sample documents for ingestion
-│   └── legal/                    # CUAD contract Markdown files (git-ignored)
-├── tests/                        # Test suite (see retrieval/RETRIEVAL_FAQ.md for retrieval tests)
-│   ├── core/                     # Fast unit tests — no external deps
-│   │   ├── test_config.py        # Settings loading, credential masking (~12 tests)
-│   │   └── test_ingestion.py     # Data models, chunking config (~34 tests)
-│   ├── storage/                  # DB-layer tests
-│   │   ├── test_postgres_store.py # PostgreSQL connection & index tests (~46 tests)
-│   │   └── test_mem0_store.py    # Mem0Store CRUD tests
-│   ├── ingestion/                # Ingestion pipeline tests (currently empty — test_cuad_ingestion.py moved to misc/)
-│   ├── retrieval/                # Retrieval quality + IR metrics
-│   │   ├── test_retrieval_metrics.py # Gold dataset + Hit Rate/MRR/NDCG/Precision/Recall
-│   │   └── test_legal_retrieval.py   # Legal corpus quality + corpus isolation tests
-│   ├── agent/                    # Agent + API surface tests
-│   │   ├── test_rag_agent.py     # RAG agent integration tests (25+, needs PostgreSQL + Ollama)
-│   │   ├── test_agent_flow.py    # Pydantic AI event stream debugging
-│   │   ├── test_api.py           # FastAPI REST API tests (14, all mocked)
-│   │   └── test_mcp_server.py    # MCP server tests (21, all mocked)
-│   └── experimental/             # Third-party integrations
-# NOTE: knowledge_graph tests (test_age_graph_store.py, test_hybrid_kg_retrieval.py,
-#       test_nl_query.py) moved to misc/kg_legal_cuad/tests/kg/
-│       ├── test_raganything.py   # RAG-Anything modal processors
-│       └── test_pdf_question_generator.py # PDFQuestionStore
-└── main.py                       # CLI entry point
+├── v2/                               # PRIMARY — all new development here
+│   ├── knowledge/                    # Main Python package
+│   │   ├── agent/                    # Pydantic AI agent (pipeline, judge, model router)
+│   │   ├── api/                      # FastAPI app + middleware
+│   │   │   └── routes/               # chat, ingest, search, corpus, auth, health, evaluate,
+│   │   │                             #   feedback, memory, scheduler, logs
+│   │   ├── billing/                  # Cost tracking + quota
+│   │   ├── bus/                      # Redis Streams publisher/consumer + circuit breaker
+│   │   ├── config/                   # settings.py (pydantic-settings, reads .env)
+│   │   ├── corpus/                   # Corpus ontologies
+│   │   ├── evaluation/               # Retrieval metrics (Hit Rate, MRR, NDCG)
+│   │   ├── hooks/                    # HookPoint enum + async HookRegistry
+│   │   ├── ingestion/                # pipeline.py, chunker, embedder, graph_extractor, worker
+│   │   ├── memory/                   # Working memory, conversation store, summarizer
+│   │   ├── observability/            # Prometheus metrics + alert helpers
+│   │   ├── retrieval/                # Retriever, RRF fusion, semantic cache, worker
+│   │   ├── scheduler/                # APScheduler job runner + job store
+│   │   ├── store/                    # vector.py, graph.py, cache.py, entity_index.py
+│   │   └── validation/               # 6-stage query validation pipeline
+│   ├── kg/                           # Knowledge graph (moved from top-level kg/)
+│   │   ├── __init__.py               # create_kg_store() factory
+│   │   ├── age_graph_store.py        # AgeGraphStore: Apache AGE / Cypher (port 5433)
+│   │   ├── entity_index.py           # Entity indexing utilities
+│   │   ├── app/                      # CLI, REST API, Streamlit apps for KG
+│   │   ├── docs/                     # KG-specific documentation
+│   │   ├── evals/                    # KG evaluation data
+│   │   └── tests/                    # KG tests
+│   ├── docs/                         # Architecture + pipeline docs (moved from rag/docs/)
+│   │   ├── ARCHITECTURE.md
+│   │   ├── ARCHITECTURE_SUMMARY.md
+│   │   ├── CALL_GRAPH.md
+│   │   ├── DATASTORE_GUIDE.md
+│   │   ├── FAQ.md
+│   │   ├── INGESTION_PIPELINE.md
+│   │   ├── LOCAL_LLM_GUIDE.md
+│   │   ├── PROMPTS.md
+│   │   ├── RAG.md
+│   │   └── RETRIEVAL_PIPELINE.md
+│   ├── documents/                    # Sample corpus (moved from rag/documents/)
+│   │   ├── company-overview.md
+│   │   ├── team-handbook.md
+│   │   ├── *.pdf  *.docx  *.mp3     # PDFs, DOCX, audio recordings
+│   │   └── ...
+│   ├── frontend/                     # Next.js UI
+│   ├── infra/                        # nginx, Grafana dashboards, Prometheus config
+│   ├── postman/                      # Postman collection + environment
+│   ├── schema/                       # SQL migrations (001_initial_schema.sql … 008_memory.sql)
+│   ├── scripts/                      # seed.py, purge.py
+│   ├── tests/
+│   │   ├── unit/                     # No-service tests — fakeredis, mocked asyncpg
+│   │   ├── integration/              # Needs PostgreSQL + Redis
+│   │   ├── retrieval/                # Needs PostgreSQL + Redis + Ollama + ingested data
+│   │   ├── api/                      # API surface tests
+│   │   ├── agent/                    # Agent integration tests
+│   │   ├── ingestion/                # Ingestion pipeline tests
+│   │   ├── load/                     # Locust load tests
+│   │   └── chaos/                    # Chaos / fault injection tests
+│   ├── docker-compose.yml            # PostgreSQL + Apache AGE + Redis + API
+│   ├── docker-compose.observability.yml  # Prometheus + Grafana
+│   ├── Dockerfile                    # API container
+│   ├── Makefile                      # make databaseschemas | seed | test | ruff | mypy
+│   ├── pyproject.toml                # uv-managed deps
+│   ├── .env.example                  # Copy to .env and fill in values
+│   ├── RAGV2_DESIGN.md               # Full design doc
+│   ├── DATASTORE.md                  # DB schema reference
+│   ├── PROMPTS.md                    # Prompt engineering guide
+│   └── README.md                     # v2 entry point
+│
+└── (v1 — legacy, not actively developed)
+    ├── agent/    rag_agent.py, kg_agent.py, prompts.py
+    ├── api/      app.py (FastAPI, single-tenant)
+    ├── app/      cli/, rest_api/, streamlit/
+    ├── config/   settings.py
+    ├── ingestion/ pipeline.py, embedder.py, models.py, chunkers/, processors/
+    ├── mcp/      server.py (FastMCP)
+    ├── memory/   mem0_store.py
+    ├── retrieval/ retriever.py, hybrid_kg_retriever.py, rerankers.py
+    ├── storage/  vector_store/postgres.py
+    ├── tests/    (see rag/TESTS.md)
+    └── main.py   CLI entry point
 
-docker-compose.yml                # Apache AGE container (apache/age:latest, port 5433)
+misc/                                 # Archived experiments / reference code
+└── kg_legal_cuad/                    # CUAD legal corpus use-case (archived)
+    ├── kg_legal/                     # Legal KG ingestion + retrieval
+    └── tests/                        # Legal KG tests
+
+docker-compose.yml                    # Root-level AGE container shortcut (port 5433)
 ```
 
 ---
 
 ## Configuration
 
-### Environment Variables (.env)
+### Environment Variables (`rag/v2/.env`)
+
+Copy `rag/v2/.env.example` to `rag/v2/.env` and fill in:
 
 ```bash
 # PostgreSQL (pgvector)
-DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+DATABASE_URL=postgresql://ragv2:pass@localhost:5432/ragv2
+
+# Apache AGE (graph store)
+AGE_DATABASE_URL=postgresql://age:pass@localhost:5433/age_graph
+
+# Redis
+REDIS_URL=redis://localhost:6379
 
 # LLM (Ollama local)
 LLM_PROVIDER=ollama
-LLM_MODEL=llama3.1:8b
+LLM_MODEL=llama3.2:3b
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_API_KEY=ollama
 
@@ -135,301 +198,314 @@ EMBEDDING_MODEL=nomic-embed-text:latest
 EMBEDDING_BASE_URL=http://localhost:11434/v1
 EMBEDDING_API_KEY=ollama
 EMBEDDING_DIMENSION=768
+
+# Auth (JWT RS256 — keys generated by INSTALL.ps1 / INSTALL.sh into infra/keys/)
+JWT_ALGORITHM=RS256
+JWT_PUBLIC_KEY_PATH=infra/keys/public.pem
+JWT_PRIVATE_KEY_PATH=infra/keys/private.pem
 ```
 
-### PostgreSQL Setup
+### PostgreSQL / AGE Setup
 
-The database tables and indexes are created automatically by `PostgresHybridStore.initialize()`. To set up manually:
+Run `make databaseschemas` to apply all migrations in `schema/` order. Or manually:
 
-1. Enable the pgvector extension:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-
-2. Tables are created automatically: `documents` and `chunks`
-
-3. Indexes created automatically:
-   - **HNSW vector index** on `chunks.embedding` for cosine similarity search
-   - **GIN index** on `chunks.content_tsv` for full-text search
-   - **B-tree indexes** on `chunks.document_id` and `documents.source`
+```bash
+# In rag/v2/
+uv run python -c "
+import asyncio, asyncpg
+async def run():
+    conn = await asyncpg.connect(DATABASE_URL)
+    with open('schema/001_initial_schema.sql') as f:
+        await conn.execute(f.read())
+asyncio.run(run())
+"
+```
 
 ---
 
-## CLI Usage
+## Key Commands
 
-### Validate Configuration
+All commands run from `rag/v2/`:
+
 ```bash
-python -m rag.main --validate
+# Start API (dev, auto-reload)
+uv run uvicorn knowledge.api.app:app --reload --port 8001
+
+# Apply DB schemas (idempotent)
+make databaseschemas
+
+# Seed default tenant + corpus + sample docs
+make seed
+
+# Pull Ollama models
+make pull-models
+
+# Lint + format
+make ruff
+
+# Type-check
+make mypy
+
+# Unit tests (no services)
+make test-unit
+
+# All tests
+make test
 ```
-
-### Ingest Documents
-```bash
-# Full ingestion (cleans existing data)
-python -m rag.main --ingest --documents rag/documents
-
-# Incremental ingestion (keeps existing data)
-python -m rag.main --ingest --documents rag/documents --no-clean
-
-# With custom chunking
-python -m rag.main --ingest --documents rag/documents \
-    --chunk-size 1000 \
-    --chunk-overlap 200 \
-    --max-tokens 512
-
-# Verbose output
-python -m rag.main --ingest --documents rag/documents --verbose
-```
-
-### Supported File Formats
-- Text: `.md`, `.markdown`, `.txt`
-- Documents: `.pdf`, `.docx`, `.doc`, `.pptx`, `.ppt`, `.xlsx`, `.xls`, `.html`
-- Audio: `.mp3`, `.wav`, `.m4a`, `.flac` (requires `openai-whisper`)
 
 ---
 
 ## Testing
 
-### Run All Tests
-```bash
-python -m pytest rag/tests/ -v
-```
-
-### Run Specific Test Categories
+### Run Tests
 
 ```bash
-# Fast unit tests only (no external deps)
-python -m pytest rag/tests/core/ rag/tests/ingestion/ -v
+cd rag/v2
 
-# DB-layer tests (requires PostgreSQL)
-python -m pytest rag/tests/storage/ -v
+# Smoke tests — fastest, no services (<1 s)
+python -m pytest tests/unit/test_smoke.py -v
 
-# Retrieval quality tests (requires PostgreSQL + Ollama)
-python -m pytest rag/tests/retrieval/ -v --log-cli-level=INFO --tb=short
+# All unit tests — no services
+make test-unit
+# or: python -m pytest tests/unit/ -v
 
-# Agent integration tests (requires PostgreSQL + Ollama)
-python -m pytest rag/tests/agent/test_rag_agent.py -v
+# Integration tests — needs PostgreSQL + Redis
+python -m pytest tests/integration/ -v
 
-# Knowledge graph tests
-python -m pytest rag/tests/knowledge_graph/ -v
+# Retrieval quality — needs PostgreSQL + Redis + Ollama + ingested data
+python -m pytest tests/retrieval/ -v --log-cli-level=INFO --tb=short
 
-# Skip all integration tests (runs only unit + mocked tests)
-python -m pytest rag/tests/ -m "not integration" -v
+# Full suite
+make test
 ```
 
 ### Test Categories
 
-| Subfolder | Test File | What It Tests | Requirements |
-|-----------|-----------|--------------|--------------|
-| `core/` | `test_config.py` | Settings loading, credential masking | None |
-| `core/` | `test_ingestion.py` | Data models, chunking config validation | None |
-| `storage/` | `test_postgres_store.py` | PostgreSQL connection, vector/text indexes | PostgreSQL |
-| `storage/` | `test_mem0_store.py` | Mem0Store CRUD with pgvector backend | PostgreSQL |
-| `ingestion/` | `test_cuad_ingestion.py` | CUAD parsing, file extraction, eval pairs, pipeline | None (mocked) |
-| `retrieval/` | `test_retrieval_metrics.py` | Hit Rate/MRR/NDCG/Precision/Recall on NeuralFlow gold dataset | PostgreSQL + Ollama |
-| `retrieval/` | `test_legal_retrieval.py` | Legal retrieval quality on CUAD corpus + corpus isolation | PostgreSQL + Ollama |
-| `agent/` | `test_rag_agent.py` | Retriever queries, agent integration | PostgreSQL + Ollama |
-| `agent/` | `test_agent_flow.py` | Pydantic AI event stream debugging | PostgreSQL + Ollama |
-| `agent/` | `test_api.py` | FastAPI REST endpoints (chat, stream, ingest, health) | None (mocked) |
-| `agent/` | `test_mcp_server.py` | MCP server tools (search, retrieve, ingest, health) | None (mocked) |
-| `knowledge_graph/` | `test_age_graph_store.py` | AgeGraphStore Cypher ops, AGE integration | None / AGE (1 integration) |
-| `knowledge_graph/` | `test_hybrid_kg_retrieval.py` | HybridKGRetriever unit + integration | Mocked / PostgreSQL + AGE + Ollama |
-| `knowledge_graph/` | `test_nl_query.py` | NL→Cypher intent parsing + query builder | None / AGE (integration) |
-| `experimental/` | `test_raganything.py` | RAG-Anything modal processors | None (mocked) |
-| `experimental/` | `test_pdf_question_generator.py` | PDFQuestionStore search + storage | PostgreSQL |
+| Folder | What It Tests | Requirements |
+|--------|--------------|--------------|
+| `tests/unit/test_smoke.py` | Package imports, settings, models, RRF, hooks, API factory | None |
+| `tests/unit/test_settings.py` | Settings loading, validation, credential masking | None |
+| `tests/unit/test_agent.py` | Agent pipeline logic | None (mocked) |
+| `tests/unit/test_api.py` | FastAPI routes (mocked) | None |
+| `tests/unit/test_cache.py` | L1/L2 cache logic | None (fakeredis) |
+| `tests/unit/test_circuit_breaker.py` | Circuit breaker state machine | None (fakeredis) |
+| `tests/unit/test_backoff.py` | Exponential backoff | None |
+| `tests/unit/test_consumer.py` | Redis Stream consumer | None (fakeredis) |
+| `tests/unit/test_ingestion.py` | Chunker + pipeline models | None |
+| `tests/unit/test_retrieval.py` | RRF fusion, confidence filter | None |
+| `tests/unit/test_store.py` | VectorStore SQL generation | None (mocked asyncpg) |
+| `tests/unit/test_hooks_and_validation.py` | Hook registry + validation pipeline | None |
+| `tests/integration/` | Full stack — ingest → retrieve → chat | PostgreSQL + Redis |
+| `tests/retrieval/` | Hit Rate / MRR / NDCG on sample corpus | PostgreSQL + Redis + Ollama |
+| `tests/load/` | Locust throughput tests | Full stack |
 
-### Sample Test Queries (from test_rag_agent.py)
+### Sample Corpus
 
-The tests query the ingested NeuralFlow AI documents:
+Sample documents live in `rag/v2/documents/`. Run `make seed` to ingest them into the default corpus. Test queries:
 
 ```python
-# Company information
 "What does NeuralFlow AI do?"
-"How many engineers work at the company?"
-
-# Employee benefits
 "What is the PTO policy?"
-"What is the learning budget for employees?"
-
-# Technology
-"What technologies and tools does the company use?"
+"What technologies does the company use?"
 ```
-
-### Expected Test Results
-
-After successful ingestion of `rag/documents/`:
-- `test_config.py`: 13 tests pass
-- `test_ingestion.py`: 14 tests pass
-- `test_postgres_store.py`: 18 tests pass
-- `test_rag_agent.py`: All tests pass (requires PostgreSQL with data + Ollama running)
 
 ---
 
 ## Code Quality
 
-### Linting & Formatting
 ```bash
-# Check and fix
-ruff check --fix rag/
+cd rag/v2
 
-# Format
-ruff format rag/
-```
+# Ruff lint + format (auto-fix)
+make ruff
+# or: ruff check --fix knowledge/ && ruff format knowledge/
 
-### Makefile Commands
-```bash
-make ruff    # Run ruff check --fix and format
+# Type checking
+make mypy
+# or: mypy knowledge/
 ```
 
 ---
 
 ## Architecture
 
-### Two-Table Pattern
+### System at a Glance
 
-**`documents` table**: Full document metadata
-```sql
-CREATE TABLE documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title TEXT NOT NULL,
-    source TEXT NOT NULL UNIQUE,
-    content TEXT,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+```
+API (FastAPI, port 8001)
+  └─ JWT RS256 auth middleware
+  └─ rate limiting (slowapi)
+  └─ routes → publish job to Redis Stream
+        │
+        ├─ ingest-worker  (Redis consumer)
+        │     Docling → chunk → embed → graph extract → VectorStore + AGE
+        │
+        └─ retrieval-worker  (Redis consumer)
+              L1 LRU → L2 Redis → L3 semantic cache → hybrid search (RRF) → CrossEncoder
 ```
 
-**`chunks` table**: Embedded chunks for search
-```sql
-CREATE TABLE chunks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    embedding vector(768),  -- 768-dim for nomic-embed-text
-    chunk_index INTEGER NOT NULL,
-    metadata JSONB DEFAULT '{}',
-    token_count INTEGER,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-);
-```
+### Three-Layer Cache
 
-### Hybrid Search (RRF)
+| Layer | Store | Mechanism |
+|-------|-------|-----------|
+| L1 | In-process | LRU dict |
+| L2 | Redis | msgpack serialisation |
+| L3 | PostgreSQL | pgvector cosine-sim (stored as JWE) |
 
-The system combines vector and text search using Reciprocal Rank Fusion:
+### Model Tiers
 
-```python
-# Vector search for semantic similarity
-semantic_results = await store.semantic_search(query_embedding, count)
+| Tier | Model | Used for |
+|------|-------|---------|
+| nano | `qwen2.5:0.5b` | routing, classification |
+| small | `llama3.2:3b` | standard RAG responses |
+| large | `llama3.1:70b` | complex reasoning |
 
-# Text search for keyword matching
-text_results = await store.text_search(query, count)
+Tier selection is controlled by `MODEL_ROUTING_ENABLED`.
 
-# Merge with RRF (k=60)
-merged = reciprocal_rank_fusion([semantic_results, text_results])
-```
+### Multi-Tenancy
+
+Every request carries a `tenant_id` from the JWT. Each tenant has one or more named corpora; retrieval is scoped to the corpus in the request.
+
+### Corpus-Scoped KG
+
+`knowledge/store/graph.py` wraps Apache AGE. Graph names are namespaced per tenant + corpus via `settings.age_graph_name(tenant_id, corpus_id)`.
+
+### DB Schema (migrations in `schema/`)
+
+| File | What it creates |
+|------|----------------|
+| `001_initial_schema.sql` | tenants, corpora, documents, chunks (pgvector) |
+| `002_corpus_tenant.sql` | corpus membership + RBAC |
+| `003_semantic_cache.sql` | L3 semantic cache table |
+| `004_evaluation.sql` | eval runs + result rows |
+| `005_feedback.sql` | user thumbs up/down |
+| `006_billing.sql` | token + cost tracking |
+| `007_scheduler.sql` | scheduled job store |
+| `008_memory.sql` | conversation + working memory |
 
 ---
 
 ## Common Issues
 
-### 1. "pgvector extension not found"
-Enable the pgvector extension: `CREATE EXTENSION IF NOT EXISTS vector;`
+### 1. `DATABASE_URL` or `AGE_DATABASE_URL` not set
+Both are required. Copy `.env.example` → `.env` and fill in the values.
 
-### 2. "callable is not subscriptable"
+### 2. "pgvector extension not found"
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+### 3. JWT public key missing
+Run `INSTALL.ps1` (Windows) or `INSTALL.sh` (macOS/Linux) to generate RSA keys into `infra/keys/`. Or manually:
+```bash
+mkdir -p infra/keys
+openssl genrsa -out infra/keys/private.pem 2048
+openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem
+```
+
+### 4. "callable is not subscriptable"
 Use `Callable` from `collections.abc`:
 ```python
 from collections.abc import Callable
 def func(callback: Callable | None = None): ...
 ```
 
-### 3. Audio transcription fails
-Audio transcription requires both FFmpeg (in PATH) and Whisper:
-```bash
-# Install FFmpeg (system-level) - must be in PATH
-# Windows (Chocolatey): choco install ffmpeg
-#   Default path: C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin
-# Windows (WinGet): winget install ffmpeg
-# macOS: brew install ffmpeg
-# Linux: sudo apt install ffmpeg
-
-# Verify FFmpeg is in PATH
-ffmpeg -version
-
-# Install Whisper
-pip install openai-whisper
-```
-If dependencies are missing, audio files are stored with `[Error: Could not transcribe audio file ...]` placeholder.
-
-### 4. Ollama connection refused
-Start Ollama server:
+### 5. Ollama connection refused
 ```bash
 ollama serve
 ```
 
-### 5. Embedding dimension mismatch
+### 6. Embedding dimension mismatch
 Ensure `EMBEDDING_DIMENSION` matches your model:
 - `nomic-embed-text`: 768
-- `text-embedding-3-small`: 1536
-- `text-embedding-ada-002`: 1536
+- `text-embedding-3-small` / `ada-002`: 1536
+
+### 7. Audio transcription fails
+Requires FFmpeg in PATH + `openai-whisper`:
+```bash
+brew install ffmpeg        # macOS
+pip install openai-whisper
+```
 
 ---
 
 ## Development Workflow
 
-1. **Make changes** to source files in `rag/`
-2. **Run linting**: `ruff check --fix rag/ && ruff format rag/`
-3. **Run tests**: `python -m pytest rag/tests/ -v`
-4. **Test manually** if needed:
-   ```python
-   import asyncio
-   from rag.retrieval.retriever import Retriever
-   from rag.storage.vector_store.postgres import PostgresHybridStore
+1. **Work in `rag/v2/`** — all active development lives here
+2. **Smoke test first**: `python -m pytest tests/unit/test_smoke.py -v` (< 1 s, no services)
+3. **Lint**: `make ruff`
+4. **Type-check**: `make mypy`
+5. **Full unit suite**: `make test-unit`
+6. **Integration tests** when touching DB/Redis layer: `python -m pytest tests/integration/ -v`
 
-   async def test():
-       store = PostgresHybridStore()
-       retriever = Retriever(store=store)
-       results = await retriever.retrieve("What does the company do?")
-       for r in results:
-           print(f"{r.document_title}: {r.content[:100]}...")
-       await store.close()
+### Add a New Route
 
-   asyncio.run(test())
-   ```
+1. Create `knowledge/api/routes/my_route.py` with an `APIRouter`
+2. Add request/response models to `knowledge/api/schemas.py`
+3. Register the router in `knowledge/api/app.py`
+
+### Add a DB Migration
+
+Create `schema/NNN_description.sql` (next number). Run `make databaseschemas`.
+
+### Add a New Setting
+
+Add to `knowledge/config/settings.py` — pydantic-settings reads from `.env` automatically.
 
 ---
 
 ## Quick Reference
 
-### Run the Agent Programmatically
-```python
-import asyncio
-from rag.agent.rag_agent import agent
-
-async def main():
-    result = await agent.run("What services does NeuralFlow AI provide?")
-    print(result.output)
-
-asyncio.run(main())
+### Health Check
+```bash
+curl http://localhost:8001/health
 ```
 
-### Search Without Agent
+### Run the API Programmatically
 ```python
 import asyncio
-from rag.retrieval.retriever import Retriever
-from rag.storage.vector_store.postgres import PostgresHybridStore
+import httpx
 
-async def search(query: str):
-    store = PostgresHybridStore()
-    retriever = Retriever(store=store)
+async def chat(question: str, token: str) -> str:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            "http://localhost:8001/v1/chat",
+            json={"query": question, "corpus_id": "default"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        return r.json()["answer"]
 
-    # Get search results
-    results = await retriever.retrieve(query, match_count=5)
+asyncio.run(chat("What does NeuralFlow AI do?", token="..."))
+```
 
-    # Or get formatted context for LLM
-    context = await retriever.retrieve_as_context(query)
+### Search via Retriever Directly
+```python
+import asyncio, os
+from knowledge.config.settings import load_settings
+from knowledge.store.vector import PostgresHybridStore
+from knowledge.retrieval.retriever import Retriever
 
+async def search(query: str) -> None:
+    settings = load_settings()
+    store = PostgresHybridStore(settings)
+    await store.connect()
+    retriever = Retriever(store=store, settings=settings)
+    results = await retriever.retrieve(query, corpus_id="default", tenant_id="default")
+    for r in results:
+        print(f"[{r.raw_score:.3f}] {r.document_title}: {r.content[:120]}...")
     await store.close()
-    return results, context
 
-asyncio.run(search("employee benefits"))
+asyncio.run(search("employee PTO policy"))
+```
+
+### Ingest Documents
+```bash
+cd rag/v2
+make seed                              # seed default corpus from rag/v2/documents/
+
+# Or call the API directly
+curl -X POST http://localhost:8001/v1/ingest \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@documents/team-handbook.md" \
+  -F "corpus_id=default"
 ```
