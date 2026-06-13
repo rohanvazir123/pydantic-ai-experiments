@@ -34,30 +34,39 @@ class TestPackageImports:
         )
 
     def test_retrieval_imports(self) -> None:
-        from knowledge.retrieval.fusion import rrf_fuse, fuse_to_search_results  # noqa: F401
+        from knowledge.retrieval.fusion import (  # noqa: F401
+            fuse_to_search_results,
+            rrf_fuse,
+        )
         from knowledge.retrieval.retriever import Retriever  # noqa: F401
 
     def test_store_imports(self) -> None:
-        from knowledge.store.vector import PostgresHybridStore  # noqa: F401
         from knowledge.store.cache import RedisCache  # noqa: F401
+        from knowledge.store.vector import PostgresHybridStore  # noqa: F401
 
     def test_hooks_imports(self) -> None:
-        from knowledge.hooks.registry import HookRegistry, HookPoint  # noqa: F401
         from knowledge.hooks.context import HookContext  # noqa: F401
+        from knowledge.hooks.registry import HookPoint, HookRegistry  # noqa: F401
 
     def test_bus_imports(self) -> None:
-        from knowledge.bus.schemas import IngestJob, SearchRequest  # noqa: F401
         from knowledge.bus.backoff import exponential_backoff  # noqa: F401
         from knowledge.bus.circuit_breaker import CircuitBreaker  # noqa: F401
+        from knowledge.bus.schemas import IngestJob, SearchRequest  # noqa: F401
 
     def test_validation_imports(self) -> None:
         from knowledge.validation.pipeline import ValidationPipeline  # noqa: F401
 
     def test_observability_imports(self) -> None:
-        from knowledge.observability.metrics import observe_request, observe_retrieval  # noqa: F401
+        from knowledge.observability.metrics import (  # noqa: F401
+            observe_request,
+            observe_retrieval,
+        )
 
     def test_memory_imports(self) -> None:
-        from knowledge.memory.working_memory import AssembledContext, assemble  # noqa: F401
+        from knowledge.memory.working_memory import (  # noqa: F401
+            AssembledContext,
+            assemble,
+        )
 
     def test_evaluation_imports(self) -> None:
         from knowledge.evaluation.schemas import EvalResult  # noqa: F401
@@ -179,8 +188,9 @@ class TestRRFFusion:
 class TestHooks:
     def test_registry_registers_and_fires(self) -> None:
         import asyncio
-        from knowledge.hooks.registry import HookRegistry, HookPoint
+
         from knowledge.hooks.context import HookContext
+        from knowledge.hooks.registry import HookPoint, HookRegistry
 
         reg = HookRegistry()
         fired: list[str] = []
@@ -196,8 +206,9 @@ class TestHooks:
 
     def test_unregistered_point_noop(self) -> None:
         import asyncio
-        from knowledge.hooks.registry import HookRegistry, HookPoint
+
         from knowledge.hooks.context import HookContext
+        from knowledge.hooks.registry import HookPoint, HookRegistry
 
         reg = HookRegistry()
         ctx = HookContext(query="q")
@@ -224,8 +235,9 @@ class TestCircuitBreaker:
 class TestAPIAppFactory:
     def test_create_app_returns_fastapi(self) -> None:
         from fastapi import FastAPI
-        from knowledge.config.settings import Settings
+
         from knowledge.api.app import create_app
+        from knowledge.config.settings import Settings
 
         env = {**_REQUIRED_ENV}
         with mock.patch.dict(os.environ, env, clear=True):
@@ -234,8 +246,8 @@ class TestAPIAppFactory:
         assert isinstance(app, FastAPI)
 
     def test_health_route_registered(self) -> None:
-        from knowledge.config.settings import Settings
         from knowledge.api.app import create_app
+        from knowledge.config.settings import Settings
 
         env = {**_REQUIRED_ENV}
         with mock.patch.dict(os.environ, env, clear=True):

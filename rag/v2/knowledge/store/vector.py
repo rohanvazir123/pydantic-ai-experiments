@@ -27,7 +27,7 @@ from knowledge.store.cache import RedisCache
 logger = logging.getLogger(__name__)
 
 RRF_K: int = 60
-OVERFETCH_FACTOR: int = 3   # fetch k × OVERFETCH_FACTOR before reranking
+OVERFETCH_FACTOR: int = 3   # fetch k x OVERFETCH_FACTOR before reranking
 
 
 class PostgresHybridStore:
@@ -250,7 +250,7 @@ class PostgresHybridStore:
     ) -> list[dict[str, Any]]:
         """Hybrid BM25 + cosine ANN search fused with RRF (k=60).
 
-        Fetches k × OVERFETCH_FACTOR candidates from each leg, fuses with RRF,
+        Fetches k x OVERFETCH_FACTOR candidates from each leg, fuses with RRF,
         and returns the top k. raw_score is the RRF score; raw_score_type = 'rrf'.
         confidence is set to None here — populated by the CrossEncoder reranker.
         """

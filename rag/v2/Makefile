@@ -46,7 +46,7 @@ test:
 	uv run pytest tests/ -v --tb=short
 
 test-unit:
-	uv run pytest tests/unit/ -v
+	uv run pytest tests/unit/ tests/retrieval/test_retrieval_metrics.py::TestMetricFunctions -v
 
 test-integration:
 	uv run pytest tests/integration/ tests/retrieval/ tests/ingestion/ tests/agent/ tests/api/ -v --tb=short

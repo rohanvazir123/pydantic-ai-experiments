@@ -32,7 +32,7 @@ Given a question, source passages, and a generated answer, determine:
 
 RULES:
 - Base your verdict ONLY on the provided passages. Do not use prior knowledge.
-- confidence must reflect your certainty in the verdict (0.0–1.0).
+- confidence must reflect your certainty in the verdict (0.0-1.0).
 - reasoning must be one sentence explaining the key reason.
 - If the answer is a refusal or abstention, verdict = 'supported'."""
 
@@ -59,7 +59,7 @@ RULES:
 - Never store query content or answer summaries.
 - If no memorable user facts, return an empty list."""
 
-SUMMARIZER_PROMPT = """Summarize the conversation below in 3–5 sentences.
+SUMMARIZER_PROMPT = """Summarize the conversation below in 3-5 sentences.
 
 Cover:
 - What the user was trying to learn or accomplish

@@ -43,6 +43,26 @@ ignore = [
     "B905",    # zip without explicit strict
     "TRY003",  # long exception messages are fine
     "PLR0913", # too many arguments — common in async pipelines
+    # ── Opinionated style rules disabled project-wide ──────────────────────
+    "PLC0415", # import-outside-top-level: intentional for optional/lazy deps
+    "PLW0603", # global-statement: used for module-level singleton caches
+    "PLW2901", # redefined-loop-name: common and readable pattern
+    "PERF401", # manual-list-comprehension: readability over micro-perf
+    "TRY300",  # try-consider-else: adds nesting without benefit here
+    "TRY400",  # error-instead-of-exception: fine in structured-log context
+    "TRY401",  # verbose-log-message: explicit is clearer in async pipelines
+    "B017",    # assert-raises-exception: fine in tests (bare Exception is clear)
+    "B904",    # raise-without-from: HTTPException chains are intentionally detached
+    "RUF006",  # asyncio-dangling-task: fire-and-forget is intentional here
+    "PLR2004", # magic-value-comparison: numeric literals in comparisons are clear
+    "TC001",   # typing-only-import: unnecessary complexity for small codebase
+    "UP046",   # non-pep695-generic: Generic[] is compatible with Python < 3.12
+    "TRY201",  # verbose-raise: explicit re-raise is clearer
+    "TRY301",  # raise-within-try: restructuring adds complexity without benefit
+    "B007",    # unused-loop-variable: _ convention conflicts with gettext idiom
+    "SIM105",  # suppressible-exception: explicit try/except is more readable
+    "SIM117",  # multiple-with-statements: readability preference
+    "C408",    # unnecessary-dict-call: dict() is explicit about intent
 ]
 
 fixable = ["ALL"]
@@ -52,8 +72,11 @@ unfixable = []
 known-first-party = ["rag", "kg", "nl2sql", "knowledge"]
 
 [lint.per-file-ignores]
-"tests/**" = ["S101", "PLR2004"]
-"rag/v2/tests/**" = ["S101", "PLR2004"]
+# Tests: assert is fine, magic values are fine, local imports for isolation are fine
+"tests/**"        = ["S101", "PLR2004", "PLC0415"]
+"rag/v2/tests/**" = ["S101", "PLR2004", "PLC0415"]
+# Seed / dev scripts: local imports are intentional (optional heavy deps)
+"scripts/**" = ["PLC0415"]
 
 [format]
 quote-style = "double"

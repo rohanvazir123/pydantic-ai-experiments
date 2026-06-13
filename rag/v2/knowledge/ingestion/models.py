@@ -10,7 +10,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-
 # ── Chunking configuration ────────────────────────────────────────────────────
 
 class ChunkingConfig(BaseModel):
@@ -77,7 +76,7 @@ class SearchResult(BaseModel):
 class Citation(BaseModel):
     """A cited source chunk in the agent's response.
 
-    relevance_score = SearchResult.confidence (post-rerank sigmoid, 0–1).
+    relevance_score = SearchResult.confidence (post-rerank sigmoid, 0-1).
     Never set from raw_score — raw scores are not calibrated across search types.
     """
 

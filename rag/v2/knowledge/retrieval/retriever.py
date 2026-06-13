@@ -19,8 +19,8 @@ import logging
 from typing import Any
 
 from knowledge.config.settings import Settings, load_settings
-from knowledge.ingestion.models import SearchResult
 from knowledge.ingestion.embedder import Embedder
+from knowledge.ingestion.models import SearchResult
 from knowledge.retrieval.fusion import (
     apply_confidence_filter,
     fuse_to_search_results,
@@ -31,7 +31,7 @@ from knowledge.store.vector import PostgresHybridStore
 
 logger = logging.getLogger(__name__)
 
-_OVERFETCH = 3   # fetch k×3 candidates before reranking
+_OVERFETCH = 3   # fetch k*3 candidates before reranking
 
 
 class Retriever:

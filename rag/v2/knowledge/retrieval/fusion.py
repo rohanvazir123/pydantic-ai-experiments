@@ -24,24 +24,31 @@ logger = logging.getLogger(__name__)
 
 RRF_K: int = 60
 
-_MODEL_NAME    = "BAAI/bge-reranker-base"
-_reranker: Any = None   # loaded lazily on first use, cached for process lifetime
+_MODEL_NAME = "BAAI/bge-reranker-base"
 
 
-def _load_reranker() -> Any:
-    global _reranker
-    if _reranker is None:
-        try:
-            from sentence_transformers import CrossEncoder
-            _reranker = CrossEncoder(_MODEL_NAME)
-            logger.info("CrossEncoder loaded: %s", _MODEL_NAME)
-        except ImportError:
-            logger.warning(
-                "sentence_transformers not installed — reranking disabled. "
-                "Install with: pip install sentence-transformers"
-            )
-            _reranker = False   # sentinel: tried and unavailable
-    return _reranker
+class _RerankerSingleton:
+    """Lazy-load CrossEncoder once; cache for process lifetime.
+
+    Uses False as a sentinel meaning: tried, unavailable (not retried).
+    """
+
+    _model: Any = None  # None = not yet attempted; False = unavailable; else model
+
+    @classmethod
+    def get(cls) -> Any:
+        if cls._model is None:
+            try:
+                from sentence_transformers import CrossEncoder
+                cls._model = CrossEncoder(_MODEL_NAME)
+                logger.info("CrossEncoder loaded: %s", _MODEL_NAME)
+            except ImportError:
+                logger.warning(
+                    "sentence_transformers not installed — reranking disabled. "
+                    "Install with: pip install sentence-transformers"
+                )
+                cls._model = False  # sentinel: unavailable
+        return cls._model
 
 
 def sigmoid(x: float) -> float:
@@ -126,7 +133,7 @@ def _rerank_sync(
     if not results:
         return results
 
-    model = _load_reranker()
+    model = _RerankerSingleton.get()
     if not model:   # unavailable — skip reranking
         return results
 

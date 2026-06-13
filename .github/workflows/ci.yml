@@ -42,17 +42,24 @@ jobs:
         run: uv sync --extra ingestion --extra observability --extra reranker
 
       - name: Lint
-        run: uv run ruff check knowledge/ tests/
+        run: make lint
 
       - name: Type check
-        run: uv run mypy knowledge/ --no-error-summary
+        run: make typecheck
+
+      - name: Smoke tests (no services, <2 s)
+        env:
+          DATABASE_URL:     postgresql://ragv2:test@localhost:5432/ragv2_test
+          AGE_DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
+          REDIS_URL:        redis://localhost:6379/1
+        run: uv run pytest tests/unit/test_smoke.py -v --tb=short -q
 
       - name: Unit tests
         env:
           DATABASE_URL:     postgresql://ragv2:test@localhost:5432/ragv2_test
           AGE_DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
           REDIS_URL:        redis://localhost:6379/1
-        run: uv run pytest tests/unit/ -v --tb=short -q
+        run: uv run pytest tests/unit/ tests/retrieval/test_retrieval_metrics.py::TestMetricFunctions -v --tb=short -q
 
       - name: Apply database schemas (for integration tests)
         env:
@@ -98,8 +105,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: rag/v2/frontend/package.json
+          cache-dependency-path: rag/v2/frontend/package-lock.json
 
-      - run: npm install
+      - run: npm ci
       - run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete
       - run: npm run build

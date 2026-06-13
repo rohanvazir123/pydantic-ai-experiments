@@ -1,4 +1,4 @@
-"""V1–V6 validation chain.
+"""V1-V6 validation chain.
 
 All checks run before any DB query or LLM call. Cheap first, expensive last.
 Rejection returns a structured ValidationError immediately — no further stages run.
@@ -157,7 +157,7 @@ async def _v6_rbac_check(
 
 
 class ValidationPipeline:
-    """Runs V2–V6 in order. Returns None (all pass) or the first ValidationError."""
+    """Runs V2-V6 in order. Returns None (all pass) or the first ValidationError."""
 
     def __init__(
         self,

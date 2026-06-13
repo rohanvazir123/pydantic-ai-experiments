@@ -25,7 +25,7 @@ _ESCALATION_THRESHOLD = 0.5  # if nano confidence < this, escalate to small
 
 class JudgeResult(BaseModel):
     verdict:    Literal["supported", "partial", "unsupported"]
-    confidence: float        # 0.0–1.0; judge's confidence in its own verdict
+    confidence: float        # 0.0-1.0; judge's confidence in its own verdict
     reasoning:  str          # one sentence; logged, never shown to user
 
 

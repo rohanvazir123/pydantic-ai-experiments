@@ -4,34 +4,28 @@ No external services, no Docling, no docling-graph required.
 Docling-dependent classes are tested with mocked internals.
 """
 
-import asyncio
 import hashlib
-import textwrap
 from pathlib import Path
 from unittest import mock
 
 import pytest
-import pytest_asyncio
 
+from knowledge.ingestion.chunker import DoclingHybridChunker
+from knowledge.ingestion.embedder import _L1_MAX, Embedder
 from knowledge.ingestion.models import (
     ChunkData,
     ChunkingConfig,
     Citation,
     IngestResult,
-    IngestionResult,
-    MetadataFilter,
     SearchResult,
 )
-from knowledge.ingestion.embedder import Embedder, _L1_MAX
-from knowledge.ingestion.chunker import DoclingHybridChunker
 from knowledge.ingestion.pipeline import (
     DocumentIngestionPipeline,
-    _extract_title,
     _extract_metadata,
+    _extract_title,
     _find_document_files,
     _sha256_file,
 )
-
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -307,7 +301,7 @@ class TestDocumentIngestionPipeline:
         pipeline = self._make_pipeline()
         f = tmp_path / "doc.md"
         f.write_text("hello world", encoding="utf-8")
-        content_hash = _sha256_file(f)
+        _sha256_file(f)  # compute hash to warm any internal state
 
         mock_cache = mock.AsyncMock()
         mock_cache.get_fingerprint.return_value = True   # cache HIT

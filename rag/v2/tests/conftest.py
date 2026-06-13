@@ -1,11 +1,8 @@
 """Shared pytest fixtures for the knowledge test suite."""
 
 import os
-from collections.abc import AsyncGenerator
 
 import pytest
-import pytest_asyncio
-
 
 # ---------------------------------------------------------------------------
 # Environment: point tests at a test .env if DATABASE_URL is not set
