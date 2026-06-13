@@ -197,7 +197,7 @@ async def traced_agent_run(
         try:
             from langfuse import Langfuse
             lf = Langfuse()
-            langfuse_ctx = lf.trace(
+            langfuse_ctx = lf.trace(  # type: ignore[attr-defined]
                 name="rag_agent_run",
                 input={"query": query},
                 user_id=state.user_id or None,

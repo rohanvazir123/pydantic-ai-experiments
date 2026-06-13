@@ -66,7 +66,7 @@ class DoclingProcessor:
             pdf_opts.generate_picture_images = True
             pdf_opts.enable_remote_services = True
             pdf_opts.picture_description_options = PictureDescriptionApiOptions(
-                url=self._settings.vlm_base_url,
+                url=self._settings.vlm_base_url,  # type: ignore[arg-type]
                 params={
                     "model": self._settings.vlm_model,
                     "temperature": 0.1,

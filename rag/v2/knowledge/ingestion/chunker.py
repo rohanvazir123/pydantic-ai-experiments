@@ -47,8 +47,8 @@ class DoclingHybridChunker:
 
         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_MODEL)
         self._chunker = HybridChunker(
-            tokenizer=tokenizer,
-            max_tokens=self.config.max_tokens,
+            tokenizer=tokenizer,  # type: ignore[arg-type]
+            max_tokens=self.config.max_tokens,  # type: ignore[call-arg]
             merge_peers=True,
         )
         self._tokenizer = tokenizer

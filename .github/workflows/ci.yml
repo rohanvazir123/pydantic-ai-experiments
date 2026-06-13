@@ -150,13 +150,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: rag/v2/frontend/package-lock.json
 
-      # npm ci requires the lock file to be consistent with the platform's optional
-      # deps. Use npm install so optional platform packages are resolved fresh on
-      # Linux without failing when macOS-generated locks have minor differences.
-      - run: npm install --no-fund
+      # package-lock.json is not committed (it was generated against PayPal's
+      # internal Artifactory registry which is inaccessible from GitHub CI).
+      # npm install resolves from the public registry instead.
+      - run: npm install --no-fund --prefer-offline 2>/dev/null || npm install --no-fund
 
       - name: Type check
         run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete
