@@ -272,6 +272,13 @@ class TestRetrievalMetrics:
             await store.initialize()
         except Exception as exc:
             pytest.skip(f"PostgreSQL unreachable: {exc}")
+        count = await store.get_chunk_count(DEFAULT_CORPUS_ID, DEFAULT_TENANT_ID)
+        if count == 0:
+            await store.close()
+            pytest.skip(
+                f"No documents in corpus '{DEFAULT_CORPUS_ID}' — "
+                "run 'make seed' to ingest sample data before retrieval tests"
+            )
         embedder = Embedder(settings=settings)
         r = Retriever(vector_store=store, embedder=embedder, settings=settings)
         yield r
