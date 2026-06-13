@@ -38,6 +38,10 @@ This directory contains both the **design documents** and the **implementation**
 
 ## Quick Start
 
+> **Windows prerequisite:** `INSTALL.ps1` requires PowerShell 7.1+ (`pwsh`), not the
+> built-in `powershell` (5.x). Install from <https://aka.ms/powershell>, then run:
+> `pwsh -ExecutionPolicy Bypass -File INSTALL.ps1`
+
 ```bash
 cd rag/v2
 

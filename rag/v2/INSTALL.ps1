@@ -1,13 +1,16 @@
 #!/usr/bin/env pwsh
-# RAG v2 — local dev setup (Windows / macOS / Linux via PowerShell 7+)
+# RAG v2 — local dev setup (Windows / macOS / Linux via PowerShell 7.1+)
+#
+# Requires PowerShell 7.1+ (pwsh). The built-in Windows "powershell" (5.x) will
+# fail with parse errors — install pwsh from https://aka.ms/powershell
 #
 # Usage (from rag/v2/):
-#   .\INSTALL.ps1
+#   pwsh -ExecutionPolicy Bypass -File INSTALL.ps1
 #
-# Windows: if script execution is blocked, run once in an elevated PowerShell:
+# Windows: if script execution is blocked, run once in an elevated pwsh:
 #   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 # Or bypass for this session:
-#   powershell -ExecutionPolicy Bypass -File INSTALL.ps1
+#   pwsh -ExecutionPolicy Bypass -File INSTALL.ps1
 #
 # Prerequisites — install these before running:
 #
