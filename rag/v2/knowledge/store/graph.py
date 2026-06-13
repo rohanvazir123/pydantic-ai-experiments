@@ -24,7 +24,7 @@ import logging
 import re
 import uuid as _uuid
 from contextlib import asynccontextmanager
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import asyncpg
 
@@ -139,7 +139,7 @@ class AgeGraphStore:
             self._pool = None
 
     @asynccontextmanager
-    async def _conn(self):
+    async def _conn(self) -> Any:
         """Acquire a connection with AGE loaded and search_path set."""
         assert self._pool, "Call initialize() first"
         async with self._pool.acquire() as conn:

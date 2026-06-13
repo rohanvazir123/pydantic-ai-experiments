@@ -51,10 +51,9 @@ class DoclingProcessor:
         if self._pdf_converter is not None:
             return self._pdf_converter
 
-        from docling.document_converter import DocumentConverter
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
-        from docling.document_converter import PdfFormatOption
+        from docling.document_converter import DocumentConverter, PdfFormatOption
 
         pdf_opts = PdfPipelineOptions()
         pdf_opts.do_ocr = False
@@ -67,7 +66,7 @@ class DoclingProcessor:
             pdf_opts.generate_picture_images = True
             pdf_opts.enable_remote_services = True
             pdf_opts.picture_description_options = PictureDescriptionApiOptions(
-                url=self._settings.vlm_base_url,
+                url=self._settings.vlm_base_url,  # type: ignore[arg-type]
                 params={
                     "model": self._settings.vlm_model,
                     "temperature": 0.1,
@@ -95,10 +94,9 @@ class DoclingProcessor:
         if self._standard_converter is not None:
             return self._standard_converter
 
-        from docling.document_converter import DocumentConverter
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
-        from docling.document_converter import PdfFormatOption
+        from docling.document_converter import DocumentConverter, PdfFormatOption
 
         pdf_opts = PdfPipelineOptions()
         pdf_opts.do_ocr = False

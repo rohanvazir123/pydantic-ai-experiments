@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -166,7 +166,7 @@ def encrypt_answer(payload: dict[str, Any], tenant_id: str, settings: Settings |
     """
     _settings = settings or load_settings()
     try:
-        import joserfc.jwe as jwe
+        from joserfc import jwe
         from joserfc.jwk import OctKey
         key = OctKey.import_key(_derive_key(tenant_id, _settings))
         token = jwe.encrypt_compact(
@@ -183,12 +183,15 @@ def decrypt_answer(token: str, tenant_id: str, settings: Settings | None = None)
     """Decrypt a JWE token from semantic_cache."""
     _settings = settings or load_settings()
     try:
-        import joserfc.jwe as jwe
+        from joserfc import jwe
         from joserfc.jwk import OctKey
         key   = OctKey.import_key(_derive_key(tenant_id, _settings))
         result = jwe.decrypt_compact(token.encode() if isinstance(token, str) else token, key)
-        return json.loads(result.plaintext)
+        plaintext = result.plaintext
+        if plaintext is None:
+            raise ValueError("JWE decryption returned no plaintext")
+        return cast("dict[str, Any]", json.loads(plaintext))
     except ImportError:
-        return json.loads(base64.b64decode(token.encode()))
+        return cast("dict[str, Any]", json.loads(base64.b64decode(token.encode())))
     except Exception as exc:
         raise ValueError(f"Failed to decrypt answer: {exc}") from exc

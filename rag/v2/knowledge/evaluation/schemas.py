@@ -1,6 +1,6 @@
 """Evaluation Pydantic models — EvalRun, EvalResult, GoldSample."""
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 

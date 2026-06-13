@@ -3,21 +3,20 @@
 Uses fakeredis — no live Redis required.
 """
 
-import asyncio
 import json
+
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
-import fakeredis.aioredis as fakeredis
 
-from knowledge.bus.schemas import IngestJob
-from knowledge.bus.publisher import Publisher
 from knowledge.bus.consumer import (
+    MAX_RETRIES,
     _execute_with_retry,
     _group_from_stream,
     ensure_consumer_group,
-    consume_loop,
-    MAX_RETRIES,
 )
+from knowledge.bus.publisher import Publisher
+from knowledge.bus.schemas import IngestJob
 
 
 @pytest_asyncio.fixture

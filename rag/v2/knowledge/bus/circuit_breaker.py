@@ -17,7 +17,8 @@ Redis keys (all scoped to `name`):
 
 import logging
 import time
-from typing import Awaitable, TypeVar
+from collections.abc import Awaitable
+from typing import TypeVar
 
 import redis.asyncio as aioredis
 

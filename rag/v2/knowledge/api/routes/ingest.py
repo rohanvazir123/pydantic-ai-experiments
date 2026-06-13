@@ -95,7 +95,9 @@ async def job_stream(job_id: str, request: Request) -> StreamingResponse:
     if redis is None:
         raise HTTPException(status_code=503, detail="Redis not initialised")
 
-    async def _generate():
+    from collections.abc import AsyncGenerator
+
+    async def _generate() -> AsyncGenerator[str]:
         last_id = "0"
         while True:
             messages = await redis.xread({"knowledge:events": last_id}, count=10, block=2000)

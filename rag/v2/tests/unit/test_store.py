@@ -6,17 +6,17 @@ graph naming, AGE Cypher wrapper, and graceful error paths.
 """
 
 import re
+
 import pytest
 
 from knowledge.store.graph import (
+    AgeGraphStore,
+    _parse_return_aliases,
     _sanitize_label,
     _sanitize_rel_type,
-    _parse_return_aliases,
     _unquote_agtype,
-    AgeGraphStore,
 )
-from knowledge.store.vector import PostgresHybridStore, RRF_K
-
+from knowledge.store.vector import RRF_K, PostgresHybridStore
 
 # ── AgeGraphStore helpers ─────────────────────────────────────────────────────
 
@@ -153,19 +153,16 @@ class TestHybridSearchSQL:
     """Verify the RRF SQL structure contains the expected clauses without a live DB."""
 
     def test_rrf_sql_has_full_outer_join(self) -> None:
-        from knowledge.store.vector import PostgresHybridStore
-        import inspect, textwrap
+        import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         assert "FULL OUTER JOIN" in src.upper()
 
     def test_rrf_sql_has_coalesce(self) -> None:
-        from knowledge.store.vector import PostgresHybridStore
         import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         assert "COALESCE" in src.upper()
 
     def test_rrf_sql_uses_rrf_k_constant(self) -> None:
-        from knowledge.store.vector import PostgresHybridStore
         import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         # Should reference RRF_K not hardcoded 60
@@ -174,13 +171,11 @@ class TestHybridSearchSQL:
     def test_result_has_confidence_none(self) -> None:
         """hybrid_search results carry confidence=None until reranker sets it."""
         # We verify the structure via the source — confidence is set to None
-        from knowledge.store.vector import PostgresHybridStore
         import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         assert '"confidence": None' in src
 
     def test_result_has_raw_score_type_rrf(self) -> None:
-        from knowledge.store.vector import PostgresHybridStore
         import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         assert '"raw_score_type": "rrf"' in src

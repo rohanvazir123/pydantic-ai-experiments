@@ -3,12 +3,10 @@
 No external services required — CrossEncoder and stores are mocked.
 """
 
-import math
 import uuid
 from unittest import mock
 
 import pytest
-import pytest_asyncio
 
 from knowledge.ingestion.models import SearchResult
 from knowledge.retrieval.fusion import (
@@ -19,7 +17,6 @@ from knowledge.retrieval.fusion import (
     sigmoid,
 )
 from knowledge.retrieval.retriever import Retriever
-
 
 # ── Sigmoid ───────────────────────────────────────────────────────────────────
 

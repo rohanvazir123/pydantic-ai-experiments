@@ -9,7 +9,7 @@ for progress updates. Workers update the hash directly.
 """
 
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
 
@@ -123,6 +123,6 @@ class Publisher:
         if chunks_ingested is not None:
             mapping["chunks_ingested"] = str(chunks_ingested)
         if status in ("completed", "failed"):
-            from datetime import datetime, UTC
+            from datetime import UTC, datetime
             mapping["completed_at"] = datetime.now(UTC).isoformat()
-        await self._redis.hset(key, mapping=mapping)
+        await self._redis.hset(key, mapping=mapping)  # type: ignore[arg-type]

@@ -2,8 +2,8 @@
 
 import logging
 import uuid as _uuid
-from datetime import datetime, UTC
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 import asyncpg
 from croniter import croniter
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def compute_next_run_at(cron_expr: str, base: datetime | None = None) -> datetime:
     """Return the next fire time for a cron expression (UTC)."""
     it = croniter(cron_expr, base or datetime.now(UTC))
-    return it.get_next(datetime)
+    return cast("datetime", it.get_next(datetime))
 
 
 class ScheduledJobStore:

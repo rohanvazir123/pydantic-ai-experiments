@@ -16,7 +16,7 @@ import json
 import logging
 import uuid as _uuid
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -77,7 +77,7 @@ class PostgresHybridStore:
             self._pool = None
 
     @asynccontextmanager
-    async def _conn(self, tenant_id: str):
+    async def _conn(self, tenant_id: str) -> Any:
         """Acquire a connection with RLS tenant context set."""
         assert self._pool, "Call initialize() first"
         async with self._pool.acquire() as conn:
@@ -124,7 +124,7 @@ class PostgresHybridStore:
             )
         if row is None:
             return None
-        return row["metadata"].get("content_hash")
+        return cast("str | None", row["metadata"].get("content_hash"))
 
     async def delete_document_and_chunks(self, source: str, corpus_id: str, tenant_id: str) -> None:
         """Delete a document and all its chunks (cascades via FK)."""
@@ -311,9 +311,9 @@ class PostgresHybridStore:
 
     async def get_chunk_count(self, corpus_id: str, tenant_id: str) -> int:
         async with self._conn(tenant_id) as conn:
-            return await conn.fetchval(
+            return cast("int", await conn.fetchval(
                 "SELECT COUNT(*) FROM chunks WHERE corpus_id = $1", corpus_id
-            )
+            ))
 
     async def truncate_corpus(self, corpus_id: str, tenant_id: str) -> None:
         """Delete all documents and chunks for a corpus."""

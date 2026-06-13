@@ -4,28 +4,22 @@ No live services or FastAPI test client required — tests cover
 Pydantic model validation and middleware/quota helper logic.
 """
 
-import os
-import uuid
-from unittest import mock
 
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
-import fakeredis.aioredis as fakeredis
 
+from knowledge.api.quota import QuotaExceeded, enforce_quota
 from knowledge.api.schemas import (
     APIResponse,
     ChatRequest,
     ErrorDetail,
-    FeedbackRequest,
     HealthResponse,
     IngestRequest,
-    SearchRequest,
     ScheduledJobRequest,
-    TokenRequest,
+    SearchRequest,
 )
-from knowledge.api.quota import QuotaExceeded, enforce_quota
 from knowledge.api.timeout import TimeoutBudget
-
 
 # ── APIResponse envelope ──────────────────────────────────────────────────────
 

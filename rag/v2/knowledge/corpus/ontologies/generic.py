@@ -5,7 +5,7 @@ Suitable for any corpus where graph extraction is enabled but no ontology
 has been uploaded via POST /v1/corpus/{id}/ontology.
 """
 
-from typing import Any, List
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,7 +20,8 @@ def edge(label: str, **kwargs: Any) -> Any:
 class GenericEntity(BaseModel):
     """A named entity extracted from the document."""
 
-    model_config = ConfigDict(graph_id_fields=["name"])
+    model_config = ConfigDict()
+    graph_id_fields: list[str] = ["name"]
 
     name: str = Field(
         description=(
@@ -43,7 +44,7 @@ class GenericEntity(BaseModel):
         None,
         description="Brief description from the document context. Omit if not clear.",
     )
-    related_to: List["GenericEntity"] = edge(
+    related_to: list["GenericEntity"] = edge(
         label="RELATED_TO",
         default_factory=list,
         description=(
@@ -56,7 +57,8 @@ class GenericEntity(BaseModel):
 class GenericDocument(BaseModel):
     """Root entity: the document itself."""
 
-    model_config = ConfigDict(graph_id_fields=["title"])
+    model_config = ConfigDict()
+    graph_id_fields: list[str] = ["title"]
 
     title: str = Field(
         description=(
@@ -66,7 +68,7 @@ class GenericDocument(BaseModel):
         ),
         examples=["Employee Handbook 2025", "Q4 Business Review"],
     )
-    entities: List[GenericEntity] = edge(
+    entities: list[GenericEntity] = edge(
         label="MENTIONS",
         default_factory=list,
         description="All named entities mentioned in the document.",

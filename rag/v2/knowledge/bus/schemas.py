@@ -8,7 +8,7 @@ The `attempt` field on IngestJob / SearchRequest tracks retry depth — it is
 incremented by _execute_with_retry before re-enqueueing on transient failure.
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 

@@ -12,7 +12,7 @@ is the source of truth for billing — Redis is the enforcement gate.
 """
 
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
 

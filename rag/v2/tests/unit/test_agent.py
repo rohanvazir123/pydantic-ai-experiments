@@ -4,31 +4,28 @@ No live LLM or services required. Pydantic AI agents are mocked at the
 run() boundary so we test pipeline logic, not model output.
 """
 
-import asyncio
 import uuid
 from unittest import mock
 
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
-import fakeredis.aioredis as fakeredis
 
+from knowledge.agent.agent import CitationCheck, GenerationResult
 from knowledge.agent.cost_guard import (
     SystemBudgetExceeded,
     TenantBudgetExceeded,
     check_cost_circuit_breaker,
     record_cost,
 )
+from knowledge.agent.judge import JudgeResult
 from knowledge.agent.pipeline import (
+    _PARTIAL_NOTE,
     ConfidenceAwarePipeline,
     PipelineStatus,
-    RAGResponse,
-    _PARTIAL_NOTE,
 )
-from knowledge.agent.agent import CitationCheck, GenerationResult, RAGState
-from knowledge.agent.judge import JudgeResult
 from knowledge.config.settings import Settings
 from knowledge.ingestion.models import Citation, SearchResult
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,7 +127,7 @@ class TestPipelineLayer1Gate:
 
     @pytest.mark.asyncio
     async def test_layer1_hook_fires_on_abstain(self) -> None:
-        from knowledge.hooks.registry import registry, HookPoint
+        from knowledge.hooks.registry import HookPoint, registry
 
         fired: list[str] = []
 

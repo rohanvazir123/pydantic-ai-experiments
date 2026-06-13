@@ -18,15 +18,27 @@ Middleware stack (outermost first):
 """
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from knowledge.api.middleware import CorrelationIDMiddleware, StructuredLogMiddleware
-from knowledge.api.routes import auth, chat, corpus, evaluate, feedback, health, ingest, logs, memory, scheduler, search
+from knowledge.api.routes import (
+    auth,
+    chat,
+    corpus,
+    evaluate,
+    feedback,
+    health,
+    ingest,
+    logs,
+    memory,
+    scheduler,
+    search,
+)
 from knowledge.bus.publisher import Publisher
 from knowledge.config.settings import Settings, load_settings
 from knowledge.hooks.builtins import register_builtin_hooks
@@ -39,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Connect all stores on startup; close them on shutdown."""
     settings: Settings = app.state.settings
 

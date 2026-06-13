@@ -12,7 +12,7 @@ import json
 import logging
 from base64 import b64decode, b64encode
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
@@ -35,7 +35,7 @@ def _encrypt(payload: dict[str, Any], _settings: Settings) -> str:
 def _decrypt(token: str, _settings: Settings) -> dict[str, Any]:
     try:
         raw = b64decode(token.encode()).decode()
-        return json.loads(raw)
+        return dict(json.loads(raw))
     except Exception:
         raise ValueError("Failed to decrypt semantic cache entry")
 
@@ -67,7 +67,7 @@ class SemanticCache:
             self._pool = None
 
     @asynccontextmanager
-    async def _conn(self):
+    async def _conn(self) -> Any:
         assert self._pool, "Call initialize() first"
         async with self._pool.acquire() as conn:
             await register_vector(conn)

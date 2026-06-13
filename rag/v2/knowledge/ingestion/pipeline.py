@@ -16,23 +16,29 @@ inside asyncio.to_thread(). Embedding and DB writes are fully async.
 import asyncio
 import hashlib
 import logging
-import yaml
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import yaml
 
 from knowledge.bus.schemas import IngestJob
 from knowledge.config.settings import Settings, load_settings
 from knowledge.ingestion.chunker import DoclingHybridChunker
 from knowledge.ingestion.docling_processor import (
-    DoclingProcessor,
     _AUDIO_FORMATS,
     _PDF_FORMATS,
     _STRUCTURED_FORMATS,
+    DoclingProcessor,
 )
 from knowledge.ingestion.embedder import Embedder
 from knowledge.ingestion.graph_extractor import extract_graph
-from knowledge.ingestion.models import ChunkData, ChunkingConfig, IngestResult, IngestionResult
+from knowledge.ingestion.models import (
+    ChunkData,
+    ChunkingConfig,
+    IngestionResult,
+    IngestResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,13 +269,14 @@ class DocumentIngestionPipeline:
                 metadata["graph_extraction_failed"] = True
                 return 0
             if self._age_store and document_id:
-                node_count, _ = await self._age_store.import_docling_graph(
+                _import_result = await self._age_store.import_docling_graph(
                     context, corpus_id, tenant_id, document_id
                 )
-                return node_count
+                return cast("int", _import_result[0])
             return 0
 
-        chunks_created, _ = await asyncio.gather(_chunker_task(), _graph_task())
+        _gather_result = await asyncio.gather(_chunker_task(), _graph_task())
+        chunks_created = cast("int", _gather_result[0])
 
         # ── Set fingerprint cache ────────────────────────────────────────────
         if self._cache:

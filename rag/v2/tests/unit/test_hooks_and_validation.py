@@ -4,7 +4,6 @@ No external services required.
 """
 
 import pytest
-import pytest_asyncio
 
 from knowledge.hooks.context import HookAbort, HookContext
 from knowledge.hooks.registry import HookPoint, HookRegistry
@@ -14,7 +13,6 @@ from knowledge.validation.pipeline import (
     _v4_injection_guard,
     _v6_rbac_check,
 )
-
 
 # ── HookContext ───────────────────────────────────────────────────────────────
 

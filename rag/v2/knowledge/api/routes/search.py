@@ -5,7 +5,12 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 
 from knowledge.api.middleware import get_request_id, get_tenant_id
-from knowledge.api.schemas import APIResponse, SearchRequest, SearchResponse, SearchResultItem
+from knowledge.api.schemas import (
+    APIResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResultItem,
+)
 
 router = APIRouter(prefix="/search", tags=["search"])
 

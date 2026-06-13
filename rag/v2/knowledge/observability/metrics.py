@@ -14,22 +14,23 @@ logger = logging.getLogger(__name__)
 # ── Prometheus metrics ────────────────────────────────────────────────────────
 # Lazily imported so tests don't require prometheus_client installed
 
-def _counter(name: str, doc: str, labels: list[str]):
+def _counter(name: str, doc: str, labels: list[str]) -> Any:
     try:
         from prometheus_client import Counter
         return Counter(name, doc, labels)
     except ImportError:
         return None
 
-def _histogram(name: str, doc: str, labels: list[str], buckets=None):
+def _histogram(name: str, doc: str, labels: list[str], buckets: list[float] | None = None) -> Any:
     try:
         from prometheus_client import Histogram
-        kwargs = {"buckets": buckets} if buckets else {}
-        return Histogram(name, doc, labels, **kwargs)
+        if buckets is not None:
+            return Histogram(name, doc, labels, buckets=buckets)
+        return Histogram(name, doc, labels)
     except ImportError:
         return None
 
-def _gauge(name: str, doc: str, labels: list[str] | None = None):
+def _gauge(name: str, doc: str, labels: list[str] | None = None) -> Any:
     try:
         from prometheus_client import Gauge
         return Gauge(name, doc, labels or [])

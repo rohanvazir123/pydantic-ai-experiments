@@ -38,9 +38,9 @@ def _make_judge_agent(model_id: str, settings: Settings) -> Any:
     _ms: dict = {}
     if settings.llm_provider == "ollama":
         _ms = {"extra_body": {"num_ctx": 4096}}
-    return Agent(
+    return Agent(  # type: ignore[call-overload]
         model,
-        system_prompt=JUDGE_SYSTEM_PROMPT,
+        instructions=JUDGE_SYSTEM_PROMPT,
         output_type=JudgeResult,
         model_settings=_ms,
     )

@@ -7,11 +7,10 @@ load_settings() singleton) rather than reading os.environ directly.
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Self
-
 
 # ---------------------------------------------------------------------------
 # Sub-models
@@ -26,23 +25,23 @@ class CorpusConfig:
     """
 
     __slots__ = (
-        "id",
-        "display_name",
-        "source_folders",
         "allowed_roles",
-        "metadata_tags",
-        "enable_graph_extraction",
-        "graph_ontology_path",
-        "graph_extraction_provider",
-        "graph_extraction_model",
-        "graph_extraction_contract",
-        "graph_processing_mode",
-        "graph_extraction_backend",
         "allowed_topics",
         "data_region",
+        "display_name",
+        "enable_graph_extraction",
+        "graph_extraction_backend",
+        "graph_extraction_contract",
+        "graph_extraction_model",
+        "graph_extraction_provider",
+        "graph_ontology_path",
+        "graph_processing_mode",
+        "id",
+        "metadata_tags",
+        "source_folders",
     )
 
-    def __init__(self, data: dict) -> None:  # noqa: ANN401
+    def __init__(self, data: dict) -> None:
         self.id: str = data["id"]
         self.display_name: str = data.get("display_name", self.id)
         self.source_folders: list[Path] = [

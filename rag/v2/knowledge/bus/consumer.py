@@ -22,9 +22,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar, cast
 
-from pydantic import BaseModel
-
 import redis.asyncio as aioredis
+from pydantic import BaseModel
 
 from knowledge.bus.backoff import exponential_backoff
 from knowledge.bus.schemas import WorkerEvent
@@ -119,7 +118,7 @@ async def _execute_with_retry(
         job = job_model.model_validate_json(payload_raw)
     except Exception as exc:
         # Corrupt payload — non-retriable; ACK and DLQ immediately
-        await redis.xack(stream, stream.split(":")[0], msg_id)
+        await redis.xack(stream, stream.split(":", maxsplit=1)[0], msg_id)
         await _move_to_dlq(redis, stream, "unknown", payload_raw, exc, permanent=True)
         return
 
@@ -136,7 +135,7 @@ async def _execute_with_retry(
         await redis.xack(stream, _group_from_stream(stream), msg_id)
         await _move_to_dlq(redis, stream, job_id, payload_raw, exc, permanent=True)
 
-    except (Exception, asyncio.TimeoutError) as exc:
+    except (TimeoutError, Exception) as exc:
         if attempt >= max_retries:
             # Exhausted retries — ACK original, DLQ
             await redis.xack(stream, _group_from_stream(stream), msg_id)
@@ -216,7 +215,7 @@ async def consume_loop(
             continue
 
         # xreadgroup returns a heterogeneous nested structure; cast to known shape
-        typed = cast(list[tuple[Any, list[tuple[bytes, dict[bytes, bytes]]]]], messages)
+        typed = cast("list[tuple[Any, list[tuple[bytes, dict[bytes, bytes]]]]]", messages)
         for _stream_name, entries in typed:
             for msg_id, fields in entries:
                 payload_raw: str = fields.get(b"payload", b"{}").decode()

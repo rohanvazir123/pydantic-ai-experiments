@@ -154,6 +154,7 @@ class ConversationStore:
         # Trigger summarization when threshold crossed (async, non-blocking)
         if return_turn == SUMMARIZE_THRESHOLD:
             import asyncio
+
             from knowledge.memory.summarizer import summarize_conversation
             asyncio.create_task(summarize_conversation(conversation_id, self))
 

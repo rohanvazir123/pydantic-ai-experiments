@@ -4,19 +4,12 @@ No live services — auth stubs, scheduler math, working memory trim,
 evaluation metric formulas.
 """
 
-import math
 import uuid
-from unittest import mock
 
 import pytest
 
 from knowledge.api.auth import TokenClaims, _verify_stub, check_corpus_access
-from knowledge.scheduler.job_store import compute_next_run_at
-from knowledge.memory.working_memory import (
-    assemble,
-    count_tokens,
-    format_history,
-)
+from knowledge.evaluation.metrics.performance import estimate_cost
 from knowledge.evaluation.metrics.retrieval import (
     compute_all_metrics,
     hit_rate,
@@ -24,9 +17,13 @@ from knowledge.evaluation.metrics.retrieval import (
     percentile,
     reciprocal_rank,
 )
-from knowledge.evaluation.metrics.performance import estimate_cost
 from knowledge.evaluation.schemas import GoldSample
-
+from knowledge.memory.working_memory import (
+    assemble,
+    count_tokens,
+    format_history,
+)
+from knowledge.scheduler.job_store import compute_next_run_at
 
 # ── Auth (Phase 9) ────────────────────────────────────────────────────────────
 
@@ -37,7 +34,8 @@ class TestTokenClaims:
         assert "reader" in claims.roles
 
     def test_stub_decodes_valid_jwt_payload(self) -> None:
-        import base64, json
+        import base64
+        import json
         payload = {"sub": "user1", "tenant_id": "acme", "roles": ["admin"], "exp": 9999999999}
         encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
         token   = f"header.{encoded}.sig"
@@ -62,20 +60,20 @@ class TestTokenClaims:
 
 class TestComputeNextRunAt:
     def test_daily_cron(self) -> None:
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         base = datetime(2026, 6, 1, 10, 0, 0, tzinfo=UTC)  # 10:00
         nxt  = compute_next_run_at("0 2 * * *", base)       # fires at 02:00 next day
         assert nxt.hour == 2
         assert nxt.day  == 2
 
     def test_every_minute_cron(self) -> None:
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         base = datetime(2026, 6, 1, 10, 30, 0, tzinfo=UTC)
         nxt  = compute_next_run_at("* * * * *", base)
         assert nxt > base
 
     def test_weekly_cron(self) -> None:
-        from datetime import datetime, UTC, timedelta
+        from datetime import UTC, datetime
         base = datetime(2026, 6, 1, 0, 0, 0, tzinfo=UTC)
         nxt  = compute_next_run_at("0 0 * * 0", base)    # every Sunday midnight
         assert (nxt - base).days <= 7

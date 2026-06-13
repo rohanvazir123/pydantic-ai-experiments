@@ -16,13 +16,10 @@ Job is NOT moved to DLQ on graph extraction failure.
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from knowledge.config.settings import Settings, load_settings
 from knowledge.corpus.ontologies.loader import load_ontology
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,6 @@ and the pipeline_latency_ms field so we can identify bottlenecks per stage
 (retrieval vs rerank vs generation vs judge).
 """
 
-import json
 import os
 import random
 import uuid

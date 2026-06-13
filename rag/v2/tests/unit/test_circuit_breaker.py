@@ -3,17 +3,16 @@
 Uses fakeredis — no live Redis required.
 """
 
-import asyncio
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
-import fakeredis.aioredis as fakeredis
 
 from knowledge.bus.circuit_breaker import (
+    _STATE_CLOSED,
+    _STATE_HALF_OPEN,
+    _STATE_OPEN,
     CircuitBreaker,
     CircuitOpenError,
-    _STATE_CLOSED,
-    _STATE_OPEN,
-    _STATE_HALF_OPEN,
 )
 
 

@@ -33,8 +33,7 @@ def exponential_backoff(
     Returns:
         Seconds to sleep — always ≥ base_s, ≤ max_s + jitter.
     """
-    if attempt < 1:
-        attempt = 1
+    attempt = max(attempt, 1)
     raw = min(base_s * (multiplier ** (attempt - 1)), max_s)
-    jitter = random.uniform(0, jitter_factor * raw)  # noqa: S311 — not crypto
+    jitter = random.uniform(0, jitter_factor * raw)
     return raw + jitter

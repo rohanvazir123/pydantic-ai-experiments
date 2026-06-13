@@ -20,8 +20,9 @@ Every gate fires the appropriate hook point.
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from enum import StrEnum
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -244,7 +245,7 @@ class ConfidenceAwarePipeline:
         session_id: str = "",
         model_tier: str = "small",
         message_history: list | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[str]:
         """Streaming path — Layer 1 gate only; judge skipped for latency.
 
         Yields SSE-formatted data lines.

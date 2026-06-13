@@ -9,8 +9,13 @@ import uuid
 
 from fastapi import APIRouter, Request
 
-from knowledge.api.schemas import APIResponse, RefreshResponse, TokenRequest, TokenResponse
 from knowledge.api.middleware import get_request_id
+from knowledge.api.schemas import (
+    APIResponse,
+    RefreshResponse,
+    TokenRequest,
+    TokenResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

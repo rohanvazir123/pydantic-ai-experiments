@@ -11,7 +11,7 @@ Key patterns:
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 import redis.asyncio as aioredis
 

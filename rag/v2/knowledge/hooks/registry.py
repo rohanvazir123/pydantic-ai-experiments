@@ -68,7 +68,7 @@ class HookRegistry:
         self._hooks[point].sort(key=lambda t: t[0])
         logger.debug("Registered hook '%s' at %s (priority=%d)", hook_name, point, priority)
 
-    def hook(self, point: HookPoint, priority: int = 0, name: str | None = None):
+    def hook(self, point: HookPoint, priority: int = 0, name: str | None = None) -> "Callable[[Hook], Hook]":
         """Decorator variant of register()."""
         def decorator(fn: Hook) -> Hook:
             self.register(point, fn, priority=priority, name=name)

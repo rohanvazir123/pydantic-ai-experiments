@@ -15,6 +15,7 @@ import logging
 import time
 import uuid as _uuid
 from contextvars import ContextVar
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -63,12 +64,12 @@ def set_user_id(user_id: str) -> None:
 class CorrelationIDMiddleware(BaseHTTPMiddleware):
     """Sets X-Request-ID on every request/response and injects into contextvars."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
         # Use client-provided ID if present (for distributed tracing), else generate
         request_id = request.headers.get("X-Request-ID") or str(_uuid.uuid4())
         _request_id_var.set(request_id)
 
-        response = await call_next(request)
+        response: Response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
 
@@ -76,9 +77,9 @@ class CorrelationIDMiddleware(BaseHTTPMiddleware):
 class StructuredLogMiddleware(BaseHTTPMiddleware):
     """Emits one JSON-compatible structured log line per request."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
         t0 = time.monotonic()
-        response = await call_next(request)
+        response: Response = await call_next(request)
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         logger.info(

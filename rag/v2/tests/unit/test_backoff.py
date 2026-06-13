@@ -1,6 +1,7 @@
 """Unit tests for knowledge.bus.backoff."""
 
 import pytest
+
 from knowledge.bus.backoff import exponential_backoff
 
 

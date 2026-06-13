@@ -3,12 +3,12 @@
 Uses fakeredis — no live Redis required.
 """
 
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
-import fakeredis.aioredis as fakeredis
 
-from knowledge.store.cache import RedisCache, _embed_key, _search_key, _fingerprint_key
 from knowledge.config.settings import Settings
+from knowledge.store.cache import RedisCache, _embed_key, _fingerprint_key, _search_key
 
 
 def make_cache() -> RedisCache:

@@ -6,7 +6,7 @@ On timeout, defaults to 'small'. Adds < 80ms P95 overhead.
 
 import asyncio
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
@@ -46,9 +46,9 @@ def _get_router_agent(settings: Settings) -> Any:
         _ms: dict = {}
         if settings.llm_provider == "ollama":
             _ms = {"extra_body": {"num_ctx": 2048}}
-        _router_agent = Agent(
+        _router_agent = Agent(  # type: ignore[call-overload]
             model,
-            system_prompt=ROUTER_SYSTEM_PROMPT,
+            instructions=ROUTER_SYSTEM_PROMPT,
             output_type=RoutingDecision,
             model_settings=_ms,
         )
@@ -76,8 +76,8 @@ async def route(
             agent.run(query),
             timeout=_settings.model_routing_timeout_s,
         )
-        return result.output
-    except (asyncio.TimeoutError, Exception) as exc:
+        return cast("RoutingDecision", result.output)
+    except (TimeoutError, Exception) as exc:
         logger.warning("Model router failed (%s) — defaulting to small", exc)
         return RoutingDecision(
             complexity="moderate",

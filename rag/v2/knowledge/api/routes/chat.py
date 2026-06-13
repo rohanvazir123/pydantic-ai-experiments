@@ -9,20 +9,24 @@ cannot carry a JSON body, so we use fetch + ReadableStream on the client.
 """
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from knowledge.api.middleware import (
-    get_request_id, get_tenant_id, get_user_id,
-    set_session_id, set_tenant_id,
+    get_request_id,
+    get_tenant_id,
+    get_user_id,
+    set_session_id,
+    set_tenant_id,
 )
 from knowledge.api.schemas import APIResponse, ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-def _get_pipeline(request: Request):
+def _get_pipeline(request: Request) -> Any:
     pipeline = getattr(request.app.state, "pipeline", None)
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Pipeline not initialised")
@@ -89,7 +93,9 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
     """
     pipeline = _get_pipeline(request)
 
-    async def _generate():
+    from collections.abc import AsyncGenerator
+
+    async def _generate() -> AsyncGenerator[str]:
         async for event in pipeline.run_stream(
             query=body.query,
             corpus_ids=body.corpus_ids,

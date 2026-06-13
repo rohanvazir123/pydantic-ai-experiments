@@ -48,10 +48,11 @@ async def summarize_conversation(
     )
 
     try:
-        from knowledge.config.settings import load_settings
         from pydantic_ai import Agent
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
+
+        from knowledge.config.settings import load_settings
 
         s        = load_settings()
         provider = OpenAIProvider(base_url=s.llm_base_url, api_key=s.llm_api_key)

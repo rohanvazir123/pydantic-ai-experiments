@@ -6,8 +6,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from knowledge.api.middleware import get_request_id, get_tenant_id, get_user_id
 from knowledge.api.schemas import (
-    APIResponse,
     AddMemoryRequest,
+    APIResponse,
     ConversationSummary,
     MemoryItem,
 )

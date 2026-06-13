@@ -1,5 +1,7 @@
 """Health and metrics routes."""
 
+from typing import Literal, cast
+
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
@@ -20,7 +22,7 @@ async def health(request: Request) -> HealthResponse:
 
     # Use cached health if available (TTL managed by RedisCache)
     if state:
-        return state
+        return cast("HealthResponse", state)
 
     components: dict[str, str] = {}
     degraded_modes: list[str] = []
@@ -53,6 +55,7 @@ async def health(request: Request) -> HealthResponse:
     # Ollama (LLM)
     try:
         import httpx
+
         from knowledge.config.settings import load_settings
         s = load_settings()
         async with httpx.AsyncClient(timeout=3.0) as client:
@@ -63,23 +66,25 @@ async def health(request: Request) -> HealthResponse:
         degraded_modes.append("search_only")
 
     all_healthy = all(v == "healthy" for v in components.values())
-    status = "healthy" if all_healthy else ("degraded" if components else "unhealthy")
+    _status: Literal["healthy", "degraded", "unhealthy"] = (
+        "healthy" if all_healthy else ("degraded" if components else "unhealthy")
+    )
 
     return HealthResponse(
-        status=status,
+        status=_status,
         degraded_modes=degraded_modes,
         components=components,
     )
 
 
 @router.get("/metrics", response_class=PlainTextResponse, tags=["ops"])
-async def metrics() -> str:
+async def metrics() -> PlainTextResponse:
     """Prometheus metrics endpoint.
 
     Phase 11 TODO: expose real Prometheus metrics from knowledge/observability/metrics.py.
     """
     try:
-        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
     except Exception:
         return PlainTextResponse("# Prometheus metrics not available\n")

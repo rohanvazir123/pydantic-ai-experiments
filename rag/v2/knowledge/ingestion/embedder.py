@@ -9,7 +9,7 @@ Retries: on RateLimitError, APIConnectionError, APITimeoutError (transient).
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 from knowledge.bus.backoff import exponential_backoff
 from knowledge.config.settings import Settings, load_settings
@@ -77,8 +77,8 @@ class Embedder:
                     ),
                     timeout=self._settings.embedding_timeout_s,
                 )
-                return response.data[0].embedding
-            except asyncio.TimeoutError as exc:
+                return cast("list[float]", response.data[0].embedding)
+            except TimeoutError as exc:
                 last_exc = exc
                 logger.warning("Embed timeout (attempt %d/%d)", attempt, self._settings.embedding_retry_attempts)
             except Exception as exc:

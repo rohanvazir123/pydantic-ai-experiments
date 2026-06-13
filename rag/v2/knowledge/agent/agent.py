@@ -69,9 +69,9 @@ class RAGState(BaseModel):
     async def get_retriever(self) -> Any:
         async with self._init_lock:
             if not self._initialized:
+                from knowledge.ingestion.embedder import Embedder
                 from knowledge.retrieval.retriever import Retriever
                 from knowledge.store.vector import PostgresHybridStore
-                from knowledge.ingestion.embedder import Embedder
                 store = PostgresHybridStore()
                 await store.initialize()
                 self._retriever   = Retriever(vector_store=store, embedder=Embedder())
@@ -94,7 +94,7 @@ def _get_llm_model(settings: Settings) -> OpenAIChatModel:
     return OpenAIChatModel(settings.llm_model, provider=provider)
 
 
-def _build_agent(settings: Settings, low_confidence: bool = False) -> PydanticAgent:
+def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
     system_prompt = MAIN_SYSTEM_PROMPT
     if low_confidence:
         system_prompt += LOW_CONFIDENCE_NOTICE
@@ -104,7 +104,7 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> PydanticAg
     if settings.llm_provider == "ollama":
         _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
 
-    ag: PydanticAgent = PydanticAgent(
+    ag: Any = PydanticAgent(  # type: ignore[call-overload]
         model,
         system_prompt=system_prompt,
         output_type=GenerationResult,

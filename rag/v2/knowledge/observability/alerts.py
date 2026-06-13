@@ -8,7 +8,7 @@ Fallback: if SMTP unreachable, writes to logs/alerts.jsonl + stderr.
 import asyncio
 import json
 import logging
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -43,8 +43,9 @@ async def send_alert(
         body += f"{k.capitalize()}: {v}\n"
 
     try:
-        import aiosmtplib
         from email.message import EmailMessage
+
+        import aiosmtplib
 
         if not _settings.smtp_host or not _settings.smtp_user:
             raise RuntimeError("SMTP not configured")
