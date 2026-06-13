@@ -1,4 +1,18 @@
-# rag/docs — Table of Contents
+# RAG v2 — Documentation
+
+## Table of Contents
+
+- [Architecture Summary](#architecture-summary)
+- [Architecture Deep-Dive](#architecture-deep-dive)
+- [Call Graph](#call-graph)
+- [Datastore Guide](#datastore-guide)
+- [FAQ](#faq)
+- [Ingestion Pipeline](#ingestion-pipeline)
+- [Local LLM Guide](#local-llm-guide)
+- [RAG Background](#rag-background)
+- [Retrieval Pipeline](#retrieval-pipeline)
+
+---
 
 | Document | Description |
 |----------|-------------|
