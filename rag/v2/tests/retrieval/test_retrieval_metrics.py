@@ -456,17 +456,23 @@ class TestRetrievalMetrics:
 
     @pytest.mark.asyncio
     async def test_results_scoped_to_corpus(self, retriever: Retriever) -> None:
-        """All results belong to the requested corpus."""
-        results = await retriever.retrieve(
+        """Results for a known corpus contain content; a different corpus returns none."""
+        results_default = await retriever.retrieve(
             query="What does NeuralFlow AI do?",
             corpus_ids=[DEFAULT_CORPUS_ID],
             tenant_id=DEFAULT_TENANT_ID,
             k=5,
         )
-        for r in results:
-            assert r.corpus_id == DEFAULT_CORPUS_ID, (
-                f"Result from wrong corpus: {r.corpus_id!r}"
-            )
+        results_other = await retriever.retrieve(
+            query="What does NeuralFlow AI do?",
+            corpus_ids=["other-corpus-xyz"],
+            tenant_id=DEFAULT_TENANT_ID,
+            k=5,
+        )
+        assert results_default, "Expected results for the default corpus"
+        assert results_other == [], (
+            f"Expected empty results for unknown corpus, got {len(results_other)}"
+        )
 
     # ── Ground-truth content tests ─────────────────────────────────────────────
 

@@ -12,6 +12,7 @@ Hybrid search uses Reciprocal Rank Fusion (k=60) to combine the two legs:
     score = Σ  1 / (60 + rank_i)  for each search leg that returned the row
 """
 
+import json
 import logging
 import uuid as _uuid
 from contextlib import asynccontextmanager
@@ -46,6 +47,20 @@ class PostgresHybridStore:
     async def initialize(self) -> None:
         async def _init(conn: asyncpg.Connection) -> None:
             await register_vector(conn)
+            await conn.set_type_codec(
+                "jsonb",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+                format="text",
+            )
+            await conn.set_type_codec(
+                "json",
+                encoder=json.dumps,
+                decoder=json.loads,
+                schema="pg_catalog",
+                format="text",
+            )
 
         self._pool = await asyncpg.create_pool(
             self._settings.database_url,

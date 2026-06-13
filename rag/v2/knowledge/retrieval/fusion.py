@@ -31,9 +31,16 @@ _reranker: Any = None   # loaded lazily on first use, cached for process lifetim
 def _load_reranker() -> Any:
     global _reranker
     if _reranker is None:
-        from sentence_transformers import CrossEncoder
-        _reranker = CrossEncoder(_MODEL_NAME)
-        logger.info("CrossEncoder loaded: %s", _MODEL_NAME)
+        try:
+            from sentence_transformers import CrossEncoder
+            _reranker = CrossEncoder(_MODEL_NAME)
+            logger.info("CrossEncoder loaded: %s", _MODEL_NAME)
+        except ImportError:
+            logger.warning(
+                "sentence_transformers not installed — reranking disabled. "
+                "Install with: pip install sentence-transformers"
+            )
+            _reranker = False   # sentinel: tried and unavailable
     return _reranker
 
 
@@ -111,11 +118,18 @@ def _rerank_sync(
     query: str,
     results: list[SearchResult],
 ) -> list[SearchResult]:
-    """Synchronous CrossEncoder reranking — runs inside asyncio.to_thread."""
+    """Synchronous CrossEncoder reranking — runs inside asyncio.to_thread.
+
+    Returns results unchanged (with confidence=None) when sentence_transformers
+    is not installed, so the pipeline degrades gracefully to pure RRF ordering.
+    """
     if not results:
         return results
 
     model = _load_reranker()
+    if not model:   # unavailable — skip reranking
+        return results
+
     pairs = [(query, r.content) for r in results]
     logits: list[float] = model.predict(pairs).tolist()
 

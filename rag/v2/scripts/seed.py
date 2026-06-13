@@ -5,7 +5,7 @@ Run via:  make seed   (or: uv run python scripts/seed.py)
 Steps:
   1. Connectivity checks — DB, Redis, Ollama
   2. Default corpus config written to .env if CORPUS_CONFIGS_JSON is empty
-  3. Sample documents ingested from ../../rag/documents/ into default:neuralflow
+  3. Sample documents ingested from rag/v2/documents/ into default:default
   4. Summary printed
 
 This script is idempotent — safe to run multiple times.
@@ -22,21 +22,21 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-SAMPLE_DOCS = ROOT.parent.parent / "rag" / "documents"  # ../../rag/documents
+SAMPLE_DOCS = ROOT / "documents"  # rag/v2/documents/
 
 DEFAULT_CORPUS_CONFIG = [
     {
-        "id": "neuralflow",
+        "id": "default",
         "display_name": "NeuralFlow AI Docs",
         "source_folders": [str(SAMPLE_DOCS)],
         "allowed_roles": ["reader", "writer", "admin"],
         "enable_graph_extraction": False,
-        "metadata_tags": {"corpus": "neuralflow", "env": "dev"},
+        "metadata_tags": {"corpus": "default", "env": "dev"},
     }
 ]
 
 TENANT_ID = "default"
-CORPUS_ID = "neuralflow"
+CORPUS_ID = "default"
 
 
 # ── Step 1: connectivity checks ───────────────────────────────────────────────
