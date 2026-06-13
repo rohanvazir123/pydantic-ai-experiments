@@ -108,6 +108,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Only build the API image in CI — it validates the core packaging and
+      # the shared base layer. Worker images (ingest-worker, retrieval-worker)
+      # add heavy ML extras (whisper/torch) and are built in the CD pipeline
+      # when pushing to a registry, not on every PR.
       - name: Build API image
         uses: docker/build-push-action@v6
         with:
@@ -115,26 +119,6 @@ jobs:
           target: api
           push: false
           tags: knowledge-api:${{ github.sha }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
-
-      - name: Build ingest-worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: rag/v2
-          target: ingest-worker
-          push: false
-          tags: knowledge-ingest-worker:${{ github.sha }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
-
-      - name: Build retrieval-worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: rag/v2
-          target: retrieval-worker
-          push: false
-          tags: knowledge-retrieval-worker:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
