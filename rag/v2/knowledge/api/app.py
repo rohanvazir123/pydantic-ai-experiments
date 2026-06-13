@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # ── Shutdown ──────────────────────────────────────────────────────────────
     await vector_store.close()
     await cache.close()
-    await redis_client.aclose()
+    await redis_client.aclose()  # type: ignore[attr-defined]
     logger.info("knowledge API shutdown complete")
 
 

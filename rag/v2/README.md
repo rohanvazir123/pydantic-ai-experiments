@@ -5,15 +5,18 @@
 - [What This Is](#what-this-is)
 - [Directory Layout](#directory-layout)
 - [Quick Start](#quick-start)
+- [Key Commands](#key-commands)
+- [Testing](#testing)
+- [Reproducing CI Locally](#reproducing-ci-locally)
 - [Where to Read More](#where-to-read-more)
 
 ---
 
 ## What This Is
 
-RAG v2 is the production rewrite of the RAG system. It adds multi-corpus support, Redis-backed async workers, a confidence-aware pipeline, knowledge graph extraction via docling-graph and Apache AGE, a full memory system, and a Next.js frontend.
+RAG v2 is the production rewrite of the RAG system. Multi-corpus, multi-tenant, Redis-backed async workers, confidence-aware pipeline, knowledge-graph extraction via docling-graph + Apache AGE, full memory system, and a Next.js frontend.
 
-This directory contains both the **design documents** and the **implementation** for the backend Python service.
+**`knowledge/`** is the main Python package. Everything else in this directory is configuration, infrastructure, or documentation.
 
 ---
 
@@ -21,61 +24,179 @@ This directory contains both the **design documents** and the **implementation**
 
 | Path | What it is |
 |------|-----------|
-| `RAGV2_DESIGN.md` | Architecture reference — system design, data schemas, SLAs |
-| `TODO_implementation.md` | Phased build plan — what to implement and in what order |
-| `TESTS.md` | Test plan — categories, requirements, per-phase gates |
-| `TEST_QA_REFERENCE.md` | QA reference — metric formulas, thresholds, load model |
 | `knowledge/` | Main Python package — all backend logic |
-| `schema/` | SQL files that build the PostgreSQL schema |
-| `tests/` | Pytest test suite |
-| `postman/` | Postman collection for manual API testing |
-| `infra/` | Nginx config, Grafana dashboards |
-| `pyproject.toml` | Python project config, dependencies, tool settings |
-| `Makefile` | Common commands: dev, migrate, test, lint, typecheck |
+| `kg/` | Knowledge graph module (Apache AGE / Cypher) |
+| `documents/` | Sample corpus for seeding / testing |
+| `docs/` | Architecture, pipeline, and FAQ documentation |
+| `schema/` | SQL migrations (001 → 008, apply in order) |
+| `scripts/` | `seed.py` (ingest sample docs), `purge.py` (reset corpus) |
+| `tests/` | Pytest suite: `unit/`, `integration/`, `retrieval/` |
+| `frontend/` | Next.js UI |
+| `infra/` | Nginx, Grafana dashboards, Prometheus config |
+| `postman/` | Postman collection + environment for manual API testing |
+| `docker-compose.yml` | PostgreSQL + Apache AGE + Redis + API |
+| `docker-compose.observability.yml` | Prometheus + Grafana stack |
+| `Dockerfile` | Multi-stage image: `api`, `ingest-worker`, `retrieval-worker` |
+| `Makefile` | Common commands — see [Key Commands](#key-commands) |
+| `pyproject.toml` | Python project config, deps, tool settings |
 | `.env.example` | All required environment variables with defaults |
+| `RAGV2_DESIGN.md` | Full system design, data schemas, SLAs |
+| `TESTS.md` | Test plan — categories, requirements, per-phase gates |
+| `TEST_QA_REFERENCE.md` | QA reference — metric formulas, thresholds |
 
 ---
 
 ## Quick Start
 
-> **Windows prerequisite:** `INSTALL.ps1` requires PowerShell 7.1+ (`pwsh`), not the
-> built-in `powershell` (5.x). Install from <https://aka.ms/powershell>, then run:
-> `pwsh -ExecutionPolicy Bypass -File INSTALL.ps1`
+> **Windows prerequisite:** `INSTALL.ps1` requires PowerShell 7.1+ (`pwsh`). Install from
+> <https://aka.ms/powershell>, then: `pwsh -ExecutionPolicy Bypass -File INSTALL.ps1`
 
 ```bash
 cd rag/v2
 
-# 1. Install dependencies
+# 1. Install deps (uv)
 uv sync --extra all
 
-# 2. Copy and edit env
+# 2. Configure
 cp .env.example .env
-# Set DATABASE_URL, AGE_DATABASE_URL, and LLM settings in .env
+# Edit: DATABASE_URL, AGE_DATABASE_URL, REDIS_URL, LLM settings
 
 # 3. Start services
-docker compose up -d postgres age redis ollama
+docker compose up -d postgres age redis
 
-# 4. Apply database schemas
-make databaseschemas
+# 4. Apply DB schema + seed sample docs
+make seed           # runs databaseschemas then seed.py
 
-# 5. Seed default tenant, corpus, and sample documents
-make seed
+# 5. Pull Ollama models
+make pull-models    # llama3.2:3b, nomic-embed-text, qwen2.5:0.5b
 
-# 6. Pull Ollama models
-make pull-models
+# 6. Start the API
+uv run uvicorn knowledge.api.app:app --reload --port 8001
 
-# 7. Run unit tests (no services needed)
-make test-unit
-
-# 8. Start the API
-uv run uvicorn knowledge.api.app:app --reload
+# Health check
+curl http://localhost:8001/health
 ```
+
+---
+
+## Key Commands
+
+```bash
+make databaseschemas   # apply SQL migrations (idempotent)
+make seed              # schema + ingest rag/v2/documents/ into default corpus
+make test-unit         # unit + retrieval metric tests — no services needed
+make test              # full suite
+make lint              # ruff check knowledge/ tests/
+make typecheck         # mypy knowledge/
+make ruff              # ruff --fix + format
+```
+
+---
+
+## Testing
+
+### Quick smoke test (no services, <2 s)
+```bash
+pytest tests/unit/test_smoke.py -v
+```
+
+### Unit tests (no services, ~15 s)
+```bash
+make test-unit
+# = pytest tests/unit/ tests/retrieval/test_retrieval_metrics.py::TestMetricFunctions
+```
+
+### Integration tests (PostgreSQL + Redis required)
+```bash
+DATABASE_URL=postgresql://ragv2:test@localhost:5432/ragv2_test \
+REDIS_URL=redis://localhost:6379/1 \
+pytest tests/integration/ -v
+```
+
+### Retrieval quality tests (PostgreSQL + Redis + Ollama + ingested data)
+```bash
+# Requires make seed first
+DATABASE_URL=... REDIS_URL=... pytest tests/retrieval/ -v --log-cli-level=INFO
+```
+
+### Test categories
+
+| Folder | What | Services |
+|--------|------|---------|
+| `tests/unit/` | Settings, models, RRF, hooks, API factory | None |
+| `tests/retrieval/::TestMetricFunctions` | IR metric math | None |
+| `tests/integration/test_vector_store.py` | Document CRUD, vector/text/hybrid search, corpus isolation | PostgreSQL |
+| `tests/integration/test_cache.py` | Embedding/search/fingerprint/health cache | Redis |
+| `tests/retrieval/::TestRetrievalMetrics` | Hit Rate/MRR/NDCG against gold dataset (auto-skips if corpus empty) | PostgreSQL + Ollama |
+
+---
+
+## Reproducing CI Locally
+
+CI uses `ragv2:test` on port 5432 (postgres Docker service). To replicate exactly:
+
+```bash
+# 1. Create the CI database (one-time setup)
+python - <<'EOF'
+import asyncio, asyncpg
+
+async def main():
+    # Connect as your admin user
+    conn = await asyncpg.connect("postgresql://<admin>:<pass>@localhost:<port>/postgres")
+    await conn.execute("CREATE USER ragv2 WITH PASSWORD 'test' SUPERUSER")
+    await conn.execute("CREATE DATABASE ragv2_test OWNER ragv2")
+    await conn.close()
+    # Enable vector extension
+    conn2 = await asyncpg.connect("postgresql://ragv2:test@localhost:<port>/ragv2_test")
+    await conn2.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    await conn2.close()
+    print("Done")
+
+asyncio.run(main())
+EOF
+
+# 2. Apply migrations (same as CI)
+DATABASE_URL=postgresql://ragv2:test@localhost:<port>/ragv2_test \
+python - <<'PYEOF'
+import asyncio, asyncpg, glob, os, sys
+
+async def main():
+    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    for f in sorted(glob.glob("schema/*.sql")):
+        await conn.execute(open(f).read())
+        print(f"  applied {f}")
+    await conn.close()
+
+asyncio.run(main())
+PYEOF
+
+# 3. Run all CI steps in order
+export DATABASE_URL=postgresql://ragv2:test@localhost:<port>/ragv2_test
+export AGE_DATABASE_URL=$DATABASE_URL
+export REDIS_URL=redis://localhost:6379/1
+
+make lint
+make typecheck
+pytest tests/unit/test_smoke.py -v
+pytest tests/unit/ tests/retrieval/test_retrieval_metrics.py::TestMetricFunctions -v
+pytest tests/integration/ -v
+```
+
+**Important:** `ragv2` must be created as a SUPERUSER so it owns its tables and
+bypasses Row-Level Security. In CI, `POSTGRES_USER=ragv2` in the service container
+automatically grants superuser. Locally, ensure `ragv2` owns all tables in
+`ragv2_test` or has `SUPERUSER` privilege, otherwise RLS policies will block
+`INSERT` statements (the `SET LOCAL` in `_conn()` only works for the session owner).
 
 ---
 
 ## Where to Read More
 
+- **Architecture deep-dive**: `docs/ARCHITECTURE.md`
+- **Ingestion pipeline**: `docs/INGESTION_PIPELINE.md`
+- **Retrieval pipeline**: `docs/RETRIEVAL_PIPELINE.md`
+- **Datastore guide**: `docs/DATASTORE_GUIDE.md`
+- **FAQ**: `docs/FAQ.md`
 - **System design**: `RAGV2_DESIGN.md`
 - **Build plan**: `TODO_implementation.md`
-- **Memory design**: `../../basics/rag/memory/MEMORY_DESIGN.md`
-- **docling-graph**: `../../basics/rag/docling-graph/faq.md`
+- **KG module**: `kg/docs/`

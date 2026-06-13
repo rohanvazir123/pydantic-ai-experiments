@@ -89,7 +89,7 @@ async def _main() -> None:
     finally:
         await vector_store.close()
         await cache.close()
-        await redis_client.aclose()
+        await redis_client.aclose()  # type: ignore[attr-defined]
         logger.info("Retrieval worker '%s' stopped", worker_id)
 
 

@@ -90,7 +90,7 @@ async def _main() -> None:
         await vector_store.close()
         await age_store.close()
         await cache.close()
-        await redis_client.aclose()
+        await redis_client.aclose()  # type: ignore[attr-defined]
         logger.info("Ingest worker '%s' stopped cleanly", worker_id)
 
 

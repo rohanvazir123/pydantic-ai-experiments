@@ -153,7 +153,10 @@ jobs:
           cache: npm
           cache-dependency-path: rag/v2/frontend/package-lock.json
 
-      - run: npm ci
+      # npm ci requires the lock file to be consistent with the platform's optional
+      # deps. Use npm install so optional platform packages are resolved fresh on
+      # Linux without failing when macOS-generated locks have minor differences.
+      - run: npm install --no-fund
 
       - name: Type check
         run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete

@@ -75,7 +75,7 @@ class RedisCache:
 
     async def close(self) -> None:
         if self._client:
-            await self._client.aclose()
+            await self._client.aclose()  # type: ignore[attr-defined]
             self._client = None
 
     # ── Embedding cache ───────────────────────────────────────────────────────
