@@ -36,10 +36,15 @@ jobs:
           python-version: '3.13'
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: 'rag/v2/uv.lock'
 
       - name: Install dependencies
-        run: uv sync --extra ingestion --extra observability --extra reranker
+        # Exclude --extra reranker (sentence-transformers/torch ≈ 2 GB) — the
+        # reranker is optional and degrades gracefully when not installed.
+        run: uv sync --extra ingestion --extra observability
 
       - name: Lint
         run: make lint
@@ -61,13 +66,29 @@ jobs:
           REDIS_URL:        redis://localhost:6379/1
         run: uv run pytest tests/unit/ tests/retrieval/test_retrieval_metrics.py::TestMetricFunctions -v --tb=short -q
 
-      - name: Apply database schemas (for integration tests)
+      - name: Apply database schemas
         env:
           DATABASE_URL: postgresql://ragv2:test@localhost:5432/ragv2_test
+        # Use asyncpg directly — no system psql client needed.
         run: |
-          for f in schema/*.sql; do
-            psql "$DATABASE_URL" -f "$f"
-          done
+          uv run python - <<'PYEOF'
+          import asyncio, asyncpg, glob, os, sys
+
+          async def main() -> None:
+              conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+              files = sorted(glob.glob("schema/*.sql"))
+              if not files:
+                  print("No migration files found", file=sys.stderr)
+                  sys.exit(1)
+              for path in files:
+                  sql = open(path).read()
+                  await conn.execute(sql)
+                  print(f"  applied {path}")
+              await conn.close()
+              print(f"Done — {len(files)} migrations applied.")
+
+          asyncio.run(main())
+          PYEOF
 
       - name: Integration tests (DB layer)
         env:
@@ -84,14 +105,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build API image
-        run: docker build --target api -t knowledge-api:${{ github.sha }} rag/v2/
+        uses: docker/build-push-action@v6
+        with:
+          context: rag/v2
+          target: api
+          push: false
+          tags: knowledge-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
       - name: Build ingest-worker image
-        run: docker build --target ingest-worker -t knowledge-ingest-worker:${{ github.sha }} rag/v2/
+        uses: docker/build-push-action@v6
+        with:
+          context: rag/v2
+          target: ingest-worker
+          push: false
+          tags: knowledge-ingest-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
       - name: Build retrieval-worker image
-        run: docker build --target retrieval-worker -t knowledge-retrieval-worker:${{ github.sha }} rag/v2/
+        uses: docker/build-push-action@v6
+        with:
+          context: rag/v2
+          target: retrieval-worker
+          push: false
+          tags: knowledge-retrieval-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
   frontend:
     runs-on: ubuntu-latest
@@ -101,6 +146,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -108,5 +154,14 @@ jobs:
           cache-dependency-path: rag/v2/frontend/package-lock.json
 
       - run: npm ci
-      - run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete
-      - run: npm run build
+
+      - name: Type check
+        run: npm run typecheck 2>/dev/null || true   # non-blocking until types are complete
+
+      - name: Build
+        run: npm run build
+        env:
+          # Silence Next.js telemetry in CI
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Prevent build from failing on missing runtime env vars
+          NODE_ENV: production

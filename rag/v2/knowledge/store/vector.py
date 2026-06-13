@@ -78,13 +78,19 @@ class PostgresHybridStore:
 
     @asynccontextmanager
     async def _conn(self, tenant_id: str) -> Any:
-        """Acquire a connection with RLS tenant context set."""
+        """Acquire a connection inside an explicit transaction with RLS context.
+
+        SET LOCAL only persists for the duration of the current transaction.
+        Without an explicit BEGIN the implicit per-statement transactions would
+        reset app.tenant_id before each subsequent statement, breaking RLS.
+        """
         assert self._pool, "Call initialize() first"
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                f"SET LOCAL app.tenant_id = '{tenant_id}'"
-            )
-            yield conn
+            async with conn.transaction():
+                await conn.execute(
+                    f"SET LOCAL app.tenant_id = '{tenant_id}'"
+                )
+                yield conn
 
     # ── Documents ─────────────────────────────────────────────────────────────
 

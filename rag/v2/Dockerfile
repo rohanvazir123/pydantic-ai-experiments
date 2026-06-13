@@ -7,9 +7,12 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # ── Stage 2: api-deps — install API extras ────────────────────────────────────
+# reranker (sentence-transformers/torch) is excluded — it's optional and the
+# pipeline degrades gracefully when not available (pure RRF ordering).
+# Install separately in production via: pip install sentence-transformers
 FROM base AS api-deps
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --extra ingestion --extra observability --extra reranker --extra mcp --no-dev
+RUN uv sync --extra ingestion --extra observability --extra mcp --no-dev
 
 # ── Stage 3: worker-deps — install worker extras ──────────────────────────────
 FROM base AS worker-deps
