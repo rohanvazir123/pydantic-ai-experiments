@@ -24,7 +24,11 @@ from pydantic_ai import RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from knowledge.agent.prompts import LOW_CONFIDENCE_NOTICE, MAIN_SYSTEM_PROMPT
+from knowledge.agent.prompts import (
+    LOW_CONFIDENCE_NOTICE,
+    MAIN_SYSTEM_PROMPT,
+    STREAM_SYSTEM_PROMPT,
+)
 from knowledge.config.settings import Settings, load_settings
 from knowledge.ingestion.models import Citation, SearchResult
 
@@ -100,9 +104,9 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
         system_prompt += LOW_CONFIDENCE_NOTICE
 
     model = _get_llm_model(settings)
-    _ms: dict = {}
+    _ms: dict = {"max_tokens": settings.max_output_tokens}
     if settings.llm_provider == "ollama":
-        _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
+        _ms["extra_body"] = {"num_ctx": settings.llm_num_ctx}
 
     ag: Any = PydanticAgent(  # type: ignore[call-overload]
         model,
@@ -172,6 +176,29 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
 # Module-level default agent (loaded once per process)
 _settings = load_settings()
 agent = _build_agent(_settings)
+
+
+def _build_stream_agent(settings: Settings) -> Any:
+    """Plain-text agent for the streaming path.
+
+    output_type=str so stream_text() works.  Citations are not extracted
+    in this path — the answer text is streamed token-by-token instead.
+    """
+    model = _get_llm_model(settings)
+    _ms: dict = {"max_tokens": settings.max_output_tokens}
+    if settings.llm_provider == "ollama":
+        _ms["extra_body"] = {"num_ctx": settings.llm_num_ctx}
+    ag: Any = PydanticAgent(  # type: ignore[call-overload]
+        model,
+        system_prompt=STREAM_SYSTEM_PROMPT,
+        output_type=str,
+        model_settings=_ms,
+        deps_type=RAGState,
+    )
+    return ag
+
+
+stream_agent = _build_stream_agent(_settings)
 
 
 # ── Traced run helper ─────────────────────────────────────────────────────────

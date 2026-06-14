@@ -161,7 +161,7 @@ class Settings(BaseSettings):
     api_rate_limit_burst: int = Field(10, ge=1)
     max_query_chars: int = Field(4096, ge=1)
     max_prompt_tokens: int = Field(8192, ge=512)
-    max_output_tokens: int = Field(1024, ge=64)
+    max_output_tokens: int = Field(2048, ge=64)
 
     # ── Confidence thresholds ─────────────────────────────────────────────────
     min_confidence_score: float = Field(0.10, ge=0.0, le=1.0)
@@ -169,7 +169,7 @@ class Settings(BaseSettings):
     retrieval_confidence_threshold: float = Field(1.5, ge=0.0)
     judge_enabled: bool = Field(False)
     judge_confidence_threshold: float = Field(0.60, ge=0.0, le=1.0)
-    judge_k: int = Field(5, ge=1)
+    judge_k: int = Field(10, ge=1)
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
     scheduler_enabled: bool = Field(True)

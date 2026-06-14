@@ -35,7 +35,7 @@ export async function login(email: string, password: string): Promise<void> {
 /** Log out: clear in-memory token and ask the server to invalidate the refresh cookie. */
 export async function logout(): Promise<void> {
   clearTokens()
-  await fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => null)
+  await fetch('/api/v2/auth/logout', { method: 'POST' }).catch(() => null)
 }
 
 /**
@@ -45,7 +45,7 @@ export async function logout(): Promise<void> {
  */
 export async function tryRestoreSession(): Promise<boolean> {
   try {
-    const res = await fetch('/api/v1/auth/refresh', { method: 'POST' })
+    const res = await fetch('/api/v2/auth/refresh', { method: 'POST' })
     if (!res.ok) return false
     const json = await res.json()
     if (json.data?.access_token) {

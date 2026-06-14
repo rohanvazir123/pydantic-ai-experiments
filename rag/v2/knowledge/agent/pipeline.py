@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from knowledge.agent.agent import (
     GenerationResult,
     RAGState,
-    agent,
+    stream_agent,
     traced_agent_run,
 )
 from knowledge.agent.judge import judge as run_judge
@@ -262,6 +262,14 @@ class ConfidenceAwarePipeline:
             tenant_id=tenant_id, user_id=user_id, session_id=session_id,
         )
 
+        # V1-V6 validation (same gates as blocking path)
+        from knowledge.validation.pipeline import ValidationPipeline
+        vp = ValidationPipeline(settings=self._settings)
+        validation_error = await vp.validate(ctx)
+        if validation_error:
+            yield _sse({"abstained": True, "layer": 0, "reason": validation_error.message})
+            return
+
         # Layer 1
         results = await self._retriever.retrieve_with_confidence(
             query, corpus_ids, tenant_id, k=self._settings.judge_k
@@ -280,43 +288,58 @@ class ConfidenceAwarePipeline:
             user_id=user_id, tenant_id=tenant_id,
             session_id=session_id, corpus_ids=corpus_ids,
         )
+        # Build context-augmented prompt for the text streaming agent
+        context_text = self._format_context(results)
+        augmented_query = (
+            f"Use the following source passages to answer the question.\n\n"
+            f"{context_text}\n\n"
+            f"Question: {query}"
+        )
+
         try:
-            async with agent.run_stream(
-                query,
+            async with stream_agent.run_stream(
+                augmented_query,
                 deps=state,
                 message_history=message_history or [],
             ) as streamed:
                 async for delta in streamed.stream_text(delta=True):
                     yield _sse({"delta": delta})
 
-                # Citations from structured output after stream completes
+                # Best-effort: extract citations from structured output.
+                # Small models (llama3.2:3b) may not produce valid structured
+                # output — if parsing fails, stream still delivered the answer.
+                citations: list[dict] = []
+                prompt_tokens    = 0
+                completion_tokens = 0
                 try:
                     output: GenerationResult = streamed.output
                     citations = [
                         {
-                            "chunk_id":       str(c.chunk_id),
-                            "document_title": c.document_title,
+                            "chunk_id":        str(c.chunk_id),
+                            "document_title":  c.document_title,
                             "document_source": c.document_source,
                             "relevance_score": c.relevance_score,
-                            "excerpt":        c.excerpt,
+                            "excerpt":         c.excerpt,
                         }
                         for c in (output.citations or [])
                     ]
+                    usage = streamed.usage()
+                    prompt_tokens    = usage.request_tokens or 0
+                    completion_tokens = usage.response_tokens or 0
                 except Exception:
-                    citations = []
+                    pass  # answer was already streamed; skip citations
 
-                usage = streamed.usage()
                 yield _sse({
                     "done":             True,
                     "citations":        citations,
-                    "prompt_tokens":    usage.request_tokens or 0,
-                    "completion_tokens": usage.response_tokens or 0,
+                    "prompt_tokens":    prompt_tokens,
+                    "completion_tokens": completion_tokens,
                 })
 
             await registry.fire(HookPoint.POST_LLM, ctx)
         except Exception as exc:
             logger.exception("Stream error: %s", exc)
-            yield _sse({"error": "Internal server error"})
+            yield _sse({"error": str(exc)})
         finally:
             await state.close()
 
@@ -324,10 +347,10 @@ class ConfidenceAwarePipeline:
 
     @staticmethod
     def _format_context(results: list[SearchResult]) -> str:
-        """Format chunks for the judge — NO chunk_id metadata."""
+        """Format retrieved chunks as context for the streaming agent."""
         lines = []
         for r in results:
-            lines.append(f"Source: {r.document_title}\n{r.content[:800]}")
+            lines.append(f"[{r.document_title}]\n{r.content[:2000]}")
         return "\n\n---\n\n".join(lines)
 
 

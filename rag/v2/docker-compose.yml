@@ -56,7 +56,7 @@ services:
       POSTGRES_USER: ragv2
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5436:5432"
+      - "7300:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -68,9 +68,9 @@ services:
       POSTGRES_USER: age
       POSTGRES_PASSWORD: ${AGE_DB_PASSWORD}
     volumes:
-      - agedata:/var/lib/postgresql
+      - agedata:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "7400:5432"
     restart: unless-stopped
 
   redis:
@@ -78,8 +78,6 @@ services:
     command: redis-server --save 60 1 --appendonly yes
     volumes:
       - redisdata:/data
-    ports:
-      - "6379:6379"
     restart: unless-stopped
 
   ollama:

@@ -24,7 +24,14 @@ export function MessageBubble({ message, debugMode = false }: Props) {
 
         {/* Streaming cursor */}
         {message.streaming ? (
-          <span>{message.content}<span className="animate-pulse">▋</span></span>
+          <span className="text-sm leading-relaxed">
+            {message.content}
+            <span className="inline-flex gap-[3px] ml-1.5 align-middle">
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+              <span className="typing-dot" />
+            </span>
+          </span>
         ) : (
           <ReactMarkdown remarkPlugins={[remarkGfm]} className="prose prose-invert prose-sm max-w-none">
             {message.content}

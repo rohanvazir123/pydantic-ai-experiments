@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { login } from '@/lib/auth'
+import { login, tryRestoreSession } from '@/lib/auth'
+import { getAccessToken } from '@/lib/api'
 
 const DEV_EMAIL    = 'dev@neuralflow.ai'
 const DEV_PASSWORD = 'devpass'
@@ -11,7 +12,20 @@ export default function LoginPage() {
   const [email,    setEmail]    = useState(DEV_EMAIL)
   const [password, setPassword] = useState(DEV_PASSWORD)
   const [loading,  setLoading]  = useState(false)
+  const [checking, setChecking] = useState(true)   // true while restoring session
   const [error,    setError]    = useState<string | null>(null)
+
+  // On mount: if we already have a valid token (or can restore one), skip login
+  useEffect(() => {
+    if (getAccessToken()) {
+      router.replace('/chat')
+      return
+    }
+    tryRestoreSession().then(ok => {
+      if (ok) router.replace('/chat')
+      else    setChecking(false)
+    })
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -27,10 +41,12 @@ export default function LoginPage() {
     }
   }
 
+  // Show nothing while checking for an existing session
+  if (checking) return null
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
       <div className="w-full max-w-sm">
-        {/* Logo / title */}
         <div className="mb-8 text-center">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--accent)] mb-4">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
