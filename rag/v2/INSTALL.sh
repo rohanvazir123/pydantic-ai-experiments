@@ -130,8 +130,8 @@ fi
 # Extract them from .env directly (avoids xargs mangling complex JSON values).
 # pydantic-settings reads .env automatically — no need to export everything.
 set +x
-POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d "'\"")"
-AGE_DB_PASSWORD="$(grep '^AGE_DB_PASSWORD=' .env | cut -d= -f2- | tr -d "'\"")"
+POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d "'\"" || true)"
+AGE_DB_PASSWORD="$(grep '^AGE_DB_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d "'\"" || true)"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-changeme}"
 export AGE_DB_PASSWORD="${AGE_DB_PASSWORD:-changeme}"
 set -x
