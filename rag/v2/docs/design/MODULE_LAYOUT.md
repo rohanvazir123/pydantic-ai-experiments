@@ -37,13 +37,13 @@ knowledge/
 │   ├── quota.py                 # enforce_quota(): per-tenant rate limiting + budget enforcement
 │   ├── timeout.py               # TimeoutBudget dataclass + per-stage sub-deadline helpers
 │   ├── routes/
-│   │   ├── auth.py              # POST /v1/auth/token, POST /v1/auth/refresh
-│   │   ├── ingest.py            # POST /v1/ingest → publish job; GET /v1/ingest/{job_id}/status
-│   │   ├── search.py            # POST /v1/search (sync fast path)
-│   │   ├── chat.py              # POST /v1/chat, POST /v1/chat/stream (SSE)
-│   │   ├── corpus.py            # GET /v1/corpus, POST /v1/corpus/{id}/cache/invalidate
-│   │   ├── evaluate.py          # POST /v1/evaluate/run, GET /v1/evaluate/run/{id}
-│   │   ├── feedback.py          # POST /v1/feedback, POST /v1/signals
+│   │   ├── auth.py              # POST /v2/auth/token, POST /v2/auth/refresh
+│   │   ├── ingest.py            # POST /v2/ingest → publish job; GET /v2/ingest/{job_id}/status
+│   │   ├── search.py            # POST /v2/search (sync fast path)
+│   │   ├── chat.py              # POST /v2/chat, POST /v2/chat/stream (SSE)
+│   │   ├── corpus.py            # GET /v2/corpus, POST /v2/corpus/{id}/cache/invalidate
+│   │   ├── evaluate.py          # POST /v2/evaluate/run, GET /v2/evaluate/run/{id}
+│   │   ├── feedback.py          # POST /v2/feedback, POST /v2/signals
 │   │   ├── scheduler.py         # CRUD for scheduled ingestion jobs
 │   │   └── health.py            # GET /health (pool stats, Redis ping, worker heartbeat)
 │   └── schemas.py               # Pydantic request/response models (versioned)
@@ -130,7 +130,7 @@ Single `settings.py` using `pydantic-settings`. All configuration comes from env
 
 ### api
 
-FastAPI application. Routes are thin — they validate the request, call the appropriate service (pipeline, retriever, store), and return the response. No business logic lives in routes. See [REST_API.md](../REST_API.md) for the full endpoint reference.
+FastAPI application. Routes are thin — they validate the request, call the appropriate service (pipeline, retriever, store), and return the response. No business logic lives in routes. See [REST_API.md](REST_API.md) for the full endpoint reference.
 
 ### bus
 
@@ -186,7 +186,7 @@ Six-stage input validation chain (V1 schema → V2 length → V3 language → V4
 
 ### evaluation
 
-Offline eval harness. Triggered via `POST /v1/evaluate/run`, which publishes to `knowledge:eval`. The eval runner measures retrieval quality (Hit Rate, MRR, NDCG) and answer quality (faithfulness, relevance, correctness) against a gold dataset. See [design/EVALUATION.md](EVALUATION.md).
+Offline eval harness. Triggered via `POST /v2/evaluate/run`, which publishes to `knowledge:eval`. The eval runner measures retrieval quality (Hit Rate, MRR, NDCG) and answer quality (faithfulness, relevance, correctness) against a gold dataset. See [design/EVALUATION.md](EVALUATION.md).
 
 ### observability
 

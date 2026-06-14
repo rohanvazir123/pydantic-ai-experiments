@@ -7,7 +7,7 @@
  * session_id, corpus_ids, model_tier, etc.).
  *
  * Usage:
- *   for await (const event of streamSSE('/api/v1/chat/stream', { method: 'POST', body: ... })) {
+ *   for await (const event of streamSSE('/api/v2/chat/stream', { method: 'POST', body: ... })) {
  *     if (event.delta)   appendToken(event.delta)
  *     if (event.done)    setCitations(event.citations)
  *     if (event.error)   handleError(event.error)

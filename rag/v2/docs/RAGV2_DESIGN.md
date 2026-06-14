@@ -37,11 +37,11 @@
        │
        │  HTTPS (TLS 1.3)  — two types of requests, same origin:
        │  ①  /*           page load (HTML, JS bundle, assets)
-       │  ②  /api/v1/*   REST + SSE calls from browser JS (Authorization: Bearer)
+       │  ②  /api/v2/*   REST + SSE calls from browser JS (Authorization: Bearer)
        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Nginx  (port 443)                                                          │
-│  ├── /api/v1/*  → proxy_pass api:8000        (② REST + SSE calls)          │
+│  ├── /api/v2/*  → proxy_pass api:8000        (② REST + SSE calls)          │
 │  │              SSE routes: proxy_buffering off, proxy_read_timeout 3600s   │
 │  └── /*         → proxy_pass frontend:3000   (① page load only)            │
 └────────────────┬──────────────────────────────────┬────────────────────────┘
@@ -59,9 +59,9 @@
   │  path ② (same origin):       │    │  POST /auth/token  /auth/refresh    │
   │                              │    │  POST /chat        /chat/stream     │
   │  src/lib/api.ts              │    │  POST /search      /ingest          │
-  │    fetch('/api/v1/chat')     │───►│  GET  /corpus      /conversations   │
-  │    fetch('/api/v1/search')   │    │  GET  /memories    /scheduler/jobs  │
-  │    fetch('/api/v1/memories') │    │  POST /evaluate/run  /feedback      │
+  │    fetch('/api/v2/chat')     │───►│  GET  /corpus      /conversations   │
+  │    fetch('/api/v2/search')   │    │  GET  /memories    /scheduler/jobs  │
+  │    fetch('/api/v2/memories') │    │  POST /evaluate/run  /feedback      │
   │    …all endpoints…           │    │  GET  /logs        /health          │
   │                              │◄───│                                     │
   │  src/lib/sse.ts              │    │  Returns:                           │
@@ -72,7 +72,7 @@
   │  src/lib/auth.ts             │
   │    access token → memory     │    Local dev only (npm run dev):
   │    refresh → httpOnly cookie │    next.config.ts rewrites
-  └──────────────────────────────┘    /api/v1/* → localhost:8000
+  └──────────────────────────────┘    /api/v2/* → localhost:8000
                                       so browser still calls :3000 (same origin)
                                  │
                 ─────────────────┴────────────────────────────────────
@@ -263,7 +263,7 @@ A common question when reading this architecture: ingestion uses Redis Streams �
 ```
 Browser                    Nginx                  API (Uvicorn)
   │                          │                        │
-  │  POST /api/v1/chat/stream│                        │
+  │  POST /api/v2/chat/stream│                        │
   │─────────────────────────►│                        │
   │                          │  proxy_pass (keep-alive)│
   │                          │───────────────────────►│
@@ -337,12 +337,12 @@ USER TYPES A QUERY AND HITS SEND
 
   Browser (React)
   │  chatStore.sendMessage(query, session_id, corpus_ids, model_tier)
-  │  api.ts: POST /api/v1/chat/stream   { query, session_id, corpus_ids }
+  │  api.ts: POST /api/v2/chat/stream   { query, session_id, corpus_ids }
   │          Authorization: Bearer <access_token>
   ▼
 
   Nginx (port 443)
-  │  /api/v1/* → proxy_pass api:8000
+  │  /api/v2/* → proxy_pass api:8000
   │  proxy_buffering off  (SSE route)
   ▼
 
@@ -630,5 +630,5 @@ These sections have been moved to dedicated documents:
 
 | Document | What it covers |
 |----------|---------------|
-| [REST_API.md](REST_API.md) | All API endpoints with request/response shapes |
+| [REST_API.md](design/REST_API.md) | All API endpoints with request/response shapes |
 | [DATASTORE.md](DATASTORE.md) | Complete datastore reference |

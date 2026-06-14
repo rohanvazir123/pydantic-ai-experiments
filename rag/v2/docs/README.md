@@ -14,7 +14,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [REST_API.md](REST_API.md) | REST API reference: all endpoints, request/response shapes, status codes |
+| [REST_API.md](design/REST_API.md) | REST API reference: all endpoints, request/response shapes, status codes |
 | [RAGV2_DESIGN.md](RAGV2_DESIGN.md) | System overview: architecture diagram, data flow, goals, SLAs, module layout |
 | [DATASTORE.md](DATASTORE.md) | Complete datastore reference: PostgreSQL/pgvector, AGE, Redis, schema |
 | [PROMPTS.md](PROMPTS.md) | All agent system prompts, dynamic instructions, and structured output schemas |

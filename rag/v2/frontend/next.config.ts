@@ -4,7 +4,7 @@ const config: NextConfig = {
   output: 'standalone',   // produces self-contained server.js for Docker image
 
   async rewrites() {
-    // In production (Docker), Nginx proxies /api/v1/* to the API container —
+    // In production (Docker), Nginx proxies /api/v2/* to the API container —
     // no rewrite needed. In local dev (npm run dev, API on :8000), Next.js
     // proxies server-side so the browser never makes a cross-origin request.
     if (process.env.NODE_ENV === 'production') {
@@ -13,8 +13,8 @@ const config: NextConfig = {
     const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8000'
     return [
       {
-        source: '/api/v1/:path*',
-        destination: `${apiBase}/api/v1/:path*`,
+        source: '/api/v2/:path*',
+        destination: `${apiBase}/api/v2/:path*`,
       },
     ]
   },

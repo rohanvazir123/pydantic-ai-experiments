@@ -132,7 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     # ── Routes ────────────────────────────────────────────────────────────────
-    prefix = "/api/v1"
+    prefix = "/api/v2"
     app.include_router(auth.router,      prefix=prefix)
     app.include_router(chat.router,      prefix=prefix)
     app.include_router(search.router,    prefix=prefix)

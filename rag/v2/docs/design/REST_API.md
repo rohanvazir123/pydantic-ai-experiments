@@ -19,7 +19,7 @@
 
 ## Overview
 
-**Base URL:** `http://localhost:8001/api/v1` (dev) · `https://<host>/api/v1` (prod via Nginx)
+**Base URL:** `http://localhost:8001/api/v2` (dev) · `https://<host>/api/v2` (prod via Nginx)
 
 **Envelope:** every response (success or error) is wrapped in `APIResponse[T]`:
 
@@ -52,7 +52,7 @@
 
 ## Auth
 
-### `POST /api/v1/auth/token`
+### `POST /api/v2/auth/token`
 
 Issue a JWT access token.
 
@@ -74,7 +74,7 @@ Issue a JWT access token.
 
 ---
 
-### `POST /api/v1/auth/refresh`
+### `POST /api/v2/auth/refresh`
 
 Rotate the refresh token and return a new access token. Reads the httpOnly refresh cookie set at login.
 
@@ -91,7 +91,7 @@ Rotate the refresh token and return a new access token. Reads the httpOnly refre
 
 ## Chat
 
-### `POST /api/v1/chat`
+### `POST /api/v2/chat`
 
 Blocking chat — runs the full 3-gate pipeline (retrieval → agent → judge) and returns a single JSON response.
 
@@ -153,7 +153,7 @@ When `status` is an abstention, `answer` contains a corpus-safe fallback message
 
 ---
 
-### `POST /api/v1/chat/stream`
+### `POST /api/v2/chat/stream`
 
 SSE streaming chat — Layer 1 gate only; judge is skipped for latency. Yields token deltas as Server-Sent Events.
 
@@ -181,7 +181,7 @@ data: {"error": "Internal server error"}
 
 ## Search
 
-### `POST /api/v1/search`
+### `POST /api/v2/search`
 
 Synchronous hybrid search — retrieval only, no LLM. Returns ranked chunks with confidence scores. P95 target < 600ms.
 
@@ -231,7 +231,7 @@ Synchronous hybrid search — retrieval only, no LLM. Returns ranked chunks with
 
 Ingestion is async — the API publishes a job to Redis Streams and returns immediately. The ingest-worker processes it in the background.
 
-### `POST /api/v1/ingest`
+### `POST /api/v2/ingest`
 
 Submit an ingestion job.
 
@@ -265,7 +265,7 @@ Submit an ingestion job.
 
 ---
 
-### `GET /api/v1/ingest/{job_id}/status`
+### `GET /api/v2/ingest/{job_id}/status`
 
 Poll job status from the Redis job hash.
 
@@ -287,7 +287,7 @@ Poll job status from the Redis job hash.
 
 ---
 
-### `GET /api/v1/ingest/{job_id}/stream`
+### `GET /api/v2/ingest/{job_id}/stream`
 
 SSE stream of job progress events. Closes when the job reaches `job_completed` or `job_failed`.
 
@@ -300,7 +300,7 @@ data: {"job_id": "uuid", "event_type": "job_completed", "chunks_ingested": 42}
 
 ## Corpus
 
-### `GET /api/v1/corpus`
+### `GET /api/v2/corpus`
 
 List all corpora accessible to the current JWT role.
 
@@ -320,7 +320,7 @@ List all corpora accessible to the current JWT role.
 
 ---
 
-### `POST /api/v1/corpus/{corpus_id}/cache/invalidate`
+### `POST /api/v2/corpus/{corpus_id}/cache/invalidate`
 
 Flush all L2 (Redis) and L3 (pgvector semantic) cache entries for a corpus. Use after bulk updates.
 
@@ -331,7 +331,7 @@ Flush all L2 (Redis) and L3 (pgvector semantic) cache entries for a corpus. Use 
 
 ---
 
-### `GET /api/v1/corpus/{corpus_id}/ontology`
+### `GET /api/v2/corpus/{corpus_id}/ontology`
 
 Return the current ontology Python source for a corpus (or the generic default if none is set).
 
@@ -346,7 +346,7 @@ Return the current ontology Python source for a corpus (or the generic default i
 
 ---
 
-### `POST /api/v1/corpus/{corpus_id}/ontology`
+### `POST /api/v2/corpus/{corpus_id}/ontology`
 
 Upload a Python ontology file. The file is validated (must contain a root `BaseModel` subclass) before saving. Clears the LRU ontology cache.
 
@@ -361,7 +361,7 @@ Returns `422` if the file is invalid.
 
 ---
 
-### `DELETE /api/v1/corpus/{corpus_id}/ontology`
+### `DELETE /api/v2/corpus/{corpus_id}/ontology`
 
 Remove the custom ontology. Next extraction uses the generic default.
 
@@ -376,7 +376,7 @@ Remove the custom ontology. Next extraction uses the generic default.
 
 Conversation history is Tier 2 episodic memory — scoped to the current user via JWT.
 
-### `GET /api/v1/conversations`
+### `GET /api/v2/conversations`
 
 List conversations, newest first.
 
@@ -401,7 +401,7 @@ List conversations, newest first.
 
 ---
 
-### `GET /api/v1/conversations/{conversation_id}`
+### `GET /api/v2/conversations/{conversation_id}`
 
 Get conversation metadata and all messages.
 
@@ -418,7 +418,7 @@ Get conversation metadata and all messages.
 
 ---
 
-### `DELETE /api/v1/conversations/{conversation_id}`
+### `DELETE /api/v2/conversations/{conversation_id}`
 
 Soft-delete. Hard delete occurs after the 7-day GDPR grace period.
 
@@ -433,7 +433,7 @@ Soft-delete. Hard delete occurs after the 7-day GDPR grace period.
 
 User memories are Tier 3 semantic memory (Mem0) — long-term facts extracted from conversations, scoped to the current user.
 
-### `GET /api/v1/memories`
+### `GET /api/v2/memories`
 
 List all memories for the current user.
 
@@ -446,7 +446,7 @@ List all memories for the current user.
 
 ---
 
-### `POST /api/v1/memories`
+### `POST /api/v2/memories`
 
 Manually add a memory.
 
@@ -462,7 +462,7 @@ Manually add a memory.
 
 ---
 
-### `DELETE /api/v1/memories/{memory_id}`
+### `DELETE /api/v2/memories/{memory_id}`
 
 Delete one memory. Immediate hard delete (GDPR requirement).
 
@@ -473,7 +473,7 @@ Delete one memory. Immediate hard delete (GDPR requirement).
 
 ---
 
-### `DELETE /api/v1/memories`
+### `DELETE /api/v2/memories`
 
 Delete ALL memories for the current user (right to erasure).
 
@@ -488,7 +488,7 @@ Delete ALL memories for the current user (right to erasure).
 
 Scheduled ingestion jobs run on a cron schedule, submitting ingest jobs automatically.
 
-### `GET /api/v1/scheduler/jobs`
+### `GET /api/v2/scheduler/jobs`
 
 List scheduled jobs for the current tenant.
 
@@ -511,7 +511,7 @@ List scheduled jobs for the current tenant.
 
 ---
 
-### `POST /api/v1/scheduler/jobs`
+### `POST /api/v2/scheduler/jobs`
 
 Create a new scheduled ingestion job.
 
@@ -538,7 +538,7 @@ Create a new scheduled ingestion job.
 
 ---
 
-### `DELETE /api/v1/scheduler/jobs/{job_id}`
+### `DELETE /api/v2/scheduler/jobs/{job_id}`
 
 Cancel and remove a scheduled job.
 
@@ -549,7 +549,7 @@ Cancel and remove a scheduled job.
 
 ---
 
-### `POST /api/v1/scheduler/jobs/{job_id}/run-now`
+### `POST /api/v2/scheduler/jobs/{job_id}/run-now`
 
 Trigger an immediate one-off ingest run for a scheduled job outside its cron schedule.
 
@@ -566,7 +566,7 @@ Offline evaluation — measures retrieval quality (Hit Rate, MRR, NDCG) against 
 
 > **Status:** Phase 12 (in progress). `GET /run/{id}` and `GET /compare` return placeholder responses.
 
-### `POST /api/v1/evaluate/run`
+### `POST /api/v2/evaluate/run`
 
 Trigger an evaluation run against the corpus's gold dataset.
 
@@ -588,13 +588,13 @@ Trigger an evaluation run against the corpus's gold dataset.
 
 ---
 
-### `GET /api/v1/evaluate/run/{run_id}`
+### `GET /api/v2/evaluate/run/{run_id}`
 
 Poll eval run status and aggregated metrics.
 
 ---
 
-### `GET /api/v1/evaluate/compare?a={run_id}&b={run_id}`
+### `GET /api/v2/evaluate/compare?a={run_id}&b={run_id}`
 
 Regression diff between two eval runs.
 
@@ -602,7 +602,7 @@ Regression diff between two eval runs.
 
 ## Feedback
 
-### `POST /api/v1/feedback`
+### `POST /api/v2/feedback`
 
 Submit explicit user feedback on a response.
 
@@ -631,7 +631,7 @@ Submit explicit user feedback on a response.
 
 ---
 
-### `POST /api/v1/signals`
+### `POST /api/v2/signals`
 
 Submit an implicit behavioural signal. Intended for service-to-service calls from the frontend.
 
@@ -688,13 +688,13 @@ Prometheus metrics in text format. No auth required. Scraped by Grafana.
 ```
 # HELP rag_requests_total ...
 # TYPE rag_requests_total counter
-rag_requests_total{method="POST",route="/api/v1/chat",status="200"} 1234
+rag_requests_total{method="POST",route="/api/v2/chat",status="200"} 1234
 ...
 ```
 
 ---
 
-## `GET /api/v1/logs`
+## `GET /api/v2/logs`
 
 Return recent log entries from the Redis ring buffer (`knowledge:logs:recent`, last 5,000 entries, 24h TTL). Admin role required.
 
