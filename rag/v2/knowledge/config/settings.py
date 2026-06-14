@@ -166,6 +166,7 @@ class Settings(BaseSettings):
     min_confidence_score: float = Field(0.10, ge=0.0, le=1.0)
     confidence_warn_threshold: float = Field(0.40, ge=0.0, le=1.0)
     retrieval_confidence_threshold: float = Field(1.5, ge=0.0)
+    judge_enabled: bool = Field(False)
     judge_confidence_threshold: float = Field(0.60, ge=0.0, le=1.0)
     judge_k: int = Field(5, ge=1)
 

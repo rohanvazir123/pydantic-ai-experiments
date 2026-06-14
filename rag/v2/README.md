@@ -27,7 +27,7 @@ RAG v2 is the production rewrite of the RAG system. Multi-corpus, multi-tenant, 
 | `knowledge/` | Main Python package — all backend logic |
 | `kg/` | Knowledge graph module (Apache AGE / Cypher) |
 | `documents/` | Sample corpus for seeding / testing |
-| `docs/` | Architecture, pipeline, and FAQ documentation |
+| `docs/` | All documentation — see [docs/README.md](docs/README.md) |
 | `schema/` | SQL migrations (001 → 008, apply in order) |
 | `scripts/` | `seed.py` (ingest sample docs), `purge.py` (reset corpus) |
 | `tests/` | Pytest suite: `unit/`, `integration/`, `retrieval/` |
@@ -40,9 +40,6 @@ RAG v2 is the production rewrite of the RAG system. Multi-corpus, multi-tenant, 
 | `Makefile` | Common commands — see [Key Commands](#key-commands) |
 | `pyproject.toml` | Python project config, deps, tool settings |
 | `.env.example` | All required environment variables with defaults |
-| `RAGV2_DESIGN.md` | Full system design, data schemas, SLAs |
-| `TESTS.md` | Test plan — categories, requirements, per-phase gates |
-| `TEST_QA_REFERENCE.md` | QA reference — metric formulas, thresholds |
 
 ---
 
@@ -192,11 +189,15 @@ automatically grants superuser. Locally, ensure `ragv2` owns all tables in
 
 ## Where to Read More
 
-- **Architecture deep-dive**: `docs/ARCHITECTURE.md`
-- **Ingestion pipeline**: `docs/INGESTION_PIPELINE.md`
-- **Retrieval pipeline**: `docs/RETRIEVAL_PIPELINE.md`
-- **Datastore guide**: `docs/DATASTORE_GUIDE.md`
-- **FAQ**: `docs/FAQ.md`
-- **System design**: `RAGV2_DESIGN.md`
-- **Build plan**: `TODO_implementation.md`
-- **KG module**: `kg/docs/`
+All documentation lives in [`docs/`](docs/README.md):
+
+| Doc | What it covers |
+|-----|---------------|
+| [`docs/REST_API.md`](docs/REST_API.md) | Every endpoint: method, path, request/response shapes |
+| [`docs/RAGV2_DESIGN.md`](docs/RAGV2_DESIGN.md) | Full system design: architecture, Redis Streams, SLAs, cost model |
+| [`docs/DATASTORE.md`](docs/DATASTORE.md) | PostgreSQL, AGE, Redis — schema and access patterns |
+| [`docs/PROMPTS.md`](docs/PROMPTS.md) | All agent system prompts and structured output schemas |
+| [`docs/LOCAL_LLM_GUIDE.md`](docs/LOCAL_LLM_GUIDE.md) | Ollama setup, model tiers, VRAM requirements |
+| [`docs/TESTS.md`](docs/TESTS.md) | Test plan — categories, requirements, per-phase gates |
+| [`docs/TEST_QA_REFERENCE.md`](docs/TEST_QA_REFERENCE.md) | Metric formulas, thresholds, acceptance criteria |
+| [`docs/TODO_implementation.md`](docs/TODO_implementation.md) | Bottom-up build plan: phases and test gates |

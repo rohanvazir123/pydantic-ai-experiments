@@ -188,42 +188,49 @@ class ConfidenceAwarePipeline:
                 request_id=request_id,
             )
 
-        # ── Layer 3: Judge gate ───────────────────────────────────────────────
-        t0 = time.monotonic()
-        judge_result = await run_judge(
-            query=query,
-            context=context_text,    # NO chunk_id metadata passed to judge
-            answer=gen.answer,
-            settings=self._settings,
-        )
-        t["judge"] = int((time.monotonic() - t0) * 1000)
+        # ── Layer 3: Judge gate (passthrough when judge_enabled=False) ───────
+        judge_confidence: float | None = None
+        low_conf_warning = False
+
+        if self._settings.judge_enabled:
+            t0 = time.monotonic()
+            judge_result = await run_judge(
+                query=query,
+                context=context_text,    # NO chunk_id metadata passed to judge
+                answer=gen.answer,
+                settings=self._settings,
+            )
+            t["judge"] = int((time.monotonic() - t0) * 1000)
+
+            if (
+                judge_result.verdict == "unsupported"
+                or judge_result.confidence < self._settings.judge_confidence_threshold
+            ):
+                await registry.fire(HookPoint.ON_VALIDATION_FAIL, ctx)
+                await registry.fire(HookPoint.POST_LLM, ctx)
+                return RAGResponse(
+                    answer=_ABSTAIN_MSG[PipelineStatus.ABSTAINED_JUDGE],
+                    status=PipelineStatus.ABSTAINED_JUDGE,
+                    pipeline_latency_ms=t,
+                    abstention_layer=3,
+                    abstention_reason=f"judge:{judge_result.verdict}",
+                    request_id=request_id,
+                )
+
+            judge_confidence = judge_result.confidence
+            low_conf_warning = judge_result.verdict == "partial"
 
         await registry.fire(HookPoint.POST_LLM, ctx)
 
-        if (
-            judge_result.verdict == "unsupported"
-            or judge_result.confidence < self._settings.judge_confidence_threshold
-        ):
-            await registry.fire(HookPoint.ON_VALIDATION_FAIL, ctx)
-            return RAGResponse(
-                answer=_ABSTAIN_MSG[PipelineStatus.ABSTAINED_JUDGE],
-                status=PipelineStatus.ABSTAINED_JUDGE,
-                pipeline_latency_ms=t,
-                abstention_layer=3,
-                abstention_reason=f"judge:{judge_result.verdict}",
-                request_id=request_id,
-            )
-
         # ── Answered ──────────────────────────────────────────────────────────
         answer = gen.answer
-        low_conf_warning = judge_result.verdict == "partial"
         if low_conf_warning:
             answer += _PARTIAL_NOTE
 
         return RAGResponse(
             answer=answer,
             status=PipelineStatus.ANSWERED,
-            confidence=judge_result.confidence,
+            confidence=judge_confidence,
             citations=gen.citations or [],
             low_confidence_warning=low_conf_warning,
             pipeline_latency_ms=t,
