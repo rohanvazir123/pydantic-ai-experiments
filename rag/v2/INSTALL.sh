@@ -126,12 +126,12 @@ if [ ! -f .env ]; then
 else
   ok ".env already exists"
 fi
-# Load env vars into this shell so subsequent commands inherit them
-set +x   # silence the export noise
-# shellcheck disable=SC2046
-export $(grep -v '^#' .env | grep -v '^$' | xargs) 2>/dev/null || true
-# Docker Compose requires POSTGRES_PASSWORD / AGE_DB_PASSWORD explicitly.
-# Default to 'changeme' if not set in .env (matches .env.example defaults).
+# Docker Compose needs POSTGRES_PASSWORD / AGE_DB_PASSWORD in the shell env.
+# Extract them from .env directly (avoids xargs mangling complex JSON values).
+# pydantic-settings reads .env automatically — no need to export everything.
+set +x
+POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d "'\"")"
+AGE_DB_PASSWORD="$(grep '^AGE_DB_PASSWORD=' .env | cut -d= -f2- | tr -d "'\"")"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-changeme}"
 export AGE_DB_PASSWORD="${AGE_DB_PASSWORD:-changeme}"
 set -x
