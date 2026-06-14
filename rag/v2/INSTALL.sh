@@ -206,7 +206,7 @@ PYEOF
 ok "Migrations complete"
 
 step "Seeding sample documents"
-uv run python scripts/seed.py 2>&1 | grep -E "✓|✗|⚠|Dev token|──"
+uv run python scripts/seed.py
 ok "Seed complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
