@@ -438,6 +438,24 @@ pip install openai-whisper
 5. **Full unit suite**: `make test-unit`
 6. **Integration tests** when touching DB/Redis layer: `python -m pytest tests/integration/ -v`
 
+### Pre-commit gate (REQUIRED before every commit)
+
+Run all three in order from `rag/v2/`. All must be green before committing:
+
+```bash
+uv run ruff check knowledge/ tests/   # lint — catches import order, naming, style
+uv run mypy knowledge/                # type check — catches type errors
+uv run pytest tests/unit/ -q          # unit tests — 279 tests, ~15s, no services needed
+```
+
+Or as a single command:
+
+```bash
+uv run ruff check knowledge/ tests/ && uv run mypy knowledge/ && uv run pytest tests/unit/ -q
+```
+
+**Never commit if any of these fail.** CI runs the same checks and will block the push.
+
 ### Add a New Route
 
 1. Create `knowledge/api/routes/my_route.py` with an `APIRouter`
