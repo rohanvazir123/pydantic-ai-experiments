@@ -44,8 +44,10 @@ def _make_stub_token(sub: str, tenant_id: str, roles: list[str], ttl: int = ACCE
 
 def _make_rs256_token(sub: str, tenant_id: str, roles: list[str], ttl: int = ACCESS_TTL) -> str:
     """Sign a JWT with the RS256 private key."""
-    import jwt as pyjwt
     from pathlib import Path
+
+    import jwt as pyjwt
+
     s = load_settings()
     key = Path(s.jwt_private_key_path).read_bytes()
     return pyjwt.encode(

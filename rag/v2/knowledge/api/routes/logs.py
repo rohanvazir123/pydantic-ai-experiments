@@ -47,7 +47,7 @@ async def get_logs(
     # Build exact-match level set if caller specified individual levels
     exact_levels: set[str] | None = None
     if levels:
-        exact_levels = {l.strip().upper() for l in levels.split(",") if l.strip()}
+        exact_levels = {lvl.strip().upper() for lvl in levels.split(",") if lvl.strip()}
 
     min_rank = _LEVEL_RANK.get((level or "DEBUG").upper(), 0)
 
@@ -67,9 +67,8 @@ async def get_logs(
         if exact_levels is not None:
             if entry_level not in exact_levels:
                 continue
-        else:
-            if _LEVEL_RANK.get(entry_level, 0) < min_rank:
-                continue
+        elif _LEVEL_RANK.get(entry_level, 0) < min_rank:
+            continue
 
         # Field filters
         if service and entry.get("service") != service:
