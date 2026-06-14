@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # RAG v2 — launch API + frontend
-# Usage:  bash start.sh
 set -euxo pipefail
-cd "$(dirname "$0")"
+
+# Always run from the script's own directory (rag/v2/)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 BOLD='\033[1m'; GREEN='\033[0;32m'; RESET='\033[0m'
 ok() { echo -e "  ${GREEN}✓${RESET} $1"; }
-
 
 # Ensure Docker services are up
 docker compose up -d postgres redis >/dev/null 2>&1
@@ -23,37 +24,35 @@ fi
 lsof -ti:7100 | xargs kill -9 2>/dev/null || true
 lsof -ti:7200 | xargs kill -9 2>/dev/null || true
 
-# Start API
+# Start API (must run from rag/v2/ for 'knowledge' package to be found)
 echo -e "\n${BOLD}Starting API on :7100${RESET}"
-uv run uvicorn knowledge.api.app:app --port 7100 --reload \
+uv run uvicorn knowledge.api.app:app --port 7100 \
   > /tmp/rag-api.log 2>&1 &
-API_PID=$!
-echo $API_PID > /tmp/rag-api.pid
+echo $! > /tmp/rag-api.pid
 
 # Start frontend
 echo -e "${BOLD}Starting frontend on :7200${RESET}"
-(cd frontend && PORT=7200 npm run dev > /tmp/rag-ui.log 2>&1) &
-UI_PID=$!
-echo $UI_PID > /tmp/rag-ui.pid
+(cd "$SCRIPT_DIR/frontend" && PORT=7200 npm run dev > /tmp/rag-ui.log 2>&1) &
+echo $! > /tmp/rag-ui.pid
 
-# Wait for API to be ready
+# Wait for API
 echo -n "  Waiting for API"
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
   if curl -sf http://localhost:7100/health >/dev/null 2>&1; then
     echo ""; ok "API ready"; break
   fi
   echo -n "."; sleep 1
-  [ "$i" -eq 30 ] && { echo ""; echo "API failed to start — tail /tmp/rag-api.log"; exit 1; }
+  [ "$i" -eq 40 ] && { echo ""; echo "API failed — check: tail /tmp/rag-api.log"; exit 1; }
 done
 
-# Wait for Next.js
+# Wait for frontend
 echo -n "  Waiting for UI"
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
   if curl -sf http://localhost:7200 >/dev/null 2>&1; then
     echo ""; ok "UI ready"; break
   fi
   echo -n "."; sleep 1
-  [ "$i" -eq 30 ] && { echo ""; echo "UI failed to start — tail /tmp/rag-ui.log"; exit 1; }
+  [ "$i" -eq 40 ] && { echo ""; echo "UI failed — check: tail /tmp/rag-ui.log"; exit 1; }
 done
 
 echo -e "\n${BOLD}  ✓ Everything running${RESET}"
@@ -63,7 +62,6 @@ echo -e "  Logs → tail -f /tmp/rag-api.log"
 echo -e "  Stop → kill \$(cat /tmp/rag-api.pid) \$(cat /tmp/rag-ui.pid)"
 echo ""
 
-# Open browser (macOS)
 open http://localhost:7200 2>/dev/null || \
   xdg-open http://localhost:7200 2>/dev/null || \
   echo "  Open http://localhost:7200 in your browser"

@@ -37,9 +37,11 @@ echo -e "${YELLOW}Clean install? This will destroy all containers and data volum
 read -r -p "  Wipe everything and start fresh? [y/N] " CLEAN_ANSWER
 set -x
 if [ "$(echo "$CLEAN_ANSWER" | tr '[:upper:]' '[:lower:]')" = "y" ]; then
-  step "Clean install — destroying containers and volumes"
-  docker compose down --volumes --remove-orphans 2>/dev/null || true
-  ok "Containers and volumes removed"
+  step "Clean install — removing containers and data volumes (Ollama models preserved)"
+  docker compose down --remove-orphans 2>/dev/null || true
+  # Remove only DB/cache volumes — NOT ollamamodels (models take time to re-download)
+  docker volume rm v2_pgdata v2_agedata v2_redisdata 2>/dev/null || true
+  ok "Containers and data volumes removed"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
