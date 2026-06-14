@@ -21,6 +21,7 @@ from rag.ingestion.models import (
     ChunkingConfig,
     IngestionConfig,
     IngestionResult,
+    MetadataFilter,
     SearchResult,
 )
 
@@ -207,3 +208,93 @@ class TestSearchResult:
             document_source="source.md",
         )
         assert result.metadata == {}
+
+
+class TestMetadataFilter:
+    """Unit tests for MetadataFilter model and is_empty property."""
+
+    # --- is_empty ---
+
+    def test_default_filter_is_empty(self):
+        assert MetadataFilter().is_empty is True
+
+    def test_empty_dicts_still_empty(self):
+        assert MetadataFilter(
+            metadata_eq={}, metadata_in={}, metadata_gte={}, metadata_lte={}, document_sources=[]
+        ).is_empty is True
+
+    def test_metadata_eq_not_empty(self):
+        assert MetadataFilter(metadata_eq={"quarter": "Q4"}).is_empty is False
+
+    def test_metadata_in_not_empty(self):
+        assert MetadataFilter(metadata_in={"quarter": ["Q3", "Q4"]}).is_empty is False
+
+    def test_document_source_not_empty(self):
+        assert MetadataFilter(document_source="rag/documents/report.md").is_empty is False
+
+    def test_document_sources_not_empty(self):
+        assert MetadataFilter(document_sources=["a.md", "b.md"]).is_empty is False
+
+    def test_document_title_not_empty(self):
+        assert MetadataFilter(document_title="Q4 2024 Earnings").is_empty is False
+
+    # --- Q4 2024 scenario ---
+
+    def test_q4_2024_filter_not_empty(self):
+        f = MetadataFilter(metadata_eq={"quarter": "Q4", "year": "2024"})
+        assert f.is_empty is False
+        assert f.metadata_eq["quarter"] == "Q4"
+        assert f.metadata_eq["year"] == "2024"
+
+    def test_q4_2024_combined_with_doc_source(self):
+        f = MetadataFilter(
+            metadata_eq={"quarter": "Q4", "year": "2024"},
+            document_source="rag/documents/earnings/amazon_q4_2024.md",
+        )
+        assert f.is_empty is False
+        assert f.metadata_eq == {"quarter": "Q4", "year": "2024"}
+        assert f.document_source == "rag/documents/earnings/amazon_q4_2024.md"
+
+    def test_multi_quarter_in_filter(self):
+        f = MetadataFilter(metadata_in={"quarter": ["Q3", "Q4"], "year": ["2024"]})
+        assert f.is_empty is False
+        assert "Q3" in f.metadata_in["quarter"]
+        assert "Q4" in f.metadata_in["quarter"]
+
+    def test_metadata_gte_not_empty(self):
+        assert MetadataFilter(metadata_gte={"date": "2024-10-01"}).is_empty is False
+
+    def test_metadata_lte_not_empty(self):
+        assert MetadataFilter(metadata_lte={"date": "2024-12-31"}).is_empty is False
+
+    def test_q4_2024_date_range_filter(self):
+        f = MetadataFilter(
+            metadata_gte={"date": "2024-10-01"},
+            metadata_lte={"date": "2024-12-31"},
+        )
+        assert f.is_empty is False
+        assert f.metadata_gte["date"] == "2024-10-01"
+        assert f.metadata_lte["date"] == "2024-12-31"
+
+    # --- field defaults ---
+
+    def test_metadata_eq_defaults_to_empty_dict(self):
+        assert MetadataFilter().metadata_eq == {}
+
+    def test_metadata_in_defaults_to_empty_dict(self):
+        assert MetadataFilter().metadata_in == {}
+
+    def test_metadata_gte_defaults_to_empty_dict(self):
+        assert MetadataFilter().metadata_gte == {}
+
+    def test_metadata_lte_defaults_to_empty_dict(self):
+        assert MetadataFilter().metadata_lte == {}
+
+    def test_document_sources_defaults_to_empty_list(self):
+        assert MetadataFilter().document_sources == []
+
+    def test_document_source_defaults_to_none(self):
+        assert MetadataFilter().document_source is None
+
+    def test_document_title_defaults_to_none(self):
+        assert MetadataFilter().document_title is None

@@ -9,28 +9,22 @@
   - [Internal Workflow](#internal-workflow)
   - [Customization and Tuning](#customization-and-tuning)
   - [Image Handling and Local VLMs](#image-handling-and-local-vlms)
+  - [VLM Picture Annotation — How It Works](#vlm-picture-annotation--how-it-works)
+  - [Results from Running vlm_picture_annotation.py](#results-from-running-vlm_picture_annotationpy)
 - [Docling Chunking Failures](#docling-chunking-failures)
-  - [Which documents demonstrate bad chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
+  - [Which Documents Demonstrate Bad Chunks?](#which-documents-demonstrate-that-docling-does-not-produce-correct-chunks)
   - [Failure Scenarios and Fixes](#failure-scenarios-and-fixes)
   - [Scripts and Results](#scripts-and-results)
 - [Docling Output Format](#docling-output-format)
-  - [Chunk JSON structure](#chunk-json-structure)
-  - [How to spot column mixing in the output](#how-to-spot-column-mixing-in-the-output)
-- [Does Docling work with research papers?](#does-docling-work-with-research-papers)
-  - [Will a VLM fix the remaining issues?](#will-a-vlm-fix-the-remaining-issues)
-  - [Do we need a specialist model like Nougat for equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
-  - [Internal Pipeline](#internal-pipeline)
-  - [Graph Ontology](#graph-ontology)
-  - [LLM Prompts](#llm-prompts)
-  - [Local LLM and Configurables](#local-llm-and-configurables)
-  - [Context Window Management](#context-window-management)
-  - [PostgreSQL Storage Schema](#postgresql-storage-schema)
-  - [How Apache AGE is Used](#how-apache-age-is-used)
-  - [Query Modes](#query-modes)
-  - [What does the entity-relationship output look like?](#what-does-the-entity-relationship-output-look-like)
-  - [How is data stored in LIGHTRAG_VDB_ENTITY and LIGHTRAG_VDB_RELATION?](#how-is-data-stored-in-lightrag_vdb_entity-and-lightrag_vdb_relation)
-  - [Limitations and Where It Will Fail](#limitations-and-where-it-will-fail)
-  - [Will It Scale?](#will-it-scale)
+  - [Chunk JSON Structure](#chunk-json-structure)
+  - [How to Spot Column Mixing in the Output](#how-to-spot-column-mixing-in-the-output)
+- [Does Docling Work with Research Papers?](#does-docling-work-with-research-papers)
+  - [What Docling Gets Right](#what-docling-gets-right)
+  - [What It Struggles With](#what-it-struggles-with)
+  - [Practical Reality from Our Test Run](#practical-reality-from-our-test-run)
+  - [When It Genuinely Fails](#when-it-genuinely-fails)
+  - [Will a VLM Fix the Remaining Issues?](#will-a-vlm-fix-the-remaining-issues)
+  - [Do We Need a Specialist Model Like Nougat for Equations?](#do-we-need-a-specialist-model-like-nougat-for-equations)
 
 ---
 
@@ -228,36 +222,157 @@ By default, Docling extracts figure captions and bounding boxes but does **not**
 
 #### Wiring a VLM for figure descriptions
 
-```python
-from docling.document_converter import DocumentConverter, PdfPipelineOptions
-from docling.datamodel.base_models import InputFormat
-from docling.models.picture_description_api_model import PictureDescriptionApiOptions
-
-# Enable image export so figures are available as PIL images
-pipeline_options = PdfPipelineOptions()
-pipeline_options.generate_picture_images = True
-pipeline_options.images_scale = 2.0
-
-# Point to a local Ollama VLM endpoint
-picture_options = PictureDescriptionApiOptions(
-    url="http://localhost:11434/v1/chat/completions",
-    params={"model": "llava:13b"},
-    prompt="Describe this figure concisely for a retrieval system.",
-)
-pipeline_options.picture_description_options = picture_options
-
-converter = DocumentConverter(
-    format_options={InputFormat.PDF: PdfPipelineOptions(**pipeline_options.__dict__)}
-)
-result = converter.convert("document_with_figures.pdf")
-
-# Figure descriptions are now in FigureItem.annotations
-for item, _ in result.document.iterate_items():
-    if hasattr(item, "annotations") and item.annotations:
-        print(item.annotations[0].text)
-```
+See [VLM picture annotation — how it works](#vlm-picture-annotation--how-it-works) below for the full working implementation with `PictureDescriptionApiOptions`.
 
 **Practical note:** VLM processing is slow — expect ~5–30s per figure depending on model size and GPU. For bulk ingestion, filter to only `FigureItem` objects and batch them.
+
+### VLM picture annotation — how it works
+
+The correct way to wire Qwen2.5-VL (or any OpenAI-compatible vision model) into Docling is via `PictureDescriptionApiOptions`. This keeps the standard PDF pipeline for text and tables, and routes **only cropped figure images** to the VLM.
+
+```python
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionApiOptions
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.do_ocr = False               # digital PDFs have a text layer
+pipeline_options.do_table_structure = True    # parse table rows/cols locally
+pipeline_options.do_picture_classification = False
+pipeline_options.do_picture_description = True   # route figures to VLM
+pipeline_options.generate_picture_images = True  # crop figures for the VLM call
+pipeline_options.enable_remote_services = True   # required for API-based description
+
+pipeline_options.picture_description_options = PictureDescriptionApiOptions(
+    url="http://localhost:11434/v1/chat/completions",  # or port 8000 for vLLM
+    params={"model": "qwen2.5vl:7b"},
+    prompt="Describe this chart or image in detail.",
+    timeout=180,
+    concurrency=1,
+)
+
+converter = DocumentConverter(
+    format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+    }
+)
+result = converter.convert("document.pdf")
+print(result.document.export_to_markdown())
+```
+
+**Key behaviour:** If a 10-page document has 2 charts, Qwen2.5-VL is called exactly **2 times** — once per cropped figure image. The remaining 10 pages of text never touch the VLM. This is fundamentally different from `VlmPipeline`, which renders every page as an image and sends all of them to the model.
+
+| Approach | VLM calls per page | Text quality | When to use |
+|----------|-------------------|--------------|-------------|
+| `PictureDescriptionApiOptions` | Once per figure on that page | High — layout analysis extracts text | Most cases — digital PDFs with figures |
+| `VlmPipeline` | Every page | Lower — VLM reconstructs all text from image | Scanned PDFs, image-only documents |
+
+**GPU requirement:** None on the Docling/Python side — it makes HTTP calls to Ollama. The GPU is only needed on the Ollama server. On Apple Silicon, Ollama uses Metal automatically.
+
+### Results from running vlm_picture_annotation.py
+
+Two documents tested with `qwen2.5vl:7b` via Ollama.
+
+**Script:** `basics/rag/docling/vlm_picture_annotation.py`
+**Outputs:** `basics/rag/docling/output/vlm_annotation/`
+
+---
+
+#### Test 1 — rag_paper.pdf (academic paper, 2005.11401)
+
+| Pipeline | Total chunks | Figure chunks | Figures described |
+|----------|-------------|---------------|-------------------|
+| Standard (no VLM) | 105 | 4 (captions only) | 0 |
+| VLM (`qwen2.5vl:7b`) | 118 | 5 | 4 |
+
+The VLM produced 13 more chunks. Figures that had only a caption became richer chunks with Qwen's description appended inline.
+
+**Figure 1** — RAG architecture flowchart:
+```
+Standard [394 chars]:
+  Figure 1: Overview of our approach. We combine a pre-trained retriever
+  (Query Encoder + Document Index)... [caption only]
+
+VLM [1064 chars]:
+  Figure 1: Overview of our approach...
+  The image is a flowchart. Components: 1. Query Encoder (q): encodes the
+  current context/query. This embedding is used by the retriever to identify
+  relevant passages from previously generated responses...
+```
+
+**Figure 3** — Line graphs (retrieval performance vs K):
+```
+Standard [840 chars]:
+  Effect of Retrieving more documents... [surrounding text, no chart data]
+
+VLM [594 chars]:
+  Figure 3: Left: NQ performance... Right: MS-MARCO Bleu-1 and Rouge-L...
+  The image shows a series of three line graphs, each comparing performance of
+  different models at varying values of K (number of retrieved documents)...
+```
+
+---
+
+#### Test 2 — tesla_q4_2023.pdf (financial slide-deck)
+
+This is the more revealing test — the Tesla Q4 report is a designed slide-deck where almost every slide is a chart. The standard pipeline extracted essentially no figure content.
+
+| Pipeline | Total chunks | Figure chunks | Figures described |
+|----------|-------------|---------------|-------------------|
+| Standard (no VLM) | 132 | **0** | 0 |
+| VLM (`qwen2.5vl:7b`) | 157 | 19 | 19 |
+
+Standard pipeline: zero figures detected — the deck's charts were invisible to text extraction.
+VLM pipeline: **19 figures described**, covering market share trends, FSD miles, vehicle costs, and gross profit bars across every slide.
+
+**Figure 1** — Market share line graph:
+```
+VLM [822 chars]:
+  Market share of Tesla vehicles by region (TTM)
+  This chart is a line graph tracking % changes for three regions: US/Canada,
+  Europe, and China, from Q4 2017 to Q4 2023. X-axis: quarters. Y-axis: %.
+  Key observations: 1. US/Canada — noticeable upward trend...
+```
+
+**Figure 2** — FSD cumulative miles:
+```
+VLM [1033 chars]:
+  Cumulative miles driven with FSD Beta (millions)
+  Line chart from March 2021 to December 2023. X-axis: monthly increments.
+  Initial period shows gradual increase, accelerating significantly in 2022...
+```
+
+**Figure 3** — Cost of goods sold per vehicle:
+```
+VLM [825 chars]:
+  Cost of goods sold per vehicle
+  Bar chart Q4 2022 to Q4 2023. Y-axis in thousands, ranging 34,000–40,000.
+  Q4 2022 highest bar. Visible downward trend through 2023...
+```
+
+**Figure 6** — Services gross profit:
+```
+VLM [969 chars]:
+  Services & Other gross profit bar chart, 2015 to 2023.
+  Y-axis: -600 to 600 millions USD. Chart shows the progression from losses
+  in early years to profit in later years...
+```
+
+---
+
+#### What worked well
+
+- **Financial charts**: accurately described axes, ranges, trend direction, and year-over-year comparisons
+- **Line graphs**: identified regions/models being compared, described trend shape
+- **Bar charts**: extracted y-axis scale, labelled quarters/years, described relative bar heights
+- **Slide-deck PDFs**: the biggest win — standard pipeline gets nothing, VLM gets everything
+
+#### What to watch for
+
+- Qwen sometimes misidentifies domain context (called the RAG architecture a "MultiDial system") — the visual description is accurate but framing can be off
+- Heatmaps and attention matrices: vaguer descriptions ("a chart representing timeline") — a more specific prompt or larger model (72B) improves this
+- Descriptions are appended **inline after the caption** in markdown export, not in a separate field — chunks are longer but not structurally tagged
+- The `--pages` flag defaults to 5 — run with `--pages -1` to process the full document
 
 ---
 
@@ -396,6 +511,32 @@ chunker = HybridChunker(repeat_table_header=True)
 | `repeat_table_header=True` | **Works** | Table header rows are injected into every continuation chunk |
 | `strip_headers_footers()` via doc tree mutation | **Did not work** | `doc.body.children` manipulation does not remove items from the document in Docling 2.x — the internal ref structure is more complex |
 | Post-hoc chunk filtering for headers/footers | **TODO — revisit** | Simpler and more reliable: filter chunks by short length + all-caps or page-number patterns after chunking, without touching the document tree |
+
+#### How `TableFormerMode.ACCURATE` fixes two-column mixing
+
+The root cause of column mixing is that `FAST` mode (the default) uses a lighter layout model that does not reliably detect column boundaries. It reads text left-to-right across both columns, interleaving sentences from unrelated paragraphs. `ACCURATE` activates the full `DocLayNet`-based classifier, which identifies column regions as separate layout blocks and assigns reading order within each column before combining them.
+
+Switching to `ACCURATE` fixed column mixing for **content sections** but did not eliminate all flagged anomalies:
+
+| Document | Flagged after fix | What remained |
+|---|---|---|
+| `attention_is_all_you_need.pdf` | 2 chunks | Author name grid (page 1) + reference list fragment |
+| `bert_paper.pdf` | 1 chunk | Author name grid (page 1) |
+
+Both residual failures are the **author block on page 1** — a dense two-column grid of names and affiliations that the layout model still mis-reads. This is structural noise, not content. Introduction, methods, experiments, and results all chunked correctly. For RAG purposes these are accepted as noise and do not affect retrieval quality.
+
+**VLMs do not fix this.** Column mixing is a layout analysis problem — the text is already extracted by the text pipeline, just in the wrong order. VLMs only process image content and never see the mis-ordered text.
+
+#### Fix-to-failure mapping (confirmed results)
+
+| Failure | Fix applied | Works? |
+|---|---|---|
+| Two-column mixing — content sections | `TableFormerMode.ACCURATE` | Yes |
+| Two-column mixing — author block / reference list | No fix — accepted as noise | N/A |
+| Multi-page table splitting | `TableFormerMode.ACCURATE` + `do_cell_matching=False` + heuristic column-count post-processor | Partially |
+| Table continuation losing column context | `repeat_table_header=True` in `HybridChunker` | Yes |
+| Header / footer contamination | `strip_headers_footers()` via `doc.body.children` mutation | **Failed** — Docling 2.x internal ref structure is more complex; tree manipulation has no effect |
+| Header / footer contamination (alternative) | Post-hoc chunk filter: drop short chunks matching all-caps or page-number patterns | TODO — not yet tried |
 
 #### Output locations
 

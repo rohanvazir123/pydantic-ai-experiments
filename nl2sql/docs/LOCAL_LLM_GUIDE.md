@@ -161,8 +161,8 @@ AGE is a PostgreSQL extension. Cypher must be wrapped as:
   AS (col1 agtype, col2 agtype, ...);
 
 Rules:
-- Use only node labels: Contract, Party, Clause, RiskFlag, DateEvent, Obligation
-- Use only relationship types: SIGNED_BY, HAS_CLAUSE, HAS_RISK, HAS_DATE, HAS_OBLIGATION, RELATED_TO
+- Use only node labels: Contract, Party, Clause, Risk, Date, Obligation
+- Use only relationship types: SIGNED_BY, HAS_CLAUSE, INCREASES_RISK_FOR, CAUSES, HAS_DATE, HAS_OBLIGATION
 - Always LIMIT results to 20 unless the user asks for all
 - Output format: <cypher>...</cypher><columns>col1,col2</columns>
 ```

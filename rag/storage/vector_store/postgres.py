@@ -101,14 +101,13 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime
 from typing import Any
 
 import asyncpg
 from pgvector.asyncpg import register_vector
 
 from rag.config.settings import load_settings
-from rag.ingestion.models import ChunkData, SearchResult
+from rag.ingestion.models import ChunkData, MetadataFilter, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -116,16 +115,12 @@ logger = logging.getLogger(__name__)
 class PostgresHybridStore:
     """PostgreSQL implementation with hybrid vector + text search using pgvector."""
 
-    # Reindex when chunk count exceeds this multiple of the count at index build time
-    _IVFFLAT_REINDEX_FACTOR = 3
-
     def __init__(self):
         """Initialize PostgreSQL connection."""
         self.settings = load_settings()
         self.pool: asyncpg.Pool | None = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
-        self._ivfflat_index_build_count: int = 0  # chunk count when IVFFlat was last built
 
     async def initialize(self) -> None:
         """Initialize PostgreSQL connection and create tables/indexes."""
@@ -144,12 +139,12 @@ class PostgresHybridStore:
             try:
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-                try:
-                    await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
-                except Exception:
-                    # pg_search (ParadeDB) is optional — only needed for bm25_search().
-                    # Standard vector + tsvector search works without it.
-                    pass
+                # Uncomment to enable BM25 search via ParadeDB (requires pg_search extension).
+                # Install: https://docs.paradedb.com/documentation/getting-started/self-hosted
+                # try:
+                #     await temp_conn.execute("CREATE EXTENSION IF NOT EXISTS pg_search")
+                # except Exception:
+                #     pass
             finally:
                 await temp_conn.close()
 
@@ -194,8 +189,8 @@ class PostgresHybridStore:
                 await conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS chunks_embedding_idx
                     ON {self.settings.postgres_table_chunks}
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
+                    USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
                 """)
 
                 await conn.execute(f"""
@@ -231,13 +226,6 @@ class PostgresHybridStore:
                     CREATE INDEX IF NOT EXISTS documents_source_idx
                     ON {self.settings.postgres_table_documents}(source)
                 """)
-
-            # Record chunk count at index build time for IVFFlat reindex trigger
-            async with self.pool.acquire() as count_conn:
-                row = await count_conn.fetchrow(
-                    f"SELECT COUNT(*) as n FROM {self.settings.postgres_table_chunks}"
-                )
-                self._ivfflat_index_build_count = row["n"]
 
             logger.info("Connected to PostgreSQL and initialized tables")
             self._initialized = True
@@ -286,27 +274,70 @@ class PostgresHybridStore:
 
             logger.info(f"Inserted {len(chunks)} chunks for document {document_id}")
 
-            # Check if IVFFlat index needs rebuilding due to data growth.
-            # IVFFlat centroids are fixed at build time; recall degrades when the
-            # chunk count grows beyond ~3x the count at index creation.
-            row = await conn.fetchrow(
-                f"SELECT COUNT(*) as n FROM {self.settings.postgres_table_chunks}"
-            )
-            current_count = row["n"]
-            threshold = self._ivfflat_index_build_count * self._IVFFLAT_REINDEX_FACTOR
-            if self._ivfflat_index_build_count > 0 and current_count >= threshold:
-                logger.info(
-                    f"IVFFlat reindex triggered: {current_count} chunks "
-                    f"(threshold {threshold}, built at {self._ivfflat_index_build_count})"
-                )
-                await conn.execute(
-                    f"REINDEX INDEX CONCURRENTLY chunks_embedding_idx"
-                )
-                self._ivfflat_index_build_count = current_count
-                logger.info("IVFFlat index rebuilt successfully")
+    def _build_filter_clause(
+        self,
+        metadata_filter: MetadataFilter,
+        param_offset: int,
+    ) -> tuple[list[str], list[Any]]:
+        """Build SQL WHERE clause fragments and bound params for a MetadataFilter.
+
+        JSONB keys are passed as parameters (not inlined) to prevent injection.
+
+        Args:
+            metadata_filter: Filter specification.
+            param_offset: First positional parameter index to use (1-based, e.g. 3).
+
+        Returns:
+            (clauses, params) — clauses is a list of SQL fragments to AND together;
+            params is the list of values to append to the query's argument list.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        idx = param_offset
+
+        for key, value in metadata_filter.metadata_eq.items():
+            clauses.append(f"c.metadata->>${idx} = ${idx + 1}")
+            params.extend([key, str(value)])
+            idx += 2
+
+        for key, values in metadata_filter.metadata_in.items():
+            clauses.append(f"c.metadata->>${idx} = ANY(${idx + 1}::text[])")
+            params.extend([key, [str(v) for v in values]])
+            idx += 2
+
+        # Range filters: ISO 8601 date strings ("YYYY-MM-DD") compare correctly
+        # via text/lexicographic order, so c.metadata->>'date' >= $N works.
+        for key, value in metadata_filter.metadata_gte.items():
+            clauses.append(f"c.metadata->>${idx} >= ${idx + 1}")
+            params.extend([key, value])
+            idx += 2
+
+        for key, value in metadata_filter.metadata_lte.items():
+            clauses.append(f"c.metadata->>${idx} <= ${idx + 1}")
+            params.extend([key, value])
+            idx += 2
+
+        if metadata_filter.document_source:
+            clauses.append(f"d.source = ${idx}")
+            params.append(metadata_filter.document_source)
+            idx += 1
+
+        if metadata_filter.document_sources:
+            clauses.append(f"d.source = ANY(${idx}::text[])")
+            params.append(metadata_filter.document_sources)
+            idx += 1
+
+        if metadata_filter.document_title:
+            clauses.append(f"d.title = ${idx}")
+            params.append(metadata_filter.document_title)
+
+        return clauses, params
 
     async def semantic_search(
-        self, query_embedding: list[float], match_count: int | None = None
+        self,
+        query_embedding: list[float],
+        match_count: int | None = None,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult]:
         """
         Perform pure semantic search using vector similarity.
@@ -314,6 +345,7 @@ class PostgresHybridStore:
         Args:
             query_embedding: Query embedding vector
             match_count: Number of results to return
+            metadata_filter: Optional filter on chunk/document metadata
 
         Returns:
             List of search results ordered by similarity
@@ -326,9 +358,21 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
-                # Set IVF probes for better recall (default is 1, we use 10)
-                await conn.execute("SET ivfflat.probes = 10")
+                # Increase ef_search for better HNSW recall at query time (default is 40)
+                await conn.execute("SET hnsw.ef_search = 40")
 
+                # Build optional WHERE clause from metadata filter.
+                # $1 = query_embedding, $2 = match_count; filter params start at $3.
+                filter_clauses, filter_params = (
+                    self._build_filter_clause(metadata_filter, 3)
+                    if metadata_filter and not metadata_filter.is_empty
+                    else ([], [])
+                )
+                where_sql = ("WHERE " + " AND ".join(filter_clauses)) if filter_clauses else ""
+
+                # <=> is pgvector cosine distance (0=identical, 2=opposite).
+                # 1 - distance converts it to similarity (1=identical, -1=opposite).
+                # HNSW index with ef_search=40 balances recall vs speed.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -341,11 +385,13 @@ class PostgresHybridStore:
                         d.source as document_source
                     FROM {self.settings.postgres_table_chunks} c
                     JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
+                    {where_sql}
                     ORDER BY c.embedding <=> $1::vector
                     LIMIT $2
                     """,
                     query_embedding,
                     match_count,
+                    *filter_params,
                 )
 
                 return [
@@ -366,17 +412,38 @@ class PostgresHybridStore:
             return []
 
     async def text_search(
-        self, query: str, match_count: int | None = None
+        self,
+        query: str,
+        match_count: int | None = None,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult]:
         """
-        Perform full-text search using PostgreSQL ts_vector.
+        Full-text search using PostgreSQL tsvector + ts_rank.
+
+        plainto_tsquery stems and ANDs the query terms using the English dictionary
+        (e.g. "machine learning" → 'machin' & 'learn'). Only documents containing
+        ALL stemmed terms pass the WHERE filter.
+
+        ts_rank scoring — what it does and does NOT do:
+          - Counts how often each query term appears in the tsvector (term frequency).
+          - Weights positions by lexeme type: title > body (if set at index time).
+          - No IDF: a common word like "the" scores the same as rare "indemnification".
+          - No length normalisation: we pass no normalization flag (default 0), so
+            longer documents are NOT penalised. A 2000-word chunk with 5 hits scores
+            the same as a 100-word chunk with 5 hits.
+          - No corpus-level statistics of any kind — scores are computed per-document.
+
+        Implication: ts_rank degrades as corpus grows because high-frequency terms
+        in many documents all receive the same score. BM25 (not used here) fixes this
+        via IDF. The semantic + fuzzy legs in hybrid_search compensate partially.
 
         Args:
             query: Search query text
             match_count: Number of results to return
+            metadata_filter: Optional filter on chunk/document metadata
 
         Returns:
-            List of search results ordered by text relevance
+            List of search results ordered by ts_rank score
         """
         await self.initialize()
 
@@ -386,7 +453,16 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
-                # Convert query to tsquery format
+                # $1 = query (used twice), $2 = match_count*2; filter params start at $3.
+                filter_clauses, filter_params = (
+                    self._build_filter_clause(metadata_filter, 3)
+                    if metadata_filter and not metadata_filter.is_empty
+                    else ([], [])
+                )
+                extra_where = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
+
+                # ts_rank with no normalization flag (default 0) = raw term frequency only.
+                # No IDF, no length penalty. See docstring for full implications.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -399,12 +475,13 @@ class PostgresHybridStore:
                         d.source as document_source
                     FROM {self.settings.postgres_table_chunks} c
                     JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
-                    WHERE c.content_tsv @@ plainto_tsquery('english', $1)
+                    WHERE c.content_tsv @@ plainto_tsquery('english', $1){extra_where}
                     ORDER BY ts_rank(c.content_tsv, plainto_tsquery('english', $1)) DESC
                     LIMIT $2
                     """,
                     query,
                     match_count * 2,  # Over-fetch for RRF
+                    *filter_params,
                 )
 
                 return [
@@ -425,19 +502,28 @@ class PostgresHybridStore:
             return []
 
     async def fuzzy_search(
-        self, query: str, match_count: int | None = None
+        self,
+        query: str,
+        match_count: int | None = None,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult]:
         """
-        Perform fuzzy text search using pg_trgm trigram similarity.
+        Fuzzy search via pg_trgm's word_similarity function.
 
-        Catches typos, partial words, and short queries that plainto_tsquery misses.
+        Splits text into overlapping 3-character trigrams and scores the best
+        matching word-boundary alignment between query and content (0–1 float).
+        Threshold 0.2 filters noise; backed by a GIN trigram index for fast lookup.
+
+        Catches typos ("NeuralFow" → "NeuralFlow"), abbreviations, and partial words
+        that plainto_tsquery misses because it requires exact stem matches.
 
         Args:
             query: Search query text
             match_count: Number of results to return
+            metadata_filter: Optional filter on chunk/document metadata
 
         Returns:
-            List of search results ordered by trigram similarity
+            List of search results ordered by trigram similarity score
         """
         await self.initialize()
 
@@ -447,6 +533,17 @@ class PostgresHybridStore:
 
         try:
             async with self.pool.acquire() as conn:
+                # $1 = query (used twice), $2 = match_count*2; filter params start at $3.
+                filter_clauses, filter_params = (
+                    self._build_filter_clause(metadata_filter, 3)
+                    if metadata_filter and not metadata_filter.is_empty
+                    else ([], [])
+                )
+                extra_where = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
+
+                # word_similarity scores the best trigram match between any word in
+                # the query and any word in the content (0–1). Threshold 0.2 filters
+                # noise; backed by a GIN pg_trgm index for fast lookup.
                 rows = await conn.fetch(
                     f"""
                     SELECT
@@ -459,12 +556,13 @@ class PostgresHybridStore:
                         d.source as document_source
                     FROM {self.settings.postgres_table_chunks} c
                     JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
-                    WHERE word_similarity($1, c.content) > 0.2
+                    WHERE word_similarity($1, c.content) > 0.2{extra_where}
                     ORDER BY word_similarity($1, c.content) DESC
                     LIMIT $2
                     """,
                     query,
                     match_count * 2,  # Over-fetch for RRF
+                    *filter_params,
                 )
 
                 return [
@@ -484,82 +582,85 @@ class PostgresHybridStore:
             logger.error(f"Fuzzy search failed: {e}")
             return []
 
-    async def bm25_search(
-        self, query: str, match_count: int | None = None
-    ) -> list[SearchResult]:
-        """
-        Perform BM25 full-text search using pg_search (ParadeDB).
-
-        Provides better relevance ranking than ts_rank by accounting for
-        term frequency and document length normalization.
-
-        Args:
-            query: Search query text
-            match_count: Number of results to return
-
-        Returns:
-            List of search results ordered by BM25 score
-        """
-        await self.initialize()
-
-        if match_count is None:
-            match_count = self.settings.default_match_count
-        match_count = min(match_count, self.settings.max_match_count)
-
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"""
-                    SELECT
-                        c.id as chunk_id,
-                        c.document_id,
-                        c.content,
-                        paradedb.score(c.id) as similarity,
-                        c.metadata,
-                        d.title as document_title,
-                        d.source as document_source
-                    FROM {self.settings.postgres_table_chunks} c
-                    JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
-                    WHERE c.id @@@ paradedb.match('content', $1)
-                    ORDER BY paradedb.score(c.id) DESC
-                    LIMIT $2
-                    """,
-                    query,
-                    match_count * 2,  # Over-fetch for RRF
-                )
-
-                return [
-                    SearchResult(
-                        chunk_id=str(row["chunk_id"]),
-                        document_id=str(row["document_id"]),
-                        content=row["content"],
-                        similarity=float(row["similarity"]),
-                        metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                        document_title=row["document_title"],
-                        document_source=row["document_source"],
-                    )
-                    for row in rows
-                ]
-
-        except Exception as e:
-            logger.error(f"BM25 search failed: {e}")
-            return []
+    # ------------------------------------------------------------------
+    # Uncomment to enable BM25 search via ParadeDB (pg_search extension).
+    # Also uncomment the corresponding lines in hybrid_search() below and
+    # the CREATE EXTENSION block in _do_initialize().
+    # Install: https://docs.paradedb.com/documentation/getting-started/self-hosted
+    # ------------------------------------------------------------------
+    # async def bm25_search(
+    #     self, query: str, match_count: int | None = None
+    # ) -> list[SearchResult]:
+    #     """
+    #     BM25 search via ParadeDB pg_search extension.
+    #     @@@ is ParadeDB's match operator. paradedb.score() computes BM25
+    #     (term frequency + IDF + length normalisation) — better than ts_rank
+    #     at scale. Requires pg_search to be installed and the extension enabled.
+    #     """
+    #     await self.initialize()
+    #     if match_count is None:
+    #         match_count = self.settings.default_match_count
+    #     match_count = min(match_count, self.settings.max_match_count)
+    #     try:
+    #         async with self.pool.acquire() as conn:
+    #             rows = await conn.fetch(
+    #                 f"""
+    #                 SELECT
+    #                     c.id as chunk_id,
+    #                     c.document_id,
+    #                     c.content,
+    #                     paradedb.score(c.id) as similarity,
+    #                     c.metadata,
+    #                     d.title as document_title,
+    #                     d.source as document_source
+    #                 FROM {self.settings.postgres_table_chunks} c
+    #                 JOIN {self.settings.postgres_table_documents} d ON c.document_id = d.id
+    #                 WHERE c.id @@@ paradedb.match('content', $1)
+    #                 ORDER BY paradedb.score(c.id) DESC
+    #                 LIMIT $2
+    #                 """,
+    #                 query,
+    #                 match_count * 2,
+    #             )
+    #             return [
+    #                 SearchResult(
+    #                     chunk_id=str(row["chunk_id"]),
+    #                     document_id=str(row["document_id"]),
+    #                     content=row["content"],
+    #                     similarity=float(row["similarity"]),
+    #                     metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+    #                     document_title=row["document_title"],
+    #                     document_source=row["document_source"],
+    #                 )
+    #                 for row in rows
+    #             ]
+    #     except Exception as e:
+    #         logger.error(f"BM25 search failed: {e}")
+    #         return []
 
     async def hybrid_search(
         self,
         query: str,
         query_embedding: list[float],
         match_count: int | None = None,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult]:
         """
-        Perform hybrid search combining semantic and keyword matching.
+        Runs three searches concurrently and merges via Reciprocal Rank Fusion (RRF, k=60):
 
-        Uses Reciprocal Rank Fusion (RRF) to merge semantic, FTS, trigram, and BM25 results.
+          1. semantic_search  — pgvector cosine distance (<=>); catches synonyms/paraphrasing
+          2. text_search      — tsvector ts_rank via plainto_tsquery; exact stemmed terms
+          3. fuzzy_search     — pg_trgm word_similarity; handles typos and partial matches
+
+        Each leg over-fetches (match_count × 2) for better RRF coverage. Any leg that raises
+        is caught by return_exceptions=True and treated as an empty list. RRF score =
+        Σ 1/(60 + rank) across legs, deduped by chunk_id.
 
         Args:
             query: Search query text
             query_embedding: Query embedding vector
             match_count: Number of results to return
+            metadata_filter: Optional filter applied uniformly to all search legs
 
         Returns:
             List of search results sorted by combined RRF score
@@ -573,14 +674,23 @@ class PostgresHybridStore:
         # Over-fetch for better RRF results
         fetch_count = match_count * 2
 
-        # Run all four searches concurrently
-        semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
-            self.semantic_search(query_embedding, fetch_count),
-            self.text_search(query, fetch_count),
-            self.fuzzy_search(query, fetch_count),
-            self.bm25_search(query, fetch_count),
+        # Run all three searches concurrently.
+        # To add BM25 as a 4th leg: uncomment bm25_search() above, then replace
+        # the three lines below with the four-leg version in the comment that follows.
+        semantic_results, text_results, fuzzy_results = await asyncio.gather(
+            self.semantic_search(query_embedding, fetch_count, metadata_filter),
+            self.text_search(query, fetch_count, metadata_filter),
+            self.fuzzy_search(query, fetch_count, metadata_filter),
             return_exceptions=True,
         )
+        # Four-leg version (ParadeDB):
+        # semantic_results, text_results, fuzzy_results, bm25_results = await asyncio.gather(
+        #     self.semantic_search(query_embedding, fetch_count),
+        #     self.text_search(query, fetch_count),
+        #     self.fuzzy_search(query, fetch_count),
+        #     self.bm25_search(query, fetch_count),
+        #     return_exceptions=True,
+        # )
 
         # Handle errors gracefully
         if isinstance(semantic_results, Exception):
@@ -592,17 +702,18 @@ class PostgresHybridStore:
         if isinstance(fuzzy_results, Exception):
             logger.warning(f"Fuzzy search failed: {fuzzy_results}")
             fuzzy_results = []
-        if isinstance(bm25_results, Exception):
-            logger.warning(f"BM25 search failed: {bm25_results}")
-            bm25_results = []
+        # if isinstance(bm25_results, Exception):  # uncomment with 4-leg version
+        #     logger.warning(f"BM25 search failed: {bm25_results}")
+        #     bm25_results = []
 
-        if not any([semantic_results, text_results, fuzzy_results, bm25_results]):
+        if not any([semantic_results, text_results, fuzzy_results]):
             logger.error("All searches failed")
             return []
 
-        # Merge using RRF across all four signals
+        # Merge using RRF across all three signals.
+        # Four-leg version: _reciprocal_rank_fusion([semantic_results, text_results, fuzzy_results, bm25_results], k=60)
         merged_results = self._reciprocal_rank_fusion(
-            [semantic_results, text_results, fuzzy_results, bm25_results], k=60
+            [semantic_results, text_results, fuzzy_results], k=60
         )
 
         return merged_results[:match_count]

@@ -1,3 +1,17 @@
+# Copyright 2024 The Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 NL-to-SQL — FastAPI server.
 
@@ -174,7 +188,7 @@ async def query(request: QueryRequest) -> QueryResponse:
         )
     except Exception as exc:
         logger.exception("Query endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/v1/history", response_model=list[HistoryEntry], tags=["query"])
@@ -188,7 +202,7 @@ async def history() -> list[HistoryEntry]:
         ]
     except Exception as exc:
         logger.exception("History endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/v1/schema", tags=["query"])
@@ -198,7 +212,7 @@ async def schema() -> dict[str, str]:
         _, schema_text = await _get_manager()
         return {"schema": schema_text}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 if __name__ == "__main__":

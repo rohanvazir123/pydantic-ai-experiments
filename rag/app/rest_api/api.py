@@ -1,3 +1,17 @@
+# Copyright 2024 The Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 RAG Agent — FastAPI server.
 
@@ -171,7 +185,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         return ChatResponse(answer=str(result.output), session_id=request.session_id)
     except Exception as exc:
         logger.exception("Chat endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/chat/stream", tags=["chat"])
@@ -229,7 +243,7 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
         return RetrieveResponse(results=results, total=len(results))
     except Exception as exc:
         logger.exception("Retrieve endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
     finally:
         await state.close()
 
@@ -252,7 +266,7 @@ async def ingest(request: IngestRequest) -> IngestResponse:
         raw_results = await pipeline.ingest_documents()
     except Exception as exc:
         logger.exception("Ingest endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
     finally:
         await pipeline.close()
 

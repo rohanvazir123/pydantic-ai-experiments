@@ -1,3 +1,17 @@
+# Copyright 2024 The Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 FastAPI HTTP layer for the RAG agent.
 
@@ -53,6 +67,7 @@ Usage
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -211,7 +226,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         return ChatResponse(answer=str(result.output), session_id=request.session_id)
     except Exception as exc:
         logger.exception("Chat endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.post("/v1/chat/stream", tags=["chat"])
@@ -236,7 +251,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             yield f"data: {json.dumps({'done': True})}\n\n"
         except Exception as exc:
             logger.exception("Stream error: %s", exc)
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            yield f"data: {json.dumps({'error': 'Internal server error'})}\n\n"
         finally:
             await state.close()
 
@@ -248,6 +263,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 # ---------------------------------------------------------------------------
 
 
+_ALLOWED_INGEST_ROOT = Path("rag/documents").resolve()
+
+
 @app.post("/v1/ingest", response_model=IngestResponse, tags=["ingest"])
 async def ingest(request: IngestRequest) -> IngestResponse:
     """
@@ -256,8 +274,15 @@ async def ingest(request: IngestRequest) -> IngestResponse:
     This runs synchronously within the request. For large corpora consider
     moving this to a background job queue (see FAQ §4).
     """
+    requested = Path(request.documents_folder).resolve()
+    if not str(requested).startswith(str(_ALLOWED_INGEST_ROOT)):
+        raise HTTPException(
+            status_code=400,
+            detail=f"documents_folder must be within {_ALLOWED_INGEST_ROOT}",
+        )
+
     pipeline = create_pipeline(
-        documents_folder=request.documents_folder,
+        documents_folder=str(requested),
         clean=request.clean,
         chunk_size=request.chunk_size,
         max_tokens=request.max_tokens,
@@ -267,7 +292,7 @@ async def ingest(request: IngestRequest) -> IngestResponse:
         raw_results = await pipeline.ingest_documents()
     except Exception as exc:
         logger.exception("Ingest endpoint error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
     finally:
         await pipeline.close()
 

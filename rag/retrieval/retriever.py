@@ -19,8 +19,7 @@ Module: rag.retrieval.retriever
 ===============================
 
 This module provides the high-level retrieval interface for the RAG system.
-It coordinates embedding generation, optional HyDE query transformation,
-search, optional reranking, and result caching.
+It coordinates embedding generation, search, optional reranking, and result caching.
 
 Classes
 -------
@@ -31,7 +30,7 @@ Retriever
     Main retrieval interface orchestrating embeddings and search.
 
     Methods:
-        __init__(store, embedder, reranker, hyde)
+        __init__(store, embedder, reranker)
             Initialize with optional components (all lazy-init from settings).
 
         async retrieve(
@@ -41,11 +40,12 @@ Retriever
             use_cache: bool = True
         ) -> list[SearchResult]
             Retrieve documents. Pipeline:
-              1. HyDE (if enabled): generate hypothetical doc, embed it
-              2. Over-fetch from DB (if reranking)
-              3. Search (semantic / text / hybrid)
-              4. Rerank (if enabled) down to match_count
-              5. Cache final results
+              1. Check cache
+              2. Embed query
+              3. Over-fetch from DB (if reranking)
+              4. Search (semantic / text / hybrid)
+              5. Rerank (if enabled) down to match_count
+              6. Cache final results
 
         async retrieve_as_context(query, match_count, search_type) -> str
             Retrieve and format results as LLM context string.
@@ -63,9 +63,8 @@ Search Types
 
 Feature Flags (settings)
 ------------------------
-- hyde_enabled: Use HyDE embedding instead of raw query embedding
-- reranker_enabled: Rerank over-fetched results before returning
-- reranker_type: "llm" or "cross_encoder"
+- reranker_enabled: False by default — enable with RERANKER_ENABLED=true
+- reranker_type: "llm" (default) or "cross_encoder"
 - reranker_overfetch_factor: How many × match_count to fetch before reranking
 
 Usage
@@ -85,8 +84,7 @@ from collections import OrderedDict
 
 from rag.config.settings import load_settings
 from rag.ingestion.embedder import EmbeddingGenerator
-from rag.ingestion.models import SearchResult
-from rag.retrieval.query_processors import HyDEProcessor
+from rag.ingestion.models import MetadataFilter, SearchResult
 from rag.retrieval.rerankers import BaseReranker, CrossEncoderReranker, LLMReranker
 from rag.storage.vector_store.postgres import PostgresHybridStore
 
@@ -115,16 +113,27 @@ class ResultCache:
         self._hits = 0
         self._misses = 0
 
-    def _get_key(self, query: str, search_type: str, match_count: int) -> str:
-        """Generate cache key from query parameters."""
-        key_str = f"{query}:{search_type}:{match_count}"
+    def _get_key(
+        self,
+        query: str,
+        search_type: str,
+        match_count: int,
+        metadata_filter: MetadataFilter | None,
+    ) -> str:
+        """Generate cache key from query parameters including any metadata filter."""
+        filter_repr = metadata_filter.model_dump_json() if metadata_filter and not metadata_filter.is_empty else ""
+        key_str = f"{query}:{search_type}:{match_count}:{filter_repr}"
         return hashlib.sha256(key_str.encode()).hexdigest()[:24]
 
     def get(
-        self, query: str, search_type: str, match_count: int
+        self,
+        query: str,
+        search_type: str,
+        match_count: int,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult] | None:
         """Get cached results if available and not expired."""
-        key = self._get_key(query, search_type, match_count)
+        key = self._get_key(query, search_type, match_count, metadata_filter)
         if key in self._cache:
             timestamp, results = self._cache[key]
             # Check TTL
@@ -144,9 +153,10 @@ class ResultCache:
         search_type: str,
         match_count: int,
         results: list[SearchResult],
+        metadata_filter: MetadataFilter | None = None,
     ) -> None:
         """Cache search results."""
-        key = self._get_key(query, search_type, match_count)
+        key = self._get_key(query, search_type, match_count, metadata_filter)
         self._cache[key] = (time.time(), results)
         self._cache.move_to_end(key)
 
@@ -179,14 +189,13 @@ _result_cache = ResultCache(max_size=100, ttl_seconds=300)
 
 
 class Retriever:
-    """Orchestrates embedding, optional HyDE, search, and optional reranking."""
+    """Orchestrates embedding, search, and optional reranking."""
 
     def __init__(
         self,
         store: PostgresHybridStore | None = None,
         embedder: EmbeddingGenerator | None = None,
         reranker: BaseReranker | None = None,
-        hyde: HyDEProcessor | None = None,
     ):
         """
         Initialize retriever.
@@ -195,25 +204,11 @@ class Retriever:
             store: Vector store (creates PostgresHybridStore if not provided)
             embedder: Embedding generator (creates EmbeddingGenerator if not provided)
             reranker: Optional reranker override (lazy-init from settings if None)
-            hyde: Optional HyDE processor override (lazy-init from settings if None)
         """
         self.settings = load_settings()
         self.store = store or PostgresHybridStore()
         self.embedder = embedder or EmbeddingGenerator()
         self._reranker = reranker
-        self._hyde = hyde
-
-    def _get_hyde(self) -> HyDEProcessor:
-        """Lazy-init HyDE processor from settings."""
-        if self._hyde is None:
-            self._hyde = HyDEProcessor(
-                model=self.settings.llm_model,
-                base_url=self.settings.llm_base_url,
-                api_key=self.settings.llm_api_key,
-                embedding_model=self.settings.embedding_model,
-                embedding_base_url=self.settings.embedding_base_url,
-            )
-        return self._hyde
 
     def _get_reranker(self) -> BaseReranker:
         """Lazy-init reranker from settings."""
@@ -237,13 +232,14 @@ class Retriever:
         match_count: int | None = None,
         search_type: str = "hybrid",
         use_cache: bool = True,
+        metadata_filter: MetadataFilter | None = None,
     ) -> list[SearchResult]:
         """
         Retrieve relevant documents for a query.
 
         Pipeline:
           1. Check cache
-          2. HyDE (if enabled): generate hypothetical doc, embed it
+          2. Embed query
           3. Over-fetch from DB (if reranking enabled)
           4. Search (semantic / text / hybrid)
           5. Rerank (if enabled) and trim to match_count
@@ -254,6 +250,7 @@ class Retriever:
             match_count: Number of results to return (defaults to settings)
             search_type: "semantic", "text", or "hybrid" (default)
             use_cache: Whether to use result cache (default: True)
+            metadata_filter: Optional filter to restrict results by chunk or document metadata
 
         Returns:
             List of search results ordered by relevance
@@ -263,7 +260,7 @@ class Retriever:
 
         # 1. Cache check
         if use_cache:
-            cached_results = _result_cache.get(query, search_type, match_count)
+            cached_results = _result_cache.get(query, search_type, match_count, metadata_filter)
             if cached_results is not None:
                 logger.info(
                     f"[CACHE HIT] {len(cached_results)} results"
@@ -273,19 +270,12 @@ class Retriever:
         start_time = time.time()
         logger.info(
             f"[RETRIEVE] query='{query}', type={search_type}, count={match_count}, "
-            f"hyde={'on' if self.settings.hyde_enabled else 'off'}, "
             f"rerank={'on' if self.settings.reranker_enabled else 'off'}"
+            + (f", filter={metadata_filter.model_dump()}" if metadata_filter and not metadata_filter.is_empty else "")
         )
 
-        # 2. Query embedding — use HyDE if enabled
-        if self.settings.hyde_enabled:
-            hyde = self._get_hyde()
-            hypothetical = await hyde.generate_hypothetical(query)
-            # Use our existing embedder so caching/settings stay consistent
-            query_embedding = await self.embedder.generate_embedding(hypothetical)
-            logger.info("[HyDE] Using hypothetical-document embedding")
-        else:
-            query_embedding = await self.embedder.embed_query(query)
+        # 2. Embed query
+        query_embedding = await self.embedder.embed_query(query)
 
         # 3. Determine fetch count (over-fetch before reranking)
         fetch_count = match_count
@@ -297,11 +287,11 @@ class Retriever:
 
         # 4. Search
         if search_type == "semantic":
-            results = await self.store.semantic_search(query_embedding, fetch_count)
+            results = await self.store.semantic_search(query_embedding, fetch_count, metadata_filter)
         elif search_type == "text":
-            results = await self.store.text_search(query, fetch_count)
+            results = await self.store.text_search(query, fetch_count, metadata_filter)
         else:  # hybrid (default)
-            results = await self.store.hybrid_search(query, query_embedding, fetch_count)
+            results = await self.store.hybrid_search(query, query_embedding, fetch_count, metadata_filter)
 
         # 5. Rerank
         if self.settings.reranker_enabled and results:
@@ -333,9 +323,9 @@ class Retriever:
         elapsed_ms = (time.time() - start_time) * 1000
         logger.info(f"[RETRIEVE] Done: {len(results)} results in {elapsed_ms:.0f}ms")
 
-        # 6. Cache final results
+        # Cache final results
         if use_cache:
-            _result_cache.set(query, search_type, match_count, results)
+            _result_cache.set(query, search_type, match_count, results, metadata_filter)
 
         return results
 
@@ -351,7 +341,11 @@ class Retriever:
         logger.info("Result cache cleared")
 
     async def retrieve_as_context(
-        self, query: str, match_count: int | None = None, search_type: str = "hybrid"
+        self,
+        query: str,
+        match_count: int | None = None,
+        search_type: str = "hybrid",
+        metadata_filter: MetadataFilter | None = None,
     ) -> str:
         """
         Retrieve and format results as context string for LLM.
@@ -360,11 +354,12 @@ class Retriever:
             query: Search query text
             match_count: Number of results to return
             search_type: Type of search
+            metadata_filter: Optional filter on chunk/document metadata
 
         Returns:
             Formatted context string
         """
-        results = await self.retrieve(query, match_count, search_type)
+        results = await self.retrieve(query, match_count, search_type, metadata_filter=metadata_filter)
 
         if not results:
             return "No relevant information found in the knowledge base for this query."

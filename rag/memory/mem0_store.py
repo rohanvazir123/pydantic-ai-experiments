@@ -85,7 +85,7 @@ Usage
 import logging
 from typing import Any
 
-from rag.config.settings import Settings, load_settings
+from rag.config.settings import Settings, load_settings, mask_credential
 from rag.utils.db_utils import parse_database_url
 
 logger = logging.getLogger(__name__)
@@ -388,7 +388,7 @@ if __name__ == "__main__":
     settings = load_settings()
     _logger.info(f"\nMem0 Enabled: {settings.mem0_enabled}")
     _logger.info(f"Table Name: {settings.mem0_collection_name}")
-    _logger.info(f"Database URL: {settings.database_url[:30]}..." if settings.database_url else "Not set")
+    _logger.info(f"Database URL: {mask_credential(settings.database_url)}" if settings.database_url else "Not set")
     _logger.info(f"LLM Model: {settings.llm_model}")
     _logger.info(f"Embedding Model: {settings.embedding_model}")
 
