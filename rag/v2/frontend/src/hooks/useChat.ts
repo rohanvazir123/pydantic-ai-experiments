@@ -3,6 +3,31 @@ import { useRef } from 'react'
 import { useChatStore } from '@/store/chatStore'
 import { streamSSE } from '@/lib/sse'
 
+// Session-only Q&A cache: dies on reload (sessionStorage) and has a TTL.
+const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
+
+interface CacheEntry { answer: string; citations: any[]; expiry: number }
+
+function cacheKey(query: string, corpusIds: string[], tier: string): string {
+  return `qa:${JSON.stringify({ query, corpusIds, tier })}`
+}
+
+function cacheGet(key: string): CacheEntry | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return null
+    const entry: CacheEntry = JSON.parse(raw)
+    if (Date.now() > entry.expiry) { sessionStorage.removeItem(key); return null }
+    return entry
+  } catch { return null }
+}
+
+function cacheSet(key: string, entry: Omit<CacheEntry, 'expiry'>): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ ...entry, expiry: Date.now() + CACHE_TTL_MS }))
+  } catch { /* sessionStorage full — silently skip */ }
+}
+
 export function useChat() {
   const abortRef = useRef<AbortController | null>(null)
 
@@ -19,10 +44,28 @@ export function useChat() {
     if (!conv) return   // should never happen
 
     getStore().addUserMessage(convId, query)
+
+    const corpusIds = getStore().selectedCorpusIds
+    const tier      = getStore().modelTier
+    const key       = cacheKey(query, corpusIds, tier)
+    const cached    = cacheGet(key)
+
+    if (cached) {
+      // Serve from session cache instantly — no spinner needed
+      getStore().finaliseMessage(convId, {
+        content:   cached.answer,
+        citations: cached.citations,
+      })
+      return
+    }
+
     getStore().appendToken(convId, '')   // thinking cursor
 
     abortRef.current?.abort()
     abortRef.current = new AbortController()
+
+    let fullAnswer  = ''
+    let citations: any[] = []
 
     try {
       for await (const event of streamSSE(
@@ -31,21 +74,24 @@ export function useChat() {
           method: 'POST',
           body: JSON.stringify({
             query,
-            corpus_ids:  getStore().selectedCorpusIds,
+            corpus_ids:  corpusIds,
             session_id:  conv.session_id,
-            model_tier:  getStore().modelTier,
+            model_tier:  tier,
           }),
         },
         abortRef.current.signal,
       )) {
         if ('delta' in event) {
+          fullAnswer += event.delta
           getStore().appendToken(convId, event.delta)
         } else if ('done' in event && event.done) {
+          citations = (event as any).citations ?? []
           getStore().finaliseMessage(convId, {
-            citations:         (event as any).citations ?? [],
+            citations,
             prompt_tokens:     (event as any).prompt_tokens,
             completion_tokens: (event as any).completion_tokens,
           })
+          if (fullAnswer) cacheSet(key, { answer: fullAnswer, citations })
         } else if ('abstained' in event) {
           getStore().finaliseMessage(convId, {
             status:            `abstained_${(event as any).layer === 1 ? 'retrieval' : 'judge'}` as any,

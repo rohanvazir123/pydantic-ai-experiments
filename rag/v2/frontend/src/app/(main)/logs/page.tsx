@@ -275,7 +275,7 @@ export default function LogsPage() {
             {!visibleLogs.length && !loading && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-[var(--text-muted)]">
-                  {logs.length === 0 ? 'No logs in buffer — API may not be running' : 'No logs match the active level filters'}
+                  {logs.length === 0 ? 'No logs yet' : 'No logs match the active level filters'}
                 </td>
               </tr>
             )}

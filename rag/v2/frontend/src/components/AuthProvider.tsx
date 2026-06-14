@@ -22,9 +22,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }, [pathname, router])
 
-  // Render nothing until we know the user is authenticated.
-  // This prevents clicks on child elements before auth is confirmed.
-  if (!ready) return null
+  // Render a blank screen while auth resolves — must NOT return null,
+  // as Next.js 15 treats null from a layout as not-found and shows the 404 boundary.
+  if (!ready) return <div className="min-h-screen bg-[var(--bg)]" />
 
   return <>{children}</>
 }

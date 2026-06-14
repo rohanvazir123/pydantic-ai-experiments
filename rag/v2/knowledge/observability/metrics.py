@@ -5,8 +5,10 @@ The RedisLogProcessor mirrors every structlog entry to a capped Redis list
 so the GET /v1/logs endpoint can serve recent logs on-demand.
 """
 
+import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -112,56 +114,69 @@ def inc_pipeline_status(status: str) -> None:
         pipeline_status.labels(status=status).inc()
 
 
-# ── Redis log ring buffer processor ──────────────────────────────────────────
+# ── Redis log ring buffer ─────────────────────────────────────────────────────
 
-class RedisLogProcessor:
-    """structlog processor that mirrors each log entry to a Redis ring buffer.
+_LOG_KEY   = "knowledge:logs:recent"
+_MAX_LINES = 5_000
+_TTL_S     = 86_400  # 24h
 
-    Enables the GET /v1/logs endpoint to serve recent logs on-demand
-    without reading Docker stdout.
+
+class RedisLogHandler(logging.Handler):
+    """stdlib logging.Handler that mirrors every log record to the Redis ring buffer.
+
+    Attaches to the root logger so all logging.getLogger() calls in the app
+    are captured, regardless of whether structlog is used.
     """
 
-    LOG_KEY   = "knowledge:logs:recent"
-    MAX_LINES = 5_000
-    TTL_S     = 86_400   # 24h
-
-    def __init__(self, redis: Any) -> None:   # redis.asyncio.Redis
+    def __init__(self, redis: Any) -> None:
+        super().__init__()
         self._redis = redis
 
-    async def process(self, event_dict: dict[str, Any]) -> dict[str, Any]:
+    def emit(self, record: logging.LogRecord) -> None:
         try:
+            ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+            event_dict: dict[str, Any] = {
+                "level":     record.levelname,
+                "timestamp": ts,
+                "message":   record.getMessage(),
+                "service":   record.name,
+            }
+            if record.exc_info:
+                event_dict["exc_info"] = self.formatException(record.exc_info)
             entry = json.dumps(event_dict, default=str)
-            await self._redis.lpush(self.LOG_KEY, entry)
-            await self._redis.ltrim(self.LOG_KEY, 0, self.MAX_LINES - 1)
-            await self._redis.expire(self.LOG_KEY, self.TTL_S)
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._write(entry))
+            except RuntimeError:
+                pass  # no event loop — skip (e.g. during sync startup code)
         except Exception:
-            pass   # never let log processing break the request
-        return event_dict
+            pass  # never let logging break the request
+
+    async def _write(self, entry: str) -> None:
+        try:
+            await self._redis.lpush(_LOG_KEY, entry)
+            await self._redis.ltrim(_LOG_KEY, 0, _MAX_LINES - 1)
+            await self._redis.expire(_LOG_KEY, _TTL_S)
+        except Exception:
+            pass
 
 
 def configure_structlog(redis: Any) -> None:
-    """Wire structlog so every log entry is mirrored to the Redis ring buffer.
+    """Attach a Redis log handler to the root logger.
 
-    Call once at app startup after the Redis client is connected.
-    Falls back silently if structlog is not installed.
+    All logging.getLogger() calls (uvicorn, fastapi, knowledge.*) will be
+    captured and written to the Redis ring buffer at knowledge:logs:recent,
+    enabling GET /api/v2/logs to serve them on-demand.
+
+    Safe to call multiple times — duplicate handlers are skipped.
     """
-    try:
-        import structlog
-
-        processor = RedisLogProcessor(redis)
-
-        structlog.configure(
-            processors=[
-                structlog.contextvars.merge_contextvars,
-                structlog.processors.add_log_level,
-                structlog.processors.TimeStamper(fmt="iso", utc=True),
-                structlog.processors.StackInfoRenderer(),
-                processor.process,
-                structlog.processors.JSONRenderer(),
-            ],
-            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
-            context_class=dict,
-            logger_factory=structlog.PrintLoggerFactory(),
-        )
-    except ImportError:
-        pass  # structlog optional — standard logging still works
+    root = logging.getLogger()
+    for h in root.handlers:
+        if isinstance(h, RedisLogHandler):
+            return  # already installed
+    handler = RedisLogHandler(redis)
+    handler.setLevel(logging.DEBUG)
+    root.addHandler(handler)
+    # Ensure root logger passes INFO and above to our handler
+    if root.level == logging.NOTSET or root.level > logging.INFO:
+        root.setLevel(logging.INFO)

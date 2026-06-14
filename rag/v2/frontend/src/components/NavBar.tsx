@@ -41,6 +41,8 @@ export function NavBar() {
               key={href}
               href={href}
               title={label}
+              target="_blank"
+              rel="noopener noreferrer"
               className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors group relative ${
                 active
                   ? 'bg-[var(--accent)] text-white'

@@ -200,16 +200,6 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* New chat */}
-        <div className="p-3 border-b border-[var(--border)]">
-          <button
-            onClick={() => store.newConversation()}
-            className="w-full bg-[var(--accent)] text-white rounded-lg px-3 py-2 text-sm hover:bg-[#3d5de6] transition-colors"
-          >
-            + New Chat
-          </button>
-        </div>
-
         {/* Conversation list */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
           {store.conversations.map(c => (
@@ -245,33 +235,13 @@ export default function ChatPage() {
       <div className="flex flex-1 overflow-hidden">
         <main className="flex flex-col flex-1 overflow-hidden">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 max-w-3xl mx-auto w-full">
-            {!conversation?.messages.length && (
-              <div className="mt-16 max-w-xl mx-auto">
-                <p className="text-center text-[var(--text-muted)] text-sm mb-6">
-                  Ask anything about{' '}
-                  <span className="text-[var(--text)] font-medium">
-                    {selectedCorpus?.display_name ?? store.selectedCorpusIds[0] ?? 'your knowledge base'}
-                  </span>
-                </p>
-                <div className="grid grid-cols-1 gap-2">
-                  {SUGGESTED_QUESTIONS.map(q => (
-                    <button
-                      key={q}
-                      onClick={() => handleSend(q)}
-                      disabled={loading}
-                      className="text-left px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)] hover:bg-blue-50 text-sm text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {conversation?.messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} debugMode={debug} />
-            ))}
-            <div ref={bottomRef} />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="max-w-3xl mx-auto px-6 py-4">
+              {conversation?.messages.map(msg => (
+                <MessageBubble key={msg.id} message={msg} debugMode={debug} />
+              ))}
+              <div ref={bottomRef} />
+            </div>
           </div>
 
           <InputBar onSend={handleSend} onStop={stop} loading={loading} />

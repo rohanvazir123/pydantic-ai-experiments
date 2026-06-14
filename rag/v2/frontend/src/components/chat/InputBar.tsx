@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, KeyboardEvent } from 'react'
-import { Send, Square } from 'lucide-react'
+import { Send, Loader2 } from 'lucide-react'
 import { useChatStore } from '@/store/chatStore'
 
 interface Props {
@@ -77,7 +77,7 @@ export function InputBar({ onSend, onStop, loading }: Props) {
           className="shrink-0 p-2.5 rounded-xl bg-[var(--accent)] hover:bg-[#3d5de6] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading
-            ? <Square size={16} className="text-white" />
+            ? <Loader2 size={16} className="text-white animate-spin" />
             : <Send    size={16} className="text-white" />
           }
         </button>

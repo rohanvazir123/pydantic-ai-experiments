@@ -104,9 +104,9 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
         system_prompt += LOW_CONFIDENCE_NOTICE
 
     model = _get_llm_model(settings)
-    _ms: dict = {}
+    _ms: dict = {"max_tokens": settings.max_output_tokens}
     if settings.llm_provider == "ollama":
-        _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
+        _ms["extra_body"] = {"num_ctx": settings.llm_num_ctx}
 
     ag: Any = PydanticAgent(  # type: ignore[call-overload]
         model,
@@ -185,9 +185,9 @@ def _build_stream_agent(settings: Settings) -> Any:
     in this path — the answer text is streamed token-by-token instead.
     """
     model = _get_llm_model(settings)
-    _ms: dict = {}
+    _ms: dict = {"max_tokens": settings.max_output_tokens}
     if settings.llm_provider == "ollama":
-        _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
+        _ms["extra_body"] = {"num_ctx": settings.llm_num_ctx}
     ag: Any = PydanticAgent(  # type: ignore[call-overload]
         model,
         system_prompt=STREAM_SYSTEM_PROMPT,
