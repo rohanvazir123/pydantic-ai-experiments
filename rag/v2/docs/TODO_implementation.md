@@ -325,6 +325,32 @@ frontend/
 
 ---
 
+## Upcoming UI Features
+
+### Citation Sources Panel (next)
+
+The `CitationPanel` component (`src/components/chat/CitationPanel.tsx`) is built and styled — it renders a right-side panel with source cards (document title, excerpt, confidence bar). The hook is already in the chat page:
+
+```tsx
+const citations: Citation[] = lastMsg?.role === 'assistant' ? lastMsg.citations ?? [] : []
+// ...
+<CitationPanel citations={citations} />
+```
+
+**What's missing:** the streaming chat path (`stream_agent` with `output_type=str`) doesn't extract citations — they come back empty. To populate the panel:
+
+1. After streaming completes, make a separate `POST /api/v2/search` call with the same query to get ranked chunks
+2. Map the top-K results to `Citation[]` and call `store.finaliseMessage(convId, { citations })` to update the message
+3. The panel will auto-populate without any further UI changes
+
+Or: switch the streaming agent back to structured output and handle the parse failures more gracefully (retry with simplified schema).
+
+### Scheduled Ingestion in UI (later)
+
+The scheduler API (`POST /api/v2/scheduler/jobs`) is live. Add a Scheduler page to the frontend letting users configure cron-based ingestion jobs per corpus — source path, schedule, incremental vs full mode.
+
+---
+
 ## UI Design
 
 > The frontend is a professional, dark-first chatbot application. Every design decision below is a constraint — treat them as requirements, not suggestions.
