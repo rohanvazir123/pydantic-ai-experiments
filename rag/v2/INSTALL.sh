@@ -111,7 +111,7 @@ ok "uv $(uv --version)"
 # 3. Python environment + dependencies
 # ─────────────────────────────────────────────────────────────────────────────
 step "Installing Python dependencies"
-uv venv --python 3.13 .venv 2>/dev/null || uv venv .venv
+uv venv --python 3.13 --clear .venv 2>/dev/null || uv venv --clear .venv
 uv sync --extra ingestion --extra observability
 ok "Python deps installed"
 
