@@ -3,6 +3,10 @@
 ## Table of Contents
 
 - [Active Streams & Consumer Groups](#active-streams--consumer-groups)
+- [What's on the Streams](#whats-on-the-streams)
+  - [knowledge:ingest — IngestJob](#knowledgeingest--ingestjob)
+  - [knowledge:eval — EvalJob](#knowledgeeval--evaljob)
+  - [knowledge:events — WorkerEvent](#knowledgeevents--workerevent)
 - [Worker Lifecycle](#worker-lifecycle)
 - [Job Status API](#job-status-api)
 - [Why Search Is on the Sync Path](#why-search-is-on-the-sync-path)
@@ -31,6 +35,66 @@ Not yet wired (scaffolding only — publisher + worker exist but no route calls 
   retrieval-workers         # consumer group defined but inactive
 ```
 
+All message schemas live in `knowledge/bus/schemas.py`. Serialisation: `model_dump_json()` on publish, `model_validate_json()` on consume.
+
+---
+
+## What's on the Streams
+
+### knowledge:ingest — IngestJob
+
+Published by `POST /api/v2/ingest`. One message per document ingestion request.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `job_id` | UUID string | Stable identifier — used as Redis hash key `job:{job_id}` for status |
+| `tenant_id` | string | Tenant scope for RLS and corpus isolation |
+| `corpus_id` | string | Target corpus to ingest into |
+| `source_path` | string \| null | Local filesystem path (folder or file) |
+| `source_url` | string \| null | Remote URL to fetch and ingest |
+| `enable_graph_extraction` | bool | Run docling-graph KG extraction alongside chunking |
+| `mode` | `"incremental"` \| `"full"` | Incremental skips files already fingerprinted in Redis |
+| `attempt` | int | Retry depth — incremented before each re-enqueue (1-indexed) |
+| `submitted_at` | datetime | UTC timestamp of original submission |
+
+The worker writes progress back to `job:{job_id}` hash keys (`status`, `progress`, `chunks_ingested`, `error`) and publishes a `WorkerEvent` to `knowledge:events` on completion or failure.
+
+---
+
+### knowledge:eval — EvalJob
+
+Published by `POST /api/v2/evaluate/run`. Triggers an offline retrieval quality evaluation against the corpus gold dataset.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run_id` | UUID string | Evaluation run identifier |
+| `corpus_id` | string | Corpus to evaluate against |
+| `tenant_id` | string | Tenant scope |
+| `model_tier` | `"small"` \| `"large"` | LLM tier for answer generation during eval |
+| `search_type` | `"hybrid"` \| `"semantic"` \| `"text"` | Search mode to evaluate |
+| `k` | int | Number of results to retrieve per query (default 5) |
+| `baseline_run_id` | string \| null | If set, compares metrics against this prior run |
+| `submitted_at` | datetime | UTC timestamp |
+
+---
+
+### knowledge:events — WorkerEvent
+
+Published by workers throughout a job's lifecycle. The `GET /api/v2/ingest/{job_id}/stream` SSE endpoint reads this stream and filters by `job_id`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | enum | `heartbeat` · `job_started` · `job_completed` · `job_failed` |
+| `worker_id` | string | Which worker process emitted the event |
+| `job_id` | string \| null | Correlates with the originating `IngestJob.job_id` (null for heartbeats) |
+| `tenant_id` | string \| null | Tenant scope |
+| `corpus_id` | string \| null | Corpus being processed |
+| `progress` | int \| null | 0–100 percentage complete |
+| `error` | string \| null | Error message on `job_failed` |
+| `ts` | datetime | UTC timestamp |
+
+Heartbeat events fire every 10 s (`SET worker:<id>:heartbeat <ts> EX 30`) and allow the health endpoint to detect dead workers.
+
 ---
 
 ## Worker Lifecycle
@@ -40,8 +104,8 @@ Implemented in `knowledge/bus/consumer.py`:
 1. `XREADGROUP GROUP <group> <worker_id> COUNT 1 BLOCK 5000 STREAMS <stream> >`
 2. Deserialize message → `IngestJob` | `EvalJob`
 3. Execute pipeline
-4. `XACK` on success; increment retry counter + re-enqueue on transient failure
-5. After `MAX_RETRIES` → move to DLQ, emit alert event
+4. `XACK` on success; increment `attempt` + re-enqueue on transient failure
+5. After `MAX_RETRIES` → move to `knowledge:ingest:dlq` + emit alert event
 6. Heartbeat: `SET worker:<id>:heartbeat <ts> EX 30` every 10 s
 
 ---
