@@ -2,7 +2,7 @@
 # RAG v2 — one-shot install + launch
 # Usage:  bash INSTALL.sh
 # Run from the rag/v2/ directory.
-set -euo pipefail
+set -euxo pipefail
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
@@ -225,7 +225,7 @@ cat > start.sh << 'STARTEOF'
 #!/usr/bin/env bash
 # RAG v2 — launch API + frontend
 # Usage:  bash start.sh
-set -euo pipefail
+set -euxo pipefail
 cd "$(dirname "$0")"
 
 BOLD='\033[1m'; GREEN='\033[0;32m'; RESET='\033[0m'
