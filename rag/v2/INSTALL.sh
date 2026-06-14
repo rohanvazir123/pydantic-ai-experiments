@@ -1,127 +1,303 @@
 #!/usr/bin/env bash
-# RAG v2 — local dev setup
-# Run from the rag/v2/ directory: bash INSTALL.sh
+# RAG v2 — one-shot install + launch
+# Usage:  bash INSTALL.sh
+# Run from the rag/v2/ directory.
 set -euo pipefail
 
-# ── Prerequisites ─────────────────────────────────────────────────────────────
-# Required before running this script:
-#
-#   python3 >= 3.13   https://www.python.org/downloads/
-#   Docker Desktop    https://www.docker.com/products/docker-desktop/
-#                     Must be running (not just installed)
-#   Ollama            https://ollama.com  (macOS: drag to /Applications)
-#   openssl           Pre-installed on macOS; Linux: sudo apt install openssl
-#
-# uv (Python package manager) is installed automatically if missing.
-# -----------------------------------------------------------------------------
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+RESET='\033[0m'
+
+step()  { echo -e "\n${BOLD}==> $1${RESET}"; }
+ok()    { echo -e "  ${GREEN}✓${RESET} $1"; }
+warn()  { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
+fail()  { echo -e "  ${RED}✗${RESET}  $1"; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. Must run from rag/v2/
+# ─────────────────────────────────────────────────────────────────────────────
+if [ ! -f "pyproject.toml" ] || [ ! -d "knowledge" ]; then
+  fail "Run this script from the rag/v2/ directory:  cd rag/v2 && bash INSTALL.sh"
+  exit 1
+fi
+
+echo -e "${BOLD}"
+echo "  ╔══════════════════════════════════════╗"
+echo "  ║   RAG v2 — Install & Launch          ║"
+echo "  ╚══════════════════════════════════════╝"
+echo -e "${RESET}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Prerequisite checks
+# ─────────────────────────────────────────────────────────────────────────────
+step "Checking prerequisites"
 MISSING=0
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "ERROR: python3 not found — install from https://www.python.org/downloads/"
+# Python 3.13+
+if command -v python3 >/dev/null 2>&1; then
+  PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+  ok "python3 $PY_VER"
+else
+  fail "python3 not found — https://www.python.org/downloads/"
   MISSING=1
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "ERROR: docker not found — install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-  MISSING=1
-elif ! docker info >/dev/null 2>&1; then
-  echo "ERROR: Docker is installed but not running — start Docker Desktop first"
-  MISSING=1
-fi
-
-# Ollama: check PATH, then fall back to macOS app bundle location
-if ! command -v ollama >/dev/null 2>&1; then
-  if [ -f /Applications/Ollama.app/Contents/MacOS/Ollama ]; then
-    export PATH="/Applications/Ollama.app/Contents/MacOS:$PATH"
+# Docker
+if command -v docker >/dev/null 2>&1; then
+  if docker info >/dev/null 2>&1; then
+    ok "Docker running"
   else
-    echo "ERROR: ollama not found — install from https://ollama.com"
+    fail "Docker installed but not running — start Docker Desktop first"
     MISSING=1
   fi
-fi
-
-if ! command -v openssl >/dev/null 2>&1; then
-  echo "ERROR: openssl not found — macOS: brew install openssl / Linux: sudo apt install openssl"
+else
+  fail "docker not found — https://www.docker.com/products/docker-desktop/"
   MISSING=1
 fi
 
-[ "$MISSING" -eq 1 ] && exit 1
-
-# ── 1. Install uv ────────────────────────────────────────────────────────────
-if ! command -v uv >/dev/null 2>&1; then
-  echo "==> uv not found, installing..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  # uv installs to ~/.local/bin — source bashrc to pick it up
-  export PATH="$HOME/.local/bin:$PATH"
-  source ~/.bashrc 2>/dev/null || true
-fi
-echo "==> uv: $(uv --version)"
-
-# ── 2. Create venv and install Python deps ───────────────────────────────────
-echo "==> Creating virtual environment (.venv)..."
-uv venv --clear .venv
-echo "==> Installing Python dependencies..."
-uv sync --extra all
-
-# ── 2. Environment ────────────────────────────────────────────────────────────
-if [ ! -f .env ]; then
-  echo "==> Copying .env.example → .env"
-  cp .env.example .env
-  echo "    Edit .env if you need non-default DB/Redis/LLM settings."
+# Node.js 18+
+if command -v node >/dev/null 2>&1; then
+  NODE_VER=$(node --version)
+  ok "node $NODE_VER"
 else
-  echo "==> .env already exists, skipping copy."
+  fail "node not found — https://nodejs.org  (install v20 LTS)"
+  MISSING=1
 fi
 
-# ── 3. JWT RSA keys (required for auth) ──────────────────────────────────────
+# npm
+if command -v npm >/dev/null 2>&1; then
+  ok "npm $(npm --version)"
+else
+  fail "npm not found (comes with Node.js)"
+  MISSING=1
+fi
+
+# Ollama — check PATH, then macOS app bundle
+if ! command -v ollama >/dev/null 2>&1; then
+  if [ -f /Applications/Ollama.app/Contents/MacOS/Ollama ]; then
+    export PATH="/Applications/Ollama.app/Contents/Resources/bin:$PATH"
+    ok "ollama (from /Applications)"
+  else
+    fail "ollama not found — https://ollama.com"
+    MISSING=1
+  fi
+else
+  ok "ollama $(ollama --version 2>/dev/null || echo '')"
+fi
+
+# openssl
+if command -v openssl >/dev/null 2>&1; then
+  ok "openssl"
+else
+  fail "openssl not found — brew install openssl"
+  MISSING=1
+fi
+
+[ "$MISSING" -eq 1 ] && { echo -e "\n${RED}Fix the above and re-run.${RESET}"; exit 1; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Install uv
+# ─────────────────────────────────────────────────────────────────────────────
+step "Installing uv (Python package manager)"
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+ok "uv $(uv --version)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Python environment + dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+step "Installing Python dependencies"
+uv venv --python 3.13 .venv 2>/dev/null || uv venv .venv
+uv sync --extra ingestion --extra observability
+ok "Python deps installed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Frontend dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+step "Installing frontend dependencies (npm)"
+(cd frontend && npm install --no-fund --loglevel=error)
+ok "Frontend deps installed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Environment file
+# ─────────────────────────────────────────────────────────────────────────────
+step "Setting up environment"
+if [ ! -f .env ]; then
+  cp .env.example .env
+  ok ".env created from .env.example"
+  warn "Review .env if you need custom DB/Redis/LLM settings"
+else
+  ok ".env already exists"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. JWT RSA keys
+# ─────────────────────────────────────────────────────────────────────────────
+step "Generating JWT keys"
 KEY_DIR="infra/keys"
-JWE_DIR="$KEY_DIR/jwe"
 if [ ! -f "$KEY_DIR/private.pem" ]; then
-  echo "==> Generating RSA key pair for JWT auth..."
   mkdir -p "$KEY_DIR"
   openssl genrsa -out "$KEY_DIR/private.pem" 2048 2>/dev/null
   openssl rsa -in "$KEY_DIR/private.pem" -pubout -out "$KEY_DIR/public.pem" 2>/dev/null
-  echo "    Keys written to $KEY_DIR/"
+  ok "RSA key pair written to $KEY_DIR/"
 else
-  echo "==> JWT keys already exist, skipping."
-fi
-if [ ! -d "$JWE_DIR" ]; then
-  echo "==> Creating JWE keys directory..."
-  mkdir -p "$JWE_DIR"
+  ok "JWT keys already exist"
 fi
 
-# ── 4. Start infrastructure ───────────────────────────────────────────────────
-# Ollama runs natively (not in Docker) — the Docker service requires Nvidia GPU
-# drivers which are unavailable on Mac and most dev machines.
-echo "==> Starting Docker services (postgres, age, redis)..."
-docker compose up -d postgres age redis
-echo "    Waiting 10 s for services to become healthy..."
-sleep 10
-docker compose ps
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Docker services
+# ─────────────────────────────────────────────────────────────────────────────
+step "Starting Docker services (postgres, redis)"
+docker compose up -d postgres redis
+echo -n "  Waiting for services"
+for i in $(seq 1 20); do
+  if docker compose exec -T postgres pg_isready -U ragv2 >/dev/null 2>&1 && \
+     docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+    echo ""
+    ok "postgres + redis healthy"
+    break
+  fi
+  echo -n "."
+  sleep 2
+  if [ "$i" -eq 20 ]; then
+    echo ""
+    fail "Services did not become healthy in 40s — check: docker compose ps"
+    exit 1
+  fi
+done
 
-# ── 5. Pull Ollama models ─────────────────────────────────────────────────────
-echo "==> Pulling Ollama models (this may take a while)..."
-make pull-models PATH="$PATH"
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Ollama — ensure running, pull models
+# ─────────────────────────────────────────────────────────────────────────────
+step "Starting Ollama and pulling models"
+if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+  warn "Ollama not running — starting it in the background"
+  ollama serve >/dev/null 2>&1 &
+  sleep 5
+fi
 
-# ── 6. Migrate + seed ─────────────────────────────────────────────────────────
-echo "==> Running migrations and seeding sample data..."
-make seed
+MODELS=(llama3.2:3b nomic-embed-text:latest qwen2.5:0.5b)
+for model in "${MODELS[@]}"; do
+  echo -n "  Pulling $model..."
+  ollama pull "$model" 2>&1 | tail -1
+  ok "$model ready"
+done
 
-# ── 7. Unit tests ─────────────────────────────────────────────────────────────
-echo "==> Running unit tests..."
-make test-unit
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Database migrations + seed
+# ─────────────────────────────────────────────────────────────────────────────
+step "Running database migrations"
+source .env 2>/dev/null || true   # load DATABASE_URL etc.
+uv run python - <<'PYEOF'
+import asyncio, asyncpg, glob, os, sys
+async def main():
+    url = os.environ.get("DATABASE_URL", "postgresql://ragv2:changeme@localhost:5432/ragv2")
+    conn = await asyncpg.connect(url, timeout=10)
+    files = sorted(glob.glob("schema/*.sql"))
+    for path in files:
+        await conn.execute(open(path).read())
+        print(f"  applied {path}")
+    await conn.close()
+    print(f"  {len(files)} migrations applied")
+asyncio.run(main())
+PYEOF
+ok "Migrations complete"
 
-# ── Done ──────────────────────────────────────────────────────────────────────
+step "Seeding sample documents"
+uv run python scripts/seed.py 2>&1 | grep -E "✓|✗|⚠|Dev token|──"
+ok "Seed complete"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Smoke tests
+# ─────────────────────────────────────────────────────────────────────────────
+step "Running smoke tests"
+uv run pytest tests/unit/test_smoke.py -q --tb=short 2>&1 | tail -3
+ok "Smoke tests passed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. Write start.sh for future launches
+# ─────────────────────────────────────────────────────────────────────────────
+cat > start.sh << 'STARTEOF'
+#!/usr/bin/env bash
+# RAG v2 — launch API + frontend
+# Usage:  bash start.sh
+set -euo pipefail
+cd "$(dirname "$0")"
+
+BOLD='\033[1m'; GREEN='\033[0;32m'; RESET='\033[0m'
+ok() { echo -e "  ${GREEN}✓${RESET} $1"; }
+
+source .env 2>/dev/null || true
+
+# Ensure Docker services are up
+docker compose up -d postgres redis >/dev/null 2>&1
+ok "Docker services running"
+
+# Ensure Ollama is running
+if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+  ollama serve >/dev/null 2>&1 &
+  sleep 3
+  ok "Ollama started"
+fi
+
+# Kill any previous instances on these ports
+lsof -ti:8001 | xargs kill -9 2>/dev/null || true
+lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+
+# Start API
+echo -e "\n${BOLD}Starting API on :8001${RESET}"
+uv run uvicorn knowledge.api.app:app --port 8001 --reload \
+  > /tmp/rag-api.log 2>&1 &
+API_PID=$!
+echo $API_PID > /tmp/rag-api.pid
+
+# Start frontend
+echo -e "${BOLD}Starting frontend on :3000${RESET}"
+(cd frontend && npm run dev > /tmp/rag-ui.log 2>&1) &
+UI_PID=$!
+echo $UI_PID > /tmp/rag-ui.pid
+
+# Wait for API to be ready
+echo -n "  Waiting for API"
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+    echo ""; ok "API ready"; break
+  fi
+  echo -n "."; sleep 1
+  [ "$i" -eq 30 ] && { echo ""; echo "API failed to start — tail /tmp/rag-api.log"; exit 1; }
+done
+
+# Wait for Next.js
+echo -n "  Waiting for UI"
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3000 >/dev/null 2>&1; then
+    echo ""; ok "UI ready"; break
+  fi
+  echo -n "."; sleep 1
+  [ "$i" -eq 30 ] && { echo ""; echo "UI failed to start — tail /tmp/rag-ui.log"; exit 1; }
+done
+
+echo -e "\n${BOLD}  ✓ Everything running${RESET}"
+echo -e "  UI  →  http://localhost:3000"
+echo -e "  API →  http://localhost:8001/health"
+echo -e "  Logs → tail -f /tmp/rag-api.log"
+echo -e "  Stop → kill \$(cat /tmp/rag-api.pid) \$(cat /tmp/rag-ui.pid)"
 echo ""
-echo "==> Setup complete."
-echo ""
-echo "Activate the venv:"
-echo "  source .venv/bin/activate"
-echo ""
-echo "Start the API:"
-echo "  uv run uvicorn knowledge.api.app:app --reload --port 8001"
-echo ""
-echo "Health check:"
-echo "  curl http://localhost:8001/health"
-echo ""
-echo "For auth-gated endpoints, import the Postman collection:"
-echo "  postman/RAG_v2.postman_collection.json"
-echo "  postman/RAG_v2_local.postman_environment.json"
+
+# Open browser (macOS)
+open http://localhost:3000 2>/dev/null || \
+  xdg-open http://localhost:3000 2>/dev/null || \
+  echo "  Open http://localhost:3000 in your browser"
+STARTEOF
+chmod +x start.sh
+ok "start.sh created"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. Launch
+# ─────────────────────────────────────────────────────────────────────────────
+step "Launching RAG v2"
+bash start.sh
