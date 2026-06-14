@@ -456,6 +456,19 @@ uv run ruff check knowledge/ tests/ && uv run mypy knowledge/ && uv run pytest t
 
 **Never commit if any of these fail.** CI runs the same checks and will block the push.
 
+### Commit message style
+
+Keep commit messages minimal — one short line, no body:
+
+```
+fix: seed script DATABASE_URL default
+feat(api): add corpus cache invalidation endpoint
+docs: update REST_API endpoint list
+chore: gitignore package-lock.json
+```
+
+No bullet lists, no "Co-Authored-By" unless explicitly asked, no references to internal tools or registries. Scope is optional but useful for large repos (`feat(ui):`, `fix(ci):`, `docs:`). The message should say what changed, not why — the code is the why.
+
 ### Add a New Route
 
 1. Create `knowledge/api/routes/my_route.py` with an `APIRouter`
