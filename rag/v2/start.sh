@@ -25,7 +25,7 @@ lsof -ti:$UI_PORT  | xargs kill -9 2>/dev/null || true
 sleep 1
 
 echo -e "\n${BOLD}Starting API on :${API_PORT}${RESET}"
-uv run uvicorn knowledge.api.app:app --port "$API_PORT" \
+uv run uvicorn knowledge.api.app:app --host 0.0.0.0 --port "$API_PORT" \
   > /tmp/rag-api.log 2>&1 &
 echo $! > /tmp/rag-api.pid
 

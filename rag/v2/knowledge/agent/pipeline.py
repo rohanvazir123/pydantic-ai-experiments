@@ -262,6 +262,14 @@ class ConfidenceAwarePipeline:
             tenant_id=tenant_id, user_id=user_id, session_id=session_id,
         )
 
+        # V1-V6 validation (same gates as blocking path)
+        from knowledge.validation.pipeline import ValidationPipeline
+        vp = ValidationPipeline(settings=self._settings)
+        validation_error = await vp.validate(ctx)
+        if validation_error:
+            yield _sse({"abstained": True, "layer": 0, "reason": validation_error.message})
+            return
+
         # Layer 1
         results = await self._retriever.retrieve_with_confidence(
             query, corpus_ids, tenant_id, k=self._settings.judge_k
@@ -339,10 +347,10 @@ class ConfidenceAwarePipeline:
 
     @staticmethod
     def _format_context(results: list[SearchResult]) -> str:
-        """Format chunks for the judge — NO chunk_id metadata."""
+        """Format retrieved chunks as context for the streaming agent."""
         lines = []
         for r in results:
-            lines.append(f"Source: {r.document_title}\n{r.content[:800]}")
+            lines.append(f"[{r.document_title}]\n{r.content[:2000]}")
         return "\n\n---\n\n".join(lines)
 
 

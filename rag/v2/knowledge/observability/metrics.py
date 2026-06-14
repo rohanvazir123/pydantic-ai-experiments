@@ -137,3 +137,31 @@ class RedisLogProcessor:
         except Exception:
             pass   # never let log processing break the request
         return event_dict
+
+
+def configure_structlog(redis: Any) -> None:
+    """Wire structlog so every log entry is mirrored to the Redis ring buffer.
+
+    Call once at app startup after the Redis client is connected.
+    Falls back silently if structlog is not installed.
+    """
+    try:
+        import structlog
+
+        processor = RedisLogProcessor(redis)
+
+        structlog.configure(
+            processors=[
+                structlog.contextvars.merge_contextvars,
+                structlog.processors.add_log_level,
+                structlog.processors.TimeStamper(fmt="iso", utc=True),
+                structlog.processors.StackInfoRenderer(),
+                processor.process,
+                structlog.processors.JSONRenderer(),
+            ],
+            wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+            context_class=dict,
+            logger_factory=structlog.PrintLoggerFactory(),
+        )
+    except ImportError:
+        pass  # structlog optional — standard logging still works

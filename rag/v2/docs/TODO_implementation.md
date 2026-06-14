@@ -327,6 +327,30 @@ frontend/
 
 ## Upcoming UI Features
 
+### Guardrail Levels — Configurable Security (next)
+
+Add per-session and per-corpus guardrail levels: `permissive` | `moderate` (default) | `strict`.
+
+**What each level enforces:**
+
+| Check | Permissive | Moderate | Strict |
+|-------|-----------|---------|--------|
+| Injection guard (V4) | ✓ | ✓ | ✓ |
+| Content policy (V5 nano LLM) | — | ✓ | ✓ |
+| Retrieval confidence threshold | 0.0 | 0.0 | 1.5 (requires strong source match) |
+| System prompt strictness | relaxed | standard | domain-locked ("only answer from corpus") |
+| Off-topic refusal | no | yes | yes + corpus-scope check |
+
+**Implementation plan:**
+
+1. `settings.py`: add `guardrail_level: Literal["permissive", "moderate", "strict"] = "moderate"`
+2. `validation/pipeline.py`: gate V5 content policy on `guardrail_level != "permissive"`. In strict mode, add a corpus-scope relevance check using embedding similarity against known topics.
+3. `pipeline.py` (streaming + blocking): use `guardrail_level` to set retrieval confidence threshold and select system prompt variant.
+4. `prompts.py`: add `STRICT_STREAM_SYSTEM_PROMPT` — domain-locked, refuses everything not grounded in corpus.
+5. Frontend: add a "Security" dropdown in the chat sidebar (Permissive / Moderate / Strict). Pass selected level as a request header or body field. Store per-conversation in `chatStore`.
+
+**Files to touch:** `settings.py`, `validation/pipeline.py`, `agent/pipeline.py`, `agent/prompts.py`, `api/schemas.py` (add `guardrail_level` to `ChatRequest`), `chat/page.tsx`, `chatStore.ts`.
+
 ### Citation Sources Panel (next)
 
 The `CitationPanel` component (`src/components/chat/CitationPanel.tsx`) is built and styled — it renders a right-side panel with source cards (document title, excerpt, confidence bar). The hook is already in the chat page:

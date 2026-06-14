@@ -63,6 +63,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
     app.state.redis = redis_client
 
+    # Wire structlog → Redis ring buffer so /logs endpoint has data
+    from knowledge.observability.metrics import configure_structlog
+    configure_structlog(redis_client)
+    logger.info("Structlog wired to Redis log buffer")
+
     # L2 cache (wraps Redis)
     cache = RedisCache(settings=settings)
     await cache.connect()

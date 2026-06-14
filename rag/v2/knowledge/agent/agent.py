@@ -24,7 +24,11 @@ from pydantic_ai import RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from knowledge.agent.prompts import LOW_CONFIDENCE_NOTICE, MAIN_SYSTEM_PROMPT
+from knowledge.agent.prompts import (
+    LOW_CONFIDENCE_NOTICE,
+    MAIN_SYSTEM_PROMPT,
+    STREAM_SYSTEM_PROMPT,
+)
 from knowledge.config.settings import Settings, load_settings
 from knowledge.ingestion.models import Citation, SearchResult
 
@@ -186,7 +190,7 @@ def _build_stream_agent(settings: Settings) -> Any:
         _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
     ag: Any = PydanticAgent(  # type: ignore[call-overload]
         model,
-        system_prompt=MAIN_SYSTEM_PROMPT,
+        system_prompt=STREAM_SYSTEM_PROMPT,
         output_type=str,
         model_settings=_ms,
         deps_type=RAGState,
