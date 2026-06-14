@@ -182,19 +182,8 @@ done
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Ollama — ensure running, pull models
 # ─────────────────────────────────────────────────────────────────────────────
-step "Starting Ollama and pulling models"
-if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-  warn "Ollama not running — starting it in the background"
-  ollama serve >/dev/null 2>&1 &
-  sleep 5
-fi
-
-MODELS=(llama3.2:3b nomic-embed-text:latest qwen2.5:0.5b)
-for model in "${MODELS[@]}"; do
-  echo -n "  Pulling $model..."
-  ollama pull "$model" 2>&1 | tail -1
-  ok "$model ready"
-done
+step "Pulling Ollama models"
+bash scripts/pull_models.sh
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 9. Database migrations + seed
