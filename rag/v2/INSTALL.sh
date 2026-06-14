@@ -116,14 +116,7 @@ uv sync --extra ingestion --extra observability
 ok "Python deps installed"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. Frontend dependencies
-# ─────────────────────────────────────────────────────────────────────────────
-step "Installing frontend dependencies (npm)"
-(cd frontend && npm install --no-fund --loglevel=error)
-ok "Frontend deps installed"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Environment file
+# 4. Environment file — MUST come before Docker so compose picks up passwords
 # ─────────────────────────────────────────────────────────────────────────────
 step "Setting up environment"
 if [ ! -f .env ]; then
@@ -133,9 +126,18 @@ if [ ! -f .env ]; then
 else
   ok ".env already exists"
 fi
+# Load env vars into this shell so subsequent commands inherit them
+set +x   # silence the export noise
+# shellcheck disable=SC2046
+export $(grep -v '^#' .env | grep -v '^$' | xargs) 2>/dev/null || true
+# Docker Compose requires POSTGRES_PASSWORD / AGE_DB_PASSWORD explicitly.
+# Default to 'changeme' if not set in .env (matches .env.example defaults).
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-changeme}"
+export AGE_DB_PASSWORD="${AGE_DB_PASSWORD:-changeme}"
+set -x
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. JWT RSA keys
+# 5. JWT RSA keys
 # ─────────────────────────────────────────────────────────────────────────────
 step "Generating JWT keys"
 KEY_DIR="infra/keys"
@@ -147,6 +149,13 @@ if [ ! -f "$KEY_DIR/private.pem" ]; then
 else
   ok "JWT keys already exist"
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Frontend dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+step "Installing frontend dependencies (npm)"
+(cd frontend && npm install --no-fund --loglevel=error)
+ok "Frontend deps installed"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Docker services
@@ -191,7 +200,7 @@ done
 # 9. Database migrations + seed
 # ─────────────────────────────────────────────────────────────────────────────
 step "Running database migrations"
-source .env 2>/dev/null || true   # load DATABASE_URL etc.
+# .env already exported above
 uv run python - <<'PYEOF'
 import asyncio, asyncpg, glob, os, sys
 async def main():
@@ -231,7 +240,6 @@ cd "$(dirname "$0")"
 BOLD='\033[1m'; GREEN='\033[0;32m'; RESET='\033[0m'
 ok() { echo -e "  ${GREEN}✓${RESET} $1"; }
 
-source .env 2>/dev/null || true
 
 # Ensure Docker services are up
 docker compose up -d postgres redis >/dev/null 2>&1
