@@ -121,7 +121,8 @@ class Settings(BaseSettings):
 
     # ── JWT auth ──────────────────────────────────────────────────────────────
     jwt_algorithm: str = Field("RS256")
-    jwt_public_key_path: str = Field("infra/keys/public.pem")
+    jwt_public_key_path:  str = Field("infra/keys/public.pem")
+    jwt_private_key_path: str = Field("infra/keys/private.pem")
     jwks_cache_ttl_s: int = Field(3600, ge=60)
 
     # ── JWE payload encryption ────────────────────────────────────────────────

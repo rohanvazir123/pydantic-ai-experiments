@@ -34,6 +34,7 @@ def _make_settings(**overrides: str) -> Settings:
     base = {
         "DATABASE_URL":     "postgresql://x:x@localhost/x",
         "AGE_DATABASE_URL": "postgresql://x:x@localhost/x",
+        "JUDGE_ENABLED":    "true",   # enable judge gate in tests
     }
     base.update(overrides)
     with mock.patch.dict(os.environ, base, clear=True):

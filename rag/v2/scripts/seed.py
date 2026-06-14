@@ -240,13 +240,21 @@ async def main(force: bool = False) -> None:
     print("\n4/4  Verification")
     await verify_seed()
 
+    # Generate a 24h dev token
+    from knowledge.api.routes.auth import make_dev_token
+    dev_token = make_dev_token(ttl=86_400)
+
     print("\n=== Seed complete ===")
     print(f"\nDefault corpus: {TENANT_ID}:{CORPUS_ID}")
     print(f"Sample docs:    {SAMPLE_DOCS}")
+    print("\n── Dev token (24h) ─────────────────────────────────────────────────────")
+    print(dev_token)
+    print("────────────────────────────────────────────────────────────────────────")
+    print("  Use this token in Authorization: Bearer <token>")
+    print("  Or just open http://localhost:3000 — login page pre-fills dev credentials")
     print("\nNext steps:")
-    print("  make test-unit        # unit tests (no services)")
-    print("  make test-integration # integration tests (requires running services)")
-    print("  uv run uvicorn knowledge.api.app:app --reload  # start API")
+    print("  uv run uvicorn knowledge.api.app:app --reload --port 8001  # API")
+    print("  cd frontend && npm run dev                                  # UI")
 
 
 if __name__ == "__main__":
