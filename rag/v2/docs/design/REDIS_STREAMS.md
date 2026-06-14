@@ -2,11 +2,15 @@
 
 ## Table of Contents
 
-- [Redis Streams + Async Worker Model](#redis-streams--async-worker-model)
+- [Active Streams & Consumer Groups](#active-streams--consumer-groups)
+- [Worker Lifecycle](#worker-lifecycle)
+- [Job Status API](#job-status-api)
+- [Why Search Is on the Sync Path](#why-search-is-on-the-sync-path)
+- [Why This Doesn't Become a Concurrency Bottleneck](#why-this-doesnt-become-a-concurrency-bottleneck)
 
 ---
 
-### Redis Streams + Async Worker Model
+## Active Streams & Consumer Groups
 
 **Message bus** uses Redis Streams (`XADD` / `XREADGROUP`) rather than plain pub/sub — streams give persistent delivery, consumer groups, and dead-letter via `XPENDING`.
 
@@ -27,7 +31,12 @@ Not yet wired (scaffolding only — publisher + worker exist but no route calls 
   retrieval-workers         # consumer group defined but inactive
 ```
 
-**Worker lifecycle** (`knowledge/bus/consumer.py`):
+---
+
+## Worker Lifecycle
+
+Implemented in `knowledge/bus/consumer.py`:
+
 1. `XREADGROUP GROUP <group> <worker_id> COUNT 1 BLOCK 5000 STREAMS <stream> >`
 2. Deserialize message → `IngestJob` | `EvalJob`
 3. Execute pipeline
@@ -35,13 +44,18 @@ Not yet wired (scaffolding only — publisher + worker exist but no route calls 
 5. After `MAX_RETRIES` → move to DLQ, emit alert event
 6. Heartbeat: `SET worker:<id>:heartbeat <ts> EX 30` every 10 s
 
-**Job status** exposed via API:
-- `GET /v1/ingest/{job_id}/status` → polls `HGETALL job:{job_id}` (hash: status, progress, error, corpus_id)
-- `GET /v1/ingest/{job_id}/stream` → SSE subscription to `knowledge:events` filtered by job_id
+---
 
-**Why search is on the sync path (not Redis Streams):**
+## Job Status API
 
-`POST /v1/search` runs the retriever directly in the API process, not through a Redis Stream worker. This is an intentional architectural decision:
+- `GET /api/v2/ingest/{job_id}/status` → polls `HGETALL job:{job_id}` (hash: status, progress, error, corpus_id)
+- `GET /api/v2/ingest/{job_id}/stream` → SSE subscription to `knowledge:events` filtered by job_id
+
+---
+
+## Why Search Is on the Sync Path
+
+`POST /api/v2/search` runs the retriever directly in the API process, not through a Redis Stream worker. This is an intentional architectural decision:
 
 | Dimension | Ingestion (async) | Interactive search (sync) |
 |-----------|-------------------|--------------------------|
@@ -55,7 +69,9 @@ The retriever (`knowledge/retrieval/retriever.py`) runs entirely on asyncio I/O 
 
 The `knowledge:search` stream and `retrieval-workers` group exist for **bulk/background search batches only** — evaluation runs, pre-warming the semantic cache, batch re-ranking jobs. Interactive chat and search never touch that stream.
 
-**Why this doesn't become a concurrency bottleneck:**
+---
+
+## Why This Doesn't Become a Concurrency Bottleneck
 
 A common question: if many chat sessions run in parallel, doesn't the API process become a bottleneck handling all retrieval synchronously?
 
@@ -84,6 +100,3 @@ The concurrency model is: Gunicorn launches multiple Uvicorn worker *processes* 
 At the target load (5 req/s peak, ~10 in-flight), a single Uvicorn worker handles this comfortably. The asyncpg pool depth (10 connections) is the practical concurrency ceiling per worker process — if more than 10 queries are simultaneously in-flight, the 11th queues behind the pool. At 5 req/s this is never reached in practice; each retrieval completes in ~120ms P95, so average in-flight pool occupancy is `5 × 0.12 = 0.6 connections`.
 
 **When would you need workers for retrieval?** Only if the retriever were CPU-bound (e.g. running a local embedding model synchronously) — that would block the event loop and starve other coroutines. Since embeddings go to Ollama over HTTP (async) and reranking uses `asyncio.to_thread`, neither blocks. The sync-path design holds up to the load model without change.
-
----
-
