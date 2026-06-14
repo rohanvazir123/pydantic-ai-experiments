@@ -72,10 +72,7 @@ check: fix typecheck
 # ── Ollama models ─────────────────────────────────────────────────────────────
 
 pull-models:
-	ollama pull llama3.2:3b
-	ollama pull nomic-embed-text:latest
-	ollama pull qwen2.5:0.5b
-	ollama pull llama3.1:70b
+	bash scripts/pull_models.sh
 
 # ── Chaos testing ─────────────────────────────────────────────────────────────
 
