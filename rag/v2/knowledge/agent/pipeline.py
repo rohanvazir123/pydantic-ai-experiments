@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from knowledge.agent.agent import (
     GenerationResult,
     RAGState,
-    agent,
+    stream_agent,
     traced_agent_run,
 )
 from knowledge.agent.judge import judge as run_judge
@@ -280,9 +280,17 @@ class ConfidenceAwarePipeline:
             user_id=user_id, tenant_id=tenant_id,
             session_id=session_id, corpus_ids=corpus_ids,
         )
+        # Build context-augmented prompt for the text streaming agent
+        context_text = self._format_context(results)
+        augmented_query = (
+            f"Use the following source passages to answer the question.\n\n"
+            f"{context_text}\n\n"
+            f"Question: {query}"
+        )
+
         try:
-            async with agent.run_stream(
-                query,
+            async with stream_agent.run_stream(
+                augmented_query,
                 deps=state,
                 message_history=message_history or [],
             ) as streamed:

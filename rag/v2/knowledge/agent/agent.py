@@ -174,6 +174,29 @@ _settings = load_settings()
 agent = _build_agent(_settings)
 
 
+def _build_stream_agent(settings: Settings) -> Any:
+    """Plain-text agent for the streaming path.
+
+    output_type=str so stream_text() works.  Citations are not extracted
+    in this path — the answer text is streamed token-by-token instead.
+    """
+    model = _get_llm_model(settings)
+    _ms: dict = {}
+    if settings.llm_provider == "ollama":
+        _ms = {"extra_body": {"num_ctx": settings.llm_num_ctx}}
+    ag: Any = PydanticAgent(  # type: ignore[call-overload]
+        model,
+        system_prompt=MAIN_SYSTEM_PROMPT,
+        output_type=str,
+        model_settings=_ms,
+        deps_type=RAGState,
+    )
+    return ag
+
+
+stream_agent = _build_stream_agent(_settings)
+
+
 # ── Traced run helper ─────────────────────────────────────────────────────────
 
 async def traced_agent_run(
