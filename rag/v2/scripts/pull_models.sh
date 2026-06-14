@@ -64,8 +64,7 @@ done
 echo -e "\n${BOLD}==> Verifying${RESET}"
 MISSING=0
 for model in "${MODELS[@]}"; do
-  base="${model%%:*}"
-  if ollama list | grep -q "$base"; then
+  if ollama show "$model" >/dev/null 2>&1; then
     ok "$model present"
   else
     fail "$model NOT found after pull"
