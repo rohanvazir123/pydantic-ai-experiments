@@ -15,6 +15,7 @@
 
 ### Further Reading (design/)
 
+- [REST_API.md](design/REST_API.md) — All /api/v2 endpoints with request/response shapes
 - [INGESTION.md](design/INGESTION.md) — Ingestion pipeline, KG extraction, AGE store
 - [REDIS_STREAMS.md](design/REDIS_STREAMS.md) — Message bus, async workers, DLQ
 - [CACHING.md](design/CACHING.md) — L1/L2/L3 cache layers, TTLs, invalidation
