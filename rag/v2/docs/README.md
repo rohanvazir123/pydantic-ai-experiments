@@ -35,3 +35,4 @@
 | [design/SECURITY.md](design/SECURITY.md) | JWT/JWE/RBAC, memory architecture |
 | [design/DEPLOYMENT.md](design/DEPLOYMENT.md) | Docker Compose, packaging, cloud deployment, SaaS model |
 | [design/EVALUATION.md](design/EVALUATION.md) | Eval system, load/chaos testing, implementation phases |
+| [design/OBSERVABILITY.md](design/OBSERVABILITY.md) | Where to find logs, log levels, Prometheus metrics, Langfuse traces, Grafana |

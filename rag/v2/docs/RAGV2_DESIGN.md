@@ -24,6 +24,7 @@
 - [SECURITY.md](design/SECURITY.md) — JWT/JWE/RBAC, memory architecture
 - [DEPLOYMENT.md](design/DEPLOYMENT.md) — Docker Compose, packaging, cloud, SaaS model
 - [EVALUATION.md](design/EVALUATION.md) — Eval system, load/chaos testing, implementation phases
+- [OBSERVABILITY.md](design/OBSERVABILITY.md) — Logs (UI, Docker, Redis), metrics, Langfuse traces, alerts
 
 ---
 
