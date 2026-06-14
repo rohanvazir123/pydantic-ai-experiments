@@ -1,94 +1,103 @@
-.PHONY: lint format check fix clean install dev test run validate ingest \
-        v2-lint v2-format v2-fix v2-typecheck v2-check
+# Root Makefile — delegates to rag/v2/
+#
+# All active development is in rag/v2/. Targets here are thin wrappers
+# so you can run `make <target>` from the repo root without cd-ing first.
+#
+# Usage:
+#   make install      — one-shot setup (runs rag/v2/INSTALL.sh)
+#   make pull-models  — pull Ollama models
+#   make start        — start API + frontend
+#   make seed         — apply DB schemas + seed sample docs
+#   make lint         — ruff check
+#   make typecheck    — mypy
+#   make test         — full unit test suite
+#   make test-smoke   — smoke tests only (<2s, no services)
 
-# Ruff linting and formatting (targets rag/ directory)
-lint:
-	ruff check rag/
+.DEFAULT_GOAL := help
+.PHONY: install start pull-models seed lint typecheck test test-smoke \
+        test-unit test-integration ruff check clean help \
+        v1-lint v1-test
 
-format:
-	ruff format rag/
+V2 := rag/v2
 
-check: lint
-	ruff format --check rag/
+# ── Setup & Launch ────────────────────────────────────────────────────────────
 
-fix:
-	ruff check --fix rag/
-	ruff format rag/
-
-# Combined ruff command (lint + format)
-ruff: fix
-
-# Installation
 install:
-	pip install -r requirements.txt
+	cd $(V2) && bash INSTALL.sh
 
-dev:
-	pip install -r requirements-dev.txt
+start:
+	cd $(V2) && bash start.sh
 
-# RAG commands
-run:
-	python -m rag.main
+pull-models:
+	cd $(V2) && bash scripts/pull_models.sh
 
-validate:
-	python -m rag.main --validate
+seed:
+	cd $(V2) && make seed
 
-ingest:
-	python -m rag.main --ingest
+# ── Code Quality ──────────────────────────────────────────────────────────────
 
-ingest-no-clean:
-	python -m rag.main --ingest --no-clean
+lint:
+	cd $(V2) && make lint
 
-# Testing
-test:
-	pytest tests/ -v
+ruff: lint
 
-# Clean
+typecheck:
+	cd $(V2) && make typecheck
+
+# Full pre-commit gate (same as CI)
+check: lint typecheck test-unit
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+
+test: test-unit
+
+test-unit:
+	cd $(V2) && make test-unit
+
+test-smoke:
+	cd $(V2) && uv run pytest tests/unit/test_smoke.py -v
+
+test-integration:
+	cd $(V2) && make test-integration
+
+# ── Housekeeping ──────────────────────────────────────────────────────────────
+
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 
-# ── RAG v2 (backend/knowledge/) ──────────────────────────────────────────────
+# ── Legacy v1 (rag/ — not actively developed) ─────────────────────────────────
 
-v2-lint:
-	ruff check backend/knowledge/
+v1-lint:
+	ruff check rag/
 
-v2-format:
-	ruff format backend/knowledge/
+v1-test:
+	pytest rag/tests/ -v
 
-v2-fix:
-	ruff check --fix backend/knowledge/
-	ruff format backend/knowledge/
+# ── Help ──────────────────────────────────────────────────────────────────────
 
-v2-typecheck:
-	mypy backend/knowledge/
-
-# Full quality gate — run this before committing v2 code
-v2-check: v2-fix v2-typecheck
-
-# ── Help ─────────────────────────────────────────────────────────────────────
-
-# Help
 help:
-	@echo "Available targets:"
-	@echo "  lint          - Run ruff linter"
-	@echo "  format        - Run ruff formatter"
-	@echo "  check         - Check linting and formatting (no changes)"
-	@echo "  fix           - Fix linting issues and format code"
-	@echo "  ruff          - Alias for fix (lint + format)"
-	@echo "  install       - Install dependencies"
-	@echo "  dev           - Install dev dependencies"
-	@echo "  run           - Run RAG main (validate + ingest)"
-	@echo "  validate      - Validate configuration only"
-	@echo "  ingest        - Run document ingestion only"
-	@echo "  ingest-no-clean - Ingest without cleaning existing data"
-	@echo "  test          - Run tests"
-	@echo "  clean         - Remove cache files"
 	@echo ""
-	@echo "RAG v2 (backend/knowledge/):"
-	@echo "  v2-lint       - Ruff lint check"
-	@echo "  v2-format     - Ruff format"
-	@echo "  v2-fix        - Ruff fix + format"
-	@echo "  v2-typecheck  - mypy strict type check"
-	@echo "  v2-check      - Full quality gate (fix + typecheck)"
+	@echo "  RAG v2 — root Makefile (delegates to rag/v2/)"
+	@echo ""
+	@echo "  Setup"
+	@echo "    make install        One-shot install + launch (bash INSTALL.sh)"
+	@echo "    make pull-models    Pull Ollama models (nomic + qwen2.5:0.5b + llama3.2:3b)"
+	@echo "    make seed           Apply DB migrations + ingest sample docs"
+	@echo "    make start          Start API (:8001) + frontend (:3000)"
+	@echo ""
+	@echo "  Quality  (run before every commit)"
+	@echo "    make lint           ruff check knowledge/ tests/"
+	@echo "    make typecheck      mypy knowledge/"
+	@echo "    make check          lint + typecheck + test-unit"
+	@echo ""
+	@echo "  Tests"
+	@echo "    make test           Unit tests (no services, ~15s)"
+	@echo "    make test-smoke     Smoke tests only (<2s)"
+	@echo "    make test-integration  Integration tests (needs postgres + redis)"
+	@echo ""
+	@echo "  All targets delegate to rag/v2/Makefile."
+	@echo ""
