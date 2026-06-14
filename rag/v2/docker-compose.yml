@@ -1,0 +1,110 @@
+services:
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/certs:/certs:ro
+    depends_on: [api, frontend]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    env_file: .env
+    environment:
+      GUNICORN_WORKERS: "2"
+    depends_on: [postgres, age, redis, ollama]
+    restart: unless-stopped
+
+  ingest-worker:
+    build:
+      context: .
+      target: ingest-worker
+    env_file: .env
+    deploy:
+      replicas: 2
+    depends_on: [postgres, age, redis, ollama]
+    restart: unless-stopped
+
+  retrieval-worker:
+    build:
+      context: .
+      target: retrieval-worker
+    env_file: .env
+    deploy:
+      replicas: 2
+    depends_on: [postgres, redis, ollama]
+    restart: unless-stopped
+
+  eval-worker:
+    build:
+      context: .
+      target: eval-worker
+    env_file: .env
+    depends_on: [postgres, redis, ollama]
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ragv2
+      POSTGRES_USER: ragv2
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5436:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  age:
+    image: apache/age:latest
+    environment:
+      POSTGRES_DB: age_graph
+      POSTGRES_USER: age
+      POSTGRES_PASSWORD: ${AGE_DB_PASSWORD}
+    volumes:
+      - agedata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --appendonly yes
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollamamodels:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  frontend:
+    build:
+      context: ../frontend
+      target: runner
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ""
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  agedata:
+  redisdata:
+  ollamamodels:

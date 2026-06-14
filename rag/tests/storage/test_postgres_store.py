@@ -489,7 +489,7 @@ class TestMetadataFilteredSearch:
             dates = [first_day, first_day, last_day, last_day]
             chunks = [
                 ChunkData(
-                    content=f"{title} — chunk {i}: revenue, expenses, net income summary.",
+                    content=f"{title} — chunk {i}: testmfmarker revenue expenses net income summary.",
                     index=i,
                     start_char=i * 100,
                     end_char=(i + 1) * 100,
@@ -564,8 +564,12 @@ class TestMetadataFilteredSearch:
             assert r.document_source == self._SOURCES["q4_2024"]
 
     async def test_empty_filter_returns_all_test_documents(self):
-        """No filter: all three seeded documents must appear in results."""
-        results = await self._store.text_search("earnings", match_count=50)
+        """No filter: all three seeded documents must appear in results.
+
+        Searches for 'testmfmarker' — a token unique to the test seed data —
+        so real corpus documents don't crowd out the test docs in the ranking.
+        """
+        results = await self._store.text_search("testmfmarker", match_count=50)
         sources = {r.document_source for r in results}
         for key in self._SOURCES:
             assert self._SOURCES[key] in sources, f"Expected {self._SOURCES[key]} in results"

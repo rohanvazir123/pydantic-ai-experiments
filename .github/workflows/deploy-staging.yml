@@ -1,0 +1,21 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    needs: []    # add 'test' job name from ci.yml when ready for gating
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy (placeholder — wire to your target)
+        run: |
+          echo "TODO: push images to registry and deploy to staging"
+          echo "SHA: ${{ github.sha }}"
+          # Example for Docker Compose over SSH:
+          # ssh user@staging 'cd /app && docker compose pull && docker compose up -d'

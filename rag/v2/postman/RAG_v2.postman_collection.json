@@ -1,0 +1,387 @@
+{
+  "info": {
+    "name": "RAG v2 — knowledge API",
+    "_postman_id": "rag-v2-knowledge-api",
+    "description": "Manual test collection for the RAG v2 backend. Import into Postman, set the 'baseUrl' and 'token' variables, then run requests top-to-bottom.\n\nVariables (set in the collection or environment):\n  baseUrl — e.g. http://localhost:8000/api/v1\n  token   — JWT access token from POST /auth/token\n  job_id  — filled automatically by the ingest flow\n  session_id — UUID for conversation thread",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000/api/v1", "type": "string" },
+    { "key": "token",   "value": "",  "type": "string" },
+    { "key": "job_id",  "value": "",  "type": "string" },
+    { "key": "session_id", "value": "00000000-0000-0000-0000-000000000001", "type": "string" },
+    { "key": "corpus_id",  "value": "default:default", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /auth/token — get JWT",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "const json = pm.response.json();",
+                "pm.collectionVariables.set('token', json.access_token);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"email\": \"admin@example.com\", \"password\": \"changeme\" }"
+            },
+            "url": "{{baseUrl}}/auth/token"
+          }
+        },
+        {
+          "name": "POST /auth/refresh — rotate token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "http://localhost:8000/health"
+          }
+        },
+        {
+          "name": "GET /metrics (service token)",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:8000/metrics"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Corpus",
+      "item": [
+        {
+          "name": "GET /corpus — list corpora",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/corpus"
+          }
+        },
+        {
+          "name": "POST /corpus/{id}/cache/invalidate",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/corpus/{{corpus_id}}/cache/invalidate"
+          }
+        },
+        {
+          "name": "GET /corpus/{id}/ontology",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/corpus/{{corpus_id}}/ontology"
+          }
+        },
+        {
+          "name": "POST /corpus/{id}/ontology — upload .py file",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "file", "type": "file", "src": "" }]
+            },
+            "url": "{{baseUrl}}/corpus/{{corpus_id}}/ontology"
+          }
+        },
+        {
+          "name": "DELETE /corpus/{id}/ontology — revert to generic",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/corpus/{{corpus_id}}/ontology"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ingest",
+      "item": [
+        {
+          "name": "POST /ingest — submit job",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "const json = pm.response.json();",
+                "pm.collectionVariables.set('job_id', json.data.job_id);"
+              ],
+              "type": "text/javascript"
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"corpus_id\": \"{{corpus_id}}\",\n  \"source_path\": \"../rag/documents\",\n  \"enable_graph_extraction\": false,\n  \"mode\": \"full\"\n}"
+            },
+            "url": "{{baseUrl}}/ingest"
+          }
+        },
+        {
+          "name": "GET /ingest/{job_id}/status — poll",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/ingest/{{job_id}}/status"
+          }
+        },
+        {
+          "name": "GET /ingest/{job_id}/stream — SSE progress",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/ingest/{{job_id}}/stream"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "POST /search — hybrid search",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"What is the PTO policy?\",\n  \"corpus_ids\": [\"{{corpus_id}}\"],\n  \"k\": 5\n}"
+            },
+            "url": "{{baseUrl}}/search"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "POST /chat — blocking",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"What does NeuralFlow AI do?\",\n  \"corpus_ids\": [\"{{corpus_id}}\"],\n  \"session_id\": \"{{session_id}}\",\n  \"model_tier\": \"small\"\n}"
+            },
+            "url": "{{baseUrl}}/chat"
+          }
+        },
+        {
+          "name": "POST /chat/stream — SSE streaming",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Summarise the employee benefits.\",\n  \"corpus_ids\": [\"{{corpus_id}}\"],\n  \"session_id\": \"{{session_id}}\",\n  \"model_tier\": \"small\"\n}"
+            },
+            "url": "{{baseUrl}}/chat/stream"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Conversations (Episodic memory)",
+      "item": [
+        {
+          "name": "GET /conversations — list",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/conversations?limit=20",
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "GET /conversations/{id}",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/conversations/REPLACE_WITH_ID"
+          }
+        },
+        {
+          "name": "DELETE /conversations/{id}",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/conversations/REPLACE_WITH_ID"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Memories (User semantic memory)",
+      "item": [
+        {
+          "name": "GET /memories — list",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/memories"
+          }
+        },
+        {
+          "name": "POST /memories — add manually",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"content\": \"User is a senior software engineer at a fintech company\" }"
+            },
+            "url": "{{baseUrl}}/memories"
+          }
+        },
+        {
+          "name": "DELETE /memories/{id}",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/memories/REPLACE_WITH_ID"
+          }
+        },
+        {
+          "name": "DELETE /memories — erase all (GDPR)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/memories"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scheduler",
+      "item": [
+        {
+          "name": "GET /scheduler/jobs — list",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/scheduler/jobs"
+          }
+        },
+        {
+          "name": "POST /scheduler/jobs — create",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"HR docs daily sync\",\n  \"source_type\": \"local\",\n  \"source_config\": { \"path\": \"../rag/documents\" },\n  \"corpus_id\": \"{{corpus_id}}\",\n  \"cron_expr\": \"0 2 * * *\",\n  \"mode\": \"incremental\",\n  \"enable_graph_extraction\": false\n}"
+            },
+            "url": "{{baseUrl}}/scheduler/jobs"
+          }
+        },
+        {
+          "name": "POST /scheduler/jobs/{id}/run-now",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/scheduler/jobs/REPLACE_WITH_ID/run-now"
+          }
+        },
+        {
+          "name": "DELETE /scheduler/jobs/{id}",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/scheduler/jobs/REPLACE_WITH_ID"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Evaluation",
+      "item": [
+        {
+          "name": "POST /evaluate/run — trigger",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"corpus_id\": \"{{corpus_id}}\",\n  \"k\": 5,\n  \"model_tier\": \"small\",\n  \"search_type\": \"hybrid\"\n}"
+            },
+            "url": "{{baseUrl}}/evaluate/run"
+          }
+        },
+        {
+          "name": "GET /evaluate/run/{id} — poll",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/evaluate/run/REPLACE_WITH_RUN_ID"
+          }
+        },
+        {
+          "name": "GET /evaluate/compare?a={id}&b={id}",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/evaluate/compare?a=BASELINE_ID&b=CURRENT_ID",
+              "query": [
+                { "key": "a", "value": "BASELINE_ID" },
+                { "key": "b", "value": "CURRENT_ID" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Feedback",
+      "item": [
+        {
+          "name": "POST /feedback — thumbs up/down",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"REPLACE_WITH_REQUEST_ID\",\n  \"thumbs\": true,\n  \"tags\": []\n}"
+            },
+            "url": "{{baseUrl}}/feedback"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logs",
+      "item": [
+        {
+          "name": "GET /logs — recent logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/logs?level=INFO&limit=100",
+              "query": [
+                { "key": "level", "value": "INFO" },
+                { "key": "service", "value": "", "disabled": true },
+                { "key": "corpus_id", "value": "", "disabled": true },
+                { "key": "request_id", "value": "", "disabled": true },
+                { "key": "limit", "value": "100" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
