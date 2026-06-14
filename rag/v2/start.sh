@@ -1,67 +1,81 @@
 #!/usr/bin/env bash
 # RAG v2 — launch API + frontend
-set -euxo pipefail
+set -euo pipefail
 
-# Always run from the script's own directory (rag/v2/)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# cd to rag/v2/ regardless of where this script is called from
+cd "$(cd "$(dirname "$0")" && pwd)"
 
-BOLD='\033[1m'; GREEN='\033[0;32m'; RESET='\033[0m'
-ok() { echo -e "  ${GREEN}✓${RESET} $1"; }
+BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RESET='\033[0m'
+ok()   { echo -e "  ${GREEN}✓${RESET} $1"; }
+warn() { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
 
-# Ensure Docker services are up
+API_PORT=7100
+UI_PORT=7200
+
+# ── Docker services ───────────────────────────────────────────────────────────
 docker compose up -d postgres redis >/dev/null 2>&1
 ok "Docker services running"
 
-# Ensure Ollama is running
+# ── Ollama ────────────────────────────────────────────────────────────────────
 if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+  warn "Ollama not running — starting..."
   ollama serve >/dev/null 2>&1 &
   sleep 3
-  ok "Ollama started"
 fi
 
-# Kill any previous instances on these ports
-lsof -ti:7100 | xargs kill -9 2>/dev/null || true
-lsof -ti:7200 | xargs kill -9 2>/dev/null || true
+# ── Kill stale processes on our ports ─────────────────────────────────────────
+lsof -ti:$API_PORT | xargs kill -9 2>/dev/null || true
+lsof -ti:$UI_PORT  | xargs kill -9 2>/dev/null || true
+sleep 1
 
-# Start API (must run from rag/v2/ for 'knowledge' package to be found)
-echo -e "\n${BOLD}Starting API on :7100${RESET}"
-uv run uvicorn knowledge.api.app:app --port 7100 \
+# ── API ───────────────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}Starting API on :${API_PORT}${RESET}"
+uv run uvicorn knowledge.api.app:app --port "$API_PORT" \
   > /tmp/rag-api.log 2>&1 &
 echo $! > /tmp/rag-api.pid
 
-# Start frontend
-echo -e "${BOLD}Starting frontend on :7200${RESET}"
-(cd "$SCRIPT_DIR/frontend" && PORT=7200 npm run dev > /tmp/rag-ui.log 2>&1) &
+# ── Frontend ──────────────────────────────────────────────────────────────────
+echo -e "${BOLD}Starting frontend on :${UI_PORT}${RESET}"
+(cd frontend && PORT=$UI_PORT npm run dev > /tmp/rag-ui.log 2>&1) &
 echo $! > /tmp/rag-ui.pid
 
-# Wait for API
+# ── Wait for API ──────────────────────────────────────────────────────────────
 echo -n "  Waiting for API"
 for i in $(seq 1 40); do
-  if curl -sf http://localhost:7100/health >/dev/null 2>&1; then
-    echo ""; ok "API ready"; break
+  if curl -sf "http://localhost:${API_PORT}/health" >/dev/null 2>&1; then
+    echo ""; ok "API ready  →  http://localhost:${API_PORT}/health"; break
   fi
   echo -n "."; sleep 1
-  [ "$i" -eq 40 ] && { echo ""; echo "API failed — check: tail /tmp/rag-api.log"; exit 1; }
+  if [ "$i" -eq 40 ]; then
+    echo ""
+    echo "API failed to start. Last log:"
+    tail -20 /tmp/rag-api.log
+    exit 1
+  fi
 done
 
-# Wait for frontend
+# ── Wait for frontend ─────────────────────────────────────────────────────────
 echo -n "  Waiting for UI"
 for i in $(seq 1 40); do
-  if curl -sf http://localhost:7200 >/dev/null 2>&1; then
-    echo ""; ok "UI ready"; break
+  if curl -sf "http://localhost:${UI_PORT}" >/dev/null 2>&1; then
+    echo ""; ok "UI ready   →  http://localhost:${UI_PORT}"; break
   fi
   echo -n "."; sleep 1
-  [ "$i" -eq 40 ] && { echo ""; echo "UI failed — check: tail /tmp/rag-ui.log"; exit 1; }
+  if [ "$i" -eq 40 ]; then
+    echo ""
+    echo "UI failed to start. Last log:"
+    tail -20 /tmp/rag-ui.log
+    exit 1
+  fi
 done
 
 echo -e "\n${BOLD}  ✓ Everything running${RESET}"
-echo -e "  UI  →  http://localhost:7200"
-echo -e "  API →  http://localhost:7100/health"
-echo -e "  Logs → tail -f /tmp/rag-api.log"
-echo -e "  Stop → kill \$(cat /tmp/rag-api.pid) \$(cat /tmp/rag-ui.pid)"
+echo -e "  UI   →  http://localhost:${UI_PORT}"
+echo -e "  API  →  http://localhost:${API_PORT}/health"
+echo -e "  Logs →  tail -f /tmp/rag-api.log"
+echo -e "  Stop →  kill \$(cat /tmp/rag-api.pid) \$(cat /tmp/rag-ui.pid)"
 echo ""
 
-open http://localhost:7200 2>/dev/null || \
-  xdg-open http://localhost:7200 2>/dev/null || \
-  echo "  Open http://localhost:7200 in your browser"
+open "http://localhost:${UI_PORT}" 2>/dev/null || \
+  xdg-open "http://localhost:${UI_PORT}" 2>/dev/null || \
+  echo "  Open http://localhost:${UI_PORT} in your browser"
