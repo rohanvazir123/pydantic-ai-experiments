@@ -3,18 +3,18 @@
 @tailwind utilities;
 
 :root {
-  --bg:          #0f1117;
-  --surface:     #1a1d27;
-  --border:      #2d3048;
+  --bg:          #f0f2f5;
+  --surface:     #ffffff;
+  --border:      #e1e4eb;
   --accent:      #4f6ef7;
-  --text:        #e8eaf0;
-  --text-muted:  #8b91a8;
-  --success:     #22c55e;
-  --warning:     #f59e0b;
-  --error:       #ef4444;
+  --text:        #111827;
+  --text-muted:  #6b7280;
+  --success:     #16a34a;
+  --warning:     #d97706;
+  --error:       #dc2626;
 }
 
-html.dark body {
+body {
   background-color: var(--bg);
   color: var(--text);
 }

@@ -135,9 +135,7 @@ jobs:
         with:
           node-version: '22'
 
-      # package-lock.json is not committed (it was generated against PayPal's
-      # internal Artifactory registry which is inaccessible from GitHub CI).
-      # npm install resolves from the public registry instead.
+      # No package-lock.json committed — npm install resolves from the public registry.
       - run: npm install --no-fund --prefer-offline 2>/dev/null || npm install --no-fund
 
       - name: Type check

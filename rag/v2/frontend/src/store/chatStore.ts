@@ -26,7 +26,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeId:          null,
   selectedCorpusIds: [],
   modelTier:         'auto',
-  isDark:            true,
+  isDark:            false,
 
   newConversation: () => {
     const id = crypto.randomUUID()

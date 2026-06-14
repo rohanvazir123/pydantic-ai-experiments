@@ -10,7 +10,7 @@ const config: NextConfig = {
     if (process.env.NODE_ENV === 'production') {
       return []
     }
-    const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8000'
+    const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8001'
     return [
       {
         source: '/api/v2/:path*',

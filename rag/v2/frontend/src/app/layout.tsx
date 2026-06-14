@@ -9,11 +9,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body className="bg-[var(--bg)] text-[var(--text)] min-h-screen">
         {children}
         <Toaster position="bottom-right" toastOptions={{
-          style: { background: '#1a1d27', color: '#e8eaf0', border: '1px solid #2d3048' },
+          style: { background: '#ffffff', color: '#111827', border: '1px solid #e1e4eb' },
         }} />
       </body>
     </html>

@@ -60,3 +60,5 @@ rag/v2/infra/keys/
 rag/v2/frontend/node_modules/
 rag/v2/frontend/.next/
 rag/v2/frontend/next-env.d.ts
+# lockfile resolves to a private registry on this machine — CI installs without it
+rag/v2/frontend/package-lock.json

@@ -161,6 +161,8 @@ ok "Frontend deps installed"
 # 7. Docker services
 # ─────────────────────────────────────────────────────────────────────────────
 step "Starting Docker services (postgres, redis)"
+# Reset postgres volume so it initialises with correct POSTGRES_PASSWORD
+docker compose down postgres --volumes 2>/dev/null || true
 docker compose up -d postgres redis
 echo -n "  Waiting for services"
 for i in $(seq 1 20); do
@@ -193,7 +195,7 @@ step "Running database migrations"
 uv run python - <<'PYEOF'
 import asyncio, asyncpg, glob, os, sys
 async def main():
-    url = os.environ.get("DATABASE_URL", "postgresql://ragv2:changeme@localhost:5432/ragv2")
+    url = os.environ.get("DATABASE_URL", "postgresql://ragv2:changeme@localhost:5436/ragv2")
     conn = await asyncpg.connect(url, timeout=10)
     files = sorted(glob.glob("schema/*.sql"))
     for path in files:
