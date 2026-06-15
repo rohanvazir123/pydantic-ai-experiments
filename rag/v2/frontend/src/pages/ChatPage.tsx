@@ -13,78 +13,26 @@ interface CorpusInfo {
   display_name: string
 }
 
-const SUGGESTED_QUESTIONS = [
-  // company-overview.md
-  'What does NeuralFlow AI do and what industries does it serve?',
-  'What are NeuralFlow AI\'s main products and services?',
-  'Who are NeuralFlow AI\'s typical clients?',
-
-  // team-handbook.md
-  'What is the PTO and leave policy?',
-  'How does the company support professional development?',
-  'What are the working hours and flexibility options?',
-  'What is the code of conduct and expense policy?',
-
-  // mission-and-goals.md
-  'What are the company\'s goals and objectives for this year?',
-  'What markets is NeuralFlow AI targeting for expansion?',
-  'How does NeuralFlow measure business impact for clients?',
-
-  // q4-2024-business-review.pdf
-  'What were the Q4 2024 financial highlights and revenue vs targets?',
-  'Which business units performed best in Q4?',
-  'What are the strategic priorities going into 2025?',
-
-  // client-review-globalfinance.pdf
-  'What was the GlobalFinance client review about?',
-  'What were the outcomes and recommendations from the GlobalFinance engagement?',
-
-  // meeting-notes-2025-01-08.docx + meeting-notes-2025-01-15.docx
-  'What were the key decisions from the January 8 meeting?',
-  'What action items and owners came out of the January 15 meeting?',
-
-  // Recording1–4.mp3 (transcribed audio)
-  'What was discussed in the recorded team meetings?',
-  'What blockers or risks were raised in the recorded sessions?',
-
-  // technical-architecture-guide.pdf
-  'What is the technology stack and cloud infrastructure used?',
-  'How are AI models deployed to production?',
-  'What are the API design standards and data pipeline structure?',
-
-  // implementation-playbook.md
-  'What are the standard phases of an AI implementation project?',
-  'What does the go-live checklist cover?',
-  'How does the company approach change management and client training?',
-
-  // clip_paper.pdf
-  'What is the CLIP model and how does it work?',
-  'What are the key findings and use cases from the CLIP paper?',
-
-  // rag_paper.pdf
-  'How does Retrieval Augmented Generation work?',
-  'What are the main benefits and limitations of RAG systems?',
-
-  // bis_annual_report_2024.pdf
-  'What does the BIS 2024 annual report say about global inflation and monetary policy?',
-  'What financial stability risks does the BIS highlight for 2024?',
-
-  // tesla_q4_2023.pdf
-  'What were Tesla\'s key financial results in Q4 2023?',
-  'What did Tesla say about production, deliveries, and margins in Q4 2023?',
-]
-
 export function ChatPage() {
   const store         = useChatStore()
   const { sendMessage, stop } = useChat()
-  const [loading,  setLoading]  = useState(false)
-  const [debug,    setDebug]    = useState(true)
-  const [corpora,  setCorpora]  = useState<CorpusInfo[]>([])
+  const [loading,   setLoading]   = useState(false)
+  const [debug,     setDebug]     = useState(true)
+  const [corpora,   setCorpora]   = useState<CorpusInfo[]>([])
+  const [questions, setQuestions] = useState<string[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const conversation = store.conversations.find(c => c.id === store.activeId)
   const lastMsg      = conversation?.messages.at(-1)
   const citations: Citation[] = lastMsg?.role === 'assistant' ? lastMsg.citations ?? [] : []
+
+  // Fetch suggested questions from public JSON (editable without touching code)
+  useEffect(() => {
+    fetch('/suggested-questions.json')
+      .then(r => r.json())
+      .then((data: { q: string }[]) => setQuestions(data.map(d => d.q)))
+      .catch(() => {})
+  }, [])
 
   // Fetch corpora once on mount, auto-select first
   useEffect(() => {
@@ -200,7 +148,7 @@ export function ChatPage() {
               Suggested Questions
             </h3>
             <div className="flex flex-col gap-2">
-              {SUGGESTED_QUESTIONS.map(q => (
+              {questions.map(q => (
                 <button
                   key={q}
                   onClick={() => handleSend(q)}

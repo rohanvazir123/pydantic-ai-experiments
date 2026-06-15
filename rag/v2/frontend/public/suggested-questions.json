@@ -1,0 +1,47 @@
+[
+  {"doc": "company-overview.md",              "q": "What does NeuralFlow AI do and what industries does it serve?"},
+  {"doc": "company-overview.md",              "q": "What are NeuralFlow AI's main products and services?"},
+  {"doc": "company-overview.md",              "q": "Who are NeuralFlow AI's typical clients?"},
+
+  {"doc": "team-handbook.md",                 "q": "What is the PTO and leave policy?"},
+  {"doc": "team-handbook.md",                 "q": "How does the company support professional development?"},
+  {"doc": "team-handbook.md",                 "q": "What are the working hours and flexibility options?"},
+  {"doc": "team-handbook.md",                 "q": "What is the code of conduct and expense policy?"},
+
+  {"doc": "mission-and-goals.md",             "q": "What are the company's goals and objectives for this year?"},
+  {"doc": "mission-and-goals.md",             "q": "What markets is NeuralFlow AI targeting for expansion?"},
+  {"doc": "mission-and-goals.md",             "q": "How does NeuralFlow measure business impact for clients?"},
+
+  {"doc": "q4-2024-business-review.pdf",      "q": "What were the Q4 2024 financial highlights and revenue vs targets?"},
+  {"doc": "q4-2024-business-review.pdf",      "q": "Which business units performed best in Q4?"},
+  {"doc": "q4-2024-business-review.pdf",      "q": "What are the strategic priorities going into 2025?"},
+
+  {"doc": "client-review-globalfinance.pdf",  "q": "What was the GlobalFinance client review about?"},
+  {"doc": "client-review-globalfinance.pdf",  "q": "What were the outcomes and recommendations from the GlobalFinance engagement?"},
+
+  {"doc": "meeting-notes-2025-01-08.docx",    "q": "What were the key decisions from the January 8 meeting?"},
+  {"doc": "meeting-notes-2025-01-15.docx",    "q": "What action items and owners came out of the January 15 meeting?"},
+
+  {"doc": "Recording1-4.mp3",                 "q": "What was discussed in the recorded team meetings?"},
+  {"doc": "Recording1-4.mp3",                 "q": "What blockers or risks were raised in the recorded sessions?"},
+
+  {"doc": "technical-architecture-guide.pdf", "q": "What is the technology stack and cloud infrastructure used?"},
+  {"doc": "technical-architecture-guide.pdf", "q": "How are AI models deployed to production?"},
+  {"doc": "technical-architecture-guide.pdf", "q": "What are the API design standards and data pipeline structure?"},
+
+  {"doc": "implementation-playbook.md",       "q": "What are the standard phases of an AI implementation project?"},
+  {"doc": "implementation-playbook.md",       "q": "What does the go-live checklist cover?"},
+  {"doc": "implementation-playbook.md",       "q": "How does the company approach change management and client training?"},
+
+  {"doc": "clip_paper.pdf",                   "q": "What is the CLIP model and how does it work?"},
+  {"doc": "clip_paper.pdf",                   "q": "What are the key findings and use cases from the CLIP paper?"},
+
+  {"doc": "rag_paper.pdf",                    "q": "How does Retrieval Augmented Generation work?"},
+  {"doc": "rag_paper.pdf",                    "q": "What are the main benefits and limitations of RAG systems?"},
+
+  {"doc": "bis_annual_report_2024.pdf",       "q": "What does the BIS 2024 annual report say about global inflation and monetary policy?"},
+  {"doc": "bis_annual_report_2024.pdf",       "q": "What financial stability risks does the BIS highlight for 2024?"},
+
+  {"doc": "tesla_q4_2023.pdf",                "q": "What were Tesla's key financial results in Q4 2023?"},
+  {"doc": "tesla_q4_2023.pdf",                "q": "What did Tesla say about production, deliveries, and margins in Q4 2023?"}
+]
