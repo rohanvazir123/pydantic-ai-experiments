@@ -75,6 +75,81 @@ useEffect(() => {
 
 **Dependency array:** omit — every render; `[]` — once on mount; `[a, b]` — when a or b changes.
 
+**Complete example — typed API fetch with loading/error states:**
+
+```tsx
+import React, { useState, useEffect } from "react";
+
+// 1. Define TypeScript types for the API response shape
+interface PexelsPhoto {
+  id: number;
+  photographer: string;
+  avg_color: string;
+  src: { medium: string; large: string };
+}
+
+interface PexelsResponse {
+  page: number;
+  per_page: number;
+  photos: PexelsPhoto[];
+  total_results: number;
+}
+
+export function PexelsGallery() {
+  // 2. Initialise state with explicit TypeScript types
+  const [photos, setPhotos] = useState<PexelsPhoto[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // 3. Define the async function INSIDE the hook — never make the callback itself async
+    const fetchPhotos = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("https://api.pexels.com/v1/curated", {
+          headers: { Authorization: "YOUR_API_KEY" },
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data: PexelsResponse = await response.json();
+        setPhotos(data.photos);
+      } catch (err) {
+        // err is `unknown` — narrow it before using .message
+        setError(err instanceof Error ? err.message : "An error occurred");
+      } finally {
+        setLoading(false);  // always clears loading, even on error
+      }
+    };
+
+    // 4. Invoke immediately
+    fetchPhotos();
+  }, []); // 5. Empty array → runs exactly once on mount
+
+  // 6. Handle each UI state before the happy path
+  if (loading) return <div>Loading images...</div>;
+  if (error)   return <div>Error: {error}</div>;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+      {photos.map((photo) => (
+        <div key={photo.id} style={{ backgroundColor: photo.avg_color, padding: "8px", borderRadius: "8px" }}>
+          <img src={photo.src.medium} alt={`Shot by ${photo.photographer}`} style={{ width: "100%" }} />
+          <p style={{ margin: "4px 0 0", fontSize: "12px" }}>📸 {photo.photographer}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+Key patterns this example demonstrates:
+- Interfaces mirror the exact API response shape — no `any`
+- `useState<PexelsPhoto[]>([])` — explicit generic, not inferred from `[]`
+- `err instanceof Error` — the correct way to narrow `unknown` in a catch block
+- `finally` — `setLoading(false)` runs whether the fetch succeeded or threw
+- Early returns for loading/error keep the happy-path JSX clean
+
 ---
 
 ### useContext
