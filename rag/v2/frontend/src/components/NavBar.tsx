@@ -38,9 +38,7 @@ export function NavBar() {
               key={href}
               to={href}
               title={label}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors group relative ${
+className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors group relative ${
                 active
                   ? 'bg-[var(--accent)] text-white'
                   : 'text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-[var(--text)]'
