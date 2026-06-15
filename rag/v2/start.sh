@@ -30,7 +30,12 @@ uv run uvicorn knowledge.api.app:app --host 0.0.0.0 --port "$API_PORT" \
 echo $! > /tmp/rag-api.pid
 
 echo -e "${BOLD}Starting frontend on :${UI_PORT}${RESET}"
-(cd frontend && PORT=$UI_PORT npm run dev > /tmp/rag-ui.log 2>&1) &
+# Load nvm so the subshell gets Node 20 (required by Vite 8)
+(cd frontend && \
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}" && \
+  [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" && \
+  nvm use --silent 2>/dev/null || true && \
+  PORT=$UI_PORT npm run dev > /tmp/rag-ui.log 2>&1) &
 echo $! > /tmp/rag-ui.pid
 
 echo -n "  Waiting for API"
