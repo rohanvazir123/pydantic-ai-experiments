@@ -199,9 +199,9 @@ export function ChatPage() {
           )}
         </div>
 
-        {/* Conversation list */}
+        {/* Conversation list — only show titled conversations */}
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
-          {store.conversations.map(c => (
+          {store.conversations.filter(c => c.title).map(c => (
             <button
               key={c.id}
               onClick={() => store.setActive(c.id)}
@@ -211,7 +211,7 @@ export function ChatPage() {
                   : 'text-[var(--text-muted)] hover:bg-[var(--border)]'
               }`}
             >
-              {c.title ?? 'New chat'}
+              {c.title}
             </button>
           ))}
         </nav>
