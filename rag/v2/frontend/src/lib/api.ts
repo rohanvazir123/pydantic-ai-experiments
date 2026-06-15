@@ -2,23 +2,24 @@
  * Typed API client.
  *
  * All calls go to /api/v2/* — a relative URL that works in both environments:
- *   - Production: Nginx proxies /api/v2/* → api:8000 (same origin, no CORS)
- *   - Dev (npm run dev): next.config.ts rewrites /api/v2/* → localhost:8000
+ *   - Dev: Vite proxy forwards /api/v2/* → http://127.0.0.1:7100
+ *   - Production: Nginx proxies /api/v2/* → API container
  *
- * Never hardcode http://localhost:8000 here. Always use the relative path.
+ * Never hardcode http://localhost:7100 here. Always use the relative path.
  */
 
 const BASE = '/api/v2'
 
 export class APIError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public status: number,
-    public retryAfterS?: number,
-  ) {
+  code: string
+  status: number
+  retryAfterS?: number
+  constructor(code: string, message: string, status: number, retryAfterS?: number) {
     super(message)
     this.name = 'APIError'
+    this.code = code
+    this.status = status
+    this.retryAfterS = retryAfterS
   }
 }
 

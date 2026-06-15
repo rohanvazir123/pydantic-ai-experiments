@@ -1,4 +1,4 @@
-'use client'
+
 import type { Message } from '@/types/chat'
 
 interface Props { message: Message; adminMode?: boolean }

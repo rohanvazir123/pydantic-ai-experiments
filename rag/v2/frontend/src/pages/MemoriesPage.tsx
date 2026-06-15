@@ -1,4 +1,4 @@
-'use client'
+
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { Trash2, Plus } from 'lucide-react'
@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 
 interface Memory { id: string; content: string; created_at?: string }
 
-export default function MemoriesPage() {
+export function MemoriesPage() {
   const [memories, setMemories] = useState<Memory[]>([])
   const [newText,  setNewText]  = useState('')
   const [loading,  setLoading]  = useState(false)

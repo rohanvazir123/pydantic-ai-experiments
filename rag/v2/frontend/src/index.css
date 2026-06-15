@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
   --bg:          #f0f2f5;
@@ -17,6 +15,11 @@
 body {
   background-color: var(--bg);
   color: var(--text);
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
 }
 
 /* Scrollbar */

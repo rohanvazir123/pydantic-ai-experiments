@@ -1,4 +1,4 @@
-'use client'
+
 import { useState } from 'react'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -6,7 +6,7 @@ import { Upload } from 'lucide-react'
 
 interface JobStatus { job_id: string; status: string; progress: number; chunks_ingested?: number; error?: string }
 
-export default function IngestPage() {
+export function IngestPage() {
   const [corpusId,  setCorpusId]  = useState('neuralflow')
   const [sourcePath, setSourcePath] = useState('../../rag/documents')
   const [mode,      setMode]      = useState<'incremental' | 'full'>('incremental')

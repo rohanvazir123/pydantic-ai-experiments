@@ -1,4 +1,3 @@
-'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useChatStore } from '@/store/chatStore'
 import { useChat }      from '@/hooks/useChat'
@@ -130,7 +129,7 @@ const SUGGESTED_QUESTIONS = [
   'How are decisions escalated and approved?',
 ]
 
-export default function ChatPage() {
+export function ChatPage() {
   const store         = useChatStore()
   const { sendMessage, stop } = useChat()
   const [loading,  setLoading]  = useState(false)
@@ -171,7 +170,7 @@ export default function ChatPage() {
     }
   }
 
-  const selectedCorpus = corpora.find(c => c.id === store.selectedCorpusIds[0])
+  void corpora // selectedCorpus unused — corpus shown in dropdown only
 
   return (
     <div className="flex h-screen bg-[var(--bg)]">

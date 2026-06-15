@@ -1,4 +1,4 @@
-'use client'
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
 import { RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
@@ -45,7 +45,7 @@ function LatencyCell({ ms }: { ms?: number }) {
 
 // ── Expandable row ────────────────────────────────────────────────────────────
 
-function LogRow({ log, idx }: { log: LogEntry; idx: number }) {
+function LogRow({ log }: { log: LogEntry; idx: number }) {
   const [open, setOpen] = useState(false)
   const level = (log.level?.toUpperCase() ?? 'INFO') as Level
   const style = LEVEL_STYLE[level] ?? LEVEL_STYLE.INFO
@@ -112,7 +112,7 @@ const AUTO_REFRESH_OPTIONS = [
   { label: '30s',  value: 30000 },
 ]
 
-export default function LogsPage() {
+export function LogsPage() {
   const [logs,         setLogs]         = useState<LogEntry[]>([])
   const [loading,      setLoading]      = useState(false)
   const [activeLevels, setActiveLevels] = useState<Set<Level>>(new Set(['INFO', 'WARNING', 'ERROR', 'CRITICAL']))

@@ -1,31 +1,26 @@
-'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useNavigate } from 'react-router-dom'
 import { login, tryRestoreSession } from '@/lib/auth'
 import { getAccessToken } from '@/lib/api'
 
 const DEV_EMAIL    = 'dev@neuralflow.ai'
 const DEV_PASSWORD = 'devpass'
 
-export default function LoginPage() {
-  const router = useRouter()
+export function LoginPage() {
+  const navigate = useNavigate()
   const [email,    setEmail]    = useState(DEV_EMAIL)
   const [password, setPassword] = useState(DEV_PASSWORD)
   const [loading,  setLoading]  = useState(false)
-  const [checking, setChecking] = useState(true)   // true while restoring session
+  const [checking, setChecking] = useState(true)
   const [error,    setError]    = useState<string | null>(null)
 
-  // On mount: if we already have a valid token (or can restore one), skip login
   useEffect(() => {
-    if (getAccessToken()) {
-      router.replace('/chat')
-      return
-    }
+    if (getAccessToken()) { navigate('/chat', { replace: true }); return }
     tryRestoreSession().then(ok => {
-      if (ok) router.replace('/chat')
+      if (ok) navigate('/chat', { replace: true })
       else    setChecking(false)
     })
-  }, [router])
+  }, [navigate])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -33,7 +28,7 @@ export default function LoginPage() {
     setError(null)
     try {
       await login(email, password)
-      router.push('/chat')
+      navigate('/chat')
     } catch (err: any) {
       setError(err.message ?? 'Login failed')
     } finally {
@@ -41,7 +36,6 @@ export default function LoginPage() {
     }
   }
 
-  // Show nothing while checking for an existing session
   if (checking) return null
 
   return (
@@ -60,43 +54,22 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-6 space-y-4">
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors" />
           </div>
-
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1.5">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors" />
           </div>
-
           {error && (
-            <p className="text-xs text-[var(--error)] bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-              {error}
-            </p>
+            <p className="text-xs text-[var(--error)] bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
           )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[var(--accent)] hover:bg-[#3d5de6] disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
-          >
+          <button type="submit" disabled={loading}
+            className="w-full bg-[var(--accent)] hover:bg-[#3d5de6] disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
-
-          <p className="text-center text-xs text-[var(--text-muted)]">
-            Dev credentials are pre-filled — just click Sign in
-          </p>
+          <p className="text-center text-xs text-[var(--text-muted)]">Dev credentials are pre-filled — just click Sign in</p>
         </form>
       </div>
     </div>
