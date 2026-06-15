@@ -5,6 +5,7 @@
 - [Basic Hooks](#basic-hooks)
   - [useState](#usestate)
   - [useEffect](#useeffect)
+    - [Complete example — typed API fetch with loading/error states](#complete-example--typed-api-fetch-with-loadingerror-states)
   - [useContext](#usecontext)
 - [Ref Hooks](#ref-hooks)
   - [useRef](#useref)
