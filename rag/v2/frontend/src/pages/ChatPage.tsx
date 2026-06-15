@@ -14,119 +14,64 @@ interface CorpusInfo {
 }
 
 const SUGGESTED_QUESTIONS = [
-  // Company overview
-  'What does NeuralFlow AI do?',
-  'When was NeuralFlow AI founded and what is its mission?',
-  'What industries does NeuralFlow AI serve?',
+  // company-overview.md
+  'What does NeuralFlow AI do and what industries does it serve?',
   'What are NeuralFlow AI\'s main products and services?',
   'Who are NeuralFlow AI\'s typical clients?',
-  'What makes NeuralFlow AI different from competitors?',
-  'What is the company vision for the next 3 years?',
 
-  // Team & culture
-  'What are the core principles and company culture?',
-  'What does the onboarding process look like for new hires?',
-  'How is performance evaluated at NeuralFlow AI?',
-  'What is the management structure?',
-  'How does the company support professional development?',
-  'What are the team collaboration tools and practices?',
-  'How does the company handle remote and hybrid work?',
-  'What is the hiring process?',
-  'What values guide decision-making at NeuralFlow AI?',
-
-  // HR & policies
+  // team-handbook.md
   'What is the PTO and leave policy?',
+  'How does the company support professional development?',
   'What are the working hours and flexibility options?',
-  'What benefits does NeuralFlow AI offer?',
-  'What is the parental leave policy?',
-  'How does the company handle sick leave?',
-  'What is the expense reimbursement policy?',
-  'What is the code of conduct?',
-  'How is compensation structured?',
-  'What is the bonus and equity policy?',
-  'What are the travel and accommodation policies?',
+  'What is the code of conduct and expense policy?',
 
-  // Business performance
-  'What were the key outcomes from the latest business review?',
-  'What were the Q4 financial highlights?',
-  'How did revenue compare to targets?',
-  'What are the key growth metrics for the year?',
-  'What new clients were acquired recently?',
-  'Which business units performed best?',
-  'What were the main challenges discussed in the review?',
-  'What are the strategic priorities going forward?',
-  'What investments were made in the last quarter?',
-  'What cost savings were achieved?',
-  'What is the revenue forecast?',
-
-  // Technology & architecture
-  'What technologies and tools does the team use?',
-  'What is the technology stack for AI projects?',
-  'How does the company approach data privacy and security?',
-  'What cloud infrastructure is used?',
-  'What are the main software development practices?',
-  'How are AI models deployed to production?',
-  'What is the QA and testing approach?',
-  'How does the team handle technical debt?',
-  'What monitoring and observability tools are used?',
-  'How is the data pipeline structured?',
-  'What are the API design standards?',
-
-  // Projects & clients
-  'What projects are currently in progress?',
-  'What was the GlobalFinance client review about?',
-  'What were the outcomes of recent client engagements?',
-  'How does the company manage project delivery?',
-  'What is the typical project lifecycle?',
-  'How are client requirements gathered?',
-  'What is the escalation process for project issues?',
-  'How are project milestones tracked?',
-
-  // Meetings & decisions
-  'What were the key decisions from the January 8 meeting?',
-  'What were the key decisions from the January 15 meeting?',
-  'What action items came out of the latest team meeting?',
-  'What topics were discussed in the recent all-hands?',
-  'Who owns the follow-up items from the last meeting?',
-  'What were the blockers discussed in the latest standup?',
-
-  // Research & knowledge
-  'What is the CLIP model and how is it used?',
-  'What is Retrieval Augmented Generation (RAG)?',
-  'What does the BIS annual report say about global inflation?',
-  'What are the key findings from the Tesla Q4 2023 report?',
-  'How does the company stay current with AI research?',
-  'What papers or research guides the team\'s technical decisions?',
-
-  // Implementation & delivery
-  'What does the implementation playbook cover?',
-  'What are the standard phases of an AI implementation project?',
-  'How does the company approach change management?',
-  'What risk management practices are followed?',
-  'What are the quality standards for deliverables?',
-  'How is client training and enablement handled?',
-  'What is the go-live checklist?',
-  'How are post-implementation reviews conducted?',
-
-  // Mission & strategy
+  // mission-and-goals.md
   'What are the company\'s goals and objectives for this year?',
   'What markets is NeuralFlow AI targeting for expansion?',
-  'How does the company prioritise between projects?',
-  'What is the partnership and vendor strategy?',
-  'How does the company approach AI ethics and responsible AI?',
-  'What is the competitive landscape?',
   'How does NeuralFlow measure business impact for clients?',
-  'What is the product roadmap?',
 
-  // Operational
-  'What are the security and compliance requirements?',
-  'How is data handled and protected?',
-  'What is the incident response process?',
-  'How are software releases managed?',
-  'What are the SLA commitments to clients?',
-  'How is the support process structured?',
-  'What communication channels are used internally?',
-  'How are decisions escalated and approved?',
+  // q4-2024-business-review.pdf
+  'What were the Q4 2024 financial highlights and revenue vs targets?',
+  'Which business units performed best in Q4?',
+  'What are the strategic priorities going into 2025?',
+
+  // client-review-globalfinance.pdf
+  'What was the GlobalFinance client review about?',
+  'What were the outcomes and recommendations from the GlobalFinance engagement?',
+
+  // meeting-notes-2025-01-08.docx + meeting-notes-2025-01-15.docx
+  'What were the key decisions from the January 8 meeting?',
+  'What action items and owners came out of the January 15 meeting?',
+
+  // Recording1–4.mp3 (transcribed audio)
+  'What was discussed in the recorded team meetings?',
+  'What blockers or risks were raised in the recorded sessions?',
+
+  // technical-architecture-guide.pdf
+  'What is the technology stack and cloud infrastructure used?',
+  'How are AI models deployed to production?',
+  'What are the API design standards and data pipeline structure?',
+
+  // implementation-playbook.md
+  'What are the standard phases of an AI implementation project?',
+  'What does the go-live checklist cover?',
+  'How does the company approach change management and client training?',
+
+  // clip_paper.pdf
+  'What is the CLIP model and how does it work?',
+  'What are the key findings and use cases from the CLIP paper?',
+
+  // rag_paper.pdf
+  'How does Retrieval Augmented Generation work?',
+  'What are the main benefits and limitations of RAG systems?',
+
+  // bis_annual_report_2024.pdf
+  'What does the BIS 2024 annual report say about global inflation and monetary policy?',
+  'What financial stability risks does the BIS highlight for 2024?',
+
+  // tesla_q4_2023.pdf
+  'What were Tesla\'s key financial results in Q4 2023?',
+  'What did Tesla say about production, deliveries, and margins in Q4 2023?',
 ]
 
 export function ChatPage() {
