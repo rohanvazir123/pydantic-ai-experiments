@@ -5,7 +5,7 @@
 - [Basic Hooks](#basic-hooks)
   - [useState](#usestate)
   - [useEffect](#useeffect)
-    - [Complete example — typed API fetch with loading/error states](#complete-example--typed-api-fetch-with-loadingerror-states)
+    - [Complete example — typed API fetch (Pexels)](#complete-example--typed-api-fetch-with-loadingerror-states)
   - [useContext](#usecontext)
 - [Ref Hooks](#ref-hooks)
   - [useRef](#useref)
@@ -76,7 +76,7 @@ useEffect(() => {
 
 **Dependency array:** omit — every render; `[]` — once on mount; `[a, b]` — when a or b changes.
 
-**Complete example — typed API fetch with loading/error states:**
+#### Complete example — typed API fetch with loading/error states
 
 ```tsx
 import React, { useState, useEffect } from "react";
