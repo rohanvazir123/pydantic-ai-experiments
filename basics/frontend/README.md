@@ -9,6 +9,7 @@ Tutorials covering the full frontend stack used in the RAG v2 project. Each file
 - [React](#react)
 - [TSX](#tsx)
 - [React Hooks](#react-hooks)
+- [Practice](#practice)
 
 ---
 
@@ -90,3 +91,23 @@ Every standard React hook with TypeScript types, purpose, and a real example fro
 | `useLayoutEffect` | Synchronous post-DOM-mutation effects |
 | `useImperativeHandle` | Expose methods via ref |
 | Custom hooks | `useChat` breakdown, `useLocalStorage<T>` pattern |
+
+---
+
+## Practice
+
+**[practice/exercises.md](practice/exercises.md)**
+
+Eight progressive exercises that build a Todo app from scratch, followed by a capstone photo search app. Each exercise targets one concept from the tutorials above and uses the Vite scaffold at `basics/basics/`.
+
+| Exercise | Concept |
+|----------|---------|
+| 1 | TypeScript interfaces and union types |
+| 2 | Functional components and typed props |
+| 3 | `useState`, lists, derived values |
+| 4 | `useEffect` — load and sync to `localStorage` |
+| 5 | Custom hook — extract logic from a component |
+| 6 | `useRef` — DOM focus |
+| 7 | `useMemo`, `useCallback`, `React.memo` |
+| 8 | Async fetch with loading/error state |
+| Capstone | Photo search app — all concepts combined |
