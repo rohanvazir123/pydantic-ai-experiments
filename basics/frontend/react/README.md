@@ -16,25 +16,57 @@ React is a UI library. Everything is a function that returns JSX, and React deci
 
 ## Setup
 
+### 1 — Node environment (do once per machine)
+
+**macOS**
 ```bash
-# macOS / Windows — from the basics/basics/ directory
+brew install nvm
+
+# Add to ~/.zshrc:
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+
+source ~/.zshrc
+nvm install --lts
+nvm use --lts
+nvm alias default node
+
+node --version    # 18.x or 20.x
+npm --version
+```
+
+**Windows (PowerShell as Administrator)**
+```powershell
+winget install CoreyButler.NVMforWindows
+# Close and reopen terminal:
+nvm install lts
+nvm use lts
+node --version
+```
+
+> **Windows tip:** If `nvm use` fails, right-click PowerShell → "Run as Administrator" for the first call only. Node will then work in any normal terminal.
+
+### 2 — Install packages (do once per clone)
+
+```bash
 cd basics/basics
-npm install          # only needed once; installs React, TypeScript, Vite, zustand, react-router-dom, clsx
-npm run dev          # start dev server at http://localhost:5173
+npm install                                 # React, TypeScript, Vite, ESLint
+npm install zustand react-router-dom clsx   # state, routing, classnames
+```
 
-# Type-check (run this in a second terminal while the dev server runs)
-npx tsc --noEmit --watch
+### 3 — Start working
 
-# Lint
-npx eslint src/
+```bash
+cd basics/basics
+npm run dev                  # http://localhost:5173 — hot-reloads on save
+npx tsc --noEmit --watch     # type-checker in a second terminal
+npx eslint src/              # lint on demand
 ```
 
 **Recommended VS Code extensions:**
 - ESLint
-- Prettier (set `"editor.formatOnSave": true`)
-- ES7+ React/Redux/React-Native snippets (rfce → scaffold a component instantly)
-
-**Windows-specific:** If `npm run dev` gives a permission error, run the terminal as Administrator once. If `node` is not found after installing via nvm-windows, close and reopen the terminal.
+- Prettier (`"editor.formatOnSave": true`)
+- ES7+ React/Redux/React-Native snippets (`rfce` → full component scaffold)
 
 ---
 

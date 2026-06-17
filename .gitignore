@@ -62,3 +62,6 @@ rag/v2/frontend/.next/
 rag/v2/frontend/next-env.d.ts
 # lockfile resolves to a private registry on this machine — CI installs without it
 rag/v2/frontend/package-lock.json
+
+# Frontend practice project — scaffolded locally per-machine, not tracked
+basics/basics/

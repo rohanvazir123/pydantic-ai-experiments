@@ -15,16 +15,46 @@ TSX is what you write every time you make a React component. This folder covers 
 
 ## Setup
 
-No extra install needed — `.tsx` files are processed by the same Vite project used throughout Days 1–5.
+### 1 — Node environment (do once per machine)
+
+**macOS**
+```bash
+brew install nvm
+
+# Add to ~/.zshrc:
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+
+source ~/.zshrc
+nvm install --lts
+nvm use --lts
+
+node --version    # 18.x or 20.x
+```
+
+**Windows (PowerShell as Administrator)**
+```powershell
+winget install CoreyButler.NVMforWindows
+# Close and reopen terminal:
+nvm install lts
+nvm use lts
+node --version
+```
+
+### 2 — Install packages (do once per clone)
 
 ```bash
-# macOS / Windows
 cd basics/basics
-npm install       # only needed once
-npm run dev       # http://localhost:5173
+npm install                                 # Vite, React, TypeScript
+npm install zustand react-router-dom clsx   # extras
+```
 
-# Type-check .tsx files (esbuild does NOT catch type errors — you must run this)
-npx tsc --noEmit
+### 3 — Start working
+
+```bash
+cd basics/basics
+npm run dev          # http://localhost:5173
+npx tsc --noEmit     # IMPORTANT: esbuild does NOT type-check — run this separately
 ```
 
 Every `.tsx` component you write goes in `basics/basics/src/components/`. Import it in `App.tsx` to see it in the browser.

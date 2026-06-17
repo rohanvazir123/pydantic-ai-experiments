@@ -15,22 +15,52 @@ TypeScript is JavaScript with a type checker. Once it clicks, you will not want 
 
 ## Setup
 
+### 1 — Node environment (do once per machine)
+
+**macOS**
 ```bash
-# macOS / Windows — from the basics/basics/ directory
-cd basics/basics
-npm install          # only needed once
-npm run dev          # start dev server at http://localhost:5173
+brew install nvm
 
-# Run the TypeScript type-checker (do this constantly while you work)
-npx tsc --noEmit
+# Add to ~/.zshrc:
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
 
-# Watch mode — re-checks every time you save
-npx tsc --noEmit --watch
+source ~/.zshrc
+nvm install --lts
+nvm use --lts
+nvm alias default node
+
+node --version    # 18.x or 20.x
 ```
 
-Create scratch files at `basics/basics/src/scratch-ts.ts`. The dev server ignores them unless you import them, so you can write freely without breaking the app. Run `npx tsc --noEmit` to see type errors.
+**Windows (PowerShell as Administrator)**
+```powershell
+winget install CoreyButler.NVMforWindows
+# Close and reopen terminal:
+nvm install lts
+nvm use lts
+node --version
+```
 
-**VS Code users:** Install the **ESLint** and **TypeScript + JavaScript Language Features** extensions. Red squiggles in the editor are the type checker — fix them as you go.
+### 2 — Install packages (do once per clone)
+
+```bash
+cd basics/basics
+npm install                                 # core deps
+npm install zustand react-router-dom clsx   # extras used in exercises
+```
+
+### 3 — Start working
+
+```bash
+cd basics/basics
+npm run dev                  # http://localhost:5173
+npx tsc --noEmit --watch     # type-checker in a second terminal — re-runs on save
+```
+
+Create scratch files at `basics/basics/src/scratch-ts.ts`. The dev server ignores unimported files, so you can write freely without breaking the app.
+
+**VS Code:** Install **ESLint** and **TypeScript + JavaScript Language Features**. Red squiggles = type errors — fix them as you go.
 
 ---
 

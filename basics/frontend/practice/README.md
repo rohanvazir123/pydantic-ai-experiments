@@ -26,14 +26,60 @@ Before starting these exercises you should have:
 
 ## Project Setup
 
-```bash
-# macOS / Windows — start the dev server
-cd basics/basics
-npm run dev
-# Open http://localhost:5173
+### 1 — Node environment (do once per machine)
 
-# Type-check in a separate terminal (run this often)
-npx tsc --noEmit --watch
+**macOS**
+```bash
+brew install nvm
+
+# Add to ~/.zshrc:
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+
+source ~/.zshrc
+nvm install --lts
+nvm use --lts
+nvm alias default node
+
+node --version    # 18.x or 20.x
+```
+
+**Windows (PowerShell as Administrator)**
+```powershell
+winget install CoreyButler.NVMforWindows
+# Close and reopen terminal:
+nvm install lts
+nvm use lts
+node --version
+```
+
+### 2 — Scaffold the project (do once per machine — basics/basics/ is gitignored)
+
+```bash
+# Run from the basics/ directory
+cd basics
+
+# Node 20+
+npm create vite@latest basics -- --template react-ts
+
+# Node 18 fallback
+npm create vite@5 basics -- --template react-ts
+```
+
+### 3 — Install packages (do once per machine)
+
+```bash
+cd basics/basics
+npm install                                 # core deps (React, TypeScript, Vite)
+npm install zustand react-router-dom clsx   # extras used in exercises
+```
+
+### 4 — Start working
+
+```bash
+cd basics/basics
+npm run dev                  # http://localhost:5173 — hot-reloads on save
+npx tsc --noEmit --watch     # type-checker in a second terminal
 ```
 
 Work in `basics/basics/src/`. The dev server hot-reloads every file save.
