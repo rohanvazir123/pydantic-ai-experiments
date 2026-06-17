@@ -4,12 +4,37 @@ React is a UI library. Everything is a function that returns JSX, and React deci
 
 ## Table of Contents
 
+- [Setup](#setup)
 - [What to Study](#what-to-study)
 - [Day 3 Schedule — Core React](#day-3-schedule--core-react)
 - [Day 4 Schedule — Hooks Deep Dive](#day-4-schedule--hooks-deep-dive)
 - [What to Build Each Day](#what-to-build-each-day)
 - [Mental Models Worth Internalising](#mental-models-worth-internalising)
 - [Checklist](#checklist)
+
+---
+
+## Setup
+
+```bash
+# macOS / Windows — from the basics/basics/ directory
+cd basics/basics
+npm install          # only needed once; installs React, TypeScript, Vite, zustand, react-router-dom, clsx
+npm run dev          # start dev server at http://localhost:5173
+
+# Type-check (run this in a second terminal while the dev server runs)
+npx tsc --noEmit --watch
+
+# Lint
+npx eslint src/
+```
+
+**Recommended VS Code extensions:**
+- ESLint
+- Prettier (set `"editor.formatOnSave": true`)
+- ES7+ React/Redux/React-Native snippets (rfce → scaffold a component instantly)
+
+**Windows-specific:** If `npm run dev` gives a permission error, run the terminal as Administrator once. If `node` is not found after installing via nvm-windows, close and reopen the terminal.
 
 ---
 

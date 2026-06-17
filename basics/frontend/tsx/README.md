@@ -4,11 +4,30 @@ TSX is what you write every time you make a React component. This folder covers 
 
 ## Table of Contents
 
+- [Setup](#setup)
 - [What to Study](#what-to-study)
 - [When to Read This](#when-to-read-this)
 - [Key Rules to Memorise](#key-rules-to-memorise)
 - [Quick Reference](#quick-reference)
 - [Checklist](#checklist)
+
+---
+
+## Setup
+
+No extra install needed — `.tsx` files are processed by the same Vite project used throughout Days 1–5.
+
+```bash
+# macOS / Windows
+cd basics/basics
+npm install       # only needed once
+npm run dev       # http://localhost:5173
+
+# Type-check .tsx files (esbuild does NOT catch type errors — you must run this)
+npx tsc --noEmit
+```
+
+Every `.tsx` component you write goes in `basics/basics/src/components/`. Import it in `App.tsx` to see it in the browser.
 
 ---
 

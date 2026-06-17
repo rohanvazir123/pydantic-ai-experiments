@@ -4,11 +4,33 @@ TypeScript is JavaScript with a type checker. Once it clicks, you will not want 
 
 ## Table of Contents
 
+- [Setup](#setup)
 - [What to Study](#what-to-study)
 - [Day 2 Schedule](#day-2-schedule)
 - [What to Build](#what-to-build)
 - [Checklist](#checklist)
 - [Common Errors and What They Mean](#common-errors-and-what-they-mean)
+
+---
+
+## Setup
+
+```bash
+# macOS / Windows — from the basics/basics/ directory
+cd basics/basics
+npm install          # only needed once
+npm run dev          # start dev server at http://localhost:5173
+
+# Run the TypeScript type-checker (do this constantly while you work)
+npx tsc --noEmit
+
+# Watch mode — re-checks every time you save
+npx tsc --noEmit --watch
+```
+
+Create scratch files at `basics/basics/src/scratch-ts.ts`. The dev server ignores them unless you import them, so you can write freely without breaking the app. Run `npx tsc --noEmit` to see type errors.
+
+**VS Code users:** Install the **ESLint** and **TypeScript + JavaScript Language Features** extensions. Red squiggles in the editor are the type checker — fix them as you go.
 
 ---
 

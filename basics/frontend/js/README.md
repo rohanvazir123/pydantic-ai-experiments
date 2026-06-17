@@ -4,10 +4,36 @@ Modern JavaScript is the foundation everything else builds on. Before you touch 
 
 ## Table of Contents
 
+- [Setup](#setup)
 - [What to Study](#what-to-study)
 - [Day 1 Schedule](#day-1-schedule)
 - [What to Build](#what-to-build)
 - [Checklist](#checklist)
+
+---
+
+## Setup
+
+No install needed for Day 1 — all examples run directly in the browser console or in a `.ts` scratch file. When you are ready to run TypeScript files, use the Vite project:
+
+```bash
+# macOS / Windows — from the basics/basics/ directory
+cd basics/basics
+npm install          # only needed once
+npm run dev          # starts dev server at http://localhost:5173
+
+# Type-check scratch files without running them
+npx tsc --noEmit
+```
+
+Create scratch files in `basics/basics/src/scratch-js.ts` and import them in `main.tsx` temporarily to test in the browser, or run them with:
+
+```bash
+# macOS
+node --input-type=module < src/scratch-js.js   # after tsc compiles it
+
+# Simpler: just open DevTools console (F12) and paste JS snippets directly
+```
 
 ---
 

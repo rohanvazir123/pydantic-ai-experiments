@@ -74,35 +74,45 @@ npm --version     # 10.x or higher
 
 ## Create the Vite Practice Project
 
-The practice exercises live in `basics/basics/`. Scaffold it now (run from the `basics/` directory):
+The practice project is already scaffolded at `basics/basics/`. If you are setting up on a new machine, re-create it from the `basics/` directory:
+
+> **Node version note:** `create-vite@latest` requires Node 20+. If you are on Node 18 (check with `node --version`), use `create-vite@5` instead — same result, older tooling.
 
 **macOS / Linux:**
 ```bash
-cd basics/frontend/../..    # navigate to the basics/ directory
-npx create-vite@latest basics -- --template react-ts
+cd basics   # the basics/ directory, not basics/basics/
+
+# Node 20+ (recommended)
+npm create vite@latest basics -- --template react-ts
+
+# Node 18 fallback
+npm create vite@5 basics -- --template react-ts
+
 cd basics
 npm install
 ```
 
 **Windows (PowerShell):**
 ```powershell
-cd basics   # navigate to the basics/ directory
-npx create-vite@latest basics -- --template react-ts
+cd basics   # the basics/ directory, not basics/basics/
+
+# Node 20+ (recommended)
+npm create vite@latest basics -- --template react-ts
+
+# Node 18 fallback
+npm create vite@5 basics -- --template react-ts
+
 cd basics
 npm install
 ```
 
-This creates `basics/basics/` with:
-- Vite (bundler + dev server)
-- React 19
-- TypeScript
-- ESLint
+This creates `basics/basics/` with Vite, React, TypeScript, and ESLint.
 
 ---
 
 ## Install Packages
 
-The practice exercises use a few additional packages. Install them inside `basics/basics/`:
+The practice exercises use a few additional packages. Install them inside `basics/basics/` (already done if you cloned this repo and ran `npm install`):
 
 ```bash
 cd basics/basics
@@ -110,14 +120,10 @@ cd basics/basics
 # State management
 npm install zustand
 
-# Routing
+# Routing (types are bundled — no separate @types needed)
 npm install react-router-dom
-npm install -D @types/react-router-dom
 
-# HTTP client (optional — fetch is built in, but axios is good to know)
-npm install axios
-
-# Utility: classnames (conditional CSS classes)
+# Utility: conditional CSS classes
 npm install clsx
 ```
 
