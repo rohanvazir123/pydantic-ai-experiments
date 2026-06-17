@@ -1,27 +1,130 @@
-# Frontend Practice
+# Practice — Day 5
 
-Hands-on exercises that build on the five tutorial docs. Work through them in order inside the `basics/basics/` Vite project.
+Hands-on exercises that build on everything from Days 1–4. You write all the code; the docs explain all the concepts. Day 5 is where it clicks.
 
 ## Table of Contents
 
-- [How to use this](#how-to-use-this)
+- [Prerequisites](#prerequisites)
+- [Project Setup](#project-setup)
+- [Day 5 Schedule](#day-5-schedule)
 - [Files](#files)
+- [Tips for Getting Unstuck](#tips-for-getting-unstuck)
 
 ---
 
-## How to use this
+## Prerequisites
+
+Before starting these exercises you should have:
+
+- [ ] Read `js/javascript.md` (Day 1)
+- [ ] Read `ts/typescript.md` (Day 2)
+- [ ] Read `react/react.md` (Day 3)
+- [ ] Read `tsx/tsx.md` + `react/hooks.md` (Day 4)
+- [ ] A working Vite project at `basics/basics/` (see main [README](../README.md) for setup)
+
+---
+
+## Project Setup
 
 ```bash
+# macOS / Windows — start the dev server
 cd basics/basics
-npm run dev        # start dev server at http://localhost:5173
+npm run dev
+# Open http://localhost:5173
+
+# Type-check in a separate terminal (run this often)
+npx tsc --noEmit --watch
 ```
 
-Edit files in `basics/basics/src/`. The dev server hot-reloads on save.
+Work in `basics/basics/src/`. The dev server hot-reloads every file save.
 
-Each exercise tells you exactly which file to create or edit and what to implement.
+**Suggested folder structure as you work through the exercises:**
+
+```
+basics/basics/src/
+├── types/
+│   ├── todo.ts          (Exercise 1)
+│   └── pexels.ts        (Capstone)
+├── components/
+│   ├── TodoItem.tsx     (Exercise 2)
+│   ├── TodoList.tsx     (Exercises 3–7)
+│   ├── TodoSuggestion.tsx (Exercise 8)
+│   ├── PhotoCard.tsx    (Capstone)
+│   └── SearchBar.tsx    (Capstone)
+├── hooks/
+│   ├── useTodos.ts      (Exercise 5)
+│   └── usePhotoSearch.ts (Capstone)
+└── App.tsx              (wire everything together)
+```
+
+---
+
+## Day 5 Schedule
+
+```
+Morning (2–3 h) — Todo App
+  Exercises 1–5: Types → Component → State → Persistence → Custom hook
+  Goal: a working Todo list that saves to localStorage
+
+Mid-day (1 h) — Optimisation + Refs
+  Exercises 6–7: useRef (auto-focus) + useMemo/useCallback/React.memo
+  Goal: understand when these matter (and when they don't)
+
+Afternoon (1 h) — API fetch
+  Exercise 8: TodoSuggestion — async fetch, loading/error state
+  Goal: pattern you will use for every API call in a real app
+
+Evening (2–3 h) — Capstone
+  Photo search app — AbortController, useDeferredValue, React.memo, typed API
+  Goal: finish with a working, deployable mini-app that uses every concept
+```
+
+---
 
 ## Files
 
-| File | What it covers |
-|------|---------------|
-| [exercises.md](exercises.md) | Progressive exercises: types → components → hooks → capstone |
+| File | What it is |
+|------|-----------|
+| [exercises.md](exercises.md) | All 8 exercises + capstone — starter stubs with TODOs, reference links, checklists |
+
+---
+
+## Tips for Getting Unstuck
+
+**TypeScript error you don't understand:**
+Hover over the red underline in VS Code — the tooltip is usually enough. If not, copy the error text and search for it on the TypeScript docs or Stack Overflow.
+
+**"Cannot find module":**
+Check that the file exists and the import path is correct. TypeScript is case-sensitive on Linux/Mac — `TodoItem` and `todoItem` are different files.
+
+**Blank screen / nothing renders:**
+Open the browser console (F12 → Console). A JS runtime error will be there.
+
+**State not updating:**
+Make sure you are calling the setter, not mutating the array directly.
+```tsx
+// Wrong — mutates in place, React does not detect the change
+todos.push(newTodo)
+
+// Right — new array reference triggers re-render
+setTodos(prev => [...prev, newTodo])
+```
+
+**useEffect runs too often:**
+Check your dependency array. Objects and arrays created inline are new references on every render — move them outside the component or wrap in `useMemo`.
+
+**Type errors after adding a package:**
+```bash
+npm install -D @types/<package-name>
+# e.g. npm install -D @types/react-router-dom
+```
+
+**Windows: `npx` not found:**
+Make sure Node is on your PATH. Close and reopen the terminal after installing Node via nvm-windows.
+
+**Windows: ESLint or Vite errors about line endings:**
+Add a `.editorconfig` at the project root:
+```ini
+[*]
+end_of_line = lf
+```
