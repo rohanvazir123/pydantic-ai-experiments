@@ -7,6 +7,7 @@ You will build 5 small components today, each teaching one concept. By the end y
 
 ## Table of Contents
 
+- [Sample Component — Read This First](#sample-component--read-this-first)
 - [Before You Start](#before-you-start)
 - [Step 1 — Read JSX, then wipe App.tsx](#step-1--read-jsx-then-wipe-apptsx)
 - [Step 2 — Build Counter (useState)](#step-2--build-counter-usestate)
@@ -19,6 +20,124 @@ You will build 5 small components today, each teaching one concept. By the end y
 - [Step 9 — Lift state up — connect Counter and UserList](#step-9--lift-state-up--connect-counter-and-userlist)
 - [Step 10 — Read Parts 2 and 3 (no coding)](#step-10--read-parts-2-and-3-no-coding)
 - [End-of-Day Checklist](#end-of-day-checklist)
+
+---
+
+## Sample Component — Read This First
+
+Before diving into the steps, read through this complete, production-style component. Every pattern used here is explained in the steps below — this gives you the target to aim for.
+
+**File:** `basics/basics/src/components/UserCard.tsx`
+
+```tsx
+import React, { useState } from 'react';
+
+// 1. Define an interface for the component props
+interface UserCardProps {
+  name: string;
+  age: number;
+  email?: string;                          // optional prop — has a default below
+  role: 'admin' | 'user' | 'guest';       // union literal — only these three strings are valid
+  onStatusChange: (status: string) => void; // function prop — parent handles the side effect
+}
+
+// 2. Standard function with destructured, typed props
+//    Prefer this over React.FC — simpler, no implicit children prop
+export const UserCard = ({
+  name,
+  age,
+  email = 'No email provided',             // default value for optional prop
+  role,
+  onStatusChange,
+}: UserCardProps): React.JSX.Element => {
+
+  // 3. useState — explicit generic keeps TypeScript honest
+  const [isActive, setIsActive] = useState<boolean>(true);
+
+  // 4. Typed event handler — MouseEvent generic matches the element it is attached to
+  const handleToggle = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    event.preventDefault();
+    const newStatus = !isActive ? 'Active' : 'Inactive';
+    setIsActive(!isActive);
+    onStatusChange(newStatus);             // call back to the parent
+  };
+
+  return (
+    <div style={{ border: '1px solid #ccc', padding: '16px', borderRadius: '8px' }}>
+      <h2>{name}</h2>
+      <p>Age: {age}</p>
+      <p>Email: {email}</p>
+      <p>Role: <strong>{role}</strong></p>
+      <p>Status: {isActive ? '🟢 Active' : '🔴 Inactive'}</p>
+      <button onClick={handleToggle}>Toggle Status</button>
+    </div>
+  );
+};
+```
+
+**How to use it — `App.tsx`:**
+
+```tsx
+import { useState } from 'react';
+import { UserCard } from './components/UserCard';
+
+export default function App() {
+  // Parent owns the log of status changes — lifted up from UserCard
+  const [log, setLog] = useState<string[]>([]);
+
+  function handleStatusChange(status: string) {
+    setLog(prev => [...prev, `Status changed to: ${status}`]);
+  }
+
+  return (
+    <div style={{ padding: '24px', maxWidth: '400px' }}>
+      <h1>User Management</h1>
+
+      {/* All required props provided */}
+      <UserCard
+        name="Ada Lovelace"
+        age={36}
+        email="ada@example.com"
+        role="admin"
+        onStatusChange={handleStatusChange}
+      />
+
+      {/* email omitted — uses default "No email provided" */}
+      <UserCard
+        name="Alan Turing"
+        age={41}
+        role="user"
+        onStatusChange={handleStatusChange}
+      />
+
+      {/* Status change log */}
+      {log.length > 0 && (
+        <div style={{ marginTop: '16px', fontSize: '13px', color: '#666' }}>
+          <strong>Activity log:</strong>
+          <ul>
+            {log.map((entry, i) => <li key={i}>{entry}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**What each pattern demonstrates:**
+
+| Pattern | Where | Why |
+|---------|-------|-----|
+| `interface UserCardProps` | Props definition | TypeScript enforces every caller passes the right shape |
+| `email?: string` with default | Props + destructuring | Optional prop — parent can omit it |
+| `'admin' \| 'user' \| 'guest'` | Role prop | Literal union — `role="superuser"` is a compile error |
+| `(status: string) => void` | Callback prop | Parent decides what to do; child just calls back |
+| `useState<boolean>(true)` | Local state | Explicit generic — avoids ambiguity |
+| `React.MouseEvent<HTMLButtonElement>` | Event handler | Narrowed to the exact element type |
+| `[...prev, entry]` | Log update | Spread creates a new array — never mutate state |
+| `key={i}` in the log | List rendering | Fine here because the log only appends, never reorders |
+
+Paste this into your project and run it before starting Step 1. Once you can see it in the browser, you are ready.
 
 ---
 

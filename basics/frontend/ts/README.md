@@ -6,6 +6,7 @@ TypeScript is JavaScript with a type checker. Once it clicks, you will not want 
 
 - [Setup](#setup)
 - [What to Study](#what-to-study)
+- [**Day 2 Step-by-Step Walkthrough →**](day2.md)
 - [Day 2 Schedule](#day-2-schedule)
 - [What to Build](#what-to-build)
 - [Checklist](#checklist)

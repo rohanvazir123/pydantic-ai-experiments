@@ -7,6 +7,7 @@ React is a UI library. Everything is a function that returns JSX, and React deci
 - [Setup](#setup)
 - [What to Study](#what-to-study)
 - [**Day 3 Step-by-Step Walkthrough →**](day3.md)
+- [**Day 4 Step-by-Step Walkthrough →**](day4.md)
 - [Day 3 Schedule — Core React](#day-3-schedule--core-react)
 - [Day 4 Schedule — Hooks Deep Dive](#day-4-schedule--hooks-deep-dive)
 - [What to Build Each Day](#what-to-build-each-day)

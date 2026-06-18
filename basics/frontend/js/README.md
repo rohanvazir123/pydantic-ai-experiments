@@ -6,6 +6,7 @@ Modern JavaScript is the foundation everything else builds on. Before you touch 
 
 - [Setup](#setup)
 - [What to Study](#what-to-study)
+- [**Day 1 Step-by-Step Walkthrough →**](day1.md)
 - [Day 1 Schedule](#day-1-schedule)
 - [What to Build](#what-to-build)
 - [Checklist](#checklist)
