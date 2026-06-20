@@ -67,3 +67,4 @@ rag/v2/frontend/package-lock.json
 basics/exercises/node_modules/
 # lockfile may embed a private registry URL — regenerate locally, never commit
 basics/exercises/package-lock.json
+basics/basics/

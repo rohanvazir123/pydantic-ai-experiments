@@ -1,5 +1,7 @@
 import './App.css';
 
+import {useState} from 'react';
+
 import {Counter} from './components/Counter';
 import {UserList} from './components/UserList';
 
@@ -25,6 +27,12 @@ const USERS = [
 ];
 
 export default function App() {
+    const [query, setQuery] = useState('');
+
+    // derived value — filter inline, no separate useState
+    const visibleUsers = USERS.filter((u) =>
+        u.name.toLowerCase().includes(query.toLowerCase()),
+    );
     return (
         <>
             <h1 className='page-title'>React Day 3</h1>
@@ -32,7 +40,19 @@ export default function App() {
                 <Counter label='Apples' />
                 <Counter label='Oranges' startAt={5} />
                 <hr />
-                <UserList users={USERS} highlightedId={1} />
+                <input
+                    type='text'
+                    placeholder='Filter users...'
+                    value={query} // controlled — value driven by state
+                    onChange={(e) => setQuery(e.target.value)} // update state on every keystroke
+                    style={{
+                        marginBottom: '12px',
+                        padding: '8px',
+                        width: '100%',
+                    }}
+                />
+                <p>{visibleUsers.length} user(s) found</p>
+                <UserList users={visibleUsers} />
             </div>
         </>
     );
