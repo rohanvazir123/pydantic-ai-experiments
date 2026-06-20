@@ -25,12 +25,12 @@ Node.js is the JavaScript runtime. Install it via **nvm** (Node Version Manager)
 # 2. Install nvm
 brew install nvm
 
-# 3. Add nvm to your shell — add these two lines to ~/.zshrc (zsh) or ~/.bash_profile (bash)
+# 3. Add nvm to your shell — add these two lines to ~/.bashrc (bash) or ~/.zshrc (zsh)
 export NVM_DIR="$HOME/.nvm"
 [ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
 
 # 4. Reload your shell
-source ~/.zshrc       # or source ~/.bash_profile
+source ~/.bashrc      # or source ~/.zshrc if you use zsh
 
 # 5. Install the latest LTS Node
 nvm install --lts
@@ -83,12 +83,12 @@ The practice project is already scaffolded at `basics/exercises/`. If you are se
 cd basics   # the basics/ directory, not basics/exercises/
 
 # Node 20+ (recommended)
-npm create vite@latest basics -- --template react-ts
+npm create vite@latest exercises -- --template react-ts
 
 # Node 18 fallback
-npm create vite@5 basics -- --template react-ts
+npm create vite@5 exercises -- --template react-ts
 
-cd basics
+cd exercises
 npm install
 ```
 
@@ -97,12 +97,12 @@ npm install
 cd basics   # the basics/ directory, not basics/exercises/
 
 # Node 20+ (recommended)
-npm create vite@latest basics -- --template react-ts
+npm create vite@latest exercises -- --template react-ts
 
 # Node 18 fallback
-npm create vite@5 basics -- --template react-ts
+npm create vite@5 exercises -- --template react-ts
 
-cd basics
+cd exercises
 npm install
 ```
 
