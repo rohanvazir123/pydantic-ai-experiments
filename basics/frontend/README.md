@@ -74,13 +74,13 @@ npm --version     # 10.x or higher
 
 ## Create the Vite Practice Project
 
-The practice project is already scaffolded at `basics/basics/`. If you are setting up on a new machine, re-create it from the `basics/` directory:
+The practice project is already scaffolded at `basics/exercises/`. If you are setting up on a new machine, re-create it from the `basics/` directory:
 
 > **Node version note:** `create-vite@latest` requires Node 20+. If you are on Node 18 (check with `node --version`), use `create-vite@5` instead — same result, older tooling.
 
 **macOS / Linux:**
 ```bash
-cd basics   # the basics/ directory, not basics/basics/
+cd basics   # the basics/ directory, not basics/exercises/
 
 # Node 20+ (recommended)
 npm create vite@latest basics -- --template react-ts
@@ -94,7 +94,7 @@ npm install
 
 **Windows (PowerShell):**
 ```powershell
-cd basics   # the basics/ directory, not basics/basics/
+cd basics   # the basics/ directory, not basics/exercises/
 
 # Node 20+ (recommended)
 npm create vite@latest basics -- --template react-ts
@@ -106,16 +106,16 @@ cd basics
 npm install
 ```
 
-This creates `basics/basics/` with Vite, React, TypeScript, and ESLint.
+This creates `basics/exercises/` with Vite, React, TypeScript, and ESLint.
 
 ---
 
 ## Install Packages
 
-The practice exercises use a few additional packages. Install them inside `basics/basics/` (already done if you cloned this repo and ran `npm install`):
+The practice exercises use a few additional packages. Install them inside `basics/exercises/` (already done if you cloned this repo and ran `npm install`):
 
 ```bash
-cd basics/basics
+cd basics/exercises
 
 # State management
 npm install zustand
@@ -134,7 +134,7 @@ npm install clsx
 ## Verify Everything Works
 
 ```bash
-cd basics/basics
+cd basics/exercises
 npm run dev
 ```
 
@@ -154,7 +154,7 @@ npx eslint src/
 
 ## 5-Day Study Plan
 
-Work through the tutorial files in this order. Each day: read the doc, then write the code in `basics/basics/src/`.
+Work through the tutorial files in this order. Each day: read the doc, then write the code in `basics/exercises/src/`.
 
 | Day | File | Focus | Time |
 |-----|------|-------|------|

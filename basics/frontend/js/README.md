@@ -67,7 +67,7 @@ npm create vite@5 basics -- --template react-ts
 ### 3 — Install packages (do once per clone)
 
 ```bash
-cd basics/basics
+cd basics/exercises
 npm install                       # installs all deps into node_modules/
 npm install zustand react-router-dom clsx   # extra packages used in exercises
 ```
@@ -77,7 +77,7 @@ npm install zustand react-router-dom clsx   # extra packages used in exercises
 ### 4 — Start working
 
 ```bash
-cd basics/basics
+cd basics/exercises
 npm run dev          # dev server at http://localhost:5173 — hot-reloads on save
 npx tsc --noEmit     # type-check (run this in a second terminal while you code)
 ```
@@ -117,7 +117,7 @@ Morning (2 h)
 
 Afternoon (1.5 h)
   Read: Advanced section (async/await → AbortController → async generators)
-  Do:   In basics/basics/src/, create scratch.ts and implement the exercises below
+  Do:   In basics/exercises/src/, create scratch.ts and implement the exercises below
 
 Evening (30 min)
   Review: Close the doc and write from memory — arrow function, destructuring,
@@ -128,7 +128,7 @@ Evening (30 min)
 
 ## What to Build
 
-Create `basics/basics/src/scratch-js.ts` and implement each of these without looking at the doc:
+Create `basics/exercises/src/scratch-js.ts` and implement each of these without looking at the doc:
 
 ```ts
 // 1. Destructure this object and rename 'id' to 'userId'

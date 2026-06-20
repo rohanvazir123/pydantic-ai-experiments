@@ -46,7 +46,7 @@ node --version
 ### 2 — Install packages (do once per clone)
 
 ```bash
-cd basics/basics
+cd basics/exercises
 npm install                                 # core deps
 npm install zustand react-router-dom clsx   # extras used in exercises
 ```
@@ -54,12 +54,12 @@ npm install zustand react-router-dom clsx   # extras used in exercises
 ### 3 — Start working
 
 ```bash
-cd basics/basics
+cd basics/exercises
 npm run dev                  # http://localhost:5173
 npx tsc --noEmit --watch     # type-checker in a second terminal — re-runs on save
 ```
 
-Create scratch files at `basics/basics/src/scratch-ts.ts`. The dev server ignores unimported files, so you can write freely without breaking the app.
+Create scratch files at `basics/exercises/src/scratch-ts.ts`. The dev server ignores unimported files, so you can write freely without breaking the app.
 
 **VS Code:** Install **ESLint** and **TypeScript + JavaScript Language Features**. Red squiggles = type errors — fix them as you go.
 
@@ -90,7 +90,7 @@ Create scratch files at `basics/basics/src/scratch-ts.ts`. The dev server ignore
 ```
 Morning (2 h)
   Read: Type System + Generics sections
-  Do:   In basics/basics/src/scratch-ts.ts, annotate 10 small functions from scratch
+  Do:   In basics/exercises/src/scratch-ts.ts, annotate 10 small functions from scratch
 
 Afternoon (1.5 h)
   Read: Advanced section (import type, type guards, mapped types, satisfies)
@@ -106,7 +106,7 @@ Evening (30 min)
 
 ## What to Build
 
-Create `basics/basics/src/scratch-ts.ts`:
+Create `basics/exercises/src/scratch-ts.ts`:
 
 ```ts
 // 1. Define an interface ApiUser with: id, name, email, role: 'admin' | 'viewer'
