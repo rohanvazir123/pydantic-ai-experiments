@@ -11,7 +11,7 @@ type UserProps = {
 const userInfo : UserProps = {
   name: "Jon Doe",
   age: 88,
-  //gender: 'male',
+  gender: 'male',
   phone: "123-456-7890", 
   address: ["183 Mulberry St, Santa Ana, 96777", "123 Main St, Anytown, 12345"]
 }
@@ -23,4 +23,30 @@ const guestInfo: Omit<UserProps,  "gender"> = {
   address: "456 Elm St, Othertown, 67890"
 }
 
-console.log(userInfo, guestInfo)
+type User = {
+  id: string;
+  email: string;
+};
+
+// Extending User and adding a 'role' property inline
+type Admin = User & {
+  role: "superadmin" | "moderator";
+};
+
+const adminUser: Admin = {
+  id: "usr_99",
+  email: "admin@company.com",
+  role: "superadmin"
+};
+
+const customUser: {id: string, name: string, email: string} & { customField: string } = {
+  id: "usr_100",
+  name: "John Doe",
+  email: "custom@company.com",
+  customField: "Some custom value"
+};
+
+console.log("\nUserInfo:", userInfo);
+console.log("\nGuestInfo:", guestInfo);
+console.log("\nAdminUser:", adminUser);
+console.log("\nCustomUser:", customUser);
