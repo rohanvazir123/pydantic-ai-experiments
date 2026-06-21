@@ -44,7 +44,7 @@ node --version
 ### 2 — Install packages (do once per clone)
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm install                                 # Vite, React, TypeScript
 npm install zustand react-router-dom clsx   # extras
 ```
@@ -52,12 +52,12 @@ npm install zustand react-router-dom clsx   # extras
 ### 3 — Start working
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev          # http://localhost:5173
 npx tsc --noEmit     # IMPORTANT: esbuild does NOT type-check — run this separately
 ```
 
-Every `.tsx` component you write goes in `basics/exercises/src/components/`. Import it in `App.tsx` to see it in the browser.
+Every `.tsx` component you write goes in `basics/frontend/day1_exercises/src/components/`. Import it in `App.tsx` to see it in the browser.
 
 ---
 

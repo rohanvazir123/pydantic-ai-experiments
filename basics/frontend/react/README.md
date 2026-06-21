@@ -51,7 +51,7 @@ node --version
 ### 2 — Install packages (do once per clone)
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm install                                 # React, TypeScript, Vite, ESLint
 npm install zustand react-router-dom clsx   # state, routing, classnames
 ```
@@ -59,7 +59,7 @@ npm install zustand react-router-dom clsx   # state, routing, classnames
 ### 3 — Start working
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev                  # http://localhost:5173 — hot-reloads on save
 npx tsc --noEmit --watch     # type-checker in a second terminal
 npx eslint src/              # lint on demand
@@ -91,7 +91,7 @@ Morning (2 h)
   Topics: JSX, components, useState, useEffect, useRef, conditional rendering,
           lists + keys, event handling, lifting state up
 
-  Do: In basics/exercises/src/, create:
+  Do: In basics/frontend/day1_exercises/src/, create:
       - components/Counter.tsx     (useState + button)
       - components/UserCard.tsx    (typed props, conditional rendering)
       - components/NumberList.tsx  (map with keys, filter)
@@ -101,7 +101,7 @@ Afternoon (2 h)
   Topics: Custom hooks, Zustand, React Router, async state, AbortController,
           useMemo/useCallback, file structure, PrivateRoute, layout components
 
-  Do: In basics/exercises/src/:
+  Do: In basics/frontend/day1_exercises/src/:
       - hooks/useFetch.ts          (generic fetch hook — see exercise below)
       - pages/HomePage.tsx         (renders UserCard list from the hook)
       - App.tsx                    (add BrowserRouter + Routes)

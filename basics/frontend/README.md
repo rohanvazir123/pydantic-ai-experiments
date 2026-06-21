@@ -115,7 +115,7 @@ This creates `basics/frontend/day1_exercises/` with Vite, React, TypeScript, and
 The practice exercises use a few additional packages. Install them inside `basics/frontend/day1_exercises/` (already done if you cloned this repo and ran `npm install`):
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 
 # State management
 npm install zustand
@@ -134,7 +134,7 @@ npm install clsx
 ## Verify Everything Works
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev
 ```
 

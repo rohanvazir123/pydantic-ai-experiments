@@ -1,6 +1,6 @@
 # React + TypeScript Practice Exercises
 
-All exercises use the Vite project at `basics/exercises/`. Run `npm run dev` from that directory before you start.
+All exercises use the Vite project at `basics/frontend/day1_exercises/`. Run `npm run dev` from that directory before you start.
 
 ## Table of Contents
 
@@ -418,7 +418,7 @@ Loading... / Error: ... / (empty state)
    - This lets the input stay responsive while the search runs.
 
 **Checklist before you call it done:**
-- [ ] No TypeScript errors (`tsc --noEmit` in `basics/exercises/`)
+- [ ] No TypeScript errors (`tsc --noEmit` in `basics/frontend/day1_exercises/`)
 - [ ] Loading state shows while fetch is in progress
 - [ ] Error state shows on a bad API key or network failure
 - [ ] Typing in the search box does not freeze the UI

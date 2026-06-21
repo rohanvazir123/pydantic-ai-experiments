@@ -20,7 +20,7 @@ Before starting these exercises you should have:
 - [ ] Read `ts/typescript.md` (Day 2)
 - [ ] Read `react/react.md` (Day 3)
 - [ ] Read `tsx/tsx.md` + `react/hooks.md` (Day 4)
-- [ ] A working Vite project at `basics/exercises/` (see main [README](../README.md) for setup)
+- [ ] A working Vite project at `basics/frontend/day1_exercises/` (see main [README](../README.md) for setup)
 
 ---
 
@@ -53,7 +53,7 @@ nvm use lts
 node --version
 ```
 
-### 2 — Scaffold the project (do once per machine — basics/exercises/ is gitignored)
+### 2 — Scaffold the project (do once per machine — basics/frontend/day1_exercises/ is gitignored)
 
 ```bash
 # Run from the basics/ directory
@@ -69,7 +69,7 @@ npm create vite@5 basics -- --template react-ts
 ### 3 — Install packages (do once per machine)
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm install                                 # core deps (React, TypeScript, Vite)
 npm install zustand react-router-dom clsx   # extras used in exercises
 ```
@@ -77,17 +77,17 @@ npm install zustand react-router-dom clsx   # extras used in exercises
 ### 4 — Start working
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev                  # http://localhost:5173 — hot-reloads on save
 npx tsc --noEmit --watch     # type-checker in a second terminal
 ```
 
-Work in `basics/exercises/src/`. The dev server hot-reloads every file save.
+Work in `basics/frontend/day1_exercises/src/`. The dev server hot-reloads every file save.
 
 **Suggested folder structure as you work through the exercises:**
 
 ```
-basics/exercises/src/
+basics/frontend/day1_exercises/src/
 ├── types/
 │   ├── todo.ts          (Exercise 1)
 │   └── pexels.ts        (Capstone)

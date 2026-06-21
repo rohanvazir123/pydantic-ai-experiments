@@ -26,12 +26,12 @@ You will annotate everything you wrote yesterday and progressively layer on Type
 ## Before You Start
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev                  # terminal 1 — keep running
 npx tsc --noEmit --watch     # terminal 2 — shows type errors as you save
 ```
 
-Create `basics/exercises/src/scratch-day2.ts`. This is where all today's code goes.
+Create `basics/frontend/day1_exercises/src/scratch-day2.ts`. This is where all today's code goes.
 
 Make sure `main.tsx` imports it:
 ```tsx

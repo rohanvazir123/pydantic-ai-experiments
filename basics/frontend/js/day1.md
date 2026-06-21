@@ -29,14 +29,14 @@ Open your browser (Chrome or Firefox). Press **F12** to open DevTools. Click the
 For Steps 8–10, you will use a scratch file in the Vite project:
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev    # keep running — you do not need this until Step 8
 ```
 
-Create `basics/exercises/src/scratch-day1.ts` — paste code there, then import it once in `main.tsx` to run it:
+Create `basics/frontend/day1_exercises/src/scratch-day1.ts` — paste code there, then import it once in `main.tsx` to run it:
 
 ```tsx
-// basics/exercises/src/main.tsx — add this line temporarily
+// basics/frontend/day1_exercises/src/main.tsx — add this line temporarily
 import './scratch-day1'
 ```
 
@@ -275,7 +275,7 @@ const topViewerNames = users
 
 You cannot paste module syntax in DevTools. Create two files:
 
-`basics/exercises/src/utils.ts`:
+`basics/frontend/day1_exercises/src/utils.ts`:
 ```ts
 // Named export — can have many per file
 export function formatName(first: string, last: string): string {
@@ -290,7 +290,7 @@ export default function greet(name: string): string {
 }
 ```
 
-`basics/exercises/src/scratch-day1.ts`:
+`basics/frontend/day1_exercises/src/scratch-day1.ts`:
 ```ts
 // Named imports — use exact names
 import { formatName, MAX_USERS } from './utils'
@@ -322,7 +322,7 @@ Open the browser console — you should see the four log lines.
 
 **Read** "Async / await" and the `fetch` example (~10 min).
 
-Update `basics/exercises/src/scratch-day1.ts`:
+Update `basics/frontend/day1_exercises/src/scratch-day1.ts`:
 
 ```ts
 // A function that returns a Promise — async keyword makes it return one automatically

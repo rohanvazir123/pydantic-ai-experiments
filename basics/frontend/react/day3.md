@@ -27,7 +27,7 @@ You will build 5 small components today, each teaching one concept. By the end y
 
 Before diving into the steps, read through this complete, production-style component. Every pattern used here is explained in the steps below — this gives you the target to aim for.
 
-**File:** `basics/exercises/src/components/UserCard.tsx`
+**File:** `basics/frontend/day1_exercises/src/components/UserCard.tsx`
 
 ```tsx
 import React, { useState } from 'react';
@@ -147,12 +147,12 @@ Open two terminals:
 
 ```bash
 # Terminal 1 — dev server
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev
 # Opens http://localhost:5173 — keep this running all day
 
 # Terminal 2 — type checker (catches errors as you save)
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npx tsc --noEmit --watch
 ```
 
@@ -161,7 +161,7 @@ Open `http://localhost:5173` in your browser. Keep it visible alongside your edi
 Create the components folder:
 
 ```bash
-mkdir -p basics/exercises/src/components
+mkdir -p basics/frontend/day1_exercises/src/components
 ```
 
 ---
@@ -175,7 +175,7 @@ Three rules to remember:
 - `className`, not `class`
 - Expressions inside `{}`, not statements
 
-Now replace everything in `basics/exercises/src/App.tsx` with this:
+Now replace everything in `basics/frontend/day1_exercises/src/App.tsx` with this:
 
 ```tsx
 export default function App() {
@@ -195,7 +195,7 @@ Save. The browser should show "React Day 3". If the type-checker shows no errors
 
 **Read** the "Functional components and props" and "useState: state vs derived values" sections (~10 min).
 
-Create `basics/exercises/src/components/Counter.tsx`:
+Create `basics/frontend/day1_exercises/src/components/Counter.tsx`:
 
 ```tsx
 import { useState } from 'react'
@@ -288,7 +288,7 @@ Save and test. The message below the title should update as you click.
 
 **Read** "Functional components and props" again, focusing on the TypeScript parts (~5 min).
 
-Create `basics/exercises/src/components/UserCard.tsx`:
+Create `basics/frontend/day1_exercises/src/components/UserCard.tsx`:
 
 ```tsx
 interface User {
@@ -364,7 +364,7 @@ export default function App() {
 
 **Read** "Lists and keys" (~5 min).
 
-Create `basics/exercises/src/components/UserList.tsx`:
+Create `basics/frontend/day1_exercises/src/components/UserList.tsx`:
 
 ```tsx
 import { UserCard } from './UserCard'
@@ -719,7 +719,7 @@ You are done with Day 3 if you can answer these without opening any docs:
 - [ ] Write the pattern for an async `useEffect` fetch from memory (async inner function, error handling, cleanup).
 - [ ] What is lifting state up? When do you do it?
 
-Your `basics/exercises/src/` should now have:
+Your `basics/frontend/day1_exercises/src/` should now have:
 
 ```
 src/

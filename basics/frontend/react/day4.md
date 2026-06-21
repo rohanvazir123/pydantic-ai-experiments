@@ -26,7 +26,7 @@ You will extend the app from Day 3 with every standard React hook, learning exac
 ## Before You Start
 
 ```bash
-cd basics/exercises
+cd basics/frontend/day1_exercises
 npm run dev                  # terminal 1
 npx tsc --noEmit --watch     # terminal 2
 ```
@@ -51,7 +51,7 @@ If you do not, scaffold `App.tsx` now with the fetch example from [day3.md Step 
 
 `useRef` has two jobs — DOM references and mutable values. This step covers DOM refs.
 
-Add auto-scroll to the bottom of the user list when users load. Create `basics/exercises/src/components/ScrollList.tsx`:
+Add auto-scroll to the bottom of the user list when users load. Create `basics/frontend/day1_exercises/src/components/ScrollList.tsx`:
 
 ```tsx
 import { useRef, useEffect } from 'react'
@@ -155,7 +155,7 @@ Type quickly — notice the filter only updates after you pause.
 
 Create a theme context so any component can read and toggle dark/light mode without prop drilling.
 
-Create `basics/exercises/src/context/ThemeContext.tsx`:
+Create `basics/frontend/day1_exercises/src/context/ThemeContext.tsx`:
 
 ```tsx
 import { createContext, useContext, useState } from 'react'
@@ -195,7 +195,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 ```
 
-Wrap `App` with the provider in `basics/exercises/src/main.tsx`:
+Wrap `App` with the provider in `basics/frontend/day1_exercises/src/main.tsx`:
 
 ```tsx
 import { ThemeProvider } from './context/ThemeContext'
@@ -328,7 +328,7 @@ Open DevTools console. Typing in the filter input — only the components that c
 
 When you have multiple state values that always change together, `useReducer` is cleaner than separate `useState` calls.
 
-Create `basics/exercises/src/components/SearchBar.tsx`:
+Create `basics/frontend/day1_exercises/src/components/SearchBar.tsx`:
 
 ```tsx
 import { useReducer } from 'react'
@@ -401,7 +401,7 @@ Replace the manual filter input in `App.tsx` with `<SearchBar onChange={...} />`
 
 **Read** "useId" in `hooks.md` (~3 min).
 
-Create `basics/exercises/src/components/FormField.tsx`:
+Create `basics/frontend/day1_exercises/src/components/FormField.tsx`:
 
 ```tsx
 import { useId } from 'react'
@@ -509,7 +509,7 @@ const visibleUsers = useMemo(() => {
 
 **Read** "Custom Hooks" in `hooks.md` — the `useChat` breakdown and `useLocalStorage` example (~10 min).
 
-Extract everything fetch-related from `App.tsx` into a reusable hook. Create `basics/exercises/src/hooks/useUserSearch.ts`:
+Extract everything fetch-related from `App.tsx` into a reusable hook. Create `basics/frontend/day1_exercises/src/hooks/useUserSearch.ts`:
 
 ```ts
 import { useState, useEffect, useRef, useMemo } from 'react'
