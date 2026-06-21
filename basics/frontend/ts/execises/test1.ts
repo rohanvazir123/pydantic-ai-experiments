@@ -82,3 +82,39 @@ console.log("Minors:", minors.map((u) => u.name));            // ['Bob', 'Diana'
 // find with optional field — guard before using phone
 const firstWithPhone = users.find((u) => u.phone !== undefined);
 console.log("First with phone:", firstWithPhone?.name, firstWithPhone?.phone); // Alice 111-111-1111
+
+// --- Generic findArray ---
+
+// T can be anything — the predicate tells TypeScript what to look for
+const findInArray = <T>(arr: T[], predicate: (item: T) => boolean): T | undefined =>
+  arr.find(predicate);
+
+// Works with UserProps[]
+const found1 = findInArray(users, (u) => u.name === "Diana");
+console.log("\nGeneric find (UserProps):", found1?.name);   // Diana
+
+// Works with number[]
+const nums = [10, 25, 3, 47, 8];
+const firstOver20 = findInArray(nums, (n) => n > 20);
+console.log("Generic find (number):", firstOver20);         // 25
+
+// Works with string[]
+const fruits = ["apple", "banana", "cherry"];
+const withB = findInArray(fruits, (f) => f.startsWith("b"));
+console.log("Generic find (string):", withB);               // banana
+
+// Generic findAll — same idea, uses filter instead of find
+const findAllInArray = <T>(arr: T[], predicate: (item: T) => boolean): T[] =>
+  arr.filter(predicate);
+
+const allMinors = findAllInArray(users, (u) => u.age < 18);
+console.log("Generic findAll (minors):", allMinors.map((u) => u.name)); // ['Bob', 'Diana']
+
+// Generic findByKey — find by any key that exists on T
+const findByKey = <T, K extends keyof T>(arr: T[], key: K, value: T[K]): T | undefined =>
+  arr.find((item) => item[key] === value);
+
+const byName   = findByKey(users, "name", "Charlie");
+const byGender = findByKey(users, "gender", "female");
+console.log("findByKey name:",   byName?.name);    // Charlie
+console.log("findByKey gender:", byGender?.name);  // Alice (first female)
