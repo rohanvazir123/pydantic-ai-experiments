@@ -89,19 +89,34 @@ console.log("First with phone:", firstWithPhone?.name, firstWithPhone?.phone); /
 const findInArray = <T>(arr: T[], predicate: (item: T) => boolean): T | undefined =>
   arr.find(predicate);
 
+// Generic findIndex — returns index of first match, or -1
+const findIndexInArray = <T>(arr: T[], predicate: (item: T) => boolean): number =>
+  arr.findIndex(predicate);
+
 // Works with UserProps[]
 const found1 = findInArray(users, (u) => u.name === "Diana");
-console.log("\nGeneric find (UserProps):", found1?.name);   // Diana
+console.log("\nGeneric find (UserProps):", found1?.name);              // Diana
+
+const dianaIndex = findIndexInArray(users, (u) => u.name === "Diana");
+console.log("Generic findIndex (UserProps):", dianaIndex);            // 3
 
 // Works with number[]
 const nums = [10, 25, 3, 47, 8];
 const firstOver20 = findInArray(nums, (n) => n > 20);
-console.log("Generic find (number):", firstOver20);         // 25
+const firstOver20Index = findIndexInArray(nums, (n) => n > 20);
+console.log("Generic find (number):", firstOver20);                   // 25
+console.log("Generic findIndex (number):", firstOver20Index);         // 1
 
 // Works with string[]
 const fruits = ["apple", "banana", "cherry"];
 const withB = findInArray(fruits, (f) => f.startsWith("b"));
-console.log("Generic find (string):", withB);               // banana
+const withBIndex = findIndexInArray(fruits, (f) => f.startsWith("b"));
+console.log("Generic find (string):", withB);                         // banana
+console.log("Generic findIndex (string):", withBIndex);               // 1
+
+// -1 when not found
+const missingIndex = findIndexInArray(nums, (n) => n > 100);
+console.log("Generic findIndex (not found):", missingIndex);          // -1
 
 // Generic findAll — same idea, uses filter instead of find
 const findAllInArray = <T>(arr: T[], predicate: (item: T) => boolean): T[] =>
@@ -114,7 +129,13 @@ console.log("Generic findAll (minors):", allMinors.map((u) => u.name)); // ['Bob
 const findByKey = <T, K extends keyof T>(arr: T[], key: K, value: T[K]): T | undefined =>
   arr.find((item) => item[key] === value);
 
-const byName   = findByKey(users, "name", "Charlie");
-const byGender = findByKey(users, "gender", "female");
-console.log("findByKey name:",   byName?.name);    // Charlie
-console.log("findByKey gender:", byGender?.name);  // Alice (first female)
+// Generic findIndexByKey — same constraint, returns index
+const findIndexByKey = <T, K extends keyof T>(arr: T[], key: K, value: T[K]): number =>
+  arr.findIndex((item) => item[key] === value);
+
+const byName        = findByKey(users, "name", "Charlie");
+const byNameIndex   = findIndexByKey(users, "name", "Charlie");
+const byGender      = findByKey(users, "gender", "female");
+const byGenderIndex = findIndexByKey(users, "gender", "female");
+console.log("findByKey name:",        byName?.name,   "at index:", byNameIndex);   // Charlie at index: 2
+console.log("findByKey gender:",      byGender?.name, "at index:", byGenderIndex); // Alice at index: 0
