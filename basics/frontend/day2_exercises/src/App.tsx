@@ -1,122 +1,81 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
 import './App.css'
+import { useStore } from './store/useStore'
+import { useShallow } from 'zustand/react/shallow'
+import { useStore2 } from './store/useStore2'
 
-function App() {
-  const [count, setCount] = useState(0)
+// ✅ Best Practice: select individual values — avoids re-renders when unrelated state changes
+export function App1() {
+  const count = useStore((state) => state.count1)
+  const increment = useStore((state) => state.increment1)
+  const reset = useStore((state) => state.reset1)
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <div className="panel panel-blue">
+      <div className="panel-header">
+        <h2>Pattern 1</h2>
+        <h1>Individual selectors</h1>
+      </div>
+      <div className="count accent-blue">{count}</div>
+      <div className="btn-row">
+        <button className="btn-primary btn-blue" onClick={increment}>Increment</button>
+        <button className="btn-ghost" onClick={reset}>Reset</button>
+      </div>
+    </div>
   )
 }
 
-export default App
+// ✅ useShallow: select multiple values together without causing extra re-renders
+export function App2() {
+  const { count, increment, reset } = useStore(
+    useShallow((state) => ({
+      count: state.count2,
+      increment: state.increment2,
+      reset: state.reset2,
+    }))
+  )
+
+  return (
+    <div className="panel panel-violet">
+      <div className="panel-header">
+        <h2>Pattern 2</h2>
+        <h1>useShallow selector</h1>
+      </div>
+      <div className="count accent-violet">{count}</div>
+      <div className="btn-row">
+        <button className="btn-primary btn-violet" onClick={increment}>Increment</button>
+        <button className="btn-ghost" onClick={reset}>Reset</button>
+      </div>
+    </div>
+  )
+}
+
+// ✅ Grouped actions object — the actions reference is stable, never causes re-renders
+export function App3() {
+  const { count, theme } = useStore2(
+    useShallow((state) => ({ count: state.count, theme: state.theme }))
+  )
+  const { increment, decrement, toggleTheme, reset } = useStore2((state) => state.actions)
+
+  const isDark = theme === 'dark'
+
+  return (
+    <div className="panel panel-emerald" style={{
+      background: isDark ? '#021a12' : '#f0fdf4',
+      color: isDark ? '#e2e8f0' : '#0f172a',
+      transition: 'background 0.3s, color 0.3s',
+    }}>
+      <div className="panel-header" style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)' }}>
+        <h2>Pattern 3</h2>
+        <h1>Actions object + persist</h1>
+      </div>
+      <div className="count accent-emerald">{count}</div>
+      <p>Theme: <strong>{theme}</strong> · refresh to see persist</p>
+      <div className="btn-row">
+        <button className="btn-primary btn-emerald" onClick={increment}>+</button>
+        <button className="btn-primary btn-emerald" onClick={decrement}>−</button>
+        <button className="btn-ghost" onClick={toggleTheme}>Toggle theme</button>
+        <button className="btn-ghost" onClick={reset}>Reset</button>
+      </div>
+    </div>
+  )
+}
