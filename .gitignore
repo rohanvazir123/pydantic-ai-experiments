@@ -65,5 +65,7 @@ rag/v2/frontend/package-lock.json
 
 # Frontend practice project — scaffolded locally per-machine, not tracked
 basics/frontend/day1_exercises/node_modules/
+basics/frontend/day2_exercises/node_modules/
 # lockfile may embed a private registry URL — regenerate locally, never commit
 basics/frontend/day1_exercises/package-lock.json
+basics/frontend/day2_exercises/package-lock.json
