@@ -3,7 +3,7 @@ type UserProps = {
   name: string,
   age: number, 
   address: string | string[],
-  gender?: 'male' | 'female' | 'other',
+  gender: 'male' | 'female' | 'other',
   phone?: string, // Optional property
                   
 }
@@ -11,7 +11,7 @@ type UserProps = {
 const userInfo : UserProps = {
   name: "Jon Doe",
   age: 88,
-  // gender: 'male',
+  //gender: 'male',
   phone: "123-456-7890", 
   address: ["183 Mulberry St, Santa Ana, 96777", "123 Main St, Anytown, 12345"]
 }
