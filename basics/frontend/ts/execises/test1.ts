@@ -139,3 +139,66 @@ const byGender      = findByKey(users, "gender", "female");
 const byGenderIndex = findIndexByKey(users, "gender", "female");
 console.log("findByKey name:",        byName?.name,   "at index:", byNameIndex);   // Charlie at index: 2
 console.log("findByKey gender:",      byGender?.name, "at index:", byGenderIndex); // Alice at index: 0
+
+// --- Arrow function: multiple statements in curly braces ---
+
+// When the body has more than one statement you MUST use curly braces
+// and write an explicit return. The result is NOT returned automatically.
+const findWithLog = <T>(arr: T[], predicate: (item: T) => boolean): T | undefined => {
+  // statement 1 — log before searching
+  console.log(`\nSearching ${arr.length} items...`);
+
+  // statement 2 — do the work
+  const result = arr.find(predicate);
+
+  // statement 3 — log the outcome before returning
+  if (result === undefined) {
+    console.log("Nothing found.");
+  } else {
+    console.log("Found:", result);
+  }
+
+  // explicit return is required when using curly braces
+  return result;
+};
+
+findWithLog(users, (u) => u.name === "Charlie");  // logs + returns Charlie
+findWithLog(users, (u) => u.age > 99);            // logs "Nothing found."
+
+// --- Arrow function returning an object literal ---
+
+// Returning a plain value — no issue
+const getAge = (u: UserProps): number => u.age;
+
+// Returning an object literal — wrap in parentheses ( )
+// Without the parens, JS treats { as the start of a block, not an object,
+// and the function returns undefined silently.
+const toSummary = (u: UserProps): { label: string; isAdult: boolean } => ({
+  label: `${u.name} (${u.age})`,   // template literal inside the object
+  isAdult: u.age >= 18,
+});
+
+// Generic version — build a result object that pairs the item with its index
+const findWithIndex = <T>(arr: T[], predicate: (item: T) => boolean): { item: T; index: number } | null => {
+  const index = arr.findIndex(predicate);
+
+  // null when not found — cleaner than returning { item: undefined, index: -1 }
+  if (index === -1) return null;
+
+  // parentheses around { } tell JS this is an object literal, not a block
+  return ({ item: arr[index], index });
+};
+
+const result1 = findWithIndex(users, (u) => u.gender === "other");
+const result2 = findWithIndex(users, (u) => u.age > 99);
+
+console.log("\nfindWithIndex (found):",     result1);  // { item: Charlie, index: 2 }
+console.log("findWithIndex (not found):",  result2);  // null
+
+// Map every user to a summary object using the same arrow-returns-object pattern
+const summaries = users.map((u) => ({
+  label:   `${u.name} (${u.age})`,
+  isAdult: u.age >= 18,
+  hasPhone: u.phone !== undefined,
+}));
+console.log("\nSummaries:", summaries);
