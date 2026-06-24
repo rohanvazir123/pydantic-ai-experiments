@@ -14,6 +14,12 @@ How to build and operate an evaluation pipeline for a production NL2SQL system �
 - [Adversarial Test Cases — Concrete Examples](#adversarial-test-cases--concrete-examples)
 - [Continuous Evaluation and Regression Detection](#continuous-evaluation-and-regression-detection)
 - [Human-in-the-Loop Evaluation](#human-in-the-loop-evaluation)
+- [Sandbox and Pilot Customer Testing](#sandbox-and-pilot-customer-testing)
+  - [Sandbox Environment Design](#sandbox-environment-design)
+  - [Shadow Mode Testing](#shadow-mode-testing)
+  - [Pilot Customer Program](#pilot-customer-program)
+  - [What to Measure During the Pilot](#what-to-measure-during-the-pilot)
+  - [Graduation Criteria — Pilot to Full Rollout](#graduation-criteria--pilot-to-full-rollout)
 - [Metrics Tracking and Alerting](#metrics-tracking-and-alerting)
 - [Eval in CI/CD](#eval-in-cicd)
 - [Common Mistakes](#common-mistakes)
@@ -461,7 +467,248 @@ Target: 2 independent reviewers per query, with disagreement resolution by a thi
 
 ---
 
-## Metrics Tracking and Alerting
+## Sandbox and Pilot Customer Testing
+
+Automated eval on a golden set tells you how well the system performs on curated queries against a synthetic database. Sandbox and pilot testing tells you how it performs on **real queries from real people against real data** — a completely different signal. No eval pipeline is complete without this stage.
+
+### Sandbox Environment Design
+
+The sandbox is a fully operational instance of the NL2SQL system connected to a **copy of production data**, isolated from the production system. It is not a test database with synthetic data — it is real data in a separate environment.
+
+**Why a copy of production data and not synthetic data:**
+- Real schema complexity: production schemas have 15 years of organic growth, inconsistent naming, and nullable columns that synthetic data doesn't replicate
+- Real data distributions: aggregation queries that return sensible numbers on production may return $0 or 10^9 on synthetic data, making quality hard to judge
+- Real edge cases: NULL concentrations, duplicate rows, orphaned FK references — these only exist in real data and they expose bugs synthetic data cannot
+
+**Sandbox infrastructure requirements:**
+
+```
+Sandbox Environment
+├── NL2SQL Service         ← identical binary to production, different config
+├── Schema Registry        ← copy of production schema metadata, refreshed daily
+├── Vector Store           ← copy of production embeddings, refreshed on schema change
+├── Read-only DB replica   ← daily snapshot of production, PII masked
+│     └── PII masking:     names → synthetic names, emails → fake@example.com,
+│                          phone → 000-000-0000, SSN → XXX-XX-XXXX
+├── Eval Recorder          ← logs every query, generated SQL, result, latency
+└── Human Review UI        ← internal tool for reviewing sandbox sessions
+```
+
+**PII masking is non-negotiable.** Never expose real customer names, emails, or sensitive identifiers to internal testers or pilot customers. Use a masking library (Faker, Presidio) that applies consistent masking — the same real name always maps to the same fake name, so JOIN relationships are preserved and the data remains analytically coherent.
+
+**Sandbox refresh schedule:**
+- Schema: refresh whenever production schema changes (event-driven)
+- Data: daily snapshot at 2am, masking applied before copy
+- Embeddings: refresh after every schema change and after every model update
+
+---
+
+### Shadow Mode Testing
+
+Before any pilot customer sees a single result, run the new system version in **shadow mode** against production traffic for 48–72 hours.
+
+**How shadow mode works:**
+
+```
+Production request
+        │
+        ├──────────────────────────────────────────────┐
+        ▼                                              ▼
+Current production system                   Shadow (new) system
+  - generates SQL                             - generates SQL
+  - executes query                            - executes query (read-only)
+  - returns result to user                   - result goes to eval recorder only
+                                             - user never sees it
+```
+
+The user interacts with the current system. The shadow system runs in parallel, asynchronously, without affecting the user experience or adding latency to the production path.
+
+**What shadow mode catches that CI eval cannot:**
+
+- **Real query distribution:** production users ask things that never appear in the golden set. Shadow mode surfaces these immediately.
+- **Schema-specific failures:** a column that exists in your test schema but not production, or vice versa. CI runs against a test database; shadow runs against the real schema.
+- **Latency under real load:** CI runs sequentially against a quiet database. Shadow runs against production load patterns — you see the real p99 under concurrent requests.
+- **Cold start issues:** model loading, vector index warm-up, cache miss patterns on real query distribution.
+
+**Shadow mode eval metrics:**
+
+```
+Shadow Mode Report — New Model v1.4.2 vs Production v1.4.1
+Duration: 72 hours | Shadow queries: 14,847
+
+SQL Parse Success:           99.2% vs 99.0%  ✓
+Table hallucination rate:     0.9% vs 1.1%   ✓ (improvement)
+Result equivalence (sampled): 84.1% vs 82.6% ✓
+Latency p50:                  920ms vs 890ms  ⚠ +30ms
+Latency p99:                2,810ms vs 2,640ms ⚠ +170ms
+
+Query patterns in shadow not in golden set:
+  - "Compare X to last year same period" (87 occurrences, 71% correct)
+  - "Top N by X excluding Y" (43 occurrences, 64% correct) ← ADD TO GOLDEN SET
+  - Queries with company-specific acronyms (29 occurrences, 41% correct) ← ENRICH GLOSSARY
+
+Decision: Latency increase acceptable. Proceed to limited pilot.
+          Add 43 "excluding" pattern queries to golden set before next release.
+```
+
+**Shadow mode exit criteria before pilot:**
+- Parse success rate ≥ production baseline
+- Hallucination rate ≤ production baseline
+- Latency p99 within +200ms of production baseline
+- No new systematic failure patterns identified
+
+---
+
+### Pilot Customer Program
+
+The pilot is a **structured, consent-based rollout to a small, selected set of real users** who interact with the system as they normally would, knowing they are in a pilot.
+
+**Pilot size and selection:**
+
+Start with 5–10 users. Selection criteria:
+
+| Criterion | Why |
+|-----------|-----|
+| Power users (high query volume) | Maximises signal per day of pilot |
+| Domain diversity (finance + ops + sales) | Ensures cross-domain coverage |
+| SQL-literate users | They can evaluate SQL correctness independently, giving you richer feedback |
+| Users with known, recurring query patterns | You can pre-verify their common queries work correctly before they do |
+| Users who have explicitly agreed to give feedback | Consent is required — users who don't know they're in a pilot give no feedback |
+
+**What pilot users should NOT be:**
+- Your most important executive stakeholders (if the system fails during their pilot session it creates trust issues disproportionate to the technical failure)
+- Users with access to the most sensitive data (limit blast radius of any accidental data exposure)
+- Users who will immediately share results externally (financial reports sent to investors, regulatory submissions)
+
+**Pilot onboarding checklist:**
+
+```
+Before pilot user's first session:
+  ☐ Verify their most common 10 queries work correctly in sandbox
+  ☐ Confirm PII masking is complete for their data domain
+  ☐ Set up their session in the eval recorder
+  ☐ Brief them on what they're testing and how to flag issues
+  ☐ Give them a direct feedback channel (Slack DM or email to the team)
+  ☐ Confirm rollback is ready and takes < 5 minutes
+```
+
+**Pilot user experience:**
+
+The pilot user should experience the system as a real product, not a test harness. Do not ask them to fill out a survey after every query — that destroys the natural usage pattern. Instead:
+
+- One optional "report a problem" button per result (low friction)
+- A weekly 15-minute conversation with the team to discuss what surprised them
+- A Slack channel where they can drop screenshots of anything unexpected
+
+**Running the pilot in phases:**
+
+```
+Phase 1 — Observe only (week 1):
+  Pilot users use the system. Team watches the eval recorder.
+  No changes to the system during this phase.
+  Goal: understand the real query distribution and where the system struggles.
+
+Phase 2 — Targeted fixes (week 2):
+  Fix the top 3 failure patterns identified in Phase 1.
+  Re-run those query patterns in the pilot.
+  Goal: verify the fixes work on real queries, not just synthetic ones.
+
+Phase 3 — Expanded pilot (week 3–4):
+  Expand to 20–30 users if Phase 2 exit criteria are met.
+  Include at least one user who is not SQL-literate.
+  Goal: test the full user experience including error messages, confidence indicators, UI.
+```
+
+---
+
+### What to Measure During the Pilot
+
+The pilot produces three types of signal unavailable from automated eval:
+
+**Signal 1 — Real query distribution:**
+Log every query (anonymized if needed). After 500 queries, you have a real distribution to compare against your golden set. Queries that appear frequently in production but are absent from the golden set should be added — these are coverage gaps that inflate your benchmark accuracy.
+
+```python
+# After pilot, compare distributions
+pilot_query_types = classify_queries(pilot_log)
+golden_set_distribution = classify_queries(golden_set)
+
+gaps = {
+    query_type: pilot_freq - golden_freq
+    for query_type, pilot_freq in pilot_query_types.items()
+    if pilot_freq - golden_set_distribution.get(query_type, 0) > 0.05
+}
+# gaps shows query types that are 5%+ more common in production than in golden set
+```
+
+**Signal 2 — Qualitative failure taxonomy:**
+Have a domain expert review every query the system got wrong during the pilot. Classify each failure:
+
+| Failure class | Example | Fix |
+|--------------|---------|-----|
+| Schema linking | Wrong column for "revenue" | Enrich schema metadata |
+| Business term unknown | "ARR" not in glossary | Add to business glossary |
+| Time expression | "Last fiscal year" → calendar year | Add fiscal calendar logic |
+| Missing context | "Same as last time" in first query | Improve multi-turn detection |
+| Correct SQL, wrong UX | Right result but confusing presentation | UX fix, not model fix |
+
+**Signal 3 — Trust and confidence calibration in real users:**
+Ask pilot users: "When the system shows a confidence indicator, do you check the SQL?" If 90% say no, the indicator is not working as a trust calibration tool. If 90% say always, it's creating friction. Target: users check SQL for low-confidence results (< 0.6) and trust high-confidence results (> 0.85) without checking.
+
+Track this by comparing the rate of SQL edits at different confidence score bands:
+
+```
+Confidence 0.0–0.4:  SQL edit rate = 42%  ← users correctly skeptical
+Confidence 0.4–0.6:  SQL edit rate = 28%  ← reasonable
+Confidence 0.6–0.8:  SQL edit rate = 11%  ← reasonable
+Confidence 0.8–1.0:  SQL edit rate =  4%  ← users trust high confidence
+
+If high-confidence queries have >10% edit rate, confidence is miscalibrated — recalibrate.
+```
+
+---
+
+### Graduation Criteria — Pilot to Full Rollout
+
+Do not graduate to full rollout based on a fixed time period ("we ran the pilot for 2 weeks"). Graduate based on meeting specific, measurable criteria:
+
+```
+Required for graduation (all must be met):
+
+Quantitative:
+  ☐ Execution accuracy ≥ 85% on pilot queries (measured by eval recorder)
+  ☐ User-reported error rate < 10% (from "report a problem" button)
+  ☐ SQL edit rate < 15% overall
+  ☐ No P0 incidents during pilot (wrong data presented as fact in any external report)
+  ☐ Latency p99 < 3s on production-equivalent load
+  ☐ Confidence calibration error < 10pp (confidence 0.8 → actual accuracy 70–90%)
+
+Qualitative:
+  ☐ At least 3 pilot users have said unprompted that the system saves them time
+  ☐ No pilot user has lost trust in the system due to a failure they did not catch
+  ☐ Team has classified every failure during the pilot and has a fix or mitigation for each
+
+Coverage:
+  ☐ Pilot has covered all major schema domains (finance, sales, ops, HR)
+  ☐ At least 500 unique queries processed in the pilot
+  ☐ At least one non-SQL-literate user has successfully used the system
+```
+
+**Rollout strategy after graduation:**
+
+```
+Week 1:  5% of users (random sample, not hand-selected)
+Week 2:  20% of users (if week 1 metrics hold)
+Week 3:  50% of users (if week 2 metrics hold)
+Week 4:  100% of users
+
+At each step: monitor re-query rate, SQL edit rate, latency p99.
+Automatic rollback if any metric regresses > 20% relative to the prior step's baseline.
+```
+
+**The circuit breaker:** Define in advance what triggers an immediate full rollback from any rollout stage — not a team discussion, an automatic trigger. Example: if re-query rate on any 1-hour window exceeds 25% (2x the baseline), automatically roll back to the previous version and page on-call. Speed of rollback matters more than the trigger threshold — a rollback that takes 20 minutes causes real user harm; one that takes 60 seconds does not.
+
+---
 
 ### Metrics to track over time
 
