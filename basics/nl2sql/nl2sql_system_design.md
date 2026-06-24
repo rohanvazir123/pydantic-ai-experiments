@@ -1,6 +1,6 @@
-# NL2SQL System Design — Sr Staff Engineer Interview Questions
+# NL2SQL System Design Basics
 
-Questions asked from the perspective of a very senior interviewer. Designed to test depth of knowledge and design trade-offs at the Sr Staff Software Engineer level.
+Key design areas, trade-offs, and deep-dive topics for building production NL2SQL systems.
 
 ## Table of Contents
 
