@@ -19,3 +19,4 @@ Detailed answers to every topic in [nl2sql_system_design.md](../nl2sql_system_de
 | [11_vague_queries.md](11_vague_queries.md) | Vague Queries | Ambiguity scoring, assumption surfacing, correctness SLA, rejection threshold |
 | [12_schema_drift.md](12_schema_drift.md) | Schema Drift | Migration impact, schema versioning, cache invalidation, backwards compatibility |
 | [13_schema_subset_llm.md](13_schema_subset_llm.md) | Schema Subset Selection | Wrong table detection, retrieval pipeline failure modes, embedding strategy, dynamic k, multi-tenancy |
+| [14_eval_pipeline.md](14_eval_pipeline.md) | Eval Pipeline Design | Component-level evaluation, adversarial test cases, CI/CD integration, regression detection, human review, metrics tracking |
