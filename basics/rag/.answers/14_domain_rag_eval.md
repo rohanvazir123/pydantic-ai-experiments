@@ -18,6 +18,7 @@ How to evaluate a production RAG system against real benchmarks, build domain-sp
 - [Segmenting Failure Analysis](#segmenting-failure-analysis)
 - [The NDCG-to-End-to-End Gap](#the-ndcg-to-end-to-end-gap)
 - [Using Benchmarks as CI Regression Gates](#using-benchmarks-as-ci-regression-gates)
+- [Downloading Datasets](#downloading-datasets)
 
 ---
 
@@ -706,6 +707,159 @@ python scripts/squad_lite_eval.py \
     --n_examples 200 \
     --baseline_em 0.72 \
     --baseline_f1 0.81
+```
+
+Run the BEIR gate on every PR touching the embedding model or reranker. Run the SQuAD-lite gate on every PR touching the prompt or generation model. Update baselines when you intentionally improve the system.
+
+---
+
+## Downloading Datasets
+
+### HuggingFace `datasets` — covers most benchmarks
+
+The single best tool. One API for SQuAD, HotpotQA, QASPER, CUAD, LegalBench, and more.
+
+```bash
+pip install datasets
+```
+
+```python
+from datasets import load_dataset
+
+# SQuAD 2.0
+squad    = load_dataset("squad_v2",              split="validation")
+
+# HotpotQA multi-hop
+hotpot   = load_dataset("hotpot_qa", "distractor", split="validation")
+
+# QASPER (scientific paper RAG)
+qasper   = load_dataset("allenai/qasper",        split="validation")
+
+# CUAD (legal contracts)
+cuad     = load_dataset("theatricusproject/cuad", split="test")
+
+# FiQA (financial QA — also available in BEIR)
+fiqa     = load_dataset("BeIR/fiqa", "corpus",   split="corpus")
+
+# PubMedQA — free biomedical QA (no registration unlike BioASQ)
+pubmedqa = load_dataset("toughdata/pubmedqa",    split="train")
+```
+
+Datasets are cached at `~/.cache/huggingface/datasets/` by default.
+Set `HF_DATASETS_CACHE=/your/large/disk` to redirect.
+
+### HuggingFace Hub CLI — bulk downloads
+
+```bash
+pip install huggingface_hub
+
+# Download an entire dataset repo
+huggingface-cli download allenai/qasper \
+    --repo-type dataset --local-dir ./qasper
+
+# Download a specific parquet file
+huggingface-cli download squad_v2 \
+    data/validation-00000-of-00001.parquet \
+    --repo-type dataset --local-dir ./squad
+```
+
+### BEIR — its own downloader
+
+```python
+from beir import util
+from beir.datasets.data_loader import GenericDataLoader
+
+# Datasets: scifact, fiqa, nfcorpus, arguana, trec-covid,
+#           dbpedia-entity, fever, climate-fever, nq, hotpotqa,
+#           quora, msmarco, scidocs, webis-touche2020
+
+dataset  = "scifact"
+url      = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{dataset}.zip"
+data_path = util.download_and_unzip(url, "./beir_datasets")
+
+corpus, queries, qrels = GenericDataLoader(data_path).load(split="test")
+```
+
+**Sizes — know before you download:**
+
+| Dataset | Size on disk | Notes |
+|---------|-------------|-------|
+| scifact | 3 MB | Start here — fast, science domain |
+| nfcorpus | 2 MB | Medical, very small |
+| fiqa | 17 MB | Financial opinion QA |
+| arguana | 3 MB | Argument retrieval |
+| trec-covid | 150 MB | COVID biomedical |
+| hotpotqa | 1.1 GB | Multi-hop, large |
+| fever | 3.5 GB | Fact-checking, very large |
+| nq | 2.6 GB | Natural questions, very large |
+| msmarco | 2.9 GB | Web passages, very large |
+
+Start with `scifact`, `fiqa`, `nfcorpus` — combined under 25 MB, cover science and finance.
+
+### Spider2-lite SQLite databases
+
+```bash
+pip install gdown
+
+gdown "https://drive.usercontent.google.com/download?id=1coEVsCZq-Xvj9p2TnhBFoFTsY-UoYGmG&export=download" \
+      -O spider2_localdb.zip
+
+unzip spider2_localdb.zip \
+      -d Spider2/spider2-lite/resource/databases/spider2-localdb/
+# ~1.4 GB unzipped
+```
+
+### FinanceBench
+
+```bash
+git clone --depth 1 https://github.com/patronus-ai/financebench.git
+# 150 open-source examples at:
+# financebench/data/financebench_open_source.jsonl
+```
+
+### Streaming for huge datasets — avoid downloading GBs
+
+```python
+# Don't download 3 GB of msmarco — stream and sample
+dataset = load_dataset("ms_marco", "v2.1", split="train", streaming=True)
+sample = list(dataset.take(1000))   # first 1000 examples, no full download
+```
+
+### Save processed subsets to avoid re-running
+
+```python
+import json
+
+# After creating your SQuAD-lite 500-example subset
+with open("squad_lite_500.jsonl", "w") as f:
+    for ex in lite:
+        f.write(json.dumps(ex) + "\n")
+
+# Reload instantly without touching HuggingFace
+lite = [json.loads(l) for l in open("squad_lite_500.jsonl")]
+```
+
+### Quickest start — zero credentials, under 5 minutes
+
+```bash
+pip install datasets beir gdown
+
+# SQuAD 2.0 validation set — ~30 seconds
+python -c "
+from datasets import load_dataset
+d = load_dataset('squad_v2', split='validation')
+print(len(d), 'examples')
+"
+
+# BEIR scifact — ~2 minutes, 3 MB
+python -c "
+from beir import util
+from beir.datasets.data_loader import GenericDataLoader
+url = 'https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip'
+path = util.download_and_unzip(url, './beir')
+corpus, queries, qrels = GenericDataLoader(path).load('test')
+print(len(corpus), 'docs,', len(queries), 'queries,', len(qrels), 'relevance judgements')
+"
 ```
 
 Run the BEIR gate on every PR touching the embedding model or reranker. Run the SQuAD-lite gate on every PR touching the prompt or generation model. Update baselines when you intentionally improve the system.
