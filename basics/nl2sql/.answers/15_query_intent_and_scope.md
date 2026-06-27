@@ -99,57 +99,192 @@ A query passes intent classification as ANALYTICAL but may still be too under-sp
 
 ### Dimension-Level Ambiguity Scoring
 
-Ambiguity exists along six independent dimensions. Each is scored 0.0 (fully specified) to 1.0 (completely unresolved):
+Ambiguity exists along six independent dimensions. Before defining the scoring, it is critical to anchor what **score = 0.0 (non-vague / fully specified)** means for each dimension. Without these anchors the scoring is arbitrary.
+
+---
+
+#### What non-vagueness means per dimension
+
+**Metric (what is being measured):**
+
+Score = 0.0 when:
+- The query names a single, unambiguous column or a term that resolves to exactly one column in the business glossary: `"net_revenue"`, `"arr"`, `"number of closed deals"`
+- The metric term appears verbatim as a column name or glossary alias
+- Context from prior turns has established which metric is in use
+
+Score > 0.0 when:
+- The term maps to multiple columns: `"revenue"` → `gross_revenue`, `net_revenue`, `arr`, `mrr` → score 0.9
+- The term is a high-level category without a clear default: `"performance"`, `"numbers"`, `"figures"` → score 1.0
+- The term exists in the glossary but has conditional definitions (e.g., "revenue" means ARR for SaaS contracts and one-time payment for professional services) → score 0.7
+
+**Time period:**
+
+Score = 0.0 when:
+- An explicit, unambiguous date range is given: `"Q3 2024"`, `"January 1 to March 31 2024"`, `"the week of June 10"`
+- A relative expression resolves to a unique range regardless of fiscal/calendar calendar: `"yesterday"`, `"last 7 days"`, `"MTD"` (month-to-date is always calendar)
+- A prior turn established the time period and this query continues it without changing it
+
+Score > 0.0 when:
+- No time expression at all: `"show me revenue"` → score 0.7 (will default, but user may not expect current period)
+- Relative expression that is ambiguous given the tenant's fiscal calendar: `"last year"` when fiscal year ≠ calendar year → score 0.8
+- Vague recency: `"recent"`, `"latest"`, `"current"` → score 0.6 (defaults to last 30 days, but user intent varies)
+- Relative to an unclear reference point: `"same period last year"` when the current period has not been established → score 0.9
+
+**Region / Geography:**
+
+Score = 0.0 when:
+- An exact region value is named that exists in the schema: `"North America"`, `"EMEA"`, `"Germany"` — and that value appears as a distinct value in the region column
+- The schema has only one geographic dimension and the user specifies a value from it
+
+Score > 0.0 when:
+- No region mentioned and the schema has a region dimension → score 0.5 (implies all regions, but user may have meant a specific one)
+- Region named but maps to multiple hierarchy levels: `"West"` could be a region, a sub-region, or a country depending on the schema → score 0.7
+- Region term is informal and does not exactly match schema values: `"the western markets"` → score 0.6
+
+**Product / Product Line:**
+
+Score = 0.0 when:
+- A specific product name or SKU is given that maps to exactly one row or group in the product dimension: `"iPhone 15"`, `"Product SKU-4821"`, `"Enterprise plan"`
+- The query says "all products" — this is unambiguous (no filter needed)
+
+Score > 0.0 when:
+- No product specified and the schema has a product dimension → score 0.4 (implies all products; lower harm than metric or time)
+- Product name is informal or ambiguous across multiple product lines: `"our flagship product"` → score 0.8
+- Product name exists in multiple product tables (active vs discontinued) → score 0.6
+
+**Grouping / Breakdown dimension:**
+
+Score = 0.0 when:
+- The query explicitly names the breakdown: `"by region"`, `"by month"`, `"per sales rep"`, `"broken down by product category"`
+- The query is explicitly asking for a total with no breakdown: `"total revenue"`, `"aggregate count"`
+
+Score > 0.0 when:
+- No grouping specified for an aggregation query → score 0.5 (will default to aggregate, but user may want a breakdown)
+- Ambiguous grouping level: `"by area"` when the schema has `region`, `sub_region`, `territory`, `country` → score 0.7
+
+**Granularity / Time grain:**
+
+Score = 0.0 when:
+- Explicit time grain stated: `"monthly"`, `"weekly"`, `"daily"`, `"quarterly"`, `"annual"`
+- The query is for a point-in-time value where granularity is irrelevant: `"what is today's headcount"`
+
+Score > 0.0 when:
+- No granularity and query spans a period → score 0.5 (default to aggregate total, but user may want a trend)
+- Vague granularity: `"over time"`, `"trend"`, `"historically"` → score 0.6
+
+---
+
+#### Scoring implementation with anchored definitions
 
 ```python
 class AmbiguityScorer:
-    
-    def score(self, query: str, tenant_context: TenantContext) -> AmbiguityReport:
+
+    def score(self, query: str, ctx: TenantContext) -> AmbiguityReport:
         return AmbiguityReport(
-            metric        = self._score_metric(query, tenant_context),
-            time_period   = self._score_time(query, tenant_context),
-            entity_scope  = self._score_entity(query, tenant_context),
-            grouping      = self._score_grouping(query),
-            comparison    = self._score_comparison(query),
-            granularity   = self._score_granularity(query),
+            metric       = self._score_metric(query, ctx),
+            time_period  = self._score_time(query, ctx),
+            region       = self._score_region(query, ctx),
+            product      = self._score_product(query, ctx),
+            grouping     = self._score_grouping(query, ctx),
+            granularity  = self._score_granularity(query),
         )
-    
+
     def _score_metric(self, query: str, ctx: TenantContext) -> float:
-        # High ambiguity: query uses a term that maps to multiple columns
-        # "revenue" → maps to gross_revenue, net_revenue, arr, mrr — score 0.9
-        # "orders" → maps to only orders table — score 0.1
-        candidate_columns = ctx.glossary.resolve(extract_metric_terms(query))
-        if len(candidate_columns) > 3:
-            return 0.9
-        if len(candidate_columns) > 1:
-            return 0.5
-        return 0.0
-    
+        terms = extract_metric_terms(query)
+        if not terms:
+            return 1.0  # no metric at all — completely unspecified
+
+        candidates = ctx.glossary.resolve_all(terms)  # returns list of matching columns
+
+        if len(candidates) == 0:
+            return 1.0  # metric term not in glossary — unknown
+        if len(candidates) == 1:
+            return 0.0  # resolves to exactly one column — non-vague
+        if len(candidates) <= 3:
+            return 0.5  # a few candidates — moderately ambiguous
+        return 0.9       # many candidates — highly ambiguous
+
     def _score_time(self, query: str, ctx: TenantContext) -> float:
-        # High ambiguity: no time expression, or expression that maps to multiple ranges
-        # "last year" with fiscal_year != calendar_year — score 0.8
-        # "Q3 2024" — score 0.0 (unambiguous)
-        # no time expression at all — score 0.7 (will default to current period)
-        time_exprs = extract_time_expressions(query)
-        if not time_exprs:
-            return 0.7
-        if any(ctx.fiscal_year_differs_from_calendar and "year" in e for e in time_exprs):
+        expr = extract_time_expression(query)  # returns parsed time range or None
+
+        if expr is None:
+            return 0.7  # no time expression — will default to current period
+
+        if expr.is_absolute:
+            # "Q3 2024", "January 1–March 31 2024" — unambiguous regardless of calendar
+            return 0.0
+
+        if expr.is_relative_unambiguous:
+            # "yesterday", "last 7 days", "MTD" — calendar-agnostic
+            return 0.0
+
+        if expr.requires_fiscal_calendar and ctx.fiscal_year_differs_from_calendar:
+            # "last year", "last quarter", "YTD" when fiscal ≠ calendar
             return 0.8
+
+        if expr.is_vague:
+            # "recent", "latest", "current"
+            return 0.6
+
+        return 0.2  # relative but probably resolvable with standard calendar
+
+    def _score_region(self, query: str, ctx: TenantContext) -> float:
+        regions = extract_region_references(query)
+
+        if not regions:
+            # No region mentioned
+            if ctx.schema.has_region_dimension:
+                return 0.5  # user might have meant all regions — annotate assumption
+            return 0.0      # schema has no region dimension — dimension irrelevant
+
+        for region in regions:
+            matches = ctx.schema.find_region_values(region)
+            if len(matches) == 0:
+                return 0.8  # region not found in schema values
+            if len(matches) > 1:
+                return 0.7  # maps to multiple hierarchy levels
+        return 0.0  # all regions resolve to exactly one schema value
+
+    def _score_product(self, query: str, ctx: TenantContext) -> float:
+        products = extract_product_references(query)
+
+        if not products:
+            if ctx.schema.has_product_dimension:
+                return 0.4  # no product filter — implies all, lower harm than time/metric
+            return 0.0
+
+        for product in products:
+            candidates = ctx.schema.find_products(product)
+            if len(candidates) == 0:
+                return 0.8  # product name not in schema
+            if len(candidates) > 1:
+                return 0.6  # matches multiple product rows or tables
         return 0.0
-    
-    def _score_entity(self, query: str, ctx: TenantContext) -> float:
-        # High ambiguity: entity name appears in multiple tables with different meanings
-        # "customers" → customers table only — score 0.0
-        # "partners" → appears in partners, reseller_partners, implementation_partners — score 0.8
-        entities = extract_entity_references(query)
-        max_ambiguity = 0.0
-        for entity in entities:
-            tables = ctx.schema.find_tables_for_entity(entity)
-            if len(tables) > 2:
-                max_ambiguity = max(max_ambiguity, 0.8)
-            elif len(tables) > 1:
-                max_ambiguity = max(max_ambiguity, 0.4)
-        return max_ambiguity
+
+    def _score_grouping(self, query: str, ctx: TenantContext) -> float:
+        grouping = extract_grouping_expression(query)
+
+        if grouping is None:
+            # Aggregation query with no breakdown specified
+            if is_aggregation_query(query):
+                return 0.5
+            return 0.0  # non-aggregation queries don't need grouping
+
+        candidates = ctx.schema.find_grouping_columns(grouping)
+        if len(candidates) > 1:
+            return 0.7  # "by area" → region, sub_region, territory ambiguous
+        return 0.0
+
+    def _score_granularity(self, query: str) -> float:
+        grain = extract_time_grain(query)
+
+        if grain is not None:
+            return 0.0  # "monthly", "weekly", "daily" — unambiguous
+
+        time_expr = extract_time_expression(query)
+        if time_expr and time_expr.spans_period:
+            return 0.5  # query covers a period but grain unspecified
+        return 0.0      # point-in-time or granularity irrelevant
 ```
 
 **Harm-weighted aggregate score:**
