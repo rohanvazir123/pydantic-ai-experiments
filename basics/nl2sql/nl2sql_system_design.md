@@ -17,6 +17,7 @@ Key design areas, trade-offs, and deep-dive topics for building production NL2SQ
 - [Correctness Around Vague Queries](#correctness-around-vague-queries)
 - [Schema Changes and Drift](#schema-changes-and-drift)
 - [Passing the Right Subset of Schemas to the LLM](#passing-the-right-subset-of-schemas-to-the-llm)
+- [Benchmarking with Spider2-lite](#benchmarking-with-spider2-lite)
 
 ---
 
@@ -179,3 +180,102 @@ Key design areas, trade-offs, and deep-dive topics for building production NL2SQ
 **54.** Your schema retrieval uses semantic similarity — embedding the user question and matching against embedded table descriptions. But "show me the churn rate by cohort" doesn't semantically resemble any column name or table description; it requires domain knowledge that the schema text doesn't contain. How do you bridge that gap?
 
 **55.** How do you handle multi-tenancy in schema retrieval? Tenant A has a `payments` table with 12 columns; Tenant B has a `payments` table with 40 columns and completely different semantics. Your retrieval and prompting must be tenant-scoped with zero cross-contamination. Walk me through the architecture.
+
+---
+
+## Benchmarking with Spider2-lite
+
+Spider2-lite is an open benchmark for evaluating NL2SQL systems across real-world databases and SQL dialects. Repo: [xlang-ai/Spider2](https://github.com/xlang-ai/Spider2/tree/main/spider2-lite)
+
+### What It Contains
+
+547 NL→SQL instances across three backends:
+
+| Backend | Instances | Setup required |
+|---------|-----------|---------------|
+| BigQuery | 180 | GCP project + `bigquery_credential.json` |
+| Snowflake | 207 | Request access via their form (free) |
+| SQLite | 160 | Download one `.sqlite` archive (~1.4 GB) |
+
+107 instances include `external_knowledge` — markdown files with schema context the model needs to generate correct SQL (table descriptions, function references, dialect-specific docs).
+
+Each instance has four fields:
+```json
+{
+  "instance_id": "bq011",
+  "db": "ga4",
+  "question": "How many distinct pseudo users had positive engagement time in the 7-day period ending on January 7, 2021 at 23:59:59, but had no positive engagement time in the 2-day period ending on the same date?",
+  "external_knowledge": "ga4_obfuscated_sample_ecommerce.events.md"
+}
+```
+
+### Prediction Format
+
+One `.sql` file per instance, named by `instance_id`:
+```
+your_predictions/
+├── bq011.sql
+├── sf001.sql
+├── local001.sql
+└── ...
+```
+
+### Running Evaluation
+
+```bash
+# Clone the repo
+git clone https://github.com/xlang-ai/Spider2.git
+cd Spider2/spider2-lite/evaluation_suite
+
+# Install dependencies
+pip install pandas google-cloud-bigquery tqdm
+
+# SQLite only (no cloud credentials needed)
+python evaluate.py --result_dir your_predictions/ --mode sql
+
+# Or if you've pre-executed the SQL and have CSV result files
+python evaluate.py --result_dir your_predictions_csv/ --mode exec_result
+```
+
+### Setup (one-time per backend)
+
+**SQLite (fastest to start):**
+```bash
+# Download and unzip the local databases
+# Place all .sqlite files into:
+spider2-lite/resource/databases/spider2-localdb/
+```
+
+**BigQuery:**
+- Create a GCP project, enable BigQuery API
+- Download a service account JSON key
+- Place it at `evaluation_suite/bigquery_credential.json`
+
+**Snowflake:**
+- Fill out the [Spider2 Snowflake Access form](https://docs.google.com/forms/d/e/1FAIpQLScbVIYcBkADVr-NcYm9fLMhlxR7zBAzg-jaew1VNRj6B8yD3Q/viewform)
+- They email you credentials within a day or two
+- Place them at `evaluation_suite/snowflake_credential.json`
+
+### Metric
+
+Execution-based accuracy: your SQL result set is compared to the gold result set column by column with 1e-2 float tolerance and optional order-insensitive comparison. No partial credit.
+
+```
+Final score = correct_instances / 547
+```
+
+The script also prints `correct / len(evaluated)` for the subset you have predictions for, so you can evaluate incrementally before generating all 547.
+
+### Integrating with Your Pipeline
+
+**56.** How do you wire your NL2SQL pipeline into Spider2-lite to generate predictions for all 547 instances automatically?
+
+**57.** Spider2-lite includes instances with `external_knowledge` — markdown documentation files the model needs to answer correctly. How do you incorporate external knowledge into your prompt without exceeding the token budget?
+
+**58.** Spider2-lite spans BigQuery, Snowflake, and SQLite — three different SQL dialects with meaningfully different syntax (date functions, LIMIT vs TOP, array handling, semi-structured data). How does your pipeline handle dialect-specific generation, and how does dialect confusion affect your score?
+
+**59.** Your pipeline scores 60% on Spider2-lite but you need to understand where it fails. How do you segment the failure analysis — by database backend, by query complexity, by whether external knowledge was required — to prioritise what to fix first?
+
+**60.** Spider2-lite uses execution-based evaluation — your SQL must produce the same result set as the gold SQL, not just look similar. What classes of error does this catch that exact-match evaluation misses, and what classes does it still miss?
+
+Full setup and integration walkthrough: [.answers/18_spider2_lite_eval.md](.answers/18_spider2_lite_eval.md)
