@@ -18,3 +18,4 @@ Detailed answers to every topic in [rag_system_design.md](../rag_system_design.m
 | [09_latency_performance.md](09_latency_performance.md) | Latency and Performance | Latency components and critical path, caching layers and invalidation, streaming, high concurrency bottlenecks, pre-generation |
 | [10_advanced_patterns.md](10_advanced_patterns.md) | Advanced Patterns | HyDE, RAG fusion, agentic RAG, long documents, self-RAG, hybrid structured + unstructured retrieval |
 | [11_security_access_control.md](11_security_access_control.md) | Security and Access Control | Document-level ACL, namespace isolation, prompt injection through documents, PII prevention |
+| [12_metrics_deep_dive.md](12_metrics_deep_dive.md) | Metrics Deep Dive | NDCG (formula + worked example + code), RRF (formula + worked example + evaluation), hybrid search quality measurement, ROUGE-1/2/L, METEOR, token cost as a first-class metric, quality-adjusted cost, production dashboard |
