@@ -187,6 +187,51 @@ automatically grants superuser. Locally, ensure `ragv2` owns all tables in
 
 ---
 
+## Troubleshooting
+
+### "No results found" / "No relevant information found"
+Database is empty. Apply schemas and seed:
+```bash
+make databaseschemas
+uv run python scripts/seed.py
+```
+
+### API won't start — Redis / Postgres connection refused
+Port mismatch between `.env` and `docker-compose.yml`. Check:
+```bash
+docker compose ps                    # shows actual host ports
+grep "DATABASE_URL\|REDIS_URL" .env  # shows what the app expects
+```
+Ports in `.env` must match the left side of `host:container` in docker-compose:
+- `postgres` → `7300:5432` → use `localhost:7300` in `DATABASE_URL`
+- `redis`    → `7500:6379` → use `localhost:7500` in `REDIS_URL`
+
+### Login page proxy errors (`connect ECONNREFUSED 127.0.0.1:7100`)
+Frontend Vite proxy points to the wrong API port. Check `frontend/vite.config.ts`:
+```ts
+proxy: { '/api/v2': { target: 'http://127.0.0.1:8001' } }  // must match API port
+```
+
+### `make databaseschemas` fails — `psql: command not found`
+`psql` is not required. `make databaseschemas` uses Python/asyncpg directly.
+
+### Audio transcription fails — whisper not installed
+```bash
+uv sync --extra audio   # installs openai-whisper
+brew install ffmpeg     # required by whisper
+```
+
+### Token sequence too long warnings from reranker
+Already handled — CrossEncoder is initialized with `max_length=512`. These warnings are suppressed.
+
+### `npm` not found in terminal
+nvm not loaded. Either open a new terminal (`.bash_profile` sources nvm automatically) or:
+```bash
+source ~/.bash_profile
+```
+
+---
+
 ## Where to Read More
 
 All documentation lives in [`docs/`](docs/README.md):

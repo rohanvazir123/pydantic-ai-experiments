@@ -12,11 +12,14 @@ dev-obs:
 # ── Database ──────────────────────────────────────────────────────────────────
 
 databaseschemas:
-	@for f in schema/*.sql; do \
-		echo "Running $$f ..."; \
-		psql "$$DATABASE_URL" -f "$$f"; \
-	done
-	@echo "All migrations complete."
+	@uv run python -c "\
+import asyncio, asyncpg, os, glob; \
+from dotenv import load_dotenv; load_dotenv(); \
+async def run(): \
+    conn = await asyncpg.connect(os.environ['DATABASE_URL']); \
+    [print(f'  Applying {f}...') or await conn.execute(open(f).read()) for f in sorted(glob.glob('schema/*.sql'))]; \
+    await conn.close(); print('All schemas applied.') \
+asyncio.run(run())"
 
 # ── Seed / bootstrap ─────────────────────────────────────────────────────────
 
