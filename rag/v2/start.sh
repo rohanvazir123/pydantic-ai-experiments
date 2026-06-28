@@ -48,8 +48,8 @@ ok "postgres + redis up"
 step "4. Python venv"
 if [ ! -d ".venv" ]; then
   warn ".venv missing — running uv sync"
-  uv sync --extra all 2>&1 | tail -5
 fi
+uv sync --extra all 2>&1 | tail -3
 ok "venv ready"
 
 # ── 5. DB schemas ─────────────────────────────────────────────────────────────

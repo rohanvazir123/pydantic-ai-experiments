@@ -169,9 +169,15 @@ class Retriever:
             return []
 
         top_k = results[:k]
-        aggregate = sum(
-            r.confidence for r in top_k if r.confidence is not None
-        )
+        scored = [r for r in top_k if r.confidence is not None]
+
+        # If reranker is unavailable all confidences are None — skip the gate
+        # rather than always abstaining. Gate only fires when we have real scores.
+        if not scored:
+            logger.info("Layer 1 gate: no confidence scores (reranker unavailable) — passing through")
+            return results
+
+        aggregate = sum(r.confidence for r in scored)  # type: ignore[misc]
         threshold = self._settings.retrieval_confidence_threshold
 
         if aggregate < threshold:
