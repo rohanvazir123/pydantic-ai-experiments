@@ -4,7 +4,9 @@
 
 ### Overview
 - [System at a Glance](#system-at-a-glance)
-- [System Diagram — Detailed](#system-diagram--detailed)
+- [Ingestion Path — Detailed](#ingestion-path--detailed)
+- [Retrieval Path — Detailed](#retrieval-path--detailed)
+- [Shared Storage](#shared-storage)
 - [Ingestion Flow](#ingestion-flow)
 - [User Query Data Flow](#user-query-data-flow)
 
@@ -63,152 +65,273 @@ Two independent data flows share the same storage layer.
 
 ---
 
-## System Diagram — Detailed
+## Ingestion Path — Detailed
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                          RAG v2 — Full Architecture                          ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+  Browser / API client
+        │
+        │  POST /api/v2/ingest   multipart (file + corpus_id)
+        │  Authorization: Bearer <JWT>
+        ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  API  (Uvicorn, port 7100)                              │
+  │  Validate JWT → check quota → save file → gen job_id   │
+  │  SET job:{job_id} → { status: "queued" }  [Redis hash] │
+  └──────────────────────────┬──────────────────────────────┘
+                             │  XADD knowledge:ingest
+                             │  { job_id, tenant_id, corpus_id,
+                             │    file_path, file_type, enable_graph }
+                             │
+                             │  ◄── 202 Accepted { job_id }
+                             │       client polls GET /ingest/{job_id}
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Redis Streams                                          │
+  │  knowledge:ingest       pending jobs                    │
+  │  knowledge:ingest:dlq   failed after 3 retries         │
+  │  knowledge:events       completion notifications        │
+  │  job:{id}               status hash (queued/processing/ │
+  │                         complete/failed)                │
+  └──────────────────────────┬──────────────────────────────┘
+                             │  XREADGROUP
+                             │  consumer group: ingest-workers
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Ingestion Worker  (knowledge/ingestion/worker.py × N)  │
+  │                                                         │
+  │  SET job:{job_id} → { status: "processing" }           │
+  │                                                         │
+  │  DoclingProcessor.process(file_path)                    │
+  │    asyncio.to_thread(converter.convert)  ← CPU-bound   │
+  │    ├── PDF  → _get_pdf_converter()                      │
+  │    ├── DOCX / MD → _get_standard_converter()           │
+  │    └── Audio → Whisper ASR pipeline                     │
+  │                                                         │
+  │  asyncio.gather(                                        │
+  │    ┌─────────────────────────┐  ┌─────────────────────┐│
+  │    │  VECTOR PATH            │  │  GRAPH PATH         ││
+  │    │                         │  │  (if enable_graph)  ││
+  │    │  chunk_document()       │  │                     ││
+  │    │   contextualize() each  │  │  load_ontology()    ││
+  │    │   chunk (section head)  │  │   LRU-cached        ││
+  │    │                         │  │                     ││
+  │    │  embed_batch()          │  │  run_pipeline()     ││
+  │    │   AsyncOpenAI           │  │   asyncio.to_thread ││
+  │    │   nomic-embed-text 768d │  │   LiteLLM → Ollama  ││
+  │    │   L1 lru_cache dedup   │  │   → NetworkX DiGraph││
+  │    │   L2 Redis cache dedup  │  │                     ││
+  │    │                         │  │  import_graph()     ││
+  │    │  upsert_chunks()        │  │   nodes → AGE       ││
+  │    │   asyncpg executemany   │  │   edges → AGE       ││
+  │    │   → chunks table (HNSW) │  │                     ││
+  │    │                         │  │  upsert_batch()     ││
+  │    └──────────┬──────────────┘  │   → entity_index    ││
+  │               │                 └──────────┬──────────┘│
+  │               └──────────┬─────────────────┘           │
+  │                          │                             │
+  │  XACK  (removes from pending entries)                  │
+  │  SET job:{job_id} → { status: "complete" }            │
+  │  XADD knowledge:events  IngestCompleteEvent            │
+  │                                                         │
+  │  On error: retry ×3 with backoff                       │
+  │    attempt 3 → XADD knowledge:ingest:dlq               │
+  │              → SET job:{job_id} { status: "failed" }  │
+  └──────────┬──────────────────────────┬──────────────────┘
+             │                          │
+             ▼                          ▼
+  ┌──────────────────────┐   ┌──────────────────────────────┐
+  │  PostgreSQL           │   │  Apache AGE  (port 5433)     │
+  │  chunks  (HNSW+GIN)  │   │  kg_{tenant}_{corpus} graph  │
+  │  documents            │   │  Vertices: entity types      │
+  │  kg_entity_index      │   │  Edges: EMPLOYS, APPLIES_TO  │
+  │  (HNSW + GIN)        │   │  via SQL wrapper (ag_catalog) │
+  └──────────────────────┘   └──────────────────────────────┘
+```
 
- Browser
-       │
-       │  HTTPS — two request types, same origin:
-       │  ①  /* (page load)      ②  /api/v2/* (REST + SSE)
-       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Nginx  (port 443, production)                                              │
-│  ├── /api/v2/*  → proxy_pass api:7100      (REST + SSE; buffering off)     │
-│  └── /*         → proxy_pass frontend:7200 (static HTML + JS bundle)       │
-└────────────────┬──────────────────────────────────┬────────────────────────┘
-                 │ ①                                │ ②
-                 ▼                                  ▼
-  ┌──────────────────────────────┐    ┌──────────────────────────────────────┐
-  │  Frontend  (Vite + React 19) │    │  API  (Uvicorn, port 7100)           │
-  │  port 7200                   │    │  knowledge.api.app                   │
-  │                              │    │                                      │
-  │  Serves HTML + JS bundle     │    │  Middleware stack:                   │
-  │  once.  All API calls are    │    │  CorrelationID → StructuredLog       │
-  │  made from browser JS via    │    │  → CORS → RateLimiter (slowapi)      │
-  │  fetch() to /api/v2/*.       │    │                                      │
-  │                              │    │  Routes:                             │
-  │  src/lib/api.ts              │    │  POST /auth/token  /auth/refresh     │
-  │    fetch('/api/v2/chat')     │───►│  POST /chat        /chat/stream      │
-  │  src/lib/sse.ts              │    │  POST /search      /ingest           │
-  │    fetch('/api/v2/chat/      │◄───│  GET  /corpus      /conversations    │
-  │          stream')            │    │  GET  /memories    /scheduler/jobs   │
-  │    → async generator of SSE  │    │  POST /evaluate/run  /feedback       │
-  │      events (delta / done)   │    │  GET  /logs        /health           │
-  │    AbortController to cancel │    │                                      │
-  └──────────────────────────────┘    └──────────────────────────────────────┘
-  Dev (npm run dev):                           │
-  vite.config.ts proxy:                        │
-    /api/v2/* → localhost:7100                 │
-  so browser always hits :7200               SYNC PATH           ASYNC PATH
-  (same origin, no CORS issue)        (chat, search, auth)  (ingest, eval)
-                                               │                    │
-                                               │                    │ XADD
-                                               │                    ▼
-                                               │     ┌──────────────────────────┐
-                                               │     │  Redis Streams           │
-                                               │     │  knowledge:ingest        │
-                                               │     │  knowledge:eval          │
-                                               │     │  knowledge:events        │
-                                               │     │  knowledge:ingest:dlq    │
-                                               │     │                          │
-                                               │     │  Redis cache keys:       │
-                                               │     │  cache:embed:*   24h     │
-                                               │     │  cache:search:*  5min    │
-                                               │     │  job:{id}  status hash   │
-                                               │     │  quota:*  cb:*  logs:*   │
-                                               │     └──────────────────────────┘
-                                               │                    │ XREADGROUP
-                                               │                    ▼
-                                               │     ┌──────────────────────────┐
-                                               │     │  Ingestion Worker × N    │
-                                               │     │  (worker.py)             │
-                                               │     │  Docling → chunk → embed │
-                                               │     │  → vector upsert         │
-                                               │     │  + KG extract (parallel) │
-                                               │     │  → XACK / DLQ on fail    │
-                                               │     └──────────────────────────┘
-                                               │
-              ┌────────────────────────────────┘
-              │
-              ▼
-   ┌────────────────────────┐   ┌──────────────────────┐
-   │  Validation Pipeline   │   │  Memory System        │
-   │  V1 Schema (Pydantic)  │   │  Tier 1: working mem  │
-   │  V2 Length guard       │   │  Tier 2: conv store   │
-   │  V3 Language detect    │   │  Tier 3: user facts   │
-   │  V4 Injection detect   │   │  Tier 5: sys prompts  │
-   │  V5 Content policy     │   └──────────────────────┘
-   │  V6 RBAC check         │
-   └───────────┬────────────┘
-               │
-               ▼
-   ┌────────────────────────┐
-   │  Model Router          │
-   │  nano (qwen2.5:0.5b)   │
-   │  → model_tier, requires│
-   │    _graph, complexity  │
-   └───────────┬────────────┘
-               │
-               ▼
-   ┌────────────────────────────────────────────────────────────────┐
-   │  Confidence-Aware Pipeline  (agent/pipeline.py)                │
-   │                                                                │
-   │  [RETRIEVAL] hybrid search → RRF → CrossEncoder                │
-   │  [GATE 1]  Σ confidence < threshold → ABSTAIN (no LLM call)   │
-   │  [CONTEXT] assemble 5-tier working memory                      │
-   │  [AGENT]   Pydantic AI loop → agent.run() → GenerationResult   │
-   │               LLM reads context → may call tools (extra search)│
-   │               → eventually returns answer + citations           │
-   │  [GATE 2]  uncited claims → ABSTAIN                            │
-   │  [JUDGE]   nano/small LLM: supported/partial/unsupported       │
-   │  [GATE 3]  unsupported → ABSTAIN                               │
-   │  [ASYNC]   L3 cache, episodic store, memory extract, billing   │
-   └────────────────────────────────────────────────────────────────┘
-               │
-               ▼
-   ┌──────────────────────────────────────────────────────────────────────────┐
-   │  Storage Layer  (knowledge/store/)                                       │
-   │                                                                          │
-   │  ┌────────────────────────────────┐   ┌─────────────────────────────┐   │
-   │  │  PostgreSQL  (port 5432)       │   │  Apache AGE  (port 5433)    │   │
-   │  │  pgvector/pgvector:pg16        │   │                             │   │
-   │  │                                │   │  Corpus graphs:             │   │
-   │  │  documents     source store    │   │  kg_{tenant}_{corpus}       │   │
-   │  │  chunks        HNSW + GIN      │   │                             │   │
-   │  │  kg_entity_index HNSW + GIN    │   │  Vertices: entity types     │   │
-   │  │  semantic_cache HNSW           │   │  Edges: EMPLOYS, APPLIES_TO │   │
-   │  │  audit_events  append-only     │   │         HAS_MEMBER, etc.    │   │
-   │  │  conversations (Tier 2)        │   │                             │   │
-   │  │  messages      GIN             │   │  Cypher via ag_catalog      │   │
-   │  │  user_memories HNSW + GIN      │   │  SQL wrapper — not raw      │   │
-   │  │  system_prompts (Tier 5)       │   │  Cypher                     │   │
-   │  │  token_usage   billing         │   │                             │   │
-   │  │  scheduled_jobs scheduler      │   │  entity_index in main PG    │   │
-   │  └────────────────────────────────┘   │  for GIN/HNSW searches      │   │
-   │                                       └─────────────────────────────┘   │
-   │  RLS: SET LOCAL app.tenant_id before every query                        │
-   └──────────────────────────────────────────────────────────────────────────┘
+---
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  Observability                                                               │
-│  structlog JSON → stdout (docker compose logs)                               │
-│  RedisLogProcessor → knowledge:logs:recent (ring buffer, 5k, 24h)           │
-│  Langfuse → LLM traces via @observe decorator                                │
-│  Prometheus → /metrics → Grafana (7-row dashboard)                          │
-│  SMTP alerts on: circuit open / DLQ / budget breach                         │
-└──────────────────────────────────────────────────────────────────────────────┘
+## Retrieval Path — Detailed
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  Cache Layers                                                                │
-│  L1  functools.lru_cache  in-process, per worker   embedding dedup          │
-│  L2  Redis cache:embed:*  24h TTL                  embedding dedup          │
-│  L2  Redis cache:search:* 5min TTL                 exact query cache        │
-│  L3  PostgreSQL semantic_cache  60min  cosine≥0.95  JWE-encrypted answer    │
-└──────────────────────────────────────────────────────────────────────────────┘
+```
+  Browser  (Vite + React 19, port 7200)
+        │
+        │  POST /api/v2/chat/stream
+        │  { query, session_id, corpus_ids, model_tier }
+        │  Authorization: Bearer <JWT>
+        │  AbortController.signal  ← Stop button wires here
+        ▼
+  Nginx (port 443)  proxy_pass api:7100  proxy_buffering off
+        │
+        ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  API  (Uvicorn, port 7100)                              │
+  │  CorrelationID → StructuredLog → CORS → RateLimiter     │
+  │                                                         │
+  │  ① JWT auth      extract user_id, tenant_id, roles     │
+  │  ① Quota check   Redis INCR daily + RPM → 429 if over  │
+  │  ② Conv history  load last 8 turns for session_id      │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Validation Pipeline  (knowledge/validation/pipeline.py)│
+  │                                                         │
+  │  V1  Schema      Pydantic model → 400 if malformed      │
+  │  V2  Length      len > MAX_QUERY_CHARS → 422            │
+  │  V3  Language    not in allowed_languages → 422         │
+  │  V4  Injection   regex + embedding-sim → 422            │
+  │  V5  Policy      nano LLM → on_topic / off_topic / bad  │
+  │  V6  RBAC        JWT roles vs corpus.allowed_roles → 403│
+  └──────────────────────────┬──────────────────────────────┘
+                             │  all pass
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Model Router  (nano: qwen2.5:0.5b, 3s timeout)        │
+  │  → complexity: simple / moderate / complex              │
+  │  → requires_graph: bool  (drives parallel AGE leg)      │
+  │  → model_tier: nano / small / large                     │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  PRE_RETRIEVE hook                                      │
+  │  Cost guard  → Redis budget check → 402 if exceeded    │
+  │  Mem0 search → top-3 user facts injected into prompt   │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Cache Check                                            │
+  │                                                         │
+  │  L2  Redis GET cache:search:{sha256(query+corpus)}      │
+  │       HIT ──────────────────────────────────────────►  │
+  │       MISS ↓                                       SSE  │
+  │                                                    or   │
+  │  Embed query (nomic-embed-text, 768d)             JSON  │
+  │       L1 lru_cache hit → skip embed call          resp  │
+  │                                                         │
+  │  L3  pgvector cosine ≥ 0.95 on semantic_cache          │
+  │       HIT → decrypt JWE ───────────────────────────►  │
+  │       MISS ↓                                            │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Hybrid Search  (asyncio.gather — all three parallel)   │
+  │                                                         │
+  │  ├── pgvector HNSW   embedding <=> query_emb           │
+  │  ├── tsvector GIN    content_tsv @@ websearch_query    │
+  │  └── AGE Cypher      entity search  [if requires_graph] │
+  │                                                         │
+  │  RRF fusion   score = Σ 1/(60 + rank_i)               │
+  │  CrossEncoder rerank  (BAAI/bge-reranker-base)         │
+  │  confidence = sigmoid(cross_encoder_logit)              │
+  │  drop chunks where confidence < min_confidence          │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  GATE 1 — Retrieval confidence                          │
+  │  Σ confidence(top-K) < threshold                        │
+  │       ✗ → abstained_retrieval  (no LLM call)            │
+  └──────────────────────────┬──────────────────────────────┘
+                             │  pass
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Working Memory Assembly  (working_memory.py)           │
+  │                                                         │
+  │  system_prompt       [Tier 5]                           │
+  │  + user_memory_facts [Tier 3]  top-3 Mem0 facts         │
+  │  + conv_history      [Tier 2]  last 8 turns / summary   │
+  │  + retrieved_chunks  [Tier 4]  top-K with [chunk_id]    │
+  │  + current_query                                        │
+  │                                                         │
+  │  trim_to_budget(8192 tokens)                            │
+  │  drop: low-confidence chunks → old turns → user facts   │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  Pydantic AI Agent Loop  (agent/agent.py)               │
+  │                                                         │
+  │  agent.run(query, message_history=assembled_context)    │
+  │                                                         │
+  │  Turn 1: LLM reads full context                         │
+  │    ├── enough context → GenerationResult  (most cases)  │
+  │    └── gap found → tool call                            │
+  │         search_knowledge_base(targeted_sub_query)       │
+  │         search_knowledge_graph(entity_or_relation)      │
+  │                                                         │
+  │  Turn 2+: LLM reads context + tool result              │
+  │    └── more tools or GenerationResult                   │
+  │                                                         │
+  │  GenerationResult { answer, citations, citation_check } │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  GATE 2 — Citation check                                │
+  │  citation_check.is_trustworthy == False                 │
+  │       ✗ → abstained_citation                            │
+  └──────────────────────────┬──────────────────────────────┘
+                             │  pass
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  GATE 3 — LLM Judge  (nano → small escalation)         │
+  │  sees: query + passages (no chunk_ids) + answer         │
+  │  verdict: supported / partial / unsupported             │
+  │       unsupported → abstained_judge                     │
+  │       partial     → answered + uncertainty note         │
+  │       supported   → answered                            │
+  └──────────────────────────┬──────────────────────────────┘
+                             │  answered
+                             ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │  POST_LLM async background tasks (asyncio.create_task)  │
+  │  (fire-and-forget — do not block response)              │
+  │                                                         │
+  │  ├── L3 semantic cache write  (JWE encrypt → PG)        │
+  │  ├── Episodic store  INSERT INTO messages               │
+  │  ├── Summarizer      if turn_count == 20  (nano)        │
+  │  ├── Fact extract    Mem0.add(user facts)  (nano)       │
+  │  └── Billing         INSERT token_usage + Redis INCR    │
+  └──────────────────────────┬──────────────────────────────┘
+                             │
+                             ▼
+  SSE stream → Nginx → Browser
+  data: {"delta": "..."}   (one per token)
+  data: {"citations": [...], "done": true}
+
+  Stop button pressed at any point:
+  AbortController.abort() → fetch closes → asyncio Task cancelled
+  background tasks already queued are NOT cancelled
+```
+
+---
+
+## Shared Storage
+
+Both flows read and write the same storage layer.
+
+```
+  ┌───────────────────────────────────────────────────────────────────────────┐
+  │  PostgreSQL  (port 5432)              Apache AGE  (port 5433)             │
+  │                                                                           │
+  │  chunks           HNSW + GIN          kg_{tenant}_{corpus}  graph        │
+  │  documents        source records      Vertices: entity types              │
+  │  kg_entity_index  HNSW + GIN          Edges: EMPLOYS, APPLIES_TO, etc.   │
+  │  semantic_cache   HNSW (L3 cache)     Cypher via ag_catalog SQL wrapper   │
+  │  conversations    Tier 2 episodic                                         │
+  │  messages         GIN                 Redis  (port 7500)                  │
+  │  user_memories    HNSW + GIN                                              │
+  │  system_prompts   Tier 5              knowledge:ingest   job queue        │
+  │  token_usage      billing             knowledge:events   completions      │
+  │  scheduled_jobs   scheduler           knowledge:ingest:dlq  dead letter  │
+  │  audit_events     append-only         cache:embed:*      24h TTL         │
+  │                                       cache:search:*     5min TTL        │
+  │  RLS: SET LOCAL app.tenant_id         job:{id}           status hash     │
+  │  before every query                   quota:*  cb:*  logs:*              │
+  └───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -441,34 +564,135 @@ There is no Redis Stream for chat. Ingestion uses a queue because it runs for mi
 
 After the response is sent, `asyncio.create_task` fires background tasks (cache write, episodic storage, memory extraction, billing). These run after the user already has their answer.
 
-### Sending Multiple Queries
+### Cancel Button and Multiple Queries
 
-Each query is an independent `POST /api/v2/chat/stream`. The server does not serialize them per user — two queries from the same user arrive as two concurrent asyncio Tasks.
+**There is a cancel button.** The Send button in `InputBar.tsx` switches to a
+spinning stop icon while a stream is in progress. Clicking it calls `stop()` in
+`useChat.ts`, which fires `AbortController.abort()`.
 
-**Client-side serialization (recommended):** the frontend's `chatStore` only sends the next query after the current stream ends (or is cancelled). This is a UI-level choice, not a server constraint.
-
-**If you need server-side per-user serialization:** implement a Redis key `user_lock:{user_id}` with a short TTL and `SET NX` before processing, releasing it after. This is not currently implemented — the design assumes the UI controls request pacing.
-
-### Cancelling a Query in Flight
-
-The `streamSSE` helper in `sse.ts` accepts an `AbortSignal`:
-
-```typescript
-const controller = new AbortController()
-for await (const event of streamSSE('/api/v2/chat/stream', body, controller.signal)) { ... }
-
-// cancel:
-controller.abort()
+```
+User clicks Send                User clicks Stop (same button, different state)
+     │                                    │
+     ▼                                    ▼
+ChatPage.handleSend(query)       useChat.stop()
+  setLoading(true)                 abortRef.current.abort()
+  await sendMessage(query)              │
+       │                               ▼
+       │  useChat.sendMessage:    fetch() cancelled → HTTP connection closes
+       │    abortRef.abort()      → async generator stops yielding
+       │    (cancels any          → Uvicorn detects disconnect
+       │    previous in-flight)   → asyncio Task cancelled
+       │    abortRef = new        → agent.run() receives CancelledError
+       │    AbortController()
+       │    fetch(..., signal)
+       ▼
+  finally: setLoading(false)     finally: setLoading(false)
+  button returns to Send icon    button returns to Send icon
 ```
 
-When the signal fires:
-1. `fetch()` is aborted → the HTTP connection closes
-2. The server's `ReadableStream` reader gets `done: true`
-3. The `_generate()` async generator on the server stops yielding
-4. Uvicorn detects the client disconnect → the asyncio Task is cancelled
-5. The Pydantic AI `agent.run()` (if mid-flight) is interrupted via `asyncio.CancelledError`
+**UI serialization is enforced, not just recommended.** When `loading=true`:
+- The `submit()` function returns early (`if (!q || loading) return`)
+- Enter key is a no-op
+- Suggested question buttons are `disabled`
+- The only action available is clicking Stop
 
-Background tasks already fired via `asyncio.create_task` **are not cancelled** — they run to completion independently (this is intentional: the L3 cache write and billing record should still happen even if the client disconnects).
+So users cannot stack queries. They can only stop the current one, wait for the
+button to return to Send, then type the next query.
+
+**Sending a new query also cancels the previous one** — `sendMessage` calls
+`abortRef.current?.abort()` before creating a new `AbortController`. This is a
+belt-and-suspenders guard for any code path that bypasses the `loading` check.
+
+**Abort is silent on the client.** The `catch` block in `useChat` checks
+`err?.name !== 'AbortError'` — an `AbortError` is swallowed with no error
+message shown. The streaming message is left in whatever partial state it was
+in when Stop was pressed. A `finally` block always runs `setLoading(false)`
+regardless of how the stream ended.
+
+### Cancellation Propagation — What Actually Happens Server-Side
+
+Cancellation propagates differently at each layer. Not everything is cancelled,
+and not everything should be.
+
+#### 1. In-flight DB queries — cancelled at PostgreSQL level
+
+When the asyncio Task is cancelled, `CancelledError` propagates into whichever
+`await` is currently running. asyncpg intercepts it and sends a PostgreSQL
+`CancelRequest` message to the backend process. The running query is killed
+server-side before it completes.
+
+This applies to all three legs of the hybrid search, which run under
+`asyncio.gather` (retriever.py):
+
+```python
+sem_results, text_results, graph_results = await asyncio.gather(
+    sem_task, text_task, graph_task   # no return_exceptions=True
+)
+```
+
+When the parent Task is cancelled, `CancelledError` propagates into the
+`gather`, which cancels all three child coroutines. All three DB queries
+(pgvector HNSW scan, tsvector GIN query, AGE Cypher query) receive a
+PostgreSQL `CancelRequest` simultaneously.
+
+#### 2. `CancelledError` is not accidentally swallowed
+
+The streaming pipeline has a broad `except` block (pipeline.py):
+
+```python
+try:
+    async with stream_agent.run_stream(...) as streamed:
+        async for delta in streamed.stream_text(delta=True):
+            yield _sse({"delta": delta})
+        ...
+    await registry.fire(HookPoint.POST_LLM, ctx)   # ← never reached on cancel
+except Exception as exc:                            # ← does NOT catch CancelledError
+    yield _sse({"error": str(exc)})
+finally:
+    await state.close()                             # ← always runs
+```
+
+In Python 3.8+, `asyncio.CancelledError` inherits from `BaseException`, not
+`Exception`. So `except Exception` correctly lets `CancelledError` through.
+The `finally` block always runs — `state.close()` properly returns asyncpg
+connections to the pool.
+
+#### 3. `POST_LLM` hook never fires on cancel — background tasks are not created
+
+`POST_LLM` is reached only after the stream completes normally. If the user
+cancels mid-stream, `CancelledError` is raised inside `async for delta`,
+exits the `async with` context manager, skips past `POST_LLM`, and the
+`except Exception` block does not catch it.
+
+| Task | Fires on cancel? | Notes |
+|------|-----------------|-------|
+| L3 semantic cache write | **No** | Lives in `POST_LLM` hook |
+| `INSERT INTO messages` (episodic) | **No** | Lives in `POST_LLM` hook |
+| Conversation summarizer | **No** | Lives in `POST_LLM` hook |
+| Mem0 fact extraction | **No** | Lives in `POST_LLM` hook |
+| Billing `INSERT token_usage` | **No** | Lives in `POST_LLM` hook |
+| L2 Redis search cache write | **Yes** | Fired as `create_task` immediately after retrieval — before the agent runs; already in the event loop if cancel happens during LLM generation |
+
+#### 4. Practical consequences
+
+**Billing gap:** if the LLM generated 800 tokens before the user cancelled,
+those tokens are not recorded. Quota enforcement can be evaded by spamming
+cancel. Fix: track token usage inside the streaming loop and flush in the
+`finally` block rather than relying on `POST_LLM`.
+
+**Conversation history is clean:** cancelled turns are never stored. The
+partial streamed text the user saw is lost on reload — this is correct
+behaviour; storing a half-answer would be confusing.
+
+**L2 cache is populated for cancelled requests:** if retrieval completed
+before the cancel arrived during LLM generation, the search results are
+cached in Redis for 5 minutes. A repeated query immediately after cancel
+will hit L2 and skip retrieval. This is desirable — retrieval already
+succeeded; there is no reason to redo it.
+
+**LLM call to Ollama is terminated:** `CancelledError` closes the underlying
+`httpx` connection inside Pydantic AI's `run_stream`. Ollama sees the
+connection drop and stops generating. Partial tokens already sent are lost.
 
 ---
 
