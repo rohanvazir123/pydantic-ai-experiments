@@ -40,7 +40,7 @@ class _RerankerSingleton:
         if cls._model is None:
             try:
                 from sentence_transformers import CrossEncoder
-                cls._model = CrossEncoder(_MODEL_NAME)
+                cls._model = CrossEncoder(_MODEL_NAME, max_length=512)
                 logger.info("CrossEncoder loaded: %s", _MODEL_NAME)
             except ImportError:
                 logger.warning(
