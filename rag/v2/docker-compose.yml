@@ -78,6 +78,8 @@ services:
     command: redis-server --save 60 1 --appendonly yes
     volumes:
       - redisdata:/data
+    ports:
+      - "7500:6379"
     restart: unless-stopped
 
   ollama:
