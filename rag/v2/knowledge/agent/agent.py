@@ -123,8 +123,12 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
         match_count: int | None = 5,
         search_type: str | None = "hybrid",
     ) -> str:
-        """Search the knowledge base for relevant information.
+        """Search the knowledge base for additional chunks.
 
+        Call this when the provided context is missing information needed to
+        support a claim. Use a more targeted or decomposed query than the
+        original question — search for a specific policy name, section title,
+        or sub-topic rather than repeating the full query verbatim.
         Returns formatted context with [chunk_id] anchors for citation.
         """
         retriever = await ctx.deps.get_retriever()
@@ -153,7 +157,10 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
     ) -> str:
         """Search the knowledge graph for entities and relationships.
 
-        Use when the question asks about parties, jurisdictions, or relationships.
+        Call this when the question involves connections between things — who
+        works where, what applies to whom, how entities relate. Prefer this
+        over search_knowledge_base when the answer requires traversing a
+        relationship rather than finding a passage of text.
         """
         retriever = await ctx.deps.get_retriever()
         if not retriever._graph:
