@@ -1,7 +1,18 @@
-"""Query model router — selects the cheapest tier that can answer the query.
+"""Query complexity classifier — intended to select the cheapest LLM tier.
 
-Uses the nano model (qwen2.5:0.5b) with a 3s timeout.
-On timeout, defaults to 'small'. Adds < 80ms P95 overhead.
+INTENT (not implemented):
+  Run the nano model (qwen2.5:0.5b) on every incoming query to classify its
+  complexity, then route to the appropriate tier:
+    simple   → nano  (qwen2.5:0.5b)   single-fact lookups
+    moderate → small (llama3.2:3b)    synthesis across sources
+    complex  → large (llama3.1:70b)   multi-hop reasoning, graph traversal
+  Goal: pay a ~50ms nano call to avoid paying for a 70b call on simple queries.
+  Makes economic sense when routing between cheap local models and expensive
+  cloud APIs (e.g. GPT-4o). Less useful in a fully-local stack.
+
+NOT CALLED: this module is not imported or invoked anywhere in the pipeline.
+  The pipeline uses the model_tier field from the request body directly (default
+  "small"). Wire in route() from pipeline.py if tier selection is needed.
 """
 
 import asyncio
