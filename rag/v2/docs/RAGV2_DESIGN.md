@@ -86,6 +86,17 @@
   - [Metrics](#metrics)
   - [Regression Detection](#regression-detection)
 
+### Frontend
+- [Frontend Architecture](#frontend-architecture)
+  - [Tech Stack](#tech-stack)
+  - [Layout and Navigation](#layout-and-navigation)
+  - [Pages](#pages)
+  - [Auth Flow](#auth-flow)
+  - [Streaming — SSE over POST](#streaming--sse-over-post)
+  - [State Management](#state-management)
+  - [API Client](#api-client)
+  - [Client-Side Cache (L0)](#client-side-cache-l0)
+
 ### Further Reading (design/)
 - [REST_API.md](design/REST_API.md) — All /api/v2 endpoints with request/response shapes
 - [INGESTION.md](design/INGESTION.md) — Ingestion pipeline, KG extraction, AGE store
@@ -2461,6 +2472,210 @@ USER TYPES A QUERY AND HITS SEND
   ├── PipelineStatusBadge: "Answered" | "Abstained — retrieval gap"
   └── DebugPanel (if ?debug=1): latency breakdown, model tier, cache hit, trace link
 ```
+
+---
+
+## Frontend Architecture
+
+**Where:** `rag/v2/frontend/`
+
+### Tech Stack
+
+| Layer | Library / Version |
+|-------|------------------|
+| Build | Vite 8, TypeScript 6 |
+| UI framework | React 19 |
+| Styling | Tailwind CSS v4 (Vite plugin — no PostCSS config needed) |
+| Routing | React Router v7 |
+| State | Zustand v5 |
+| Markdown rendering | react-markdown v10 + remark-gfm |
+| Icons | lucide-react |
+| Toasts | react-hot-toast |
+| E2E tests | Playwright |
+
+No Redux, no SWR/React Query, no component library. All UI is custom Tailwind.
+
+### Layout and Navigation
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ NavBar (fixed, 56px wide, left edge)                        │
+│  ■ logo                                                     │
+│  ○ Chat        /chat                                        │
+│  ○ Ingest      /ingest                                      │
+│  ○ Memories    /memories                                    │
+│  ○ Logs        /logs                                        │
+│  ○ Sign out                                                 │
+├────────────────────────────────────────────────────────────┤
+│ Content area (pl-14, offset right of NavBar)                │
+│  <Page />                                                   │
+└────────────────────────────────────────────────────────────┘
+```
+
+`MainLayout` wraps every authenticated page: `NavBar` + `<div className="pl-14">`. `NavBar` hides itself on `/login`.
+
+All routes except `/login` are wrapped in `PrivateRoute` which redirects to `/login` if no access token is present. The default route (`*`) redirects to `/chat`.
+
+### Pages
+
+#### `/chat` — ChatPage
+
+Three-column layout within the page:
+
+```
+┌──────────────┬────────────────────────────────┬──────────────┐
+│  Sidebar     │  Chat area                     │  Right panel │
+│  (240px)     │  (flex-1)                      │  (256px)     │
+│              │                                │              │
+│  Corpus      │  Message thread                │  Citations   │
+│  selector    │  (scroll, max-w-3xl centred)   │  (from last  │
+│              │                                │   assistant  │
+│  Conv list   │  InputBar (sticky bottom)      │   message)   │
+│              │                                │              │
+│  Debug       │                                │  Suggested   │
+│  toggle      │                                │  questions   │
+└──────────────┴────────────────────────────────┴──────────────┘
+```
+
+**Corpus selector:** `GET /api/v2/corpus` on mount; populates a `<select>` showing all corpora. First corpus is auto-selected. If the API is unreachable, falls back to `corpus_id = 'default'`.
+
+**Conversation list:** Only titled conversations are shown (title is set by the backend after the first turn via the conversation summary). Each conversation has its own `session_id` (a UUID generated client-side at creation time).
+
+**Debug toggle:** Switches `debugMode` prop on `MessageBubble`. When on, each assistant message shows an expandable `DebugPanel` with per-stage latency, `request_id`, `cache_hit`, confidence score, and a Langfuse trace link.
+
+**Suggested questions:** Loaded from `/suggested-questions.json` (a static file served by Nginx/Vite). Clicking a question fires `handleSend` directly.
+
+#### `/ingest` — IngestPage
+
+Form with three fields:
+- `corpus_id` (text input, default `"neuralflow"`)
+- `source_path` (text input, path to a local directory visible to the API container)
+- `mode` toggle: `incremental` | `full`
+
+Submits `POST /api/v2/ingest`. After submission, polls `GET /api/v2/ingest/{job_id}/status` every 2 seconds and renders a progress bar + status badge per job. Graph extraction is disabled (`enable_graph_extraction: false`).
+
+#### `/logs` — LogsPage
+
+Full-screen log table. Fetches `GET /api/v2/logs?level=DEBUG&limit=N[&service=…][&request_id=…]`. Level filtering is client-side — the API always returns all levels and the page toggles visibility via chip buttons. Rows are expandable to show raw JSON. Auto-refresh is configurable at 5 s / 15 s / 30 s.
+
+| Column | Field |
+|--------|-------|
+| Time | `timestamp` (displayed as HH:MM:SS) |
+| Level | `level` → coloured badge (DBG / INF / WRN / ERR / CRT) |
+| Service | `service` |
+| Message / Route | `message` or `route` or `stage` |
+| Latency | `latency_ms` or `duration_ms` (green < 500, orange < 2000, red ≥ 2000) |
+| Status | HTTP `status` or `pipeline_status` |
+| ID | `request_id` or `job_id` |
+
+#### `/memories` — MemoriesPage
+
+List view of user memory facts. `GET /api/v2/memories` on mount. Supports adding a new fact (`POST`) and deleting individual (`DELETE /memories/{id}`) or all memories (`DELETE /memories`). Memories are automatically extracted from conversations by the backend — users can also add them manually here.
+
+#### `/login` — LoginPage
+
+Email + password form. `POST /api/v2/auth/token` → receives `access_token`; stores it in-memory via `setAccessToken()`. The server sets a `HttpOnly` refresh cookie simultaneously. No styling lib — plain Tailwind form.
+
+### Auth Flow
+
+```
+Page load
+  └─ tryRestoreSession()
+       POST /api/v2/auth/refresh  (browser sends httpOnly cookie automatically)
+       ├─ 200 → setAccessToken(access_token)  in-memory  → app renders
+       └─ non-200 → redirect to /login
+
+Login form
+  └─ POST /api/v2/auth/token { email, password }
+       └─ 200 → setAccessToken(access_token) → navigate to /chat
+
+API call → 401
+  └─ tryRefresh() → POST /auth/refresh
+       ├─ 200 → setAccessToken(new_token) → retry original request
+       └─ fail → throw APIError('UNAUTHORIZED') → redirect to /login
+```
+
+**Token storage design:**
+- Access token: in-memory JS variable (`_accessToken` in `api.ts`). Never written to `localStorage` or `sessionStorage` — this eliminates XSS token theft.
+- Refresh token: `HttpOnly` cookie. JavaScript cannot read it. Browser sends it automatically on `POST /auth/refresh`. The server validates it and issues a new access token.
+- On full page refresh: access token is lost (in-memory). `tryRestoreSession()` in the root layout immediately re-issues one from the refresh cookie. The user sees no login prompt.
+
+### Streaming — SSE over POST
+
+The chat endpoint (`POST /api/v2/chat/stream`) streams responses as Server-Sent Events. The browser's native `EventSource` API cannot be used here because `EventSource` is GET-only — it cannot send a JSON body with `session_id`, `corpus_ids`, etc.
+
+Instead, `lib/sse.ts` uses `fetch()` + `ReadableStream`:
+
+```
+POST /api/v2/chat/stream
+  { query, corpus_ids, session_id, model_tier }
+  Accept: text/event-stream
+
+Server sends:
+  data: {"delta": "The "}\n\n
+  data: {"delta": "company"}\n\n
+  ...
+  data: {"done": true, "citations": [...], "prompt_tokens": 421, "completion_tokens": 87}\n\n
+  data: [DONE]\n\n
+
+On abstention:
+  data: {"abstained": true, "layer": 1, "reason": "No relevant chunks found"}\n\n
+  data: [DONE]\n\n
+```
+
+**Buffer handling:** The decoder accumulates raw bytes into a string buffer, splits on `\n\n` to isolate events, and keeps any incomplete trailing chunk in the buffer for the next read. `[DONE]` terminates the generator. Malformed JSON lines are silently skipped.
+
+**Cancellation:** Each `sendMessage()` call creates a new `AbortController`. Calling `stop()` aborts the fetch, which closes the SSE connection. `AbortError` is caught and suppressed — the message bubble shows whatever tokens arrived before cancel.
+
+### State Management
+
+All chat state lives in a single Zustand store (`store/chatStore.ts`).
+
+```typescript
+ChatState {
+  conversations:       Conversation[]    // all loaded conversation threads
+  activeId:            string | null     // which conversation is displayed
+  selectedCorpusIds:   string[]          // which corpus to search (from sidebar dropdown)
+  modelTier:           'auto' | 'small' | 'large'
+  isDark:              boolean
+}
+```
+
+Key mutations:
+
+| Action | What it does |
+|--------|-------------|
+| `newConversation()` | Creates `{ id, session_id: UUID, messages: [] }`, sets as active |
+| `addUserMessage(convId, content)` | Appends `{ role: 'user', content }` to the conversation |
+| `appendToken(convId, delta)` | If last message has `streaming: true`, appends delta to its content; otherwise creates a new streaming assistant message |
+| `finaliseMessage(convId, partial)` | Merges `partial` into the last streaming message, sets `streaming: false`, increments `turn_count` |
+
+The `streaming: true` flag on a message controls whether `MessageBubble` shows the animated typing dots or the finished ReactMarkdown output.
+
+### API Client
+
+`lib/api.ts` exports a typed `api` object with `get`, `post`, `patch`, `delete` methods. All calls use the relative path `/api/v2/*` — this works in both environments:
+
+- **Dev:** Vite's `proxy` config forwards `/api/v2/*` to `http://127.0.0.1:7100` (the uvicorn dev server).
+- **Production:** Nginx proxies `/api/v2/*` to the API container.
+
+Hardcoding `http://localhost:7100` anywhere is explicitly banned (comment in the file).
+
+`APIError` carries `code`, `status`, and optionally `retryAfterS` (from rate-limit responses).
+
+### Client-Side Cache (L0)
+
+`useChat.ts` adds a session-scoped L0 cache on top of the backend's L2/L3 caches:
+
+```
+Key:   "qa:" + JSON.stringify({ query, corpusIds, tier })
+Store: sessionStorage  (tab-scoped, cleared on tab close)
+TTL:   30 minutes (checked at read time; expired entries removed)
+```
+
+When `sendMessage()` finds an L0 hit, it immediately calls `finaliseMessage()` with the cached answer and citations — no SSE stream, no spinner. This eliminates latency for repeated questions within the same browser session (e.g., the user asking the same question twice in the same tab).
+
+L0 is silently skipped if `sessionStorage` is full (no error thrown, falls through to the API).
 
 ---
 
