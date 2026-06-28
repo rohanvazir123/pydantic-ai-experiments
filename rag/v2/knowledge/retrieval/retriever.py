@@ -74,6 +74,7 @@ class Retriever:
         include_graph: bool = False,
     ) -> list[SearchResult]:
         """Full retrieval pipeline. Returns confidence-scored, filtered results."""
+        query = " ".join(query.lower().split())  # normalize: lowercase + collapse whitespace
 
         # ── 1. L2 Redis cache (exact hash) ────────────────────────────────────
         if self._cache:
