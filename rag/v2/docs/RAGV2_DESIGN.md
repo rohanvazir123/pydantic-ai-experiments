@@ -12,10 +12,30 @@
 
 ### Pipeline Blocks — Retrieval Path
 - [Validation Pipeline (V1–V6)](#validation-pipeline-v1v6)
+  - [V1 — Schema Check](#v1--schema-check)
+  - [V2 — Length Guard](#v2--length-guard)
+  - [V3 — Language Detection](#v3--language-detection)
+  - [V4 — Injection Detector](#v4--injection-detector)
+  - [V5 — Content Policy](#v5--content-policy)
+  - [V6 — RBAC Check](#v6--rbac-check)
 - [Model Router](#model-router)
+  - [Complexity → Model Tier](#complexity--model-tier)
+  - [requires_graph](#requires_graph)
 - [Three-Layer Cache (L1 / L2 / L3)](#three-layer-cache-l1--l2--l3)
+  - [L1 — In-Process LRU](#l1--in-process-lru)
+  - [L2 — Redis Key-Value Cache](#l2--redis-key-value-cache)
+  - [L3 — Semantic Cache (pgvector)](#l3--semantic-cache-pgvector)
 - [Working Memory Assembly](#working-memory-assembly)
+  - [Five Memory Tiers](#five-memory-tiers)
+  - [Token Budget and Trimming](#token-budget-and-trimming)
 - [Hook System](#hook-system)
+  - [Why Hooks?](#why-hooks)
+  - [HookContext — Shared Request State](#hookcontext--shared-request-state)
+  - [HookAbort — Short-Circuiting the Pipeline](#hookabort--short-circuiting-the-pipeline)
+  - [All Hook Points](#all-hook-points)
+  - [Priority and Ordering](#priority-and-ordering)
+  - [Registering a Hook](#registering-a-hook)
+  - [Built-In Handlers per Point](#built-in-handlers-per-point)
 
 ### Agent Loop
 - [Agentic RAG — The Pydantic AI Loop](#agentic-rag--the-pydantic-ai-loop)
@@ -42,6 +62,11 @@
   - [Cancellation Propagation — What Actually Happens Server-Side](#cancellation-propagation--what-actually-happens-server-side)
 - [Queues in the System](#queues-in-the-system)
 - [Conversation Isolation Across Users](#conversation-isolation-across-users)
+  - [How Users and Conversations Are Identified](#how-users-and-conversations-are-identified)
+  - [Storage Isolation](#storage-isolation)
+  - [Row-Level Security](#row-level-security)
+  - [Conversation History Loading](#conversation-history-loading)
+  - [Concurrency: Two Users, Same Time](#concurrency-two-users-same-time)
 - [Why SSE and Not WebSockets](#why-sse-and-not-websockets)
 
 ### Evaluation
@@ -687,53 +712,215 @@ trim_to_budget(context, max_tokens=8192)
 
 ## Hook System
 
-**Where:** `knowledge/hooks/`
-**Purpose:** Extension points that fire at defined moments in the pipeline without modifying core pipeline logic.
+**Where:** `knowledge/hooks/` (`registry.py`, `context.py`, `builtins.py`)
 
-The hook system is a simple async event bus: `HookRegistry` holds a map of `HookPoint → list[async callable]`. Handlers are registered at application startup. The pipeline calls `await registry.fire(HookPoint.X, ctx)` at each defined point; all registered handlers for that point run sequentially.
+### Why Hooks?
 
-### Hook Points
+Without hooks, every cross-cutting concern — billing, observability, memory injection, audit logging — would be coded directly inside `pipeline.py`. The pipeline would become a 1000-line entanglement of business logic and operational concerns that are fundamentally separate problems.
+
+Hooks solve this by defining **named moments** in the pipeline where external code can run, without the pipeline knowing what that code does.
 
 ```
-Request enters pipeline
+Without hooks:                        With hooks:
+─────────────────────────────         ─────────────────────────────
+pipeline.py                           pipeline.py
+  validate()                            validate()
+  check_budget()          ──────────►   await registry.fire(PRE_RETRIEVE, ctx)
+  inject_user_memories()                retrieve()
+  retrieve()                            await registry.fire(POST_RETRIEVE, ctx)
+  record_latency_metric()               agent_run()
+  agent_run()                           await registry.fire(POST_LLM, ctx)
+  write_l3_cache()
+  store_episodic_turn()    Pipeline knows nothing about billing, metrics,
+  extract_mem0_facts()     or memory. Those concerns live in builtins.py
+  insert_billing_row()     and can be changed, removed, or replaced
+  ...                      without touching pipeline.py at all.
+```
+
+**Other benefits:**
+- **Testability** — `registry.clear()` removes all hooks in tests; pipeline logic can be tested without billing, cache writes, or metrics firing.
+- **Extensibility** — new functionality (e.g., a webhook on every answered turn, or a safety audit on every query) is one `@registry.hook(HookPoint.POST_LLM)` decorator, zero changes to pipeline code.
+- **Priority control** — when multiple handlers are at the same hook point, `priority=` determines their order. Low number runs first.
+- **Abort** — a hook can raise `HookAbort` to stop the pipeline entirely and return a custom response. The cost guard uses this to enforce budget limits without needing an `if` branch in the pipeline.
+
+### HookContext — Shared Request State
+
+Every hook receives a `HookContext` dataclass. It is populated progressively as the pipeline advances and passed through the entire chain. Hooks read from it, mutate it, or write into `metadata` for downstream hooks.
+
+```python
+@dataclass
+class HookContext:
+    # Identity (available from the start)
+    request_id:   str
+    user_id:      str
+    tenant_id:    str
+    session_id:   str
+
+    # Request
+    query:        str
+    corpus_ids:   list[str]
+    model_tier:   str
+
+    # Written by PRE_RETRIEVE hook — injected into working memory
+    system_prompt_prefix: str   # user memory facts prepended here
+
+    # Written after routing
+    routing_decision: RoutingDecision | None
+
+    # Written after retrieval
+    retrieved_chunks:     list[SearchResult]
+    aggregate_confidence: float
+
+    # Written after agent.run()
+    llm_response:      GenerationResult | None
+    generation_result: GenerationResult | None
+
+    # Written on abstention / error
+    error:             Exception | None
+    abstention_layer:  int | None
+    abstention_reason: str | None
+
+    # Free-form dict for hook-to-hook communication
+    metadata: dict[str, Any]
+```
+
+A hook that wants to pass data to a later hook writes into `ctx.metadata["my_key"] = value`. The `PRE_RETRIEVE` hook writes `ctx.system_prompt_prefix` — the working memory assembler reads it when building the LLM input.
+
+### HookAbort — Short-Circuiting the Pipeline
+
+Any hook can raise `HookAbort` to immediately stop the pipeline and return a custom HTTP response. The exception propagates out of `registry.fire()` and is caught by the pipeline, which returns the abort response to the client.
+
+```python
+class HookAbort(Exception):
+    def __init__(self, response: dict, status_code: int = 200):
+        self.response    = response
+        self.status_code = status_code
+```
+
+The cost guard hook uses this:
+
+```python
+@registry.hook(HookPoint.PRE_RETRIEVE, priority=0)
+async def enforce_budget(ctx: HookContext) -> HookContext:
+    current_spend = await redis.get(f"quota:{ctx.tenant_id}:cost_usd:{month}")
+    if float(current_spend or 0) >= tenant_budget:
+        raise HookAbort(
+            response={"error": "Monthly budget exceeded"},
+            status_code=402,
+        )
+    return ctx
+```
+
+The pipeline does not need an `if budget_exceeded` branch. The hook handles it entirely.
+
+### All Hook Points
+
+The full set of hook points, in pipeline order:
+
+```
+REQUEST ARRIVES
+    │
+    PRE_VALIDATE        before V1-V6 validation stages
     │
     V1-V6 validation
     │
-    POST_RETRIEVE ──── fires after retrieval + RRF + rerank
-    │                  used for: Prometheus metrics, latency recording
+    POST_VALIDATE       after all validation stages pass
     │
-    PRE_LLM ────────── fires before agent.run()
-    │                  used for: cost guard (budget check), billing pre-check
+    PRE_ROUTE           before model router
     │
-    [agent.run() + Gates 2 and 3]
+    model router runs
     │
-    POST_LLM ───────── fires after successful answer (and after Gate 3 abstention)
-    │                  used for: L3 cache write, episodic storage, Mem0 fact
-    │                            extraction, billing INSERT
+    POST_ROUTE          after routing decision is made
     │
-    ON_VALIDATION_FAIL fires on any gate abstention or validation rejection
-                       used for: audit logging, alert thresholds
+    PRE_RETRIEVE        before cache check + retrieval
+    │                   ← cost guard fires here (HookAbort if over budget)
+    │                   ← user memory injection fires here
+    │
+    cache check (L2 → L3)
+    ON_CACHE_HIT        if L2 or L3 returns a hit (skips retrieval)
+    │
+    hybrid search + RRF + CrossEncoder
+    │
+    POST_RETRIEVE       after retrieval + rerank completes
+    │                   ← Prometheus latency metrics fire here
+    │
+    Gate 1 check (if not results → ON_VALIDATION_FAIL → return)
+    │
+    working memory assembly
+    │
+    PRE_LLM             before agent.run()
+    │
+    agent.run() → Gate 2 → Gate 3
+    │
+    POST_LLM            after answer is produced (including Gate 3 abstention)
+    │                   ← all background tasks fire here
+    │
+    ON_VALIDATION_FAIL  on any gate abstention (Gates 1, 2, 3) or V-stage rejection
+    ON_ERROR            on any uncaught exception in the pipeline
+
+INGESTION PATH (separate)
+    PRE_INGEST          before DoclingProcessor runs
+    POST_INGEST         after chunk/embed/graph writes complete
 ```
 
-### PRE_RETRIEVE Hook
+| Hook Point | When it fires | Typical uses |
+|-----------|--------------|-------------|
+| `PRE_VALIDATE` | Before any validation | Request logging, rate-limit check |
+| `POST_VALIDATE` | After V1–V6 all pass | Audit "valid query" event |
+| `PRE_ROUTE` | Before model router | Override routing for A/B test |
+| `POST_ROUTE` | After routing decision | Log model tier chosen |
+| `PRE_RETRIEVE` | Before cache + retrieval | **Budget check**, **user memory injection** |
+| `POST_RETRIEVE` | After retrieval + rerank | Latency metrics, chunk count logging |
+| `PRE_LLM` | Before `agent.run()` | Token budget pre-estimate |
+| `POST_LLM` | After answer produced | **Cache write**, **episodic storage**, **billing**, **Mem0** |
+| `PRE_INGEST` | Before ingestion worker | Quota check for ingestion |
+| `POST_INGEST` | After ingestion completes | Notify webhooks, update UI |
+| `ON_CACHE_HIT` | When L2/L3 returns a hit | Cache hit metrics |
+| `ON_VALIDATION_FAIL` | On any gate abstention | Audit log, alert threshold |
+| `ON_ERROR` | Uncaught pipeline error | Error tracking, PagerDuty alert |
 
-Fires in the request path, before retrieval starts. Currently used for:
-- **Cost guard** — `Redis INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}`. If the tenant's monthly spend exceeds their budget limit, the hook raises `TenantBudgetExceeded (402)` and the request is aborted before any LLM or embedding call.
-- **User memory injection** — `Mem0.hybrid_search(query, user_id, k=3)` fetches the top-3 user facts and prepends them to the system prompt context (Tier 3 in working memory).
+### Priority and Ordering
 
-### POST_LLM Hook
+Multiple hooks can be registered at the same point. They run in ascending priority order (0 runs first, 100 runs last).
 
-Fires after a successful answer is produced (and after Gate 3 abstention — see Gate 3 section). All handlers run as `asyncio.create_task` so they are non-blocking. The user receives the answer before any of these complete:
+```python
+registry.register(HookPoint.PRE_RETRIEVE, enforce_budget,   priority=0)
+registry.register(HookPoint.PRE_RETRIEVE, inject_memories,  priority=10)
+```
 
-| Handler | What it does |
-|---------|-------------|
-| L3 semantic cache write | JWE-encrypt `RAGResponse` → `INSERT INTO semantic_cache` |
-| Episodic storage | `INSERT INTO messages` (role=assistant, content, citations) + `UPDATE conversations SET turn_count++` |
-| Conversation summarizer | If `turn_count == 20`: run nano model to produce a 3-5 sentence summary, write to `conversations.summary` |
-| Mem0 fact extraction | nano model extracts user-specific facts from the Q&A pair → `Mem0.add(facts, user_id)` |
-| Billing | `INSERT INTO token_usage` + `Redis INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}` |
+`enforce_budget` runs first — if it aborts, `inject_memories` never runs (no wasted Mem0 query).
 
-**`POST_LLM` does NOT fire on cancel** (CancelledError bypasses it) or on Gate 1/Gate 2 abstention. It **does** fire on Gate 3 abstention — tokens were already consumed.
+### Registering a Hook
+
+Two ways to register:
+
+```python
+# Decorator (at module level in builtins.py or any plugin module)
+@registry.hook(HookPoint.POST_LLM, priority=20)
+async def my_webhook(ctx: HookContext) -> HookContext:
+    await send_webhook(ctx.query, ctx.llm_response.answer)
+    return ctx
+
+# Explicit (at startup, e.g. in app lifespan)
+registry.register(HookPoint.POST_LLM, my_webhook, priority=20, name="my_webhook")
+```
+
+Hooks are registered at application startup in `knowledge/api/app.py` (lifespan). The `knowledge/hooks/builtins.py` module contains all built-in handlers; they are imported once and auto-registered via their decorators.
+
+### Built-In Handlers per Point
+
+| Point | Handler | File | What it does |
+|-------|---------|------|-------------|
+| `PRE_RETRIEVE` | `enforce_budget` | `billing/cost_guard.py` | `HookAbort(402)` if monthly spend ≥ budget |
+| `PRE_RETRIEVE` | `inject_user_memories` | `memory/mem0_store.py` | Fetch top-3 user facts → `ctx.system_prompt_prefix` |
+| `POST_RETRIEVE` | `record_retrieval_metrics` | `observability/metrics.py` | Prometheus histograms for latency + chunk count |
+| `POST_LLM` | `write_semantic_cache` | `retrieval/retriever.py` | JWE-encrypt answer → `INSERT INTO semantic_cache` |
+| `POST_LLM` | `store_episodic_turn` | `memory/conversation_store.py` | `INSERT INTO messages` + `UPDATE conversations` |
+| `POST_LLM` | `run_summarizer` | `memory/summarizer.py` | If `turn_count == 20`: nano summarize → `conversations.summary` |
+| `POST_LLM` | `extract_user_facts` | `memory/mem0_store.py` | nano fact extraction → `Mem0.add(facts, user_id)` |
+| `POST_LLM` | `record_billing` | `billing/cost_guard.py` | `INSERT INTO token_usage` + Redis INCR |
+| `ON_VALIDATION_FAIL` | `audit_abstention` | `observability/metrics.py` | Increment abstention counter by layer |
+| `ON_ERROR` | `alert_on_error` | `observability/metrics.py` | Log + increment error counter |
 
 ---
 
