@@ -224,3 +224,38 @@ For known multi-document queries (detected by query classification), retrieve en
 
 **The honest answer:**
 Multi-hop reasoning is an unsolved problem for RAG at scale. Iterative retrieval is the most reliable approach for production but doubles or triples latency. For most business RAG use cases, careful corpus design (pre-computing cross-document summaries, building a Q&A document that synthesises related policies) is more practical than a sophisticated multi-hop architecture.
+
+---
+
+## Query normalization: what gets normalized, what stays raw
+
+A common design question is whether to normalize the user query (lemmatize, lowercase, strip punctuation) before passing it to the LLM. The answer is: **normalize for retrieval internals, keep raw for the LLM**.
+
+### What the normalized query is used for
+
+Normalization (e.g. spaCy lemmatization: "What are the PTO policies?" → "what be the pto policy") is applied inside the retriever, before:
+
+- **L2 cache key** — the sha256 hash is computed from the normalized query, so "PTO Policy" and "pto policy" hit the same Redis entry
+- **Embedding call** — the embedding is computed from the normalized form, so semantically equivalent queries produce the same (or very close) vector, improving L3 semantic cache hit rate
+- **Full-text search (tsvector/BM25)** — normalized tokens reduce surface-form mismatch against indexed content
+
+### What receives the raw query
+
+- **Intent classifier** — the nano model classifying intent should see the original phrasing; lemmatized text ("what be the pto policy?") is harder for a small model to interpret correctly
+- **Main LLM** — the LLM receives the original user query and the retrieved context. Passing "what be the pto policy" to the LLM would produce stilted, unnatural responses
+
+### Why normalization is local to the retriever
+
+The normalization `query = normalize_query(query)` is a local rebind inside `retriever.retrieve()`. The `query` variable in the calling pipeline is unaffected. This is intentional: the retriever can use whatever internal representation improves cache hit rate and retrieval quality, while the rest of the pipeline handles the user's actual words.
+
+### Summary
+
+| Component | Query form |
+|-----------|-----------|
+| L2 Redis cache key | normalized |
+| Embedding / vector search | normalized |
+| L3 semantic cache lookup | normalized (via embedding) |
+| Full-text search (BM25/tsvector) | normalized |
+| Intent classifier | raw |
+| Main LLM generation | raw |
+| User-facing response | raw (user sees their own words reflected back) |
