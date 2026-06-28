@@ -2,6 +2,8 @@
 
 Key design areas, trade-offs, and deep-dive topics for building production NL2SQL systems.
 
+**Pipeline diagrams:** [nl2sql_pipeline_diagram.md](nl2sql_pipeline_diagram.md)
+
 ## Table of Contents
 
 - [Pipeline Architecture](#pipeline-architecture)

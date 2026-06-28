@@ -2,6 +2,8 @@
 
 Key design areas, trade-offs, and deep-dive topics for building production Retrieval-Augmented Generation systems.
 
+**Pipeline diagrams:** [rag_pipeline_diagrams.md](rag_pipeline_diagrams.md)
+
 ## Table of Contents
 
 - [Pipeline Architecture](#pipeline-architecture)
