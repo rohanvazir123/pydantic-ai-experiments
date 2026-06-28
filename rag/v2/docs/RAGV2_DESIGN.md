@@ -21,6 +21,11 @@
   - [Gate 2 — Citation Check](#gate-2--citation-check)
   - [Gate 3 — LLM Judge](#gate-3--llm-judge)
 - [Query Ambiguity and Pronoun Resolution](#query-ambiguity-and-pronoun-resolution)
+  - [How Pronouns Are Resolved](#how-pronouns-are-resolved)
+  - [Impact on Retrieval](#impact-on-retrieval)
+  - [Context Window Edge Cases](#context-window-edge-cases-turn-20)
+  - [Structurally Ambiguous Queries](#structurally-ambiguous-queries-no-prior-context)
+  - [Query Expansion, Rewriting, and Clarifying Questions](#query-expansion-rewriting-and-clarifying-questions)
 - [How Chat Requests Are Staged and Cancelled](#how-chat-requests-are-staged-and-cancelled)
   - [Where Is the Request Staged?](#where-is-the-request-staged)
   - [Cancel Button and Multiple Queries](#cancel-button-and-multiple-queries)
@@ -725,6 +730,31 @@ If a user opens a fresh conversation with "How does this compare?":
 4. If results do come back, the LLM will hedge or ask for clarification within the answer text
 
 The system does not interrupt the pipeline to ask the user a clarifying question. It always returns an answer or abstains with an explanation message.
+
+### Query Expansion, Rewriting, and Clarifying Questions
+
+**What the system does today:**
+
+There is no query rewriting step before retrieval. The raw query string is embedded and sent to hybrid search unchanged. The agent's tool calls are the only path where a rewritten or decomposed sub-query reaches retrieval — but only after the first retrieval pass has already happened.
+
+**What query expansion / rewriting would add (not yet implemented):**
+
+| Technique | What it does | Trade-off |
+|-----------|-------------|-----------|
+| **HyDE** (Hypothetical Document Embedding) | LLM generates a fake "ideal answer"; that answer is embedded instead of the query. Narrows the embedding to the answer space rather than the question space. | Extra LLM call before retrieval (+200–400ms); retrieval code exists (`rag/retrieval/retriever.py`) but is disabled |
+| **Query rewriting** | nano LLM rewrites the raw query into a cleaner, expanded form ("PTO" → "paid time off annual leave vacation policy"). Better keyword coverage for the tsvector leg. | Extra nano call; risk of rewrite introducing drift |
+| **Multi-query expansion** | Generate N paraphrases of the query, run retrieval for each, union results before RRF. Higher recall, especially for ambiguous phrasing. | N× retrieval cost |
+| **Pronoun resolution before retrieval** | Detect pronouns ("its", "they", "that policy"), substitute the antecedent from conversation history, embed the resolved query. Fixes the embedding gap described above. | Requires coreference detection; brittle on long context |
+
+**Why clarifying questions are not asked:**
+
+Interrupting the pipeline to ask the user a follow-up question requires a full round-trip: stream a question to the browser, wait for the user to respond, then re-enter the pipeline. This doubles latency and adds significant frontend state complexity (the chat must hold state between the clarifying exchange and the final answer).
+
+The current design avoids this entirely:
+- Ambiguous queries either Gate 1 abstain (nothing found) or the LLM hedges in its prose ("If you are asking about X, then…; if about Y, then…")
+- The user can immediately send a follow-up to narrow down — SSE multi-turn handles this naturally, each follow-up is a new POST with the same `session_id`
+
+**Roadmap note:** The retriever already has a `HyDE` code path (disabled via `settings.hyde_enabled`). Re-enabling it is a one-line config change; the infrastructure is in place. Multi-query expansion and pre-retrieval pronoun resolution would require new pipeline steps.
 
 ---
 
