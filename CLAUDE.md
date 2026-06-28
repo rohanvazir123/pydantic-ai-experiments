@@ -427,6 +427,15 @@ brew install ffmpeg        # macOS
 pip install openai-whisper
 ```
 
+### 8. `basics/frontend/day1_exercises` — `npm install` fails with ENOTFOUND
+`package-lock.json` must never be committed for this project — it can embed a private registry URL that is unreachable outside that network. If install fails, delete the lockfile and reinstall:
+```bash
+cd basics/frontend/day1_exercises
+rm -f package-lock.json
+npm install
+```
+`node_modules/` and `package-lock.json` are in `.gitignore`. Do not commit either.
+
 ---
 
 ## Development Workflow

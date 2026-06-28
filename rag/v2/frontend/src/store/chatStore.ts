@@ -1,4 +1,4 @@
-'use client'
+
 import { create } from 'zustand'
 import type { Conversation, Message } from '@/types/chat'
 
@@ -21,7 +21,7 @@ interface ChatState {
   loadConversations:   (convs: Conversation[]) => void
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = create<ChatState>((set, _get) => ({
   conversations:     [],
   activeId:          null,
   selectedCorpusIds: [],

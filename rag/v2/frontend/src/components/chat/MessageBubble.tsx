@@ -1,4 +1,4 @@
-'use client'
+
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Message } from '@/types/chat'
@@ -33,9 +33,9 @@ export function MessageBubble({ message, debugMode = false }: Props) {
             </span>
           </span>
         ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]} className="prose prose-invert prose-sm max-w-none">
-            {message.content}
-          </ReactMarkdown>
+          <div className="prose prose-invert prose-sm max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
         )}
 
         {/* Low confidence warning */}

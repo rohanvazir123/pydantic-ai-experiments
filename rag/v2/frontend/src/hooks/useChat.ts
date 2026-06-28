@@ -1,4 +1,4 @@
-'use client'
+
 import { useRef } from 'react'
 import { useChatStore } from '@/store/chatStore'
 import { streamSSE } from '@/lib/sse'

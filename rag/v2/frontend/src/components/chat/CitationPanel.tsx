@@ -1,4 +1,4 @@
-'use client'
+
 import type { Citation } from '@/types/chat'
 
 interface Props { citations: Citation[] }

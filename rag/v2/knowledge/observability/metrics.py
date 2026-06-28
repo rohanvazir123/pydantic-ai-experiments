@@ -132,6 +132,14 @@ class RedisLogHandler(logging.Handler):
         super().__init__()
         self._redis = redis
 
+    # Standard LogRecord attributes — not treated as user-supplied extras
+    _STDLIB_ATTRS = frozenset({
+        "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+        "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
+        "created", "msecs", "relativeCreated", "thread", "threadName",
+        "processName", "process", "message", "taskName",
+    })
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
             ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
@@ -141,6 +149,10 @@ class RedisLogHandler(logging.Handler):
                 "message":   record.getMessage(),
                 "service":   record.name,
             }
+            # Pull extra fields added via logger.info(msg, extra={...})
+            for key, val in record.__dict__.items():
+                if key not in self._STDLIB_ATTRS and not key.startswith("_"):
+                    event_dict[key] = val
             if record.exc_info:
                 event_dict["exc_info"] = self.formatException(record.exc_info)
             entry = json.dumps(event_dict, default=str)
