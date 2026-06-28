@@ -67,3 +67,5 @@ rag/v2/frontend/package-lock.json
 # All day<N>_exercises sandboxes — node_modules and lockfiles never committed
 basics/frontend/day*/node_modules/
 basics/frontend/day*/package-lock.json
+
+rag/v2/frontend/test-results/
