@@ -634,38 +634,106 @@ The retrieval pipeline checks three cache layers before running hybrid search. E
 ```
 Query arrives
     │
-    L1  In-process LRU   sub-millisecond, per-process, lost on restart
-    HIT ──────────────────────────────────────────────────────► return
+    L2  Redis search cache    ~1ms, shared across all pods, exact match, 5-min TTL
+    HIT ──────────────────────────────────────────────────────────────► return
     MISS ↓
     │
-    L2  Redis            ~1ms, shared across processes, 5-min TTL
-    HIT ──────────────────────────────────────────────────────► return
-    MISS ↓
-    │
-    Embed query (768d) ← L1 embedding cache may shortcut this
+    Embed query (768d)
+        └─ L1 (in-process dict, per pod)   → hit: skip Ollama round-trip
+        └─ L2 (Redis embed cache, 24h TTL) → cross-pod embed cache
+        └─ MISS both: call Ollama / embedding API
     │
     L3  pgvector semantic cache   ~5ms, 60-min TTL, fuzzy match (cosine ≥ 0.95)
-    HIT ──────────────────────────────────────────────────────► return (decrypt JWE)
+    HIT ──────────────────────────────────────────────────────────────► return (decrypt JWE)
     MISS ↓
     │
     Hybrid search → RRF → CrossEncoder → ...
 ```
 
-### L1 — In-Process LRU
+### L1 — In-Process Embedding Cache
 
-A Python `dict` (LRU-eviction) keyed on `sha256(query + corpus_ids)`. Populated at retrieval time; survives only within the process lifetime. Sub-millisecond lookup. Primarily useful on dev/single-instance; in a multi-pod deployment, each pod has its own L1 and misses on queries handled by other pods.
+**Where:** `knowledge/ingestion/embedder.py` — `Embedder._cache`
+
+L1 is a plain Python `dict[str, list[float]]` inside each `Embedder` instance. It caches embedding vectors keyed on the raw text string.
+
+```
+What is stored:  text string → float[] (768-dim vector)
+Max size:        1 000 entries per process (FIFO eviction on overflow)
+Scope:           per worker process; each pod has its own copy
+Lifetime:        survives only while the process is running; empty on restart
+Lookup cost:     sub-microsecond (plain dict get — no I/O)
+```
+
+**Read:** at the top of `Embedder.embed()`, before any API call.
+**Written:** immediately after a successful API response.
+
+```python
+# embedder.py
+async def embed(self, text: str) -> list[float]:
+    cached = self._cache_get(text)          # L1 check — returns instantly
+    if cached is not None:
+        return cached
+    vector = await self._call_api(text)     # Ollama / OpenAI round-trip
+    self._cache_set(text, vector)           # populate L1 for next time
+    return vector
+```
+
+**What L1 actually prevents:** a second embed call for the same text within the same worker session. Most useful during ingestion (the same chunk text never gets embedded twice in a batch) and for repeated identical queries hitting the same pod in a multi-pod deployment.
+
+**What L1 does NOT do:** it does not cache search results. If you ask "What is the PTO policy?" twice, the embedding vector is served from L1 on the second call, but hybrid search still runs unless L2 hits.
 
 ### L2 — Redis Key-Value Cache
 
+**Where:** `knowledge/store/cache.py` — `RedisCache`
+
+L2 is a Redis-backed cache shared across all API worker processes. It has three independent namespaces, each with its own TTL:
+
+| Namespace | Key pattern | Value | TTL | Purpose |
+|-----------|-------------|-------|-----|---------|
+| **Embedding** | `cache:embed:{sha256(text)}` | msgpack `float[]` | 24 h | Cross-process embedding cache — the same text never hits Ollama twice within a day, even across pods |
+| **Search results** | `cache:search:{sha256(query + corpus_ids + filters)}` | msgpack `list[dict]` | 5 min | Full search result list for an exact query — most important for retrieval performance |
+| **Doc fingerprint** | `cache:doc_fingerprint:{sha256(file_content)}` | `"1"` | 7 d | Deduplication guard during ingestion — a file with the same content hash is not re-ingested |
+
+#### Search result namespace (the "L2 hit" in the flow diagram)
+
 ```
-Key:   cache:search:{sha256(query + corpus_ids + filter_hash)}
-Value: msgpack-serialised RAGResponse
-TTL:   5 minutes
+Key:   cache:search:{sha256(query + "|" + sorted_corpus_ids + "|" + sorted_filters)}
+Value: msgpack-serialised list of SearchResult dicts
+TTL:   5 minutes (300 s)
+Write: SET NX (skip if a concurrent request already wrote the key)
 ```
 
-Written as `asyncio.create_task` immediately after retrieval completes — before the agent runs. This means: if the user cancels during LLM generation, L2 is still populated. A repeated query after cancel hits L2 and skips retrieval entirely.
+**Read:** first step of `Retriever.retrieve()`, before embedding or hybrid search. A hit bypasses the entire retrieval pipeline.
 
-Cross-process — all API workers share the same Redis instance. Effective for repeated identical queries (e.g., multiple users asking "What is the PTO policy?").
+**Written:** via `asyncio.create_task` immediately after retrieval completes — before the agent/LLM runs. This is intentional: if the user cancels mid-generation, the search results are already cached. The next identical query from any pod gets an instant L2 hit and skips retrieval.
+
+```python
+# retriever.py — L2 check (step 1 of retrieve())
+if self._cache:
+    cached = await self._cache.get_search(query, corpus_ids)
+    if cached is not None:
+        return self._dicts_to_results(cached)   # ← returns here, no embed or DB call
+
+# ... hybrid search runs ...
+
+# L2 write (non-blocking, after retrieval, before LLM)
+if self._cache and filtered:
+    asyncio.create_task(
+        self._cache.set_search(query, corpus_ids, [self._result_to_dict(r) for r in filtered])
+    )
+```
+
+**Invalidation:** `RedisCache.invalidate_corpus()` SCANs and deletes all `cache:search:*` keys. Called when a new document is ingested into a corpus (the new document may change which chunks are most relevant). The 5-minute TTL also acts as a natural expiry for staleness.
+
+#### Embedding namespace
+
+```
+Key:   cache:embed:{sha256(text)}
+Value: msgpack-serialised float[] (768 dims ≈ 3 KB per entry)
+TTL:   24 hours
+```
+
+Cross-process complement to the Embedder's L1 dict. If a query text was embedded on pod A and pod B receives the same query, pod B checks Redis before hitting Ollama. In practice, query embedding is fast enough (~5 ms on Ollama) that this layer is most valuable during batch ingestion, where thousands of chunks may be embedded across multiple worker pods.
 
 ### L3 — Semantic Cache (pgvector)
 
