@@ -8,8 +8,12 @@ const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
 
 interface CacheEntry { answer: string; citations: any[]; expiry: number }
 
+function normalizeQuery(query: string): string {
+  return query.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
 function cacheKey(query: string, corpusIds: string[], tier: string): string {
-  return `qa:${JSON.stringify({ query, corpusIds, tier })}`
+  return `qa:${JSON.stringify({ query: normalizeQuery(query), corpusIds, tier })}`
 }
 
 function cacheGet(key: string): CacheEntry | null {
