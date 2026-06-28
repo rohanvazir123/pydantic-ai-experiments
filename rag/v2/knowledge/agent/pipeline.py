@@ -34,6 +34,7 @@ from knowledge.agent.agent import (
 )
 from knowledge.agent.intent_classifier import classify_intent
 from knowledge.agent.judge import judge as run_judge
+from knowledge.validation.pii_scanner import has_pii, scan_pii
 from knowledge.config.settings import Settings, load_settings
 from knowledge.hooks.context import HookContext
 from knowledge.hooks.registry import HookPoint, registry
@@ -47,6 +48,7 @@ class PipelineStatus(StrEnum):
     ABSTAINED_RETRIEVAL = "abstained_retrieval"
     ABSTAINED_CITATION  = "abstained_citation"
     ABSTAINED_JUDGE     = "abstained_judge"
+    ABSTAINED_PII       = "abstained_pii"
 
 
 class RAGResponse(BaseModel):
@@ -84,6 +86,10 @@ _ABSTAIN_MSG = {
     PipelineStatus.ABSTAINED_JUDGE: (
         "The answer could not be verified against the source material. "
         "Please try a more specific question."
+    ),
+    PipelineStatus.ABSTAINED_PII: (
+        "Your request contains or would surface personal information. "
+        "Please remove personal details and try again."
     ),
 }
 
@@ -123,6 +129,22 @@ class ConfidenceAwarePipeline:
             model_tier=model_tier,
         )
         t: dict[str, int] = {}
+
+        # ── PII scan: query ───────────────────────────────────────────────────
+        if self._settings.pii_scan_enabled:
+            t0 = time.monotonic()
+            if await has_pii(query):
+                t["pii_query"] = int((time.monotonic() - t0) * 1000)
+                await registry.fire(HookPoint.ON_VALIDATION_FAIL, ctx)
+                return RAGResponse(
+                    answer=_ABSTAIN_MSG[PipelineStatus.ABSTAINED_PII],
+                    status=PipelineStatus.ABSTAINED_PII,
+                    pipeline_latency_ms=t,
+                    abstention_layer=0,
+                    abstention_reason="pii_in_query",
+                    request_id=request_id,
+                )
+            t["pii_query"] = int((time.monotonic() - t0) * 1000)
 
         # ── Intent classification (nano model, 2 s timeout, fallback=factual) ─
         t0 = time.monotonic()
@@ -197,6 +219,23 @@ class ConfidenceAwarePipeline:
                 abstention_reason="uncited_claims",
                 request_id=request_id,
             )
+
+        # ── PII scan: answer ──────────────────────────────────────────────────
+        if self._settings.pii_scan_enabled:
+            t0 = time.monotonic()
+            detected = await scan_pii(gen.answer)
+            t["pii_answer"] = int((time.monotonic() - t0) * 1000)
+            if detected:
+                logger.warning("PII detected in answer (%s) — abstaining", detected)
+                await registry.fire(HookPoint.ON_VALIDATION_FAIL, ctx)
+                return RAGResponse(
+                    answer=_ABSTAIN_MSG[PipelineStatus.ABSTAINED_PII],
+                    status=PipelineStatus.ABSTAINED_PII,
+                    pipeline_latency_ms=t,
+                    abstention_layer=2,
+                    abstention_reason=f"pii_in_answer:{','.join(detected)}",
+                    request_id=request_id,
+                )
 
         # ── Layer 3: Judge gate (passthrough when judge_enabled=False) ───────
         judge_confidence: float | None = None
@@ -280,6 +319,11 @@ class ConfidenceAwarePipeline:
             yield _sse({"abstained": True, "layer": 0, "reason": validation_error.message})
             return
 
+        # PII scan: query
+        if self._settings.pii_scan_enabled and await has_pii(query):
+            yield _sse({"abstained": True, "layer": 0, "reason": "pii_in_query"})
+            return
+
         # Intent classification (nano model, 2 s timeout, fallback=factual)
         intent = await classify_intent(query, settings=self._settings)
         ctx.intent = intent
@@ -319,7 +363,9 @@ class ConfidenceAwarePipeline:
                 deps=state,
                 message_history=message_history or [],
             ) as streamed:
+                full_text = ""
                 async for delta in streamed.stream_text(delta=True):
+                    full_text += delta
                     yield _sse({"delta": delta})
 
                 # Best-effort: extract citations from structured output.
@@ -346,11 +392,21 @@ class ConfidenceAwarePipeline:
                 except Exception:
                     pass  # answer was already streamed; skip citations
 
+                # PII scan: answer (advisory — tokens already streamed)
+                pii_warning: list[str] = []
+                if self._settings.pii_scan_enabled:
+                    t_pii = time.monotonic()
+                    pii_warning = await scan_pii(full_text)
+                    pii_ms = int((time.monotonic() - t_pii) * 1000)
+                    if pii_warning:
+                        logger.warning("PII detected in streamed answer (%s) in %dms", pii_warning, pii_ms)
+
                 yield _sse({
                     "done":             True,
                     "citations":        citations,
                     "prompt_tokens":    prompt_tokens,
                     "completion_tokens": completion_tokens,
+                    **({"pii_warning": pii_warning} if pii_warning else {}),
                 })
 
             await registry.fire(HookPoint.POST_LLM, ctx)

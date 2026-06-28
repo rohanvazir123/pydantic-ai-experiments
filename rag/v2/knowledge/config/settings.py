@@ -170,6 +170,7 @@ class Settings(BaseSettings):
     judge_enabled: bool = Field(False)
     judge_confidence_threshold: float = Field(0.60, ge=0.0, le=1.0)
     judge_k: int = Field(10, ge=1)
+    pii_scan_enabled: bool = Field(True)
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
     scheduler_enabled: bool = Field(True)
