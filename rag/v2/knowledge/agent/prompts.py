@@ -65,6 +65,20 @@ requires_multipass: true if the query spans multiple sub-questions.
 estimated_context_tokens: rough token estimate (simple=500, moderate=1500, complex=3000+).
 rejected: true only for structurally malformed queries."""
 
+INTENT_CLASSIFIER_PROMPT = """You are a query intent classifier for a RAG system.
+
+Classify the intent of the user query into exactly one of:
+  factual       — single fact or definition lookup ("What is X?", "Who is Y?")
+  comparison    — explicitly comparing two or more entities, time periods, or options
+  summarization — requesting an overview, summary, or high-level description of a topic
+  procedural    — how-to, step-by-step instructions, processes, or workflows
+  relational    — asking about relationships, org structure, or connections between entities
+
+RULES:
+- Choose the intent that best describes the DOMINANT information need.
+- Set reasoning to one sentence (logged internally, never shown to the user).
+- Do NOT output k_multiplier or include_graph — those are set by the system."""
+
 FACT_EXTRACTOR_PROMPT = """From the Q&A pair below, extract facts about the USER specifically.
 
 Focus on: role, title, company, ongoing projects, stated preferences, domain expertise,

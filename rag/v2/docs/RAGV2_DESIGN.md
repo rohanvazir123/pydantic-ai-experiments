@@ -18,8 +18,7 @@
   - [V4 — Injection Detector](#v4--injection-detector)
   - [V5 — Content Policy](#v5--content-policy)
   - [V6 — RBAC Check](#v6--rbac-check)
-- [Model Router](#model-router)
-  - [Complexity → Model Tier](#complexity--model-tier)
+- [Intent Classifier](#intent-classifier)
   - [requires_graph](#requires_graph)
 - [Three-Layer Cache (L1 / L2 / L3)](#three-layer-cache-l1--l2--l3)
   - [L1 — In-Process LRU](#l1--in-process-lru)
@@ -266,10 +265,12 @@ Two independent data flows share the same storage layer.
                              │  all pass
                              ▼
   ┌─────────────────────────────────────────────────────────┐
-  │  Model Router  (nano: qwen2.5:0.5b, 3s timeout)        │
-  │  → complexity: simple / moderate / complex              │
-  │  → requires_graph: bool  (drives parallel AGE leg)      │
-  │  → model_tier: nano / small / large                     │
+  │  Intent Classifier  (nano: qwen2.5:0.5b, 2s timeout)   │
+  │  → intent: factual / comparison / summarization /       │
+  │            procedural / relational                      │
+  │  → k_multiplier: 1.0 – 2.0  (scales chunk count)       │
+  │  → include_graph: bool  (drives parallel AGE leg)       │
+  │  fallback: factual (never blocks the pipeline)          │
   └──────────────────────────┬──────────────────────────────┘
                              │
                              ▼
@@ -541,7 +542,7 @@ Request body
     │
     V6  RBAC               → 403 Forbidden
     │
-    pass → continue to Model Router
+    pass → continue to Intent Classifier
 ```
 
 ### V1 — Schema Check
@@ -604,37 +605,40 @@ A `viewer` role cannot query a corpus that requires `admin`. This is enforced at
 
 ---
 
-## Model Router
+## Intent Classifier
 
-**Where:** `knowledge/agent/model_router.py`
-**When:** After validation passes, before retrieval.
+**Where:** `knowledge/agent/intent_classifier.py`
+**When:** After V1–V6 validation passes, before retrieval. Runs on both blocking (`run()`) and streaming (`run_stream()`) paths.
 
-A nano LLM (`qwen2.5:0.5b`) reads the query and returns a routing decision:
+A nano LLM (`qwen2.5:0.5b`) classifies the query intent in ≤2 seconds:
 
 ```python
-class RoutingDecision(BaseModel):
-    complexity:           Literal["simple", "moderate", "complex"]
-    requires_graph:       bool
-    model_tier:           Literal["nano", "small", "large"]
-    estimated_context_tokens: int
-    rejected:             bool    # True only for structurally malformed queries
+class IntentResult(BaseModel):
+    intent:        Literal["factual", "comparison", "summarization", "procedural", "relational"]
+    k_multiplier:  float  # applied to settings.judge_k before retrieval
+    include_graph: bool   # enables the Apache AGE Cypher leg
+    reasoning:     str    # logged internally; never shown to users
 ```
 
-**Timeout:** 3 seconds. If the router times out or fails, it falls back to `small` tier with `requires_graph=False`.
+**Timeout:** 2 seconds. On timeout or any model error, falls back to `factual` — the pipeline is never blocked.
 
-### Complexity → Model Tier
+### Intent → Retrieval Parameters
 
-| Complexity | Model | Context estimate | Examples |
-|-----------|-------|-----------------|---------|
-| `simple` | nano (`qwen2.5:0.5b`) | ~500 tokens | "What is the PTO policy?" |
-| `moderate` | small (`llama3.2:3b`) | ~1500 tokens | "Compare the benefits packages for US and EU employees" |
-| `complex` | large (`llama3.1:70b`) | 3000+ tokens | "Trace the approval chain for a $50k purchase given our current procurement policy" |
+| Intent | k_multiplier | include_graph | Examples |
+|--------|-------------|---------------|---------|
+| `factual` | 1.0 | false | "What is the PTO policy?" |
+| `procedural` | 1.5 | false | "How do I submit an expense report?" |
+| `relational` | 1.5 | **true** | "Who reports to the CTO?" |
+| `comparison` | 2.0 | false | "How do Q3 and Q4 revenue compare?" |
+| `summarization` | 2.0 | false | "Summarize the company overview" |
 
-The `model_tier` in the request body can override the router decision — useful for forcing a specific tier in tests or for users with explicit tier access.
+`k_multiplier` is applied as `k_effective = max(1, int(judge_k × k_multiplier))`. Comparison and summarization fetch 2× more chunks because they need breadth across both sides of the topic. Relational queries enable `include_graph=True` so the AGE Cypher leg runs in the parallel hybrid search (`asyncio.gather`), saving the graph leg on all non-relational queries (~50–200ms).
 
-### requires_graph
+`k_multiplier` and `include_graph` are always enforced from the lookup table in the classifier, regardless of what the nano model returns — preventing arbitrary float outputs.
 
-When `requires_graph=True`, the AGE Cypher leg runs in the parallel hybrid search (`asyncio.gather`). When `False`, the graph leg is skipped entirely, saving ~50–200ms on the AGE query. The LLM can override this during the agent loop: if it calls `search_knowledge_graph` despite `requires_graph=False`, the tool executes normally.
+### What happened to the Model Router?
+
+`knowledge/agent/model_router.py` was an earlier design for LLM tier selection (nano/small/large based on query complexity). It was never wired into the pipeline — the request body's `model_tier` field is used directly instead. The intent classifier replaces its intended role in the flow diagram. The model router file is retained for reference.
 
 ---
 
@@ -915,11 +919,11 @@ REQUEST ARRIVES
     │
     POST_VALIDATE       after all validation stages pass
     │
-    PRE_ROUTE           before model router
+    PRE_ROUTE           before intent classifier
     │
-    model router runs
+    intent classifier runs (nano, 2s timeout, fallback=factual)
     │
-    POST_ROUTE          after routing decision is made
+    POST_ROUTE          after intent classification
     │
     PRE_RETRIEVE        before cache check + retrieval
     │                   ← cost guard fires here (HookAbort if over budget)
@@ -956,8 +960,8 @@ INGESTION PATH (separate)
 |-----------|--------------|-------------|
 | `PRE_VALIDATE` | Before any validation | Request logging, rate-limit check |
 | `POST_VALIDATE` | After V1–V6 all pass | Audit "valid query" event |
-| `PRE_ROUTE` | Before model router | Override routing for A/B test |
-| `POST_ROUTE` | After routing decision | Log model tier chosen |
+| `PRE_ROUTE` | Before intent classifier | Override intent for A/B test |
+| `POST_ROUTE` | After intent classification | Log intent + k_multiplier |
 | `PRE_RETRIEVE` | Before cache + retrieval | **Budget check**, **user memory injection** |
 | `POST_RETRIEVE` | After retrieval + rerank | Latency metrics, chunk count logging |
 | `PRE_LLM` | Before `agent.run()` | Token budget pre-estimate |
@@ -2173,7 +2177,8 @@ The streaming path uses Server-Sent Events over a plain HTTP POST, not WebSocket
                      └────┬────────────┘
                           │
                      ┌────▼────────────┐
-                     │  Model Router   │  nano → tier decision
+                     │  Intent         │  nano → intent + k_multiplier + include_graph
+                     │  Classifier     │  (2s timeout, fallback=factual)
                      └────┬────────────┘
                           │
                      ┌────▼────────────┐
@@ -2216,7 +2221,7 @@ The streaming path uses Server-Sent Events over a plain HTTP POST, not WebSocket
 
 ### Detailed Step-by-Step
 
-> Quick reference: Auth + quota → V1–V6 validation → model router → cost guard → PRE\_RETRIEVE (user memories) → retrieval (L2 cache → embed → L3 cache → parallel hybrid search → RRF → CrossEncoder → confidence filter) → Layer 1 gate → working memory assembly (all five tiers) → RAG agent (LLM reads context + optional tool calls → GenerationResult) → Layer 2 gate (citation check) → judge (nano→small escalation) → async background tasks (L3 cache, episodic storage, memory extraction, billing) → RAGResponse → SSE stream → browser
+> Quick reference: Auth + quota → V1–V6 validation → intent classifier (nano, 2s timeout → intent + k_multiplier + include_graph) → cost guard → PRE\_RETRIEVE (user memories) → retrieval (L2 cache → embed → L3 cache → parallel hybrid search → RRF → CrossEncoder → confidence filter) → Layer 1 gate → working memory assembly (all five tiers) → RAG agent (LLM reads context + optional tool calls → GenerationResult) → Layer 2 gate (citation check) → judge (nano→small escalation) → async background tasks (L3 cache, episodic storage, memory extraction, billing) → RAGResponse → SSE stream → browser
 
 ```
 USER TYPES A QUERY AND HITS SEND
@@ -2265,14 +2270,14 @@ USER TYPES A QUERY AND HITS SEND
   ▼   all pass
 
 ─────────────────────────────────────────────────────────────────────────────────────────
-  Model Router  (knowledge/agent/model_router.py)
+  Intent Classifier  (knowledge/agent/intent_classifier.py)
 ─────────────────────────────────────────────────────────────────────────────────────────
 
-  nano model → RoutingDecision
-  │  complexity: simple | moderate | complex
-  │  requires_graph: bool
-  │  model_tier: nano | small | large
-  │  (3s timeout → fallback: small)
+  nano model → IntentResult
+  │  intent: factual | comparison | summarization | procedural | relational
+  │  k_multiplier: 1.0 (factual) | 1.5 (procedural/relational) | 2.0 (comparison/summarization)
+  │  include_graph: true only for relational
+  │  (2s timeout → fallback: factual)
   ▼
 
 ─────────────────────────────────────────────────────────────────────────────────────────

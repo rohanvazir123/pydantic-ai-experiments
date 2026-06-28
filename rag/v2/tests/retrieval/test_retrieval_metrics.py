@@ -1,11 +1,14 @@
 """Retrieval quality evaluation for RAG v2.
 
-Two test classes:
+Three test classes:
 
-TestMetricFunctions  — pure unit tests for IR metric helpers, no services.
-TestRetrievalMetrics — integration tests against a live PostgreSQL + Ollama
-                       stack (marked @pytest.mark.integration).  Skipped
-                       automatically when the database is unreachable.
+TestMetricFunctions     — pure unit tests for IR metric helpers, no services.
+TestRetrievalMetrics    — integration tests against a live PostgreSQL + Ollama
+                          stack (marked @pytest.mark.integration).  Skipped
+                          automatically when the database is unreachable.
+TestGeneratedEvalDataset — runs the same IR metrics on the auto-generated
+                          testset from scripts/generate_eval_questions.py.
+                          Skipped when eval_questions.json does not exist.
 
 Metrics computed for K in {1, 3, 5}:
   Hit Rate@K   — fraction of queries where ≥1 relevant doc appears in top-K
@@ -18,9 +21,11 @@ Ground-truth answer tests verify that the retriever surfaces chunks that
 actually contain the expected answer text, not just the right file.
 """
 
+import json
 import logging
 import math
 import time
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -569,6 +574,171 @@ class TestRetrievalMetrics:
             assert r.document_source,  f"Empty source in {r.chunk_id}"
             assert r.raw_score > 0,    f"Zero raw_score in {r.chunk_id}"
             assert r.raw_score_type,   f"Empty score type in {r.chunk_id}"
+
+
+# ---------------------------------------------------------------------------
+# Generated eval dataset — requires eval_questions.json
+# ---------------------------------------------------------------------------
+
+_EVAL_JSON = Path(__file__).parent / "eval_questions.json"
+
+# Thresholds for the generated dataset (looser than GOLD_DATASET —
+# LLM-generated questions are noisier and harder to tune against)
+_GEN_THRESHOLDS_K5 = {
+    "hit_rate":  0.50,
+    "mrr":       0.35,
+    "ndcg":      0.35,
+}
+
+
+def _load_generated_dataset() -> list[dict]:
+    if not _EVAL_JSON.exists():
+        return []
+    return json.loads(_EVAL_JSON.read_text())
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not _EVAL_JSON.exists(),
+    reason=(
+        "eval_questions.json not found — run: "
+        "uv run python scripts/generate_eval_questions.py"
+    ),
+)
+class TestGeneratedEvalDataset:
+    """IR metrics on the auto-generated testset.
+
+    Generate the testset first:
+      uv run python scripts/generate_eval_questions.py
+
+    Then run:
+      pytest tests/retrieval/test_retrieval_metrics.py::TestGeneratedEvalDataset -v
+    """
+
+    @pytest_asyncio.fixture
+    async def retriever(self) -> Retriever:  # type: ignore[override]
+        settings = load_settings()
+        store = PostgresHybridStore(settings=settings)
+        try:
+            await store.initialize()
+        except Exception as exc:
+            pytest.skip(f"PostgreSQL unreachable: {exc}")
+        count = await store.get_chunk_count(DEFAULT_CORPUS_ID, DEFAULT_TENANT_ID)
+        if count == 0:
+            await store.close()
+            pytest.skip("No chunks in DB — run 'make seed' first")
+        embedder = Embedder(settings=settings)
+        r = Retriever(vector_store=store, embedder=embedder, settings=settings)
+        yield r
+        await store.close()
+
+    async def _run_generated(
+        self,
+        retriever: Retriever,
+        dataset: list[dict],
+        k: int,
+    ) -> tuple[list[list[int]], list[int], list[float]]:
+        per_query_relevance: list[list[int]] = []
+        per_query_totals:    list[int]       = []
+        latencies:           list[float]     = []
+
+        for entry in dataset:
+            t0 = time.perf_counter()
+            results: list[SearchResult] = await retriever.retrieve(
+                query=entry["query"],
+                corpus_ids=[DEFAULT_CORPUS_ID],
+                tenant_id=DEFAULT_TENANT_ID,
+                k=k,
+            )
+            latencies.append((time.perf_counter() - t0) * 1000)
+            rel_list = build_relevance_list(results, entry["relevant_sources"])
+            per_query_relevance.append(rel_list)
+            per_query_totals.append(len(entry["relevant_sources"]))
+
+        return per_query_relevance, per_query_totals, latencies
+
+    def _log_generated_table(
+        self,
+        dataset: list[dict],
+        rels: list[list[int]],
+        lats: list[float],
+        k: int,
+    ) -> None:
+        logger.info("")
+        logger.info("=" * 65)
+        logger.info("  GENERATED EVAL DATASET — %d questions, K=%d", len(dataset), k)
+        logger.info("=" * 65)
+        by_type: dict[str, list[tuple[dict, list[int]]]] = {}
+        for entry, rel in zip(dataset, rels):
+            qtype = entry.get("question_type", "unknown")
+            by_type.setdefault(qtype, []).append((entry, rel))
+        for qtype, items in sorted(by_type.items()):
+            hr = sum(hit_rate(r) for _, r in items) / len(items)
+            logger.info("  %-18s  n=%-3d  Hit Rate@%d = %.3f", qtype, len(items), k, hr)
+        logger.info("-" * 65)
+        logger.info("  Mean latency: %.0fms  P95: %.0fms", sum(lats)/len(lats), percentile(lats, 95))
+        logger.info("=" * 65)
+
+    @pytest.mark.asyncio
+    async def test_hit_rate_at_5(self, retriever: Retriever) -> None:
+        """Hit Rate@5 ≥ 0.50 across all generated questions."""
+        dataset = _load_generated_dataset()
+        rels, totals, lats = await self._run_generated(retriever, dataset, k=5)
+        self._log_generated_table(dataset, rels, lats, k=5)
+        score = compute_all_metrics(rels, totals, k=5)["hit_rate"]
+        assert score >= _GEN_THRESHOLDS_K5["hit_rate"], (
+            f"Generated Hit Rate@5 {score:.3f} < threshold {_GEN_THRESHOLDS_K5['hit_rate']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_mrr_at_5(self, retriever: Retriever) -> None:
+        """MRR@5 ≥ 0.35 across all generated questions."""
+        dataset = _load_generated_dataset()
+        rels, totals, _ = await self._run_generated(retriever, dataset, k=5)
+        score = compute_all_metrics(rels, totals, k=5)["mrr"]
+        logger.info("Generated MRR@5 = %.3f  (threshold ≥ %.2f)", score, _GEN_THRESHOLDS_K5["mrr"])
+        assert score >= _GEN_THRESHOLDS_K5["mrr"], (
+            f"Generated MRR@5 {score:.3f} < threshold {_GEN_THRESHOLDS_K5['mrr']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ndcg_at_5(self, retriever: Retriever) -> None:
+        """NDCG@5 ≥ 0.35 across all generated questions."""
+        dataset = _load_generated_dataset()
+        rels, totals, _ = await self._run_generated(retriever, dataset, k=5)
+        score = compute_all_metrics(rels, totals, k=5)["ndcg"]
+        logger.info("Generated NDCG@5 = %.3f  (threshold ≥ %.2f)", score, _GEN_THRESHOLDS_K5["ndcg"])
+        assert score >= _GEN_THRESHOLDS_K5["ndcg"], (
+            f"Generated NDCG@5 {score:.3f} < threshold {_GEN_THRESHOLDS_K5['ndcg']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ground_truth_keywords_hit(self, retriever: Retriever) -> None:
+        """For every question, ≥1 top-5 chunk must contain a ground_truth keyword."""
+        dataset = _load_generated_dataset()
+        misses: list[str] = []
+        for entry in dataset:
+            results = await retriever.retrieve(
+                query=entry["query"],
+                corpus_ids=[DEFAULT_CORPUS_ID],
+                tenant_id=DEFAULT_TENANT_ID,
+                k=5,
+            )
+            if not ground_truth_hit(results, entry["ground_truth"]):
+                misses.append(entry["query"])
+
+        miss_rate = len(misses) / len(dataset)
+        logger.info(
+            "Keyword miss rate: %.1f%% (%d/%d questions)",
+            miss_rate * 100, len(misses), len(dataset),
+        )
+        if misses:
+            logger.info("Missed queries: %s", misses[:5])
+        # Allow up to 40% misses — generated questions may reference text
+        # not fully covered by the chunk sampler
+        assert miss_rate <= 0.40, (
+            f"Keyword miss rate {miss_rate:.1%} > 40% — corpus may be under-ingested"
+        )
 
     @pytest.mark.asyncio
     async def test_top_result_outscores_bottom(self, retriever: Retriever) -> None:

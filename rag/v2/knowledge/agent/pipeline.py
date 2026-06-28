@@ -32,6 +32,7 @@ from knowledge.agent.agent import (
     stream_agent,
     traced_agent_run,
 )
+from knowledge.agent.intent_classifier import classify_intent
 from knowledge.agent.judge import judge as run_judge
 from knowledge.config.settings import Settings, load_settings
 from knowledge.hooks.context import HookContext
@@ -123,10 +124,19 @@ class ConfidenceAwarePipeline:
         )
         t: dict[str, int] = {}
 
+        # ── Intent classification (nano model, 2 s timeout, fallback=factual) ─
+        t0 = time.monotonic()
+        intent = await classify_intent(query, settings=self._settings)
+        ctx.intent = intent
+        t["intent"] = int((time.monotonic() - t0) * 1000)
+
         # ── Layer 1: Retrieval confidence gate ────────────────────────────────
+        k_effective = max(1, int(self._settings.judge_k * intent.k_multiplier))
         t0 = time.monotonic()
         results = await self._retriever.retrieve_with_confidence(
-            query, corpus_ids, tenant_id, k=self._settings.judge_k
+            query, corpus_ids, tenant_id,
+            k=k_effective,
+            include_graph=intent.include_graph,
         )
         t["retrieval"] = int((time.monotonic() - t0) * 1000)
 
@@ -270,9 +280,16 @@ class ConfidenceAwarePipeline:
             yield _sse({"abstained": True, "layer": 0, "reason": validation_error.message})
             return
 
+        # Intent classification (nano model, 2 s timeout, fallback=factual)
+        intent = await classify_intent(query, settings=self._settings)
+        ctx.intent = intent
+
         # Layer 1
+        k_effective = max(1, int(self._settings.judge_k * intent.k_multiplier))
         results = await self._retriever.retrieve_with_confidence(
-            query, corpus_ids, tenant_id, k=self._settings.judge_k
+            query, corpus_ids, tenant_id,
+            k=k_effective,
+            include_graph=intent.include_graph,
         )
         ctx.retrieved_chunks = results
         await registry.fire(HookPoint.POST_RETRIEVE, ctx)

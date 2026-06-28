@@ -50,7 +50,10 @@ class HookContext:
     system_prompt_prefix: str = ""
 
     # ── Routing ───────────────────────────────────────────────────────────────
-    routing_decision: Any | None = None    # RoutingDecision | None
+    routing_decision: Any | None = None    # RoutingDecision | None (dead — model_router.py not called)
+
+    # ── Intent ────────────────────────────────────────────────────────────────
+    intent: Any | None = None              # IntentResult | None (set after validation)
 
     # ── Retrieval ─────────────────────────────────────────────────────────────
     retrieved_chunks:      list[Any] = field(default_factory=list)  # list[SearchResult]

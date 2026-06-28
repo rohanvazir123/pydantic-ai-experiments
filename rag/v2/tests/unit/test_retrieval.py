@@ -8,6 +8,7 @@ from unittest import mock
 
 import fakeredis.aioredis as fakeredis
 import pytest
+import pytest_asyncio
 
 from knowledge.ingestion.models import SearchResult
 from knowledge.retrieval.fusion import (
@@ -333,3 +334,131 @@ class TestRetrieverCircuitBreakers:
 
         vs.semantic_search.assert_called_once()
         vs.text_search.assert_called_once()
+
+
+# ── Normalized query cache hit ────────────────────────────────────────────────
+
+def _spacy_model_available() -> bool:
+    try:
+        import spacy
+        spacy.load("en_core_web_sm")
+        return True
+    except Exception:
+        return False
+
+
+requires_spacy = pytest.mark.skipif(
+    not _spacy_model_available(),
+    reason="spaCy en_core_web_sm not installed",
+)
+
+
+def _cached_row(content: str = "PTO is 15 days per year") -> dict:
+    return {
+        "chunk_id":        str(uuid.uuid4()),
+        "document_id":     str(uuid.uuid4()),
+        "document_title":  "HR Handbook",
+        "document_source": "hr.md",
+        "content":         content,
+        "metadata":        {},
+        "raw_score":       0.9,
+        "raw_score_type":  "rrf",
+        "confidence":      0.85,
+    }
+
+
+class TestNormalizedQueryCacheHit:
+    """retrieve() normalizes the query before the L2 cache lookup.
+
+    A query stored under one surface form must be retrievable with any
+    variant that normalizes to the same string, with no DB calls made.
+    """
+
+    @pytest_asyncio.fixture
+    async def cache_and_retriever(self):
+        """Returns (RedisCache with fakeredis, Retriever backed by it)."""
+        from knowledge.store.cache import RedisCache
+
+        fake_redis = fakeredis.FakeRedis(decode_responses=False)
+        cache = RedisCache(settings=_make_settings())
+        cache._client = fake_redis
+
+        # Vector store that should NOT be called on a cache hit
+        vs = mock.AsyncMock()
+        vs.semantic_search.side_effect = AssertionError("semantic_search called on cache hit")
+        vs.text_search.side_effect     = AssertionError("text_search called on cache hit")
+
+        r = _make_retriever(cache=cache, vector_store=vs)
+        return cache, r
+
+    @pytest.mark.asyncio
+    async def test_case_variant_hits_l2_cache(self, cache_and_retriever) -> None:
+        """Uppercase 'PTO Policy' stored, lowercase 'pto policy' retrieves it."""
+        cache, retriever = cache_and_retriever
+        row = _cached_row()
+        await cache.set_search("PTO Policy", ["corp1"], [row])
+
+        results = await retriever.retrieve("pto policy", ["corp1"], "t1")
+
+        assert len(results) == 1
+        assert results[0].content == row["content"]
+
+    @pytest.mark.asyncio
+    async def test_whitespace_variant_hits_l2_cache(self, cache_and_retriever) -> None:
+        """Extra internal whitespace must collapse to the same cache key."""
+        cache, retriever = cache_and_retriever
+        row = _cached_row("remote work rules")
+        await cache.set_search("remote work policy", ["corp1"], [row])
+
+        results = await retriever.retrieve("remote  work  policy", ["corp1"], "t1")
+
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_leading_trailing_whitespace_hits_cache(self, cache_and_retriever) -> None:
+        cache, retriever = cache_and_retriever
+        row = _cached_row()
+        await cache.set_search("pto policy", ["corp1"], [row])
+
+        results = await retriever.retrieve("  pto policy  ", ["corp1"], "t1")
+
+        assert len(results) == 1
+
+    @requires_spacy
+    @pytest.mark.asyncio
+    async def test_plural_variant_hits_cache(self, cache_and_retriever) -> None:
+        """'PTO policies' lemmatizes to the same form as 'PTO policy'."""
+        cache, retriever = cache_and_retriever
+        row = _cached_row()
+        await cache.set_search("PTO policy", ["corp1"], [row])
+
+        results = await retriever.retrieve("PTO policies", ["corp1"], "t1")
+
+        assert len(results) == 1
+
+    @requires_spacy
+    @pytest.mark.asyncio
+    async def test_punctuation_stripped_hits_cache(self, cache_and_retriever) -> None:
+        """Trailing '?' is dropped by spaCy and must not create a new key."""
+        cache, retriever = cache_and_retriever
+        row = _cached_row("expense process info")
+        await cache.set_search("expense report process", ["corp1"], [row])
+
+        results = await retriever.retrieve("expense report process?", ["corp1"], "t1")
+
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_different_corpus_is_cache_miss(self, cache_and_retriever) -> None:
+        """Same normalized query under a different corpus must NOT hit."""
+        cache, retriever = cache_and_retriever
+        row = _cached_row()
+        await cache.set_search("pto policy", ["corp1"], [row])
+
+        # Override store to return empty (not raise) so we can confirm a miss without error
+        retriever._vs = mock.AsyncMock()
+        retriever._vs.semantic_search.return_value = []
+        retriever._vs.text_search.return_value = []
+
+        results = await retriever.retrieve("PTO Policy", ["corp2"], "t1")
+        assert results == []  # miss → fallthrough to empty store

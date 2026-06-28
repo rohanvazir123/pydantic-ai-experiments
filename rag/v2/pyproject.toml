@@ -32,16 +32,14 @@ dependencies = [
     "prometheus-client>=0.21.0",
     "aiofiles>=24.1.0",
     "spacy>=3.7.0",
-]
-
-[project.optional-dependencies]
-# Docling document parsing (CPU-bound, sync — offloaded via asyncio.to_thread)
-ingestion = [
+    # Document parsing — core ingestion, not optional
     "docling>=2.14.0",
     "docling-core>=2.4.0",
     "docling-graph>=1.5.1",
     "transformers>=4.47.0",
 ]
+
+[project.optional-dependencies]
 # Whisper ASR — also requires FFmpeg in PATH
 audio = [
     "openai-whisper>=20240930",
@@ -69,7 +67,7 @@ scheduler-cloud = [
 ]
 # Everything — recommended for local development
 all = [
-    "knowledge[ingestion,audio,observability,mcp,reranker,mem0,scheduler-cloud]",
+    "knowledge[audio,observability,mcp,reranker,mem0,scheduler-cloud]",
 ]
 
 [build-system]

@@ -8,7 +8,25 @@ import pytest
 import pytest_asyncio
 
 from knowledge.config.settings import Settings
+from knowledge.retrieval.normalizer import normalize_query
 from knowledge.store.cache import RedisCache, _embed_key, _fingerprint_key, _search_key
+
+
+# ── spaCy availability guard ──────────────────────────────────────────────────
+
+def _spacy_model_available() -> bool:
+    try:
+        import spacy
+        spacy.load("en_core_web_sm")
+        return True
+    except Exception:
+        return False
+
+
+requires_spacy = pytest.mark.skipif(
+    not _spacy_model_available(),
+    reason="spaCy en_core_web_sm not installed — run: python -m spacy download en_core_web_sm",
+)
 
 
 def make_cache() -> RedisCache:
@@ -175,3 +193,99 @@ class TestGracefulDegradation:
     async def test_set_health_no_client(self) -> None:
         c = make_cache()
         await c.set_health("postgres", {"status": "ok"})  # must not raise
+
+
+# ── Normalized key invariants ─────────────────────────────────────────────────
+
+class TestNormalizedKeyInvariant:
+    """_search_key must return the same hash for queries that normalize identically.
+
+    Two sub-cases:
+      - Basic (always): case folding and whitespace collapse
+      - spaCy (conditional): lemmatization and punctuation stripping
+    """
+
+    def test_case_variants_produce_same_key(self) -> None:
+        # "pto policy" vs "PTO Policy" — both lowercase to "pto policy"
+        assert _search_key("pto policy", ["c1"], None) == _search_key("PTO Policy", ["c1"], None)
+
+    def test_extra_whitespace_produces_same_key(self) -> None:
+        assert _search_key("pto  policy", ["c1"], None) == _search_key("pto policy", ["c1"], None)
+
+    def test_leading_trailing_whitespace(self) -> None:
+        assert _search_key("  pto policy  ", ["c1"], None) == _search_key("pto policy", ["c1"], None)
+
+    def test_mixed_case_and_whitespace(self) -> None:
+        assert _search_key("  PTO  Policy  ", ["c1"], None) == _search_key("pto policy", ["c1"], None)
+
+    @requires_spacy
+    def test_punctuation_stripped(self) -> None:
+        # spaCy drops punctuation tokens; trailing "?" must not change the key
+        assert _search_key("What is the PTO policy?", ["c1"], None) == \
+               _search_key("What is the PTO policy", ["c1"], None)
+
+    @requires_spacy
+    def test_lemmatization_singular_plural(self) -> None:
+        # "policies" lemmatizes to "policy"
+        assert _search_key("PTO policies", ["c1"], None) == _search_key("PTO policy", ["c1"], None)
+
+    @requires_spacy
+    def test_lemmatization_verb_form(self) -> None:
+        # "serves" → "serve"; key for both sentence variants must match
+        # normalize_query("What industries does NeuralFlow serve?")
+        # normalize_query("What industry does NeuralFlow serve")
+        k1 = normalize_query("What industries does NeuralFlow serve?")
+        k2 = normalize_query("What industry does NeuralFlow serve")
+        assert k1 == k2
+
+    def test_different_queries_different_keys(self) -> None:
+        assert _search_key("pto policy", ["c1"], None) != _search_key("benefits plan", ["c1"], None)
+
+    def test_different_corpus_different_keys(self) -> None:
+        assert _search_key("pto policy", ["c1"], None) != _search_key("pto policy", ["c2"], None)
+
+
+# ── Normalized cache hit (set/get with variant queries) ───────────────────────
+
+class TestNormalizedSearchCacheHit:
+    """Storing under one query form should be retrievable with a normalized variant."""
+
+    @pytest.mark.asyncio
+    async def test_case_variant_hits_cache(self, cache: RedisCache) -> None:
+        results = [{"chunk_id": "abc", "content": "PTO is 15 days", "score": 0.9}]
+        await cache.set_search("PTO Policy", ["corp1"], results)
+        # Lowercase variant must hit the same entry
+        cached = await cache.get_search("pto policy", ["corp1"])
+        assert cached == results
+
+    @pytest.mark.asyncio
+    async def test_whitespace_variant_hits_cache(self, cache: RedisCache) -> None:
+        results = [{"chunk_id": "def", "content": "remote work policy", "score": 0.8}]
+        await cache.set_search("remote  work  policy", ["corp1"], results)
+        cached = await cache.get_search("remote work policy", ["corp1"])
+        assert cached == results
+
+    @requires_spacy
+    @pytest.mark.asyncio
+    async def test_plural_hits_singular_cached_entry(self, cache: RedisCache) -> None:
+        # Store under "PTO policy", retrieve with "PTO policies" — spaCy lemmatizes both to "policy"
+        results = [{"chunk_id": "ghi", "content": "PTO accrual rules", "score": 0.85}]
+        await cache.set_search("PTO policy", ["corp1"], results)
+        cached = await cache.get_search("PTO policies", ["corp1"])
+        assert cached == results
+
+    @requires_spacy
+    @pytest.mark.asyncio
+    async def test_punctuation_variant_hits_cache(self, cache: RedisCache) -> None:
+        results = [{"chunk_id": "jkl", "content": "expense form link", "score": 0.7}]
+        await cache.set_search("expense report process", ["corp1"], results)
+        # Trailing question mark should normalize away
+        cached = await cache.get_search("expense report process?", ["corp1"])
+        assert cached == results
+
+    @pytest.mark.asyncio
+    async def test_different_corpus_is_still_miss(self, cache: RedisCache) -> None:
+        results = [{"chunk_id": "mno", "content": "something", "score": 0.6}]
+        await cache.set_search("pto policy", ["corp1"], results)
+        # Corpus differs — must NOT hit
+        assert await cache.get_search("PTO Policy", ["corp2"]) is None
