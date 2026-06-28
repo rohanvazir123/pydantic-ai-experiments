@@ -8,6 +8,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000  // 30 minutes
 
 interface CacheEntry { answer: string; citations: any[]; expiry: number }
 
+// Client-side: lowercase + collapse whitespace. Server normalizes fully with spaCy.
 function normalizeQuery(query: string): string {
   return query.toLowerCase().trim().replace(/\s+/g, ' ')
 }

@@ -29,6 +29,7 @@ from knowledge.retrieval.fusion import (
     fuse_to_search_results,
     rerank,
 )
+from knowledge.retrieval.normalizer import normalize_query
 from knowledge.store.cache import RedisCache
 from knowledge.store.vector import PostgresHybridStore
 
@@ -74,7 +75,7 @@ class Retriever:
         include_graph: bool = False,
     ) -> list[SearchResult]:
         """Full retrieval pipeline. Returns confidence-scored, filtered results."""
-        query = " ".join(query.lower().split())  # normalize: lowercase + collapse whitespace
+        query = normalize_query(query)  # lemmatize + lowercase + strip punctuation (spaCy)
 
         # ── 1. L2 Redis cache (exact hash) ────────────────────────────────────
         if self._cache:

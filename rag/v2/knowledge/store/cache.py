@@ -19,6 +19,7 @@ import msgpack
 import redis.asyncio as aioredis
 
 from knowledge.config.settings import Settings, load_settings
+from knowledge.retrieval.normalizer import normalize_query
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +34,15 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _normalize(query: str) -> str:
-    """Lowercase, strip, collapse internal whitespace."""
-    return " ".join(query.lower().split())
-
-
 def _embed_key(text: str) -> str:
-    return f"cache:embed:{_sha256(text)}"
+    return f”cache:embed:{_sha256(text)}”
 
 
 def _search_key(query: str, corpus_ids: list[str], filters: dict[str, Any] | None) -> str:
-    parts = _normalize(query) + "|" + ",".join(sorted(corpus_ids))
+    parts = normalize_query(query) + “|” + “,”.join(sorted(corpus_ids))
     if filters:
-        parts += "|" + str(sorted(filters.items()))
-    return f"cache:search:{_sha256(parts)}"
+        parts += “|” + str(sorted(filters.items()))
+    return f”cache:search:{_sha256(parts)}”
 
 
 def _fingerprint_key(content_hash: str) -> str:

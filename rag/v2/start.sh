@@ -50,6 +50,8 @@ if [ ! -d ".venv" ]; then
   warn ".venv missing — running uv sync"
 fi
 uv sync --extra all 2>&1 | tail -3
+uv run python -m spacy info en_core_web_sm >/dev/null 2>&1 || \
+  uv run python -m spacy download en_core_web_sm 2>&1 | tail -2
 ok "venv ready"
 
 # ── 5. DB schemas ─────────────────────────────────────────────────────────────
