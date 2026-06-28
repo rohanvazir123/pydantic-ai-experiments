@@ -625,40 +625,141 @@ Gate 2 is faster than Gate 3: no extra LLM call, and it catches self-admitted ha
 
 ### Gate 3 — LLM Judge
 
-**Where:** `judge.py`, `pipeline.py:195-218`
+**Where:** `knowledge/agent/judge.py`, `pipeline.py:195-218`
 **When:** After Gate 2 passes, only when `judge_enabled=True`.
 
-A separate LLM acts as an impartial evaluator. It receives the query, retrieved passages, and generated answer — but with chunk IDs **stripped from the passages**. Stripping IDs prevents the judge from being fooled by a well-formatted `[chunk_id]` citation that doesn't actually support the underlying claim.
+#### Why a second LLM at all?
+
+Gates 1 and 2 are mechanical checks — they catch empty retrieval and self-admitted uncited claims. They do not evaluate whether the answer is actually correct. The main LLM could cite a chunk correctly (`[abc123]`) while still drawing the wrong conclusion from it — the citation is present, so Gate 2 passes. Gate 3 exists to catch exactly this: an independent model reads the passages and the answer side-by-side and decides whether the answer is genuinely grounded.
+
+This is the "LLM-as-judge" pattern: using a separate, smaller model as an evaluator of the primary model's output.
+
+#### What the judge sees
+
+The judge receives three things, constructed in `judge.py:_build_judge_prompt()`:
 
 ```
-nano LLM (qwen2.5:0.5b) receives:
-  QUESTION:  <original query>
-  PASSAGES:  <retrieved text WITHOUT [chunk_id] labels>
-  ANSWER:    <generated answer>
+QUESTION:
+  What is the company's parental leave policy?
 
-Returns: JudgeResult { verdict, confidence, reasoning }
+SOURCE PASSAGES:
+  NeuralFlow AI offers 16 weeks of fully paid parental leave for all parents,
+  regardless of gender or whether the child was adopted or biological.
+  Leave may be taken in one block or split across the first year.
+
+  Employees must notify HR at least 30 days before the intended start date.
+  Leave is coordinated through the PeopleOps portal.
+
+GENERATED ANSWER:
+  NeuralFlow AI provides 16 weeks of fully paid parental leave for all parents.
+  Leave can be taken in one block or split across the first year.
+  Employees should notify HR 30 days in advance via the PeopleOps portal.
 ```
 
-Verdict → outcome:
+Critically, **chunk IDs are stripped from the passages** before being sent to the judge. The main LLM sees `[chunk_id: abc123]` labels so it can produce citations. The judge sees plain text. This means the judge cannot be tricked by a well-formatted citation — it has to verify the claim against actual passage content.
 
-| Verdict | Judge confidence | Action |
-|---------|-----------------|--------|
-| `supported` | ≥ `judge_confidence_threshold` | `answered` |
-| `partial` | ≥ `judge_confidence_threshold` | `answered` + uncertainty note appended |
-| `unsupported` | any | `abstained_judge` |
-| any | < `judge_confidence_threshold` | `abstained_judge` |
+#### The judge's output
 
-**Escalation to small model:** The judge also outputs its own confidence in its verdict. If that confidence < 0.5, the system escalates to `llama3.2:3b` for a second opinion. This prevents the judge from incorrectly abstaining on genuinely nuanced answers.
+The judge returns a structured `JudgeResult`:
+
+```python
+class JudgeResult(BaseModel):
+    verdict:    Literal["supported", "partial", "unsupported"]
+    confidence: float        # judge's confidence in its own verdict (0.0–1.0)
+    reasoning:  str          # one sentence; logged, never shown to user
+```
+
+What each verdict means:
+
+| Verdict | Meaning | Example |
+|---------|---------|---------|
+| `supported` | Every claim in the answer is traceable to a passage | Answer says "16 weeks" — passage says "16 weeks" |
+| `partial` | Most claims are grounded but something is missing or hedged | Answer mentions the PeopleOps portal but passages only say "HR portal" without naming it |
+| `unsupported` | Answer contains claims not found in or contradicted by the passages | Answer says "20 weeks" — passage says "16 weeks" |
+
+The `confidence` field is the judge's confidence in its *own verdict*, not the confidence in the answer. A `supported` verdict with `confidence=0.9` means the judge is 90% sure the answer is grounded. A `partial` verdict with `confidence=0.3` means the judge found some issues but isn't sure how significant they are.
+
+#### Verdict → pipeline action
 
 ```
-nano verdict: partial, confidence=0.3   → escalate
-small verdict: supported, confidence=0.8 → answered
+JudgeResult
+  │
+  ├── verdict = "unsupported"
+  │   → abstained_judge
+  │
+  ├── verdict = anything, confidence < judge_confidence_threshold
+  │   → abstained_judge
+  │   (judge itself is too uncertain to trust either way)
+  │
+  ├── verdict = "partial", confidence ≥ threshold
+  │   → answered  +  "Note: This answer may be incomplete..."
+  │
+  └── verdict = "supported", confidence ≥ threshold
+      → answered
 ```
+
+#### Escalation: nano → small
+
+The nano model (`qwen2.5:0.5b`) is fast but less capable. If its `confidence` in its own verdict is < 0.5 — meaning it's uncertain whether the answer is supported or not — the system escalates to the small model (`llama3.2:3b`) for a second opinion. The small model reruns the same evaluation independently.
+
+```
+nano:  verdict="partial", confidence=0.3   ← uncertain; escalate
+small: verdict="supported", confidence=0.8 ← confident; use this
+
+Final outcome: answered (not partial, not abstained)
+```
+
+If the nano model fails entirely (timeout, parse error), it also falls through to the small model. If the small model also fails, the pipeline takes a pessimistic default: `verdict="unsupported"` → abstained.
+
+#### Concrete pass/fail examples
+
+**Pass — supported:**
+```
+Query:   "How many days of PTO does the company offer?"
+Passage: "Employees receive 20 days of paid time off per year..."
+Answer:  "The company offers 20 days of PTO per year [chunk_abc]."
+Judge:   supported, confidence=0.95 → answered
+```
+
+**Pass — partial (answer proceeds with note):**
+```
+Query:   "What is the parental leave policy?"
+Passage: "16 weeks fully paid parental leave..."
+Answer:  "NeuralFlow offers 16 weeks parental leave [chunk_abc].
+          Leave can be extended unpaid at the manager's discretion."
+Judge:   partial, confidence=0.8
+         (second sentence not in passages)
+         → answered + uncertainty note
+```
+
+**Fail — unsupported:**
+```
+Query:   "Does the company offer a 401k match?"
+Passage: "NeuralFlow offers a comprehensive benefits package including health
+          insurance and dental coverage."
+Answer:  "Yes, NeuralFlow matches 401k contributions up to 4% [chunk_abc]."
+Judge:   unsupported, confidence=0.9
+         (401k match not in passages — answer hallucinated)
+         → abstained_judge
+```
+
+**Fail — low judge confidence (too uncertain):**
+```
+Query:   "Is remote work allowed for all roles?"
+Passage: "Most engineering roles are remote-friendly..."
+Answer:  "Remote work is available for engineering roles [chunk_abc]."
+Judge:   verdict="supported", confidence=0.4
+         (judge unsure — "most" ≠ "all"; escalates to small)
+small:   verdict="partial", confidence=0.75 → answered + note
+```
+
+#### `POST_LLM` behaviour on Gate 3 abstention
+
+Unlike Gates 1 and 2, `POST_LLM` fires **even when Gate 3 abstains**. By this point, the main LLM has already run and tokens were consumed. Billing records the usage; the abstained response is stored in conversation history as an abstained turn. This ensures token costs are accounted for and future turns can see that the previous turn was abstained (not answered).
 
 Gate fires: `status = "abstained_judge"`.
 User sees on abstain: *"The generated answer is not fully supported by the retrieved documents."*
 User sees on partial: full answer + *"Note: This answer may be incomplete based on the available context."*
-`POST_LLM` fires: **Yes, even on Gate 3 abstention.** By this point, the LLM already generated a response and tokens were consumed. Billing records the usage; the abstained response is stored in conversation history (as an abstained turn, so it doesn't mislead future context).
 
 ---
 
