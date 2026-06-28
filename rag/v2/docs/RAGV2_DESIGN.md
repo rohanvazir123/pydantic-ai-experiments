@@ -36,6 +36,13 @@
   - [Priority and Ordering](#priority-and-ordering)
   - [Registering a Hook](#registering-a-hook)
   - [Built-In Handlers per Point](#built-in-handlers-per-point)
+- [Circuit Breakers](#circuit-breakers)
+  - [Hooks vs Circuit Breakers](#hooks-vs-circuit-breakers)
+  - [The Three-State Machine](#the-three-state-machine)
+  - [AGE Graph Circuit Breaker — Retrieval Path](#age-graph-circuit-breaker--retrieval-path)
+  - [Cost Circuit Breaker — Retrieval Path](#cost-circuit-breaker--retrieval-path)
+  - [Redis-Backed Shared State](#redis-backed-shared-state)
+  - [Ingestion Path — No Circuit Breaker](#ingestion-path--no-circuit-breaker)
 
 ### Agent Loop
 - [Agentic RAG — The Pydantic AI Loop](#agentic-rag--the-pydantic-ai-loop)
@@ -921,6 +928,168 @@ Hooks are registered at application startup in `knowledge/api/app.py` (lifespan)
 | `POST_LLM` | `record_billing` | `billing/cost_guard.py` | `INSERT INTO token_usage` + Redis INCR |
 | `ON_VALIDATION_FAIL` | `audit_abstention` | `observability/metrics.py` | Increment abstention counter by layer |
 | `ON_ERROR` | `alert_on_error` | `observability/metrics.py` | Log + increment error counter |
+
+---
+
+## Circuit Breakers
+
+**Where:** `knowledge/bus/circuit_breaker.py`, `knowledge/retrieval/graph_retriever.py`, `knowledge/agent/cost_guard.py`
+
+### Hooks vs Circuit Breakers
+
+These are completely different mechanisms that solve different problems.
+
+| | Hooks | Circuit Breakers |
+|--|-------|-----------------|
+| **Purpose** | Extend the pipeline with new behaviour at defined moments | Protect against cascading failures when an external service is down or slow |
+| **Trigger** | Called unconditionally on every request at the hook point | Only active when a downstream service is misbehaving |
+| **Knows about failures?** | No — hooks run regardless of service health | Yes — tracks failure counts and blocks calls automatically |
+| **Where it lives** | `knowledge/hooks/` | `knowledge/bus/circuit_breaker.py` |
+| **Analogy** | Plugin event listener | Automatic fuse box for external dependencies |
+
+`HookAbort` (from the hook system) can reject a request based on a *business rule* (budget exhausted). A circuit breaker rejects calls based on *observed failure rate* of an external service. One is about policy; the other is about fault tolerance.
+
+### The Three-State Machine
+
+Every `CircuitBreaker` instance follows the standard three-state machine:
+
+```
+             ┌────────────────────────────────────────────────┐
+             │                                                │
+             ▼          5 failures in 60s                    │
+         CLOSED  ─────────────────────────►  OPEN            │
+         (normal)                           (blocking)        │
+             ▲                                  │             │
+             │                                  │ 30s passes  │
+    2 consecutive successes                     ▼             │
+             │                            HALF-OPEN           │
+             └──────────────────────────  (one probe)  ───────┘
+                                                    failure → re-OPEN
+```
+
+| State | What happens | When transitions |
+|-------|-------------|-----------------|
+| **CLOSED** | All calls pass through normally; failures are counted | → OPEN when `failures ≥ 5` within 60s |
+| **OPEN** | All calls blocked immediately; `CircuitOpenError` raised | → HALF-OPEN after 30s probe interval |
+| **HALF-OPEN** | One probe call let through | → CLOSED on 2 consecutive successes; → OPEN on any failure |
+
+Defaults (all configurable per-instance):
+- `open_threshold`: 5 failures
+- `window_seconds`: 60 seconds (failure counting window; auto-expires via Redis TTL)
+- `probe_interval_s`: 30 seconds before first HALF-OPEN probe
+- `consecutive_success_threshold`: 2 successes to close
+
+### AGE Graph Circuit Breaker — Retrieval Path
+
+**Where:** `retrieval/graph_retriever.py`
+**Protects:** Apache AGE (port 5433) — the knowledge graph store
+
+This is the only circuit breaker on the retrieval path. The AGE graph leg is optional — hybrid search can degrade gracefully to vector + text only if AGE is unavailable. The vector and tsvector legs are not circuit-broken because PostgreSQL (port 5432) is the primary store and must always be available.
+
+```python
+# graph_retriever.py — wraps every AGE query
+self._cb = CircuitBreaker("age_graph", redis)
+
+try:
+    return await self._cb.call(_run())   # _run() = embed + entity_index.hybrid_search
+except CircuitOpenError:
+    logger.warning("AGE circuit open — skipping graph retrieval")
+    return []                            # ← graceful degradation
+except Exception:
+    return []
+```
+
+**What happens in the retriever when AGE is open:**
+
+```python
+# retriever.py
+graph_task = (
+    self._graph.query(query, corpus_ids, tenant_id)
+    if self._graph and routing_decision.requires_graph
+    else asyncio.coroutine(lambda: [])()
+)
+
+sem_results, text_results, graph_results = await asyncio.gather(
+    sem_task, text_task, graph_task
+)
+# graph_results = []  ← circuit open returns empty list instantly
+# RRF fusion runs on sem_results + text_results only
+```
+
+When the AGE circuit is open, `graph_results` is `[]` immediately (no wait, no timeout). RRF fusion proceeds with fewer inputs. The user gets an answer from vector + full-text search only. No entity relationship data — but the response is not blocked and not slower.
+
+**Prometheus metric:** `circuit_breaker_state{service="age_graph"}` — 0=CLOSED, 1=OPEN, 2=HALF-OPEN. Grafana can alert when this goes to 1.
+
+### Cost Circuit Breaker — Retrieval Path
+
+**Where:** `agent/cost_guard.py`, called from the `PRE_LLM` hook
+**Protects:** LLM spend (not a service outage — a spending limit)
+
+This is named "cost circuit breaker" in the codebase but is architecturally a *spending guard*, not a fault-tolerance circuit breaker. It does not have the three-state machine. It is a hard Redis counter check:
+
+```python
+# Two levels enforced before every agent.run():
+
+# Level 1 — tenant budget
+monthly_cost = await redis.get(f"quota:{tenant_id}:cost_usd:{month}")
+if monthly_cost >= tenant_limit:
+    raise TenantBudgetExceeded → hook raises HookAbort(402)
+
+# Level 2 — system-wide daily cap
+daily_spent = await redis.get("system:cost_usd:daily")
+if daily_spent >= system_daily_limit:
+    raise SystemBudgetExceeded → hook raises HookAbort(503)
+```
+
+| Condition | Error | HTTP |
+|-----------|-------|------|
+| Tenant monthly budget exhausted | `TenantBudgetExceeded` | 402 |
+| System daily cap breached | `SystemBudgetExceeded` | 503 |
+
+Disabled when `llm_budget_usd_per_month = 0.0` (unlimited) or `system_daily_cost_limit_usd = 0.0`.
+
+Cache hits bypass this check entirely — the cost guard is only called when the LLM will actually run.
+
+### Redis-Backed Shared State
+
+The AGE circuit breaker stores all state in Redis, not in-process memory:
+
+```
+cb:age_graph:state          → "CLOSED" | "OPEN" | "HALF-OPEN"
+cb:age_graph:failures       → integer  (expires after window_seconds; rolling window)
+cb:age_graph:opened_at      → Unix timestamp (when circuit was opened)
+cb:age_graph:half_successes → integer  (consecutive successes in HALF-OPEN)
+```
+
+This is critical in a multi-pod deployment. If one API pod observes 5 AGE timeouts, the circuit opens in Redis and is immediately OPEN on all other pods simultaneously. Every pod reads the same state. In-process circuit breakers (the common simpler approach) would require each pod to independently discover the outage, leading to 5 × N failures before all pods open their local circuits.
+
+```
+Pod A  Pod B  Pod C
+  │      │      │
+  └──────┴──────┴──► Redis  cb:age_graph:state = "OPEN"
+                            (shared; one pod's failure opens for all)
+```
+
+### Ingestion Path — No Circuit Breaker
+
+The ingestion worker does not use circuit breakers. It uses a different resilience pattern: **retry with exponential backoff + dead letter queue**.
+
+```
+Ingestion Worker
+    │
+    DoclingProcessor + embed + AGE write
+    │
+    failure?
+    ├── attempt 1 → XCLAIM (retry same message, backoff)
+    ├── attempt 2 → XCLAIM (retry, longer backoff)
+    └── attempt 3 → XADD knowledge:ingest:dlq  ← dead letter; alert fires
+                    SET job:{id} { status: "failed" }
+```
+
+Why no circuit breaker on ingestion?
+- Ingestion jobs are already async and durable (Redis Streams persist messages). A slow retry is fine — the user is not waiting.
+- The DLQ handles terminal failures: a human can inspect and requeue manually.
+- Circuit breakers are most valuable on the synchronous request path where a blocked call directly stalls a user-facing response. On the async ingestion path, the job just waits in the queue.
 
 ---
 
