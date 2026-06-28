@@ -34,6 +34,16 @@ function step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
 function err($msg)  { Write-Host "ERROR: $msg" -ForegroundColor Red }
 
+# ── Clean install prompt ──────────────────────────────────────────────────────
+Write-Host "Clean install? This will destroy all containers and data volumes." -ForegroundColor Yellow
+$cleanAnswer = Read-Host "  Wipe everything and start fresh? [y/N]"
+if ($cleanAnswer -match "^[Yy]$") {
+    step "Clean install — removing containers and data volumes (Ollama models preserved)"
+    docker compose down --remove-orphans 2>$null
+    docker volume rm v2_pgdata v2_agedata v2_redisdata 2>$null
+    ok "Containers and data volumes removed"
+}
+
 # ── Prerequisites check ───────────────────────────────────────────────────────
 $missing = $false
 
@@ -136,10 +146,7 @@ docker compose ps
 
 # ── 6. Pull Ollama models ─────────────────────────────────────────────────────
 step "Pulling Ollama models (this may take a while)..."
-ollama pull llama3.2:3b
-ollama pull nomic-embed-text:latest
-ollama pull qwen2.5:0.5b
-ollama pull llama3.1:70b
+bash scripts/pull_models.sh
 
 # ── 7. Migrate + seed ─────────────────────────────────────────────────────────
 step "Running migrations..."

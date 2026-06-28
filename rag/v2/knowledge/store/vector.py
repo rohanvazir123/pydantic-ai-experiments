@@ -14,9 +14,11 @@ Hybrid search uses Reciprocal Rank Fusion (k=60) to combine the two legs:
 
 import json
 import logging
+import sys
 import uuid as _uuid
 from contextlib import asynccontextmanager
 from typing import Any, cast
+from urllib.parse import parse_qs, urlparse
 
 import asyncpg
 from pgvector.asyncpg import register_vector
@@ -27,6 +29,22 @@ from knowledge.store.cache import RedisCache
 logger = logging.getLogger(__name__)
 
 RRF_K: int = 60
+
+
+def _asyncpg_ssl(url: str) -> bool | None:
+    """On Windows, pass ssl=False when sslmode=disable to avoid OpenSSL DLL conflict.
+
+    cryptography (loaded by redis-py) links OpenSSL 4.x statically. Python's ssl
+    module links OpenSSL 3.x dynamically. asyncpg importing ssl triggers both,
+    causing OPENSSL_Uplink crash on Windows. ssl=False skips ssl import entirely.
+    On other platforms and for SSL-required URLs, return None (use URL default).
+    """
+    if not sys.platform.startswith("win"):
+        return None
+    mode = parse_qs(urlparse(url).query).get("sslmode", [""])[0]
+    return False if mode in ("disable", "allow") else None
+
+
 OVERFETCH_FACTOR: int = 3   # fetch k x OVERFETCH_FACTOR before reranking
 
 
@@ -68,6 +86,7 @@ class PostgresHybridStore:
             max_size=10,
             command_timeout=self._settings.db_query_timeout_s,
             init=_init,
+            ssl=_asyncpg_ssl(self._settings.database_url),
         )
         logger.info("PostgresHybridStore initialised")
 

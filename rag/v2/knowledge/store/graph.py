@@ -22,9 +22,11 @@ and call _upsert_vertex() + _add_edge() per node/edge.
 
 import logging
 import re
+import sys
 import uuid as _uuid
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlparse
 
 import asyncpg
 
@@ -34,6 +36,15 @@ if TYPE_CHECKING:
     from networkx import DiGraph
 
 logger = logging.getLogger(__name__)
+
+
+def _asyncpg_ssl(url: str) -> bool | None:
+    """See knowledge/store/vector.py — same Windows OpenSSL workaround."""
+    if not sys.platform.startswith("win"):
+        return None
+    mode = parse_qs(urlparse(url).query).get("sslmode", [""])[0]
+    return False if mode in ("disable", "allow") else None
+
 
 _AGE_SETUP = [
     "LOAD 'age'",
@@ -130,6 +141,7 @@ class AgeGraphStore:
             max_size=5,
             command_timeout=self._settings.db_query_timeout_s,
             init=_age_init,
+            ssl=_asyncpg_ssl(self._settings.age_database_url),
         )
         logger.info("AgeGraphStore initialised (age_database_url set)")
 
