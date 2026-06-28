@@ -6,6 +6,7 @@ No external services required — CrossEncoder and stores are mocked.
 import uuid
 from unittest import mock
 
+import fakeredis.aioredis as fakeredis
 import pytest
 
 from knowledge.ingestion.models import SearchResult
@@ -243,3 +244,92 @@ class TestRetriever:
         back = Retriever._dicts_to_results([d])
         assert len(back) == 1
         assert back[0].confidence == pytest.approx(0.9)
+
+
+# ── Circuit breaker degradation ───────────────────────────────────────────────
+
+class TestRetrieverCircuitBreakers:
+    """Each retrieval leg degrades gracefully when its circuit breaker opens."""
+
+    @staticmethod
+    def _make_vs() -> mock.AsyncMock:
+        vs = mock.AsyncMock()
+        vs.semantic_search.return_value = []
+        vs.text_search.return_value = []
+        return vs
+
+    @staticmethod
+    def _make_emb(vector: list[float] | None = None) -> mock.AsyncMock:
+        emb = mock.AsyncMock()
+        emb.embed.return_value = vector or [0.1] * 5
+        return emb
+
+    @pytest.mark.asyncio
+    async def test_no_redis_creates_no_circuit_breakers(self) -> None:
+        r = _make_retriever()
+        assert r._embed_cb is None
+        assert r._sem_cb is None
+        assert r._text_cb is None
+
+    @pytest.mark.asyncio
+    async def test_embed_circuit_open_skips_semantic_search(self) -> None:
+        redis = fakeredis.FakeRedis(decode_responses=False)
+        vs = self._make_vs()
+        r = _make_retriever(vector_store=vs, embedder=self._make_emb(), redis=redis)
+
+        await r._embed_cb._open()
+        await r.retrieve("query", ["corpus1"], "tenant1")
+
+        # embed circuit open → query_emb=[] → semantic leg never reaches the store
+        vs.semantic_search.assert_not_called()
+        # text leg is unaffected by the embed CB
+        vs.text_search.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_pgvector_search_circuit_open_skips_semantic_leg(self) -> None:
+        redis = fakeredis.FakeRedis(decode_responses=False)
+        vs = self._make_vs()
+        r = _make_retriever(vector_store=vs, embedder=self._make_emb(), redis=redis)
+
+        await r._sem_cb._open()
+        await r.retrieve("query", ["corpus1"], "tenant1")
+
+        vs.semantic_search.assert_not_called()
+        vs.text_search.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_pgvector_text_circuit_open_skips_text_leg(self) -> None:
+        redis = fakeredis.FakeRedis(decode_responses=False)
+        vs = self._make_vs()
+        r = _make_retriever(vector_store=vs, embedder=self._make_emb(), redis=redis)
+
+        await r._text_cb._open()
+        await r.retrieve("query", ["corpus1"], "tenant1")
+
+        vs.text_search.assert_not_called()
+        vs.semantic_search.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_embed_failures_open_circuit_after_threshold(self) -> None:
+        redis = fakeredis.FakeRedis(decode_responses=False)
+        vs = self._make_vs()
+        emb = mock.AsyncMock()
+        emb.embed.side_effect = ConnectionError("Ollama unreachable")
+        r = _make_retriever(vector_store=vs, embedder=emb, redis=redis)
+        r._embed_cb._open_threshold = 2  # speed up the test
+
+        for _ in range(2):
+            await r.retrieve("query", ["c1"], "t1")
+
+        assert await r._embed_cb._get_state() == "OPEN"
+
+    @pytest.mark.asyncio
+    async def test_all_circuits_closed_calls_both_legs(self) -> None:
+        redis = fakeredis.FakeRedis(decode_responses=False)
+        vs = self._make_vs()
+        r = _make_retriever(vector_store=vs, embedder=self._make_emb(), redis=redis)
+
+        await r.retrieve("query", ["c1"], "t1")
+
+        vs.semantic_search.assert_called_once()
+        vs.text_search.assert_called_once()

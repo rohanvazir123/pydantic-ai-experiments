@@ -18,6 +18,9 @@ import asyncio
 import logging
 from typing import Any
 
+import redis.asyncio as aioredis
+
+from knowledge.bus.circuit_breaker import CircuitBreaker, CircuitOpenError
 from knowledge.config.settings import Settings, load_settings
 from knowledge.ingestion.embedder import Embedder
 from knowledge.ingestion.models import SearchResult
@@ -45,6 +48,7 @@ class Retriever:
         semantic_cache: Any | None = None,   # SemanticCache | None
         graph_retriever: Any | None = None,  # GraphRetriever | None
         settings: Settings | None = None,
+        redis: aioredis.Redis | None = None,
     ) -> None:
         self._vs      = vector_store
         self._emb     = embedder
@@ -52,6 +56,10 @@ class Retriever:
         self._sc      = semantic_cache
         self._graph   = graph_retriever
         self._settings = settings or load_settings()
+        # Circuit breakers — None when redis not provided (tests, tool-call retriever)
+        self._embed_cb = CircuitBreaker("embedding_service", redis) if redis else None
+        self._sem_cb   = CircuitBreaker("pgvector_search",   redis) if redis else None
+        self._text_cb  = CircuitBreaker("pgvector_text",     redis) if redis else None
 
     # ── Main retrieval ────────────────────────────────────────────────────────
 
@@ -77,7 +85,15 @@ class Retriever:
         # ── 2. Embed query ────────────────────────────────────────────────────
         query_emb: list[float] = []
         if self._emb:
-            query_emb = await self._emb.embed(query)
+            try:
+                if self._embed_cb:
+                    query_emb = await self._embed_cb.call(self._emb.embed(query))
+                else:
+                    query_emb = await self._emb.embed(query)
+            except CircuitOpenError:
+                logger.warning("embedding_service circuit OPEN — semantic + L3 cache skipped")
+            except Exception as exc:
+                logger.warning("Embedding failed (%s) — semantic + L3 cache skipped", exc)
 
         # ── 3. L3 semantic cache ──────────────────────────────────────────────
         if self._sc and query_emb:
@@ -200,11 +216,23 @@ class Retriever:
     ) -> list[dict]:
         if not self._vs or not query_emb:
             return []
-        results: list[dict] = []
-        for corpus_id in corpus_ids:
-            rows = await self._vs.semantic_search(query_emb, corpus_id, tenant_id, k)
-            results.extend(rows)
-        return results
+
+        async def _run() -> list[dict]:
+            rows: list[dict] = []
+            for corpus_id in corpus_ids:
+                rows.extend(await self._vs.semantic_search(query_emb, corpus_id, tenant_id, k))
+            return rows
+
+        try:
+            if self._sem_cb:
+                return await self._sem_cb.call(_run())
+            return await _run()
+        except CircuitOpenError:
+            logger.warning("pgvector_search circuit OPEN — semantic leg skipped")
+            return []
+        except Exception as exc:
+            logger.error("Semantic search failed (%s)", exc)
+            return []
 
     async def _text_search(
         self,
@@ -215,11 +243,23 @@ class Retriever:
     ) -> list[dict]:
         if not self._vs:
             return []
-        results: list[dict] = []
-        for corpus_id in corpus_ids:
-            rows = await self._vs.text_search(query, corpus_id, tenant_id, k)
-            results.extend(rows)
-        return results
+
+        async def _run() -> list[dict]:
+            rows: list[dict] = []
+            for corpus_id in corpus_ids:
+                rows.extend(await self._vs.text_search(query, corpus_id, tenant_id, k))
+            return rows
+
+        try:
+            if self._text_cb:
+                return await self._text_cb.call(_run())
+            return await _run()
+        except CircuitOpenError:
+            logger.warning("pgvector_text circuit OPEN — text search leg skipped")
+            return []
+        except Exception as exc:
+            logger.error("Text search failed (%s)", exc)
+            return []
 
     # ── Serialisation helpers ─────────────────────────────────────────────────
 

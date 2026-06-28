@@ -40,6 +40,9 @@
   - [Hooks vs Circuit Breakers](#hooks-vs-circuit-breakers)
   - [The Three-State Machine](#the-three-state-machine)
   - [AGE Graph Circuit Breaker — Retrieval Path](#age-graph-circuit-breaker--retrieval-path)
+  - [Embedding Service Circuit Breaker](#embedding-service-circuit-breaker)
+  - [pgvector Search Circuit Breaker](#pgvector-search-circuit-breaker)
+  - [pgvector Text Search Circuit Breaker](#pgvector-text-search-circuit-breaker)
   - [Cost Circuit Breaker — Retrieval Path](#cost-circuit-breaker--retrieval-path)
   - [Redis-Backed Shared State](#redis-backed-shared-state)
   - [Ingestion Path — No Circuit Breaker](#ingestion-path--no-circuit-breaker)
@@ -984,8 +987,6 @@ Defaults (all configurable per-instance):
 **Where:** `retrieval/graph_retriever.py`
 **Protects:** Apache AGE (port 5433) — the knowledge graph store
 
-This is the only circuit breaker on the retrieval path. The AGE graph leg is optional — hybrid search can degrade gracefully to vector + text only if AGE is unavailable. The vector and tsvector legs are not circuit-broken because PostgreSQL (port 5432) is the primary store and must always be available.
-
 ```python
 # graph_retriever.py — wraps every AGE query
 self._cb = CircuitBreaker("age_graph", redis)
@@ -1020,6 +1021,92 @@ When the AGE circuit is open, `graph_results` is `[]` immediately (no wait, no t
 
 **Prometheus metric:** `circuit_breaker_state{service="age_graph"}` — 0=CLOSED, 1=OPEN, 2=HALF-OPEN. Grafana can alert when this goes to 1.
 
+### Embedding Service Circuit Breaker
+
+**Where:** `retrieval/retriever.py` — wraps `Embedder.embed()` in `retrieve()`
+**Protects:** Ollama embedding endpoint (or any OpenAI-compatible embedding API)
+
+```python
+# retriever.py
+try:
+    if self._embed_cb:
+        query_emb = await self._embed_cb.call(self._emb.embed(query))
+    else:
+        query_emb = await self._emb.embed(query)
+except CircuitOpenError:
+    logger.warning("embedding_service circuit OPEN — semantic + L3 cache skipped")
+except Exception as exc:
+    logger.warning("Embedding failed (%s) — semantic + L3 cache skipped", exc)
+```
+
+When the embedding service circuit is open:
+- `query_emb` stays `[]`
+- `_semantic_search` short-circuits immediately (`if not query_emb: return []`)
+- L3 semantic cache lookup is also skipped (needs an embedding to query)
+- Text search (tsvector GIN) continues unaffected — it does not need an embedding
+- RRF fusion runs on text results only
+
+### pgvector Search Circuit Breaker
+
+**Where:** `retrieval/retriever.py` — wraps `_semantic_search()` body
+**Protects:** PostgreSQL pgvector HNSW index scans
+
+```python
+# _semantic_search() — the HNSW scan leg
+async def _run() -> list[dict]:
+    rows: list[dict] = []
+    for corpus_id in corpus_ids:
+        rows.extend(await self._vs.semantic_search(query_emb, corpus_id, tenant_id, k))
+    return rows
+
+try:
+    if self._sem_cb:
+        return await self._sem_cb.call(_run())
+    return await _run()
+except CircuitOpenError:
+    logger.warning("pgvector_search circuit OPEN — semantic leg skipped")
+    return []
+```
+
+When open, the semantic search leg returns `[]`. Text search continues. This protects against a degraded pgvector index (e.g. HNSW rebuild in progress, lock contention) without blocking the full-text leg.
+
+### pgvector Text Search Circuit Breaker
+
+**Where:** `retrieval/retriever.py` — wraps `_text_search()` body
+**Protects:** PostgreSQL tsvector GIN index scans
+
+```python
+# _text_search() — the GIN full-text scan leg
+async def _run() -> list[dict]:
+    rows: list[dict] = []
+    for corpus_id in corpus_ids:
+        rows.extend(await self._vs.text_search(query, corpus_id, tenant_id, k))
+    return rows
+
+try:
+    if self._text_cb:
+        return await self._text_cb.call(_run())
+    return await _run()
+except CircuitOpenError:
+    logger.warning("pgvector_text circuit OPEN — text search leg skipped")
+    return []
+```
+
+When open, the text search leg returns `[]`. Semantic search continues. This handles the unusual case where the GIN index is unavailable while pgvector HNSW is still healthy.
+
+**Degradation matrix across all four retrieval CBs:**
+
+| Open circuit(s) | Result |
+|----------------|--------|
+| None | Full hybrid: semantic + text + graph |
+| `age_graph` | Vector + text only (no KG entity data) |
+| `embedding_service` | Text only (no HNSW scan, no L3 cache) |
+| `pgvector_search` | Text only (HNSW scan skipped) |
+| `pgvector_text` | Semantic only (GIN scan skipped) |
+| `embedding_service` + `pgvector_search` | Text only |
+| `pgvector_search` + `pgvector_text` | Empty (both vector legs down; only graph if available) |
+| All four | Empty — abstention triggered by Gate 1 |
+
 ### Cost Circuit Breaker — Retrieval Path
 
 **Where:** `agent/cost_guard.py`, called from the `PRE_LLM` hook
@@ -1052,16 +1139,22 @@ Cache hits bypass this check entirely — the cost guard is only called when the
 
 ### Redis-Backed Shared State
 
-The AGE circuit breaker stores all state in Redis, not in-process memory:
+All four retrieval circuit breakers store their state in Redis, not in-process memory:
 
 ```
-cb:age_graph:state          → "CLOSED" | "OPEN" | "HALF-OPEN"
-cb:age_graph:failures       → integer  (expires after window_seconds; rolling window)
-cb:age_graph:opened_at      → Unix timestamp (when circuit was opened)
-cb:age_graph:half_successes → integer  (consecutive successes in HALF-OPEN)
+cb:{name}:state          → "CLOSED" | "OPEN" | "HALF-OPEN"
+cb:{name}:failures       → integer  (expires after window_seconds; rolling window)
+cb:{name}:opened_at      → Unix timestamp (when circuit was opened)
+cb:{name}:half_successes → integer  (consecutive successes in HALF-OPEN)
 ```
 
-This is critical in a multi-pod deployment. If one API pod observes 5 AGE timeouts, the circuit opens in Redis and is immediately OPEN on all other pods simultaneously. Every pod reads the same state. In-process circuit breakers (the common simpler approach) would require each pod to independently discover the outage, leading to 5 × N failures before all pods open their local circuits.
+Active key namespaces in the retrieval path:
+- `cb:age_graph:*` — Apache AGE graph store
+- `cb:embedding_service:*` — Ollama / OpenAI embedding endpoint
+- `cb:pgvector_search:*` — pgvector HNSW cosine scan
+- `cb:pgvector_text:*` — tsvector GIN full-text scan
+
+This is critical in a multi-pod deployment. If one API pod observes 5 embedding timeouts, the circuit opens in Redis and is immediately OPEN on all other pods simultaneously. Every pod reads the same state. In-process circuit breakers (the common simpler approach) would require each pod to independently discover the outage, leading to 5 × N failures before all pods open their local circuits.
 
 ```
 Pod A  Pod B  Pod C

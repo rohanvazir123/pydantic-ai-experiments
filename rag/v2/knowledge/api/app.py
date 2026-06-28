@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         embedder=embedder,
         cache=cache,
         settings=settings,
+        redis=redis_client,
     )
     app.state.retriever = retriever
 
