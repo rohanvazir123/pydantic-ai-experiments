@@ -10,16 +10,26 @@
 - [Ingestion Flow](#ingestion-flow)
 - [User Query Data Flow](#user-query-data-flow)
 
-### How the System Works
+### Pipeline Blocks — Retrieval Path
+- [Validation Pipeline (V1–V6)](#validation-pipeline-v1v6)
+- [Model Router](#model-router)
+- [Three-Layer Cache (L1 / L2 / L3)](#three-layer-cache-l1--l2--l3)
+- [Working Memory Assembly](#working-memory-assembly)
+- [Hook System](#hook-system)
+
+### Agent Loop
 - [Agentic RAG — The Pydantic AI Loop](#agentic-rag--the-pydantic-ai-loop)
   - [Is This Agentic RAG?](#is-this-agentic-rag)
   - [The Agent Loop Step by Step](#the-agent-loop-step-by-step)
+  - [Pydantic AI Orchestration Diagram](#pydantic-ai-orchestration-diagram)
   - [When Does the LLM Call a Tool?](#when-does-the-llm-call-a-tool)
   - [Streaming Path](#streaming-path)
 - [Three Confidence Gates — Deep Dive](#three-confidence-gates--deep-dive)
   - [Gate 1 — Retrieval Confidence](#gate-1--retrieval-confidence)
   - [Gate 2 — Citation Check](#gate-2--citation-check)
   - [Gate 3 — LLM Judge](#gate-3--llm-judge)
+
+### Query Handling
 - [Query Ambiguity and Pronoun Resolution](#query-ambiguity-and-pronoun-resolution)
   - [How Pronouns Are Resolved](#how-pronouns-are-resolved)
   - [Impact on Retrieval](#impact-on-retrieval)
@@ -33,6 +43,13 @@
 - [Queues in the System](#queues-in-the-system)
 - [Conversation Isolation Across Users](#conversation-isolation-across-users)
 - [Why SSE and Not WebSockets](#why-sse-and-not-websockets)
+
+### Evaluation
+- [Evaluation System](#evaluation-system)
+  - [Gold Dataset](#gold-dataset)
+  - [How an Eval Run Works](#how-an-eval-run-works)
+  - [Metrics](#metrics)
+  - [Regression Detection](#regression-detection)
 
 ### Further Reading (design/)
 - [REST_API.md](design/REST_API.md) — All /api/v2 endpoints with request/response shapes
@@ -456,6 +473,376 @@ INGESTION WORKER (knowledge/ingestion/worker.py)
 
 ---
 
+## Validation Pipeline (V1–V6)
+
+**Where:** `knowledge/validation/pipeline.py`
+**When:** Every chat and ingest request, before any retrieval or LLM call.
+
+Six stages run in sequence. Any stage can reject the request immediately with an HTTP error. The pipeline is fail-fast — a stage that fires returns before the remaining stages run.
+
+```
+Request body
+    │
+    V1  Schema check       → 400 Bad Request
+    │
+    V2  Length guard       → 422 Unprocessable Entity
+    │
+    V3  Language detect    → 422 Unprocessable Entity
+    │
+    V4  Injection detect   → 422 Unprocessable Entity
+    │
+    V5  Content policy     → 422 / 400 + audit log
+    │
+    V6  RBAC               → 403 Forbidden
+    │
+    pass → continue to Model Router
+```
+
+### V1 — Schema Check
+
+Pydantic model validation on the raw request body. Catches missing required fields, wrong types, extra fields when `extra="forbid"`. Returns `400 Bad Request` with a structured error body before any business logic runs. This is free — no DB or LLM call.
+
+### V2 — Length Guard
+
+```python
+if len(query) > settings.max_query_chars:   # default: 2000
+    raise HTTP 422
+```
+
+Prevents extremely long queries from being embedded (768-dim embed call is cheap but not free) and from consuming the context window. A 10,000-character "query" is almost certainly a prompt injection attempt or a paste accident.
+
+### V3 — Language Detection
+
+Optional. When `allowed_languages` is set in settings (e.g., `["en", "es"]`), the query language is detected using a lightweight classifier. Queries in other languages return `422`. Disabled by default — leave unset to accept all languages.
+
+### V4 — Injection Detector
+
+Two sub-checks run in parallel:
+
+1. **Regex patterns** — matches known prompt injection strings ("ignore previous instructions", "system:", "you are now", etc.). Fast; no model call.
+2. **Embedding similarity** — embeds the query and computes cosine similarity against a small bank of known attack embeddings. Catches paraphrased injections the regex misses.
+
+If either sub-check fires → `422`. The threshold for embedding similarity is configurable (`injection_similarity_threshold`, default 0.85).
+
+### V5 — Content Policy
+
+A nano LLM (`qwen2.5:0.5b`) classifies the query:
+
+```python
+class ContentPolicyResult(BaseModel):
+    verdict:    Literal["on_topic", "off_topic", "inappropriate"]
+    confidence: float
+    reason:     str
+```
+
+| Verdict | Action |
+|---------|--------|
+| `on_topic` | Continue |
+| `off_topic` | `422` — "This system only answers questions about [corpus topic]" |
+| `inappropriate` | `400` + write to audit log; may trigger alert |
+
+This is the only V stage that makes an LLM call. Timeout: 5 seconds (fallback: pass through and log).
+
+### V6 — RBAC Check
+
+Compares JWT roles against `CorpusConfig.allowed_roles` for the requested corpus.
+
+```python
+user_roles  = set(jwt_payload["roles"])         # from JWT
+corpus_roles = set(corpus.allowed_roles)         # from DB
+if not user_roles.intersection(corpus_roles):
+    raise HTTP 403
+```
+
+A `viewer` role cannot query a corpus that requires `admin`. This is enforced at the API layer before any data is touched. Database-level RLS provides a second enforcement layer (defense in depth).
+
+---
+
+## Model Router
+
+**Where:** `knowledge/agent/model_router.py`
+**When:** After validation passes, before retrieval.
+
+A nano LLM (`qwen2.5:0.5b`) reads the query and returns a routing decision:
+
+```python
+class RoutingDecision(BaseModel):
+    complexity:           Literal["simple", "moderate", "complex"]
+    requires_graph:       bool
+    model_tier:           Literal["nano", "small", "large"]
+    estimated_context_tokens: int
+    rejected:             bool    # True only for structurally malformed queries
+```
+
+**Timeout:** 3 seconds. If the router times out or fails, it falls back to `small` tier with `requires_graph=False`.
+
+### Complexity → Model Tier
+
+| Complexity | Model | Context estimate | Examples |
+|-----------|-------|-----------------|---------|
+| `simple` | nano (`qwen2.5:0.5b`) | ~500 tokens | "What is the PTO policy?" |
+| `moderate` | small (`llama3.2:3b`) | ~1500 tokens | "Compare the benefits packages for US and EU employees" |
+| `complex` | large (`llama3.1:70b`) | 3000+ tokens | "Trace the approval chain for a $50k purchase given our current procurement policy" |
+
+The `model_tier` in the request body can override the router decision — useful for forcing a specific tier in tests or for users with explicit tier access.
+
+### requires_graph
+
+When `requires_graph=True`, the AGE Cypher leg runs in the parallel hybrid search (`asyncio.gather`). When `False`, the graph leg is skipped entirely, saving ~50–200ms on the AGE query. The LLM can override this during the agent loop: if it calls `search_knowledge_graph` despite `requires_graph=False`, the tool executes normally.
+
+---
+
+## Three-Layer Cache (L1 / L2 / L3)
+
+The retrieval pipeline checks three cache layers before running hybrid search. Each layer is faster and cheaper than the one after it; each is also less precise.
+
+```
+Query arrives
+    │
+    L1  In-process LRU   sub-millisecond, per-process, lost on restart
+    HIT ──────────────────────────────────────────────────────► return
+    MISS ↓
+    │
+    L2  Redis            ~1ms, shared across processes, 5-min TTL
+    HIT ──────────────────────────────────────────────────────► return
+    MISS ↓
+    │
+    Embed query (768d) ← L1 embedding cache may shortcut this
+    │
+    L3  pgvector semantic cache   ~5ms, 60-min TTL, fuzzy match (cosine ≥ 0.95)
+    HIT ──────────────────────────────────────────────────────► return (decrypt JWE)
+    MISS ↓
+    │
+    Hybrid search → RRF → CrossEncoder → ...
+```
+
+### L1 — In-Process LRU
+
+A Python `dict` (LRU-eviction) keyed on `sha256(query + corpus_ids)`. Populated at retrieval time; survives only within the process lifetime. Sub-millisecond lookup. Primarily useful on dev/single-instance; in a multi-pod deployment, each pod has its own L1 and misses on queries handled by other pods.
+
+### L2 — Redis Key-Value Cache
+
+```
+Key:   cache:search:{sha256(query + corpus_ids + filter_hash)}
+Value: msgpack-serialised RAGResponse
+TTL:   5 minutes
+```
+
+Written as `asyncio.create_task` immediately after retrieval completes — before the agent runs. This means: if the user cancels during LLM generation, L2 is still populated. A repeated query after cancel hits L2 and skips retrieval entirely.
+
+Cross-process — all API workers share the same Redis instance. Effective for repeated identical queries (e.g., multiple users asking "What is the PTO policy?").
+
+### L3 — Semantic Cache (pgvector)
+
+```sql
+SELECT answer_jwe, query_emb <=> $vec AS dist
+FROM semantic_cache
+WHERE corpus_id = $corpus_id
+  AND expires_at > NOW()
+ORDER BY dist
+LIMIT 1
+```
+
+If `dist ≤ 0.05` (cosine similarity ≥ 0.95), the cached answer is returned. The answer is stored as a JWE (JSON Web Encryption, A256GCM) — the full `RAGResponse` is encrypted at rest. This prevents raw answer text from sitting in the database unprotected.
+
+Written in the `POST_LLM` hook as a background `create_task`. TTL: 60 minutes (configurable).
+
+L3 catches semantically equivalent queries even if the exact string differs: "What is the leave policy?" and "How much paid time off do employees get?" resolve to nearby vectors and may both hit the same cached answer.
+
+---
+
+## Working Memory Assembly
+
+**Where:** `knowledge/memory/working_memory.py`
+**When:** After Gate 1 passes (retrieval returned results), before `agent.run()`.
+
+The LLM receives a single assembled context — not the raw query alone. Five tiers of information are combined into one message history, then trimmed to fit the token budget.
+
+### Five Memory Tiers
+
+| Tier | Content | Source | Why it matters |
+|------|---------|--------|---------------|
+| Tier 5 | System prompt | `system_prompts` table or `prompts.py` | Citation rules, tool instructions, abstain policy |
+| Tier 3 | User memory facts | `user_memories` table (Mem0) | Persistent facts about this user across sessions ("user is a senior engineer in EU") |
+| Tier 2 | Conversation history | `messages` table, last 8 turns (or summary + last 8) | Follow-up resolution, pronoun context, continuity |
+| Tier 4 | Retrieved chunks | Retriever output, top-K chunks with `[chunk_id]` anchors | The actual knowledge the LLM will cite |
+| Current query | Raw user query | Request body | What the user is asking now |
+
+Tier numbers reflect priority during trimming — Tier 5 (system prompt) is never trimmed; Tier 3 (user facts) is dropped first if needed.
+
+### Token Budget and Trimming
+
+```python
+trim_to_budget(context, max_tokens=8192)
+  1. Drop lowest-confidence chunks (Tier 4) until under budget
+  2. Drop oldest conversation turns (Tier 2)
+  3. Drop user memory facts (Tier 3)
+  4. Never drop Tier 5 (system prompt)
+  5. Set context_truncated=True if any trimming happened
+```
+
+`context_truncated=True` is included in the `RAGResponse` metadata so clients can surface a "context was trimmed" indicator if needed.
+
+---
+
+## Hook System
+
+**Where:** `knowledge/hooks/`
+**Purpose:** Extension points that fire at defined moments in the pipeline without modifying core pipeline logic.
+
+The hook system is a simple async event bus: `HookRegistry` holds a map of `HookPoint → list[async callable]`. Handlers are registered at application startup. The pipeline calls `await registry.fire(HookPoint.X, ctx)` at each defined point; all registered handlers for that point run sequentially.
+
+### Hook Points
+
+```
+Request enters pipeline
+    │
+    V1-V6 validation
+    │
+    POST_RETRIEVE ──── fires after retrieval + RRF + rerank
+    │                  used for: Prometheus metrics, latency recording
+    │
+    PRE_LLM ────────── fires before agent.run()
+    │                  used for: cost guard (budget check), billing pre-check
+    │
+    [agent.run() + Gates 2 and 3]
+    │
+    POST_LLM ───────── fires after successful answer (and after Gate 3 abstention)
+    │                  used for: L3 cache write, episodic storage, Mem0 fact
+    │                            extraction, billing INSERT
+    │
+    ON_VALIDATION_FAIL fires on any gate abstention or validation rejection
+                       used for: audit logging, alert thresholds
+```
+
+### PRE_RETRIEVE Hook
+
+Fires in the request path, before retrieval starts. Currently used for:
+- **Cost guard** — `Redis INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}`. If the tenant's monthly spend exceeds their budget limit, the hook raises `TenantBudgetExceeded (402)` and the request is aborted before any LLM or embedding call.
+- **User memory injection** — `Mem0.hybrid_search(query, user_id, k=3)` fetches the top-3 user facts and prepends them to the system prompt context (Tier 3 in working memory).
+
+### POST_LLM Hook
+
+Fires after a successful answer is produced (and after Gate 3 abstention — see Gate 3 section). All handlers run as `asyncio.create_task` so they are non-blocking. The user receives the answer before any of these complete:
+
+| Handler | What it does |
+|---------|-------------|
+| L3 semantic cache write | JWE-encrypt `RAGResponse` → `INSERT INTO semantic_cache` |
+| Episodic storage | `INSERT INTO messages` (role=assistant, content, citations) + `UPDATE conversations SET turn_count++` |
+| Conversation summarizer | If `turn_count == 20`: run nano model to produce a 3-5 sentence summary, write to `conversations.summary` |
+| Mem0 fact extraction | nano model extracts user-specific facts from the Q&A pair → `Mem0.add(facts, user_id)` |
+| Billing | `INSERT INTO token_usage` + `Redis INCRBYFLOAT quota:{tenant_id}:cost_usd:{month}` |
+
+**`POST_LLM` does NOT fire on cancel** (CancelledError bypasses it) or on Gate 1/Gate 2 abstention. It **does** fire on Gate 3 abstention — tokens were already consumed.
+
+---
+
+## Evaluation System
+
+The evaluation system measures retrieval and generation quality offline against a labelled gold dataset. It is entirely separate from the runtime confidence gates — it runs on demand (or on a schedule), not on every live query.
+
+```
+POST /evaluate/run
+    │
+    ▼
+EvalJob → XADD knowledge:eval stream
+    │
+    ▼
+Eval Worker (knowledge:eval consumer group)
+    │  For each GoldSample in the gold dataset:
+    │    run retrieval pipeline → compute metrics
+    │    INSERT INTO eval_results
+    │
+    ▼
+XADD knowledge:events (EvalDone)
+SET eval:{run_id} → { status: "completed", report_json: { ... } }
+
+GET /evaluate/run/{run_id}   ← poll for results
+GET /evaluate/compare?a=run1&b=run2  ← regression diff
+```
+
+### Gold Dataset
+
+Each corpus has a JSONL file at `knowledge/evaluation/data/{corpus_id}.jsonl`. Every line is a `GoldSample`:
+
+```python
+class GoldSample(BaseModel):
+    id:                   UUID
+    corpus_id:            str
+    query:                str                    # the test question
+    relevant_doc_sources: list[str]              # which document(s) contain the answer
+    ground_truth_answer:  str | None             # optional; enables generation metrics
+    difficulty:           Literal["easy", "medium", "hard"]
+    tags:                 list[str]              # e.g. ["policy", "hr", "benefits"]
+```
+
+`relevant_doc_sources` are document source identifiers (file paths or titles). Retrieval is scored by checking whether any returned chunk came from a relevant source.
+
+### How an Eval Run Works
+
+```
+POST /evaluate/run {
+    corpus_id: "default",
+    model_tier: "small",
+    search_type: "hybrid",
+    k: 5,
+    baseline_run_id: "uuid-of-previous-run"   # optional; enables regression diff
+}
+→ 202 { run_id }
+```
+
+The eval worker:
+1. Loads the gold dataset for the corpus
+2. For each `GoldSample`, runs the retrieval pipeline (same code path as live queries)
+3. Computes retrieval metrics by comparing returned chunks to `relevant_doc_sources`
+4. If `ground_truth_answer` is set: runs the generation pipeline and scores the answer
+5. Writes one `EvalResult` row per sample to `eval_results`
+6. Writes an aggregated `report_json` to `eval_runs` on completion
+
+### Metrics
+
+**Retrieval metrics** — measure whether the retriever found the right documents:
+
+| Metric | What it measures | Range |
+|--------|-----------------|-------|
+| **Hit Rate** | Did at least one relevant doc appear in top-K? | 0 or 1 per query, averaged |
+| **MRR** (Mean Reciprocal Rank) | How high did the first relevant result rank? `1/rank` | 0–1; 1.0 = always first |
+| **NDCG@K** (Normalised Discounted Cumulative Gain) | Are all relevant docs ranked high? Penalises relevant docs buried at rank 4-5 | 0–1 |
+| **Precision@K** | Of the K returned chunks, what fraction is relevant? | 0–1 |
+| **Recall@K** | Of all relevant docs, what fraction appeared in top-K? | 0–1 |
+
+**Generation metrics** (requires `ground_truth_answer`):
+
+| Metric | What it measures |
+|--------|-----------------|
+| **Faithfulness** | Does the answer stay within the retrieved passages? (LLM judge) |
+| **Answer relevance** | Does the answer actually address the question? |
+| **BLEU-4** | N-gram overlap with ground truth (precision-focused) |
+| **ROUGE-L** | Longest common subsequence with ground truth (recall-focused) |
+| **Semantic similarity** | Cosine similarity of answer embedding vs. ground truth embedding |
+
+**Performance metrics** per query: `retrieval_ms`, `generation_ms`, `total_ms`, `prompt_tokens`, `completion_tokens`, `estimated_cost_usd`, `cache_tier_hit`.
+
+**Pipeline diagnostics**: `pipeline_status`, `abstention_layer`, `judge_verdict`, `judge_confidence`, `false_abstention` — tracks cases where the pipeline abstained on a query that had a known good answer (false abstentions).
+
+### Regression Detection
+
+When `baseline_run_id` is provided, `GET /evaluate/compare?a={baseline}&b={current}` produces a diff report:
+
+```json
+{
+  "hit_rate":  { "baseline": 0.82, "current": 0.79, "delta": -0.03 },
+  "mrr":       { "baseline": 0.71, "current": 0.74, "delta": +0.03 },
+  "ndcg":      { "baseline": 0.68, "current": 0.65, "delta": -0.03 }
+}
+```
+
+A drop in Hit Rate or MRR after a retrieval change (e.g., changing chunk size, embedding model, or RRF parameters) signals a regression. The eval worker routes through `knowledge:eval` so it does not compete with live traffic for embedding or LLM capacity.
+
+**Current status:** Eval routes (`POST /evaluate/run`, `GET /evaluate/run/{run_id}`, `GET /evaluate/compare`) are wired and publish to the `knowledge:eval` stream. The eval worker and DB-backed result storage are Phase 12 work (not yet implemented). The metrics library (`evaluation/metrics/`) and schemas are complete.
+
+---
+
 ## Agentic RAG — The Pydantic AI Loop
 
 ### Is This Agentic RAG?
@@ -526,6 +913,78 @@ pipeline.py calls:
        ▼
   pipeline.py continues to Layer 2 gate (citation check) and Layer 3 (judge)
 ```
+
+### Pydantic AI Orchestration Diagram
+
+This shows the internal mechanics of how Pydantic AI drives the loop — what happens between `agent.run()` being called and `GenerationResult` being returned.
+
+```
+pipeline.py
+  │
+  │  await traced_agent_run(query, state, message_history)
+  │         │
+  │         ▼
+  │  PydanticAgent.run(query, deps=state, message_history=...)
+  │         │
+  │         │  Pydantic AI builds the message list:
+  │         │  [SystemMessage(MAIN_SYSTEM_PROMPT)]
+  │         │  [UserMessage(user_memory_facts + conv_history + chunks + query)]
+  │         │
+  │         │  POST to Ollama / OpenAI-compatible API
+  │         │  model: llama3.2:3b (or routed tier)
+  │         │
+  │         ▼
+  │  ┌─────────────────────────────────────────────────────────┐
+  │  │ TURN 1                                                  │
+  │  │                                                         │
+  │  │  LLM response — two possible shapes:                    │
+  │  │                                                         │
+  │  │  Shape A: tool_call                                     │
+  │  │  {                                                      │
+  │  │    "tool": "search_knowledge_base",                     │
+  │  │    "args": { "query": "...", "match_count": 5 }         │
+  │  │  }                                                      │
+  │  │         │                                               │
+  │  │         │  Pydantic AI intercepts the tool call.        │
+  │  │         │  Executes the Python function directly:       │
+  │  │         │                                               │
+  │  │         │  async def search_knowledge_base(ctx, query,  │
+  │  │         │    match_count, search_type) → str:           │
+  │  │         │    retriever = await ctx.deps.get_retriever() │
+  │  │         │    results = await retriever.retrieve(...)    │
+  │  │         │    return formatted_chunks_string             │
+  │  │         │                                               │
+  │  │         │  Tool result appended as ToolMessage:         │
+  │  │         │  "[chunk_id: xyz] Title\nContent..."          │
+  │  │         │                                               │
+  │  │         └──► TURN 2 (LLM sees original context          │
+  │  │                      + tool result, decides again)      │
+  │  │                                                         │
+  │  │  Shape B: structured output (final answer)              │
+  │  │  {                                                      │
+  │  │    "answer": "The PTO policy allows...",                │
+  │  │    "citations": [{ "chunk_id": "abc", ... }],           │
+  │  │    "citation_check": {                                  │
+  │  │      "is_trustworthy": true,                            │
+  │  │      "uncited_claims": []                               │
+  │  │    }                                                    │
+  │  │  }                                                      │
+  │  │  → Pydantic AI validates against GenerationResult model │
+  │  │  → returns result to pipeline.py                        │
+  │  └─────────────────────────────────────────────────────────┘
+  │         │
+  │         │  Loop can run up to 5 tool-call turns (Pydantic AI default).
+  │         │  Most queries: 1 turn (no tools). Multi-hop: 2–3 turns.
+  │         │
+  │         ▼
+  │  result.output  → GenerationResult
+  │  result.usage() → { request_tokens, response_tokens }
+  │
+  ▼
+Gate 2 (citation check) → Gate 3 (judge)
+```
+
+**Why structured output works:** Pydantic AI instructs the model to produce JSON matching `GenerationResult`. Under the hood it uses function-calling (OpenAI tool-call API) or constrained JSON generation depending on the provider. The model cannot return free text — it must produce a valid `GenerationResult` or a tool call. This eliminates the need to parse or validate the LLM's response format manually.
 
 ### When Does the LLM Call a Tool?
 
