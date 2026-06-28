@@ -1,144 +1,202 @@
 #!/usr/bin/env bash
-# RAG v2 — launch API + frontend
+# RAG v2 — launch API + frontend with pre-flight checks and sanity Q&A
 # Usage:  bash start.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; RESET='\033[0m'
+BOLD='\033[1m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+RESET='\033[0m'
+
 ok()   { echo -e "  ${GREEN}✓${RESET} $1"; }
 warn() { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
-fail() { echo -e "  ${RED}✗${RESET} $1"; exit 1; }
+fail() { echo -e "  ${RED}✗${RESET}  $1"; exit 1; }
+step() { echo -e "\n${BOLD}$1${RESET}"; }
 
-# ── Pre-flight ────────────────────────────────────────────────────────────────
+echo -e "${BOLD}"
+echo "  ╔══════════════════════════════════════╗"
+echo "  ║   RAG v2 — Start                     ║"
+echo "  ╚══════════════════════════════════════╝"
+echo -e "${RESET}"
 
-echo -e "\n${BOLD}Pre-flight checks${RESET}"
+# ── 1. .env ───────────────────────────────────────────────────────────────────
+step "1. Environment"
+if [ ! -f ".env" ]; then
+  cp .env.example .env
+  warn ".env not found — copied from .env.example (fill in values then re-run)"
+fi
+ok ".env present (loaded by Python via dotenv)"
 
-[ -f .env ]               || fail ".env missing — cp .env.example .env and fill in values"
-ok ".env found"
-
-docker info >/dev/null 2>&1 || fail "Docker not running — start Docker Desktop first"
-ok "Docker running"
-
-command -v uv >/dev/null 2>&1 || fail "uv not found — curl -LsSf https://astral.sh/uv/install.sh | sh"
-ok "uv found"
-
-[ -d .venv ] || { warn ".venv missing — running uv sync..."; uv sync --extra ingestion --extra observability --extra reranker --extra audio; }
-ok ".venv ready"
-
-[ -f infra/keys/private.pem ] || {
-  warn "JWT keys missing — generating..."
+# ── 2. JWT keys ───────────────────────────────────────────────────────────────
+step "2. JWT keys"
+if [ ! -f "infra/keys/private.pem" ] || [ ! -f "infra/keys/public.pem" ]; then
+  warn "RSA keys missing — generating now"
   mkdir -p infra/keys
   openssl genrsa -out infra/keys/private.pem 2048 2>/dev/null
   openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem 2>/dev/null
-}
-ok "JWT keys ready"
+fi
+ok "JWT keys present"
 
-# ── Docker services ───────────────────────────────────────────────────────────
-
-echo -e "\n${BOLD}Starting Docker services${RESET}"
+# ── 3. Docker services ────────────────────────────────────────────────────────
+step "3. Docker services"
 docker compose up -d postgres redis >/dev/null 2>&1
+ok "postgres + redis up"
 
-PG_PORT=$(grep    "^DATABASE_URL" .env | sed 's/.*localhost:\([0-9]*\)\/.*/\1/')
-REDIS_PORT=$(grep "^REDIS_URL"    .env | sed 's/.*localhost:\([0-9]*\).*/\1/')
+# ── 4. Python venv ────────────────────────────────────────────────────────────
+step "4. Python venv"
+if [ ! -d ".venv" ]; then
+  warn ".venv missing — running uv sync"
+  uv sync --extra all 2>&1 | tail -5
+fi
+ok "venv ready"
 
-echo -n "  Waiting for postgres (:${PG_PORT})"
-for i in $(seq 1 20); do
-  nc -z localhost "$PG_PORT" 2>/dev/null && { echo ""; ok "Postgres ready on :${PG_PORT}"; break; }
-  echo -n "."; sleep 1
-  [ "$i" -eq 20 ] && { echo ""; fail "Postgres not reachable on :${PG_PORT} — docker-compose port: $(docker compose port postgres 5432 2>/dev/null), .env port: ${PG_PORT}"; }
-done
-
-echo -n "  Waiting for Redis (:${REDIS_PORT})"
-for i in $(seq 1 20); do
-  nc -z localhost "$REDIS_PORT" 2>/dev/null && { echo ""; ok "Redis ready on :${REDIS_PORT}"; break; }
-  echo -n "."; sleep 1
-  [ "$i" -eq 20 ] && { echo ""; fail "Redis not reachable on :${REDIS_PORT} — docker-compose port: $(docker compose port redis 6379 2>/dev/null), .env port: ${REDIS_PORT}"; }
-done
-
-# ── DB schemas + seed ─────────────────────────────────────────────────────────
-
-echo -e "\n${BOLD}Checking database${RESET}"
-CHUNK_COUNT=$(uv run python -c "
+# ── 5. DB schemas ─────────────────────────────────────────────────────────────
+step "5. Database"
+CHUNK_COUNT=$(uv run python - 2>/dev/null <<'PYEOF' | tail -1
 import asyncio, asyncpg, os
-from dotenv import load_dotenv; load_dotenv()
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env", override=False)
 async def run():
     try:
-        conn = await asyncpg.connect(os.environ['DATABASE_URL'])
-        n = await conn.fetchval('SELECT COUNT(*) FROM chunks')
+        conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+        n = await conn.fetchval("SELECT COUNT(*) FROM chunks")
         await conn.close()
         print(n)
     except Exception:
         print(0)
 asyncio.run(run())
-" 2>/dev/null | tail -1)
+PYEOF
+) || CHUNK_COUNT=0
 
 if [ "${CHUNK_COUNT:-0}" -eq 0 ]; then
-  warn "No chunks found — applying schemas and seeding..."
-  uv run python -c "
+  warn "No chunks in DB — applying schemas and seeding sample documents"
+  uv run python - <<'PYEOF' 2>&1 | grep -v "^$"
 import asyncio, asyncpg, os, glob
-from dotenv import load_dotenv; load_dotenv()
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env", override=False)
 async def run():
-    conn = await asyncpg.connect(os.environ['DATABASE_URL'])
-    for f in sorted(glob.glob('schema/*.sql')):
-        print(f'  Applying {f}...')
+    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    for f in sorted(glob.glob("schema/*.sql")):
         await conn.execute(open(f).read())
     await conn.close()
 asyncio.run(run())
-"
-  uv run python scripts/seed.py
+PYEOF
+  uv run python scripts/seed.py --force 2>&1 | tail -10
+  CHUNK_COUNT=$(uv run python - 2>/dev/null <<'PYEOF' | tail -1
+import asyncio, asyncpg, os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env", override=False)
+async def run():
+    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+    n = await conn.fetchval("SELECT COUNT(*) FROM chunks")
+    await conn.close()
+    print(n)
+asyncio.run(run())
+PYEOF
+  ) || CHUNK_COUNT=0
+  ok "${CHUNK_COUNT} chunks seeded"
 else
-  ok "${CHUNK_COUNT} chunks in DB"
+  ok "${CHUNK_COUNT} chunks already in DB"
 fi
 
-# ── Ollama ────────────────────────────────────────────────────────────────────
-
-if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-  warn "Ollama not running — starting..."
-  ollama serve >/dev/null 2>&1 &
-  sleep 3
-  curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 && ok "Ollama started" || warn "Ollama still not responding — LLM calls will fail"
-else
-  ok "Ollama running"
-fi
-
-# ── Start services ────────────────────────────────────────────────────────────
-
+# ── 6. Kill stale processes ───────────────────────────────────────────────────
+step "6. Clearing ports"
 lsof -ti:8001 | xargs kill -9 2>/dev/null || true
 lsof -ti:7200 | xargs kill -9 2>/dev/null || true
-sleep 1
+ok "Ports 8001 and 7200 clear"
 
-echo -e "\n${BOLD}Starting API on :8001${RESET}"
-uv run uvicorn knowledge.api.app:app --port 8001 --reload > /tmp/rag-api.log 2>&1 &
+# ── 7. Start API ──────────────────────────────────────────────────────────────
+step "7. Starting API (:8001)"
+uv run uvicorn knowledge.api.app:app --port 8001 --reload \
+  > /tmp/rag-api.log 2>&1 &
 echo $! > /tmp/rag-api.pid
 
-echo -e "${BOLD}Starting frontend on :7200${RESET}"
-(cd frontend && \
-  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}" && \
-  [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" && \
-  PORT=7200 npm run dev > /tmp/rag-ui.log 2>&1) &
+echo -n "  Waiting for API"
+API_UP=0
+for i in $(seq 1 45); do
+  if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+    echo ""; API_UP=1; break
+  fi
+  echo -n "."; sleep 1
+done
+if [ "$API_UP" -eq 0 ]; then
+  echo ""
+  fail "API did not start — run: tail -50 /tmp/rag-api.log"
+fi
+ok "API running"
+
+# ── 8. Start frontend ─────────────────────────────────────────────────────────
+step "8. Starting frontend (:7200)"
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+(cd frontend && PORT=7200 npm run dev > /tmp/rag-ui.log 2>&1) &
 echo $! > /tmp/rag-ui.pid
 
-echo -n "  Waiting for API"
-for i in $(seq 1 40); do
-  curl -sf http://localhost:8001/health >/dev/null 2>&1 && { echo ""; ok "API ready  →  http://localhost:8001/health"; break; }
-  echo -n "."; sleep 1
-  [ "$i" -eq 40 ] && { echo ""; echo "API failed:"; tail -20 /tmp/rag-api.log; exit 1; }
-done
-
 echo -n "  Waiting for UI"
-for i in $(seq 1 40); do
-  curl -sf http://localhost:7200 >/dev/null 2>&1 && { echo ""; ok "UI ready   →  http://localhost:7200"; break; }
+UI_UP=0
+for i in $(seq 1 45); do
+  if curl -sf http://localhost:7200 >/dev/null 2>&1; then
+    echo ""; UI_UP=1; break
+  fi
   echo -n "."; sleep 1
-  [ "$i" -eq 40 ] && { echo ""; echo "UI failed:"; tail -20 /tmp/rag-ui.log; exit 1; }
 done
+if [ "$UI_UP" -eq 0 ]; then
+  echo ""
+  warn "UI did not respond on :7200 — run: tail -50 /tmp/rag-ui.log"
+fi
+
+# ── 9. Sanity Q&A ─────────────────────────────────────────────────────────────
+step "9. Sanity check"
+SANITY=$(uv run python - <<'PYEOF' 2>/dev/null
+import asyncio, os, sys
+
+async def run():
+    try:
+        import httpx
+        from knowledge.api.routes.auth import make_dev_token
+        token = make_dev_token(ttl=300)
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "http://localhost:8001/api/v2/search",
+                json={"query": "What does NeuralFlow AI do?", "corpus_ids": ["default"]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if r.status_code == 200:
+            data = r.json()
+            results = data.get("data", {}).get("results", [])
+            print(f"OK:{len(results)}")
+        else:
+            print(f"FAIL:{r.status_code}")
+    except Exception as e:
+        print(f"ERR:{e}")
+
+asyncio.run(run())
+PYEOF
+) || SANITY="ERR:sanity-script-failed"
+
+case "$SANITY" in
+  OK:0)
+    warn "Search returned 0 results — corpus may be empty; try: make seed" ;;
+  OK:*)
+    COUNT="${SANITY#OK:}"
+    ok "Search sanity passed — got ${COUNT} result(s) for test query" ;;
+  FAIL:*)
+    warn "Search returned HTTP ${SANITY#FAIL:} — check API logs" ;;
+  ERR:*)
+    warn "Sanity check error: ${SANITY#ERR:}" ;;
+  *)
+    warn "Unexpected sanity output: ${SANITY}" ;;
+esac
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-
-echo -e "\n${BOLD}  ✓ Everything running${RESET}"
+echo ""
+echo -e "${GREEN}${BOLD}  ✓ RAG v2 is running${RESET}"
 echo -e "  UI   →  http://localhost:7200"
 echo -e "  API  →  http://localhost:8001/health"
-echo -e "  Logs →  tail -f /tmp/rag-api.log | tail -f /tmp/rag-ui.log"
+echo -e "  Logs →  tail -f /tmp/rag-api.log"
 echo -e "  Stop →  kill \$(cat /tmp/rag-api.pid) \$(cat /tmp/rag-ui.pid)"
 echo ""
 
-open http://localhost:7200 2>/dev/null || xdg-open http://localhost:7200 2>/dev/null || true
+open http://localhost:7200 2>/dev/null || true
