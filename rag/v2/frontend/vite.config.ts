@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     port: 7200,
     proxy: {
-      '/api/v2': { target: 'http://127.0.0.1:7100', changeOrigin: true },
+      '/api/v2': { target: 'http://127.0.0.1:8001', changeOrigin: true },
     },
   },
 })
