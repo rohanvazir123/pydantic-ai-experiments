@@ -53,8 +53,9 @@ anaconda_projects/
 basics/iprep/meeting-analytics/final_version/meeting_analytics.html
 basics/iprep/meeting-analytics/final_version/meeting_analytics.pptx
 basics/iprep/meeting-analytics/final_version/outputs_notebook/
-# RAG v2 generated keys (never commit private key material)
+# RSA/JWE keys (never commit private key material)
 rag/v2/infra/keys/
+infra/keys/
 
 # RAG v2 frontend build artifacts
 rag/v2/frontend/node_modules/

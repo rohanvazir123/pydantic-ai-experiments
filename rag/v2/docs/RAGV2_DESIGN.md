@@ -12,7 +12,19 @@
 
 ### How the System Works
 - [Agentic RAG — The Pydantic AI Loop](#agentic-rag--the-pydantic-ai-loop)
+  - [Is This Agentic RAG?](#is-this-agentic-rag)
+  - [The Agent Loop Step by Step](#the-agent-loop-step-by-step)
+  - [When Does the LLM Call a Tool?](#when-does-the-llm-call-a-tool)
+  - [Streaming Path](#streaming-path)
+- [Three Confidence Gates — Deep Dive](#three-confidence-gates--deep-dive)
+  - [Gate 1 — Retrieval Confidence](#gate-1--retrieval-confidence)
+  - [Gate 2 — Citation Check](#gate-2--citation-check)
+  - [Gate 3 — LLM Judge](#gate-3--llm-judge)
+- [Query Ambiguity and Pronoun Resolution](#query-ambiguity-and-pronoun-resolution)
 - [How Chat Requests Are Staged and Cancelled](#how-chat-requests-are-staged-and-cancelled)
+  - [Where Is the Request Staged?](#where-is-the-request-staged)
+  - [Cancel Button and Multiple Queries](#cancel-button-and-multiple-queries)
+  - [Cancellation Propagation — What Actually Happens Server-Side](#cancellation-propagation--what-actually-happens-server-side)
 - [Queues in the System](#queues-in-the-system)
 - [Conversation Isolation Across Users](#conversation-isolation-across-users)
 - [Why SSE and Not WebSockets](#why-sse-and-not-websockets)
@@ -528,6 +540,191 @@ Tool calls are **round-trips to the LLM**: Pydantic AI appends the tool result a
 ### Streaming Path
 
 The streaming path (`POST /chat/stream`) uses `stream_agent` — a separate agent with `output_type=str` instead of `GenerationResult`. This allows `agent.run_stream()` to yield tokens to the client as they are generated. The trade-off: citations are not extracted in the streaming path (the answer is streamed as plain text). Layer 2 (citation gate) and Layer 3 (judge) are skipped; only Layer 1 (retrieval confidence gate) runs.
+
+---
+
+## Three Confidence Gates — Deep Dive
+
+Three sequential gates can stop a response before it reaches the user. Each targets a different failure mode. Once a gate fires, execution stops — no subsequent gates run.
+
+```
+retrieve_with_confidence()
+        ↓
+  GATE 1 (no results?)
+  ✗ → abstained_retrieval          ← no LLM call; nothing billed
+  ✓ ↓
+  agent.run() → GenerationResult
+        ↓
+  GATE 2 (uncited claims?)
+  ✗ → abstained_citation           ← LLM ran; tokens NOT billed (known gap)
+  ✓ ↓
+  judge LLM
+        ↓
+  GATE 3 (unsupported / low judge confidence?)
+  ✗ → abstained_judge              ← tokens ARE billed; turn IS stored
+  ✓ ↓
+  answered
+```
+
+### Gate 1 — Retrieval Confidence
+
+**Where:** `retriever.py` → `pipeline.py:139`
+**When:** After hybrid search + CrossEncoder rerank, before any LLM call.
+
+The `CrossEncoder` scores each retrieved chunk: `confidence = sigmoid(cross_encoder_logit)` (calibrated 0–1). Chunks below `min_confidence_score` (default 0.10) are dropped. If that leaves zero chunks, `retrieve_with_confidence()` returns `[]`.
+
+```
+retrieve_with_confidence()
+  hybrid search → RRF → CrossEncoder
+  drop where confidence < 0.10
+  results = []   → pipeline.py if not results → abstain
+  results ≠ []   → continue
+```
+
+Gate fires: `status = "abstained_retrieval"` — no LLM call is made.
+User sees: *"I couldn't find relevant information in the knowledge base for your query."*
+`POST_LLM` fires: **No** — no tokens were consumed.
+
+**Low-confidence variant (does not abstain):** If results are non-empty but `aggregate_confidence < confidence_warn_threshold`, `LOW_CONFIDENCE_NOTICE` is appended to the system prompt — *"The retrieved context has low confidence scores. State any uncertainty explicitly…"* The pipeline continues; the LLM is instructed to hedge its language.
+
+### Gate 2 — Citation Check
+
+**Where:** `pipeline.py:180`
+**When:** After `agent.run()` returns a `GenerationResult`, before the judge.
+
+The LLM self-reports citation quality inside `GenerationResult`:
+
+```python
+class CitationCheck(BaseModel):
+    is_trustworthy:  bool
+    uncited_claims:  list[str] = []
+```
+
+System prompt Rule 5 instructs: `"citation_check.is_trustworthy = False if ANY claim lacks a [chunk_id]."` If the LLM made any claim it couldn't anchor to a chunk, it sets `is_trustworthy=False`.
+
+```python
+if not gen.citation_check.is_trustworthy:
+    → abstained_citation
+```
+
+Gate fires: `status = "abstained_citation"`.
+User sees: *"The answer could not be verified against source documents."*
+`POST_LLM` fires: **No** — despite the LLM having been called, the tokens are not billed and the turn is not stored. (Known gap; fix: move billing to a `finally` block.)
+
+**When this fires in practice:**
+- LLM answered from prior knowledge, ignoring the retrieved chunks
+- LLM's answer drifted into adjacent territory not covered by any chunk
+- Query was technically on-topic but the retrieved content didn't cover it precisely enough
+
+Gate 2 is faster than Gate 3: no extra LLM call, and it catches self-admitted hallucinations immediately. In practice Gates 2 and 3 often agree — an answer that fails Gate 2 would likely fail Gate 3 too — but Gate 2 fires without paying for a second model call.
+
+### Gate 3 — LLM Judge
+
+**Where:** `judge.py`, `pipeline.py:195-218`
+**When:** After Gate 2 passes, only when `judge_enabled=True`.
+
+A separate LLM acts as an impartial evaluator. It receives the query, retrieved passages, and generated answer — but with chunk IDs **stripped from the passages**. Stripping IDs prevents the judge from being fooled by a well-formatted `[chunk_id]` citation that doesn't actually support the underlying claim.
+
+```
+nano LLM (qwen2.5:0.5b) receives:
+  QUESTION:  <original query>
+  PASSAGES:  <retrieved text WITHOUT [chunk_id] labels>
+  ANSWER:    <generated answer>
+
+Returns: JudgeResult { verdict, confidence, reasoning }
+```
+
+Verdict → outcome:
+
+| Verdict | Judge confidence | Action |
+|---------|-----------------|--------|
+| `supported` | ≥ `judge_confidence_threshold` | `answered` |
+| `partial` | ≥ `judge_confidence_threshold` | `answered` + uncertainty note appended |
+| `unsupported` | any | `abstained_judge` |
+| any | < `judge_confidence_threshold` | `abstained_judge` |
+
+**Escalation to small model:** The judge also outputs its own confidence in its verdict. If that confidence < 0.5, the system escalates to `llama3.2:3b` for a second opinion. This prevents the judge from incorrectly abstaining on genuinely nuanced answers.
+
+```
+nano verdict: partial, confidence=0.3   → escalate
+small verdict: supported, confidence=0.8 → answered
+```
+
+Gate fires: `status = "abstained_judge"`.
+User sees on abstain: *"The generated answer is not fully supported by the retrieved documents."*
+User sees on partial: full answer + *"Note: This answer may be incomplete based on the available context."*
+`POST_LLM` fires: **Yes, even on Gate 3 abstention.** By this point, the LLM already generated a response and tokens were consumed. Billing records the usage; the abstained response is stored in conversation history (as an abstained turn, so it doesn't mislead future context).
+
+---
+
+## Query Ambiguity and Pronoun Resolution
+
+The system has no explicit query rewriting or pronoun resolution step. Resolution happens implicitly through two mechanisms: conversation history passed to the LLM, and the agent's tool fallback.
+
+### How Pronouns Are Resolved
+
+When the user follows up with "What is its salary range?", the raw query goes into retrieval unchanged. Pronoun resolution happens at the LLM level, not before it.
+
+```
+Turn N:   User: "Tell me about the Software Engineer role"
+          Asst: "The Software Engineer role requires..."
+
+Turn N+1: User: "What is its salary range?"
+
+agent.run(
+    query  = "What is its salary range?",
+    message_history = [... turn N ...]
+)
+→ LLM reads prior turn, resolves "its" = Software Engineer, generates answer
+```
+
+`message_history` contains the last 8 turns (or `summary + last 8` after turn 20). The LLM resolves pronouns and anaphoric references naturally during generation — no rule-based or NLP step required.
+
+### Impact on Retrieval
+
+The query sent to hybrid search is the raw unresolved string. This is the one place where the lack of rewriting matters.
+
+```
+"What is its salary range?"
+    embed as-is → 768-dim vector
+    pgvector HNSW search
+    → may return generic salary chunks; may miss the SE role specifically
+```
+
+If retrieval misses because "its" has no antecedent in the embedding, the agent compensates via tool call:
+
+```
+LLM: (reads prior turn) "User is asking about Software Engineer salary.
+      Pre-retrieved chunks don't have that. I'll search directly."
+→ search_knowledge_base("Software Engineer salary range")
+→ targeted retrieval hits the right section
+```
+
+This is one concrete reason the agentic fallback exists: the LLM can issue a resolved, decomposed query that the vector search can actually match.
+
+### Context Window Edge Cases (Turn 20+)
+
+After 20 turns, a nano-model summarizer writes a 3-5 sentence summary to `conversations`. Subsequent loads return `summary + last 8 turns`.
+
+```
+Turn 25 context:
+  [summary: "The user asked about the Software Engineer role and compensation..."]
+  [turns 18-25]
+  User query: "What is its equity vesting schedule?"
+```
+
+Pronouns in the last 8 turns always have their antecedent visible. Pronouns referring to something from early turns may succeed or fail depending on whether the summarizer named the antecedent explicitly. In practice, critical nouns that drive a multi-turn thread appear in the summary — the summarizer is prompted to capture what the user was trying to learn.
+
+### Structurally Ambiguous Queries (No Prior Context)
+
+If a user opens a fresh conversation with "How does this compare?":
+
+1. Validation passes (syntactically valid, on-topic)
+2. Retrieval embeds "How does this compare?" — unlikely to return useful chunks
+3. Gate 1 fires if no confident results come back → `abstained_retrieval`
+4. If results do come back, the LLM will hedge or ask for clarification within the answer text
+
+The system does not interrupt the pipeline to ask the user a clarifying question. It always returns an answer or abstains with an explanation message.
 
 ---
 
