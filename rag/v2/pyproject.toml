@@ -67,6 +67,10 @@ scheduler-cloud = [
     "boto3>=1.35.0",
     "google-cloud-storage>=2.0.0",
 ]
+# DeepEval RAG evaluation
+eval = [
+    "deepeval>=1.4.0",
+]
 # Everything — recommended for local development
 all = [
     "knowledge[audio,observability,mcp,reranker,mem0,scheduler-cloud]",

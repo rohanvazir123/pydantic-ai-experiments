@@ -1,5 +1,5 @@
 .PHONY: help dev dev-obs databaseschemas seed dev-reset purge-corpus test test-unit test-integration lint fix ruff typecheck mypy check \
-        pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres generate-eval test-generated-eval
+        pull-models chaos-kill-redis chaos-kill-ollama chaos-kill-postgres generate-eval test-generated-eval deepeval deepeval-large
 
 # ── Development ───────────────────────────────────────────────────────────────
 
@@ -60,6 +60,12 @@ generate-eval:
 
 test-generated-eval:
 	uv run pytest tests/retrieval/test_retrieval_metrics.py::TestGeneratedEvalDataset -v --tb=short
+
+deepeval:
+	uv run python scripts/run_deepeval.py
+
+deepeval-large:
+	uv run python scripts/run_deepeval.py --judge llama3.1:70b
 
 # ── Code quality ──────────────────────────────────────────────────────────────
 
@@ -134,5 +140,5 @@ help:
 	@echo "Seed:           make seed | make dev-reset | make purge-corpus"
 	@echo "Latency:        make watch-latency-retrieval | watch-latency-ingestion | watch-errors"
 	@echo "Load:           make load-baseline | make load-peak"
-	@echo "Eval:           make generate-eval | make test-generated-eval"
+	@echo "Eval:           make generate-eval | make test-generated-eval | make deepeval | make deepeval-large"
 	@echo "Chaos:          make chaos-kill-redis | chaos-kill-ollama | chaos-kill-postgres"

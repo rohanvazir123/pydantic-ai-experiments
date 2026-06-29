@@ -70,3 +70,6 @@ basics/frontend/day*/node_modules/
 basics/frontend/day*/package-lock.json
 
 rag/v2/frontend/test-results/
+
+# DeepEval internal (telemetry opt-out file, not project state)
+rag/v2/.deepeval/
