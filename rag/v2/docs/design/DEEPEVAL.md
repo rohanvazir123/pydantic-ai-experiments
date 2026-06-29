@@ -443,3 +443,436 @@ These are starting thresholds for `llama3.2:3b`. Raise them to 0.80 when using a
 | Did a code change break retrieval? | Contextual Relevancy (fastest, no ground truth) |
 | Did a prompt change introduce hallucinations? | Faithfulness |
 | Is the answer complete? | Contextual Recall (requires expected_output) |
+
+---
+
+## Enum Reference
+
+Frequency guide: **★★★** use on every eval · **★★** use when the feature applies · **★** rarely touched directly
+
+---
+
+### Test Case Params
+
+#### `SingleTurnParams` ★★★
+*(import: `from deepeval.test_case import SingleTurnParams`)*
+*(note: `LLMTestCaseParams` is a deprecated alias for the same enum)*
+
+Passed to `evaluation_params` in `GEval` and other metrics to tell the judge which fields to look at.
+
+| Value | One-liner |
+|-------|-----------|
+| `INPUT` | The user's question or prompt |
+| `ACTUAL_OUTPUT` | What the LLM produced |
+| `EXPECTED_OUTPUT` | Ground-truth answer; required by `GEval` correctness, `ContextualPrecision`, `ContextualRecall` |
+| `CONTEXT` | Known ground-truth facts (not retrieved — what the answer *should* draw from) |
+| `RETRIEVAL_CONTEXT` | Chunks returned by the retriever; used by Faithfulness and all Contextual metrics |
+| `METADATA` | Arbitrary key-value dict attached to the test case |
+| `TAGS` | Label list on the test case |
+| `TOOLS_CALLED` | Actual tool calls the agent made |
+| `EXPECTED_TOOLS` | Tool calls the agent was supposed to make |
+| `MCP_SERVERS` | MCP server configs available to the agent |
+| `MCP_TOOLS_CALLED` | MCP tool calls made during the run |
+| `MCP_RESOURCES_CALLED` | MCP resources fetched during the run |
+| `MCP_PROMPTS_CALLED` | MCP prompt templates invoked |
+
+#### `MultiTurnParams` ★★
+*(import: `from deepeval.test_case import MultiTurnParams`)*
+*(note: `TurnParams` is a deprecated alias)*
+
+Used when building `ConversationalTestCase` for multi-turn / chatbot evals.
+
+| Value | One-liner |
+|-------|-----------|
+| `ROLE` | Speaker role for a turn (`user` or `assistant`) |
+| `CONTENT` | Text of a turn |
+| `SCENARIO` | High-level description of the conversation setup |
+| `EXPECTED_OUTCOME` | What the conversation should have achieved |
+| `CONTEXT` | Background facts available to the chatbot |
+| `USER_DESCRIPTION` | Who the simulated user is |
+| `CHATBOT_ROLE` | System persona the chatbot is playing |
+| `RETRIEVAL_CONTEXT` | Retrieved chunks available across turns |
+| `TOOLS_CALLED` | Tool calls across all turns |
+| `MCP_TOOLS` | MCP tool calls across all turns |
+| `MCP_RESOURCES` | MCP resources accessed across all turns |
+| `MCP_PROMPTS` | MCP prompt templates invoked across all turns |
+| `METADATA` | Arbitrary metadata for the conversation |
+| `TAGS` | Labels for the conversation |
+
+#### `ToolCallParams` ★★
+*(import: `from deepeval.test_case import ToolCallParams`)*
+
+Fields inspected when comparing individual `ToolCall` objects in agentic evals.
+
+| Value | One-liner |
+|-------|-----------|
+| `INPUT_PARAMETERS` | Arguments passed into the tool |
+| `OUTPUT` | Value the tool returned |
+
+---
+
+### Synthesizer / Gold Dataset Generation
+
+#### `Evolution` ★★★
+*(import: `from deepeval.synthesizer import Evolution`)*
+
+Question mutation strategies passed to `TestsetGenerator`. Controls how questions are rewritten from source context to increase difficulty and diversity.
+
+| Value | One-liner |
+|-------|-----------|
+| `REASONING` | Rewrites to require multi-step logical inference |
+| `MULTICONTEXT` | Rewrites to require synthesising two or more passages |
+| `CONCRETIZING` | Replaces vague terms with specific details from context |
+| `CONSTRAINED` | Adds an explicit constraint (e.g. "in under 50 words") |
+| `COMPARATIVE` | Turns into a comparison between two entities |
+| `HYPOTHETICAL` | Adds a counterfactual ("what if…") framing |
+| `IN_BREADTH` | Generates a related-but-new question to expand topic coverage |
+
+#### `PromptEvolution` ★★
+*(import: `from deepeval.synthesizer import PromptEvolution`)*
+
+Same mutation strategies as `Evolution` but applied to raw prompts rather than QA pairs. All values are identical minus `MULTICONTEXT`.
+
+| Value | One-liner |
+|-------|-----------|
+| `REASONING` | Multi-step inference rewrite |
+| `CONCRETIZING` | Replace vague terms with specifics |
+| `CONSTRAINED` | Add an explicit constraint |
+| `COMPARATIVE` | Turn into a comparison |
+| `HYPOTHETICAL` | Add counterfactual framing |
+| `IN_BREADTH` | Generate a related new prompt |
+
+#### `GenerationMethod` ★★
+*(import: `from deepeval.cli.generate.utils import GenerationMethod`)*
+
+Controls what source the CLI `deepeval generate` command uses to create goldens.
+
+| Value | One-liner |
+|-------|-----------|
+| `DOCS` | Generate from document files (e.g. PDFs, Markdown) |
+| `CONTEXTS` | Generate from a pre-built list of context strings |
+| `SCRATCH` | Generate from scratch with no source material |
+| `GOLDENS` | Evolve / mutate an existing set of goldens |
+
+#### `GoldenVariation` ★★
+*(import: `from deepeval.cli.generate.utils import GoldenVariation`)*
+
+Whether the CLI generates single-turn or multi-turn test cases.
+
+| Value | One-liner |
+|-------|-----------|
+| `SINGLE_TURN` | Produce `LLMTestCase` (one question, one answer) |
+| `MULTI_TURN` | Produce `ConversationalTestCase` (full conversation thread) |
+
+#### `FileType` ★★
+*(import: `from deepeval.cli.generate.utils import FileType`)*
+
+Output format when saving generated goldens to disk.
+
+| Value | One-liner |
+|-------|-----------|
+| `JSON` | Single JSON array |
+| `CSV` | Flat CSV, one row per golden |
+| `JSONL` | One JSON object per line (preferred for large datasets) |
+
+---
+
+### Metrics
+
+#### `ScoreType` ★★
+*(import: `from deepeval.metrics.summarization.schema import ScoreType`)*
+
+Sub-scores surfaced by `SummarizationMetric`. Useful when you want to pull the two components apart instead of using the blended score.
+
+| Value | One-liner |
+|-------|-----------|
+| `ALIGNMENT` | Claims in the summary are supported by the source document |
+| `COVERAGE` | Key facts from the source document appear in the summary |
+
+#### `NodeType` ★
+*(import: `from deepeval.metrics.dag.serialization.types import NodeType`)*
+
+Node types used when building custom `DAGMetric` graphs.
+
+| Value | One-liner |
+|-------|-----------|
+| `TASK` | A prompt-based reasoning step |
+| `BINARY_JUDGEMENT` | Yes/No decision node |
+| `NON_BINARY_JUDGEMENT` | Scored decision node (0–1) |
+| `VERDICT` | Terminal node that produces the final score |
+
+#### `ChildType` ★
+*(import: `from deepeval.metrics.dag.serialization.types import ChildType`)*
+
+Edge types in a `DAGMetric` graph, controlling how child nodes are wired.
+
+| Value | One-liner |
+|-------|-----------|
+| `NODE` | Another DAG node |
+| `GEVAL` | Inline GEval metric as a leaf |
+| `METRIC` | Any other DeepEval metric as a leaf |
+
+---
+
+### Tracing & Observability
+
+#### `SpanType` ★★★
+*(import: `from deepeval.tracing import SpanType`)*
+
+Span categories emitted by DeepEval's tracing decorators. Used to classify operations in the Confident AI trace view.
+
+| Value | One-liner |
+|-------|-----------|
+| `AGENT` | Top-level agent orchestration |
+| `LLM` | A single LLM call |
+| `RETRIEVER` | A retrieval operation |
+| `TOOL` | A tool / function call |
+
+#### `TraceSpanStatus` ★★
+*(import: `from deepeval.tracing.types import TraceSpanStatus`)*
+
+Outcome of a traced span.
+
+| Value | One-liner |
+|-------|-----------|
+| `SUCCESS` | Span completed without error |
+| `ERRORED` | Span raised an exception |
+| `IN_PROGRESS` | Span is still running |
+
+#### `TraceWorkerStatus` ★
+*(import: `from deepeval.tracing.types import TraceWorkerStatus`)*
+
+Internal status of the background trace worker that batches and uploads spans.
+
+| Value | One-liner |
+|-------|-----------|
+| `SUCCESS` | Batch uploaded cleanly |
+| `FAILURE` | Upload failed |
+| `WARNING` | Upload succeeded with non-fatal issues |
+
+#### `EvalMode` ★
+*(import: `from deepeval.tracing.types import EvalMode`)*
+
+Internal flag that tells the trace manager how spans should be routed.
+
+| Value | One-liner |
+|-------|-----------|
+| `OFF` | Not inside an eval pipeline; traces post to the API as normal |
+| `EVALUATE` | Inside `evaluate(...)` — traces route into the test-run pipeline |
+| `ITERATOR_SYNC` | Inside synchronous `evals_iterator` |
+| `ITERATOR_ASYNC` | Inside async `evals_iterator` |
+
+#### `Environment` ★★
+*(import: `from deepeval.tracing.utils import Environment`)*
+
+Deployment environment tag attached to traces in Confident AI.
+
+| Value | One-liner |
+|-------|-----------|
+| `PRODUCTION` | Live traffic |
+| `DEVELOPMENT` | Local dev |
+| `STAGING` | Pre-production |
+| `TESTING` | Automated test runs |
+
+---
+
+### Provider & Integration Config
+
+#### `ProviderSlug` ★★★
+*(import: `from deepeval.constants import ProviderSlug`)*
+
+String slug identifying which LLM provider a `DeepEvalBaseLLM` implementation wraps. Used when registering a custom judge.
+
+| Value | Provider |
+|-------|----------|
+| `OPENAI` | OpenAI API |
+| `AZURE` | Azure OpenAI |
+| `ANTHROPIC` | Anthropic API |
+| `BEDROCK` | AWS Bedrock |
+| `DEEPSEEK` | DeepSeek |
+| `GOOGLE` | Google AI |
+| `GROK` | xAI Grok |
+| `KIMI` | Moonshot Kimi |
+| `LITELLM` | LiteLLM proxy |
+| `LOCAL` | Any locally-hosted model |
+| `OLLAMA` | Ollama (used by our `OllamaJudge`) |
+| `OPENROUTER` | OpenRouter |
+| `PORTKEY` | Portkey gateway |
+
+#### `Integration` ★★
+*(import: `from deepeval.tracing.integrations import Integration`)*
+
+Framework integrations that auto-instrument traces when `deepeval.trace` is active.
+
+| Value | One-liner |
+|-------|-----------|
+| `LANGCHAIN` | LangChain chains and agents |
+| `CREW_AI` | CrewAI multi-agent crews |
+| `LLAMA_INDEX` | LlamaIndex query engines |
+| `OPENAI_AGENTS` | OpenAI Agents SDK |
+| `OPEN_AI` | Raw OpenAI client calls |
+| `ANTHROPIC` | Raw Anthropic client calls |
+| `PYDANTIC_AI` | PydanticAI agents (used in this project) |
+| `GOOGLE_ADK` | Google Agent Development Kit |
+| `STRANDS` | Strands agent framework |
+| `OTEL` | OpenTelemetry exporter |
+| `OPEN_INFERENCE` | OpenInference spans |
+| `AGENTCORE` | AWS AgentCore |
+
+#### `Provider` ★★
+*(import: `from deepeval.tracing.integrations import Provider`)*
+
+LLM provider enum used in tracing metadata to label which model produced a span.
+
+| Value | One-liner |
+|-------|-----------|
+| `OPEN_AI` | OpenAI |
+| `ANTHROPIC` | Anthropic |
+| `GEMINI` | Google Gemini |
+| `X_AI` | xAI (Grok) |
+| `DEEP_SEEK` | DeepSeek |
+| `MISTRAL` | Mistral AI |
+| `PERPLEXITY` | Perplexity |
+| `BEDROCK` | AWS Bedrock |
+| `VERTEX_AI` | Google Vertex AI |
+| `AZURE` | Azure OpenAI |
+| `OPEN_ROUTER` | OpenRouter |
+| `PORTKEY` | Portkey |
+| `TRUE_FOUNDRY` | TrueFoundry |
+| `MOONSHOT` | Moonshot (Kimi) |
+
+---
+
+### Prompt Management (Confident AI)
+
+These enums are only needed if using Confident AI's hosted prompt management. Not required for self-hosted / local eval.
+
+#### `ReasoningEffort` ★
+| Value | One-liner |
+|-------|-----------|
+| `MINIMAL` | Minimal chain-of-thought in the prompt |
+| `LOW` | Light reasoning |
+| `MEDIUM` | Balanced reasoning |
+| `HIGH` | Thorough chain-of-thought |
+
+#### `Verbosity` ★
+| Value | One-liner |
+|-------|-----------|
+| `LOW` | Terse prompt output |
+| `MEDIUM` | Moderate detail |
+| `HIGH` | Full verbose output |
+
+#### `ModelProvider` ★
+Confident AI's internal provider enum (separate from `ProviderSlug`).
+
+| Value | One-liner |
+|-------|-----------|
+| `OPEN_AI` | OpenAI |
+| `ANTHROPIC` | Anthropic |
+| `GEMINI` | Google Gemini |
+| `X_AI` | xAI |
+| `DEEPSEEK` | DeepSeek |
+| `BEDROCK` | AWS Bedrock |
+| `OPENROUTER` | OpenRouter |
+
+#### `ToolMode` ★
+Controls how strictly tool calls are validated in a prompt run.
+
+| Value | One-liner |
+|-------|-----------|
+| `ALLOW_ADDITIONAL` | Allow tool calls beyond those declared |
+| `NO_ADDITIONAL` | Block undeclared tool calls |
+| `STRICT` | All tool calls must match the declared schema exactly |
+
+#### `OutputType` ★
+| Value | One-liner |
+|-------|-----------|
+| `TEXT` | Plain string output |
+| `JSON` | Unstructured JSON object |
+| `SCHEMA` | JSON validated against a `SchemaDataType` schema |
+
+#### `SchemaDataType` ★
+JSON schema primitive types used when `OutputType.SCHEMA` is set.
+
+| Value | One-liner |
+|-------|-----------|
+| `OBJECT` | JSON object `{}` |
+| `ARRAY` | JSON array `[]` |
+| `STRING` | String value |
+| `FLOAT` | Floating-point number |
+| `INTEGER` | Integer number |
+| `BOOLEAN` | `true` / `false` |
+| `NULL` | `null` |
+
+#### `PromptInterpolationType` ★
+Template syntax used when rendering a Confident AI prompt with variables.
+
+| Value | One-liner |
+|-------|-----------|
+| `MUSTACHE` | `{{variable}}` |
+| `MUSTACHE_WITH_SPACE` | `{{ variable }}` |
+| `FSTRING` | `{variable}` (Python f-string style) |
+| `DOLLAR_BRACKETS` | `${variable}` |
+| `JINJA` | Jinja2 `{{ variable }}` with full template logic |
+
+#### `PromptType` ★
+| Value | One-liner |
+|-------|-----------|
+| `TEXT` | Single string prompt |
+| `LIST` | List of message dicts (chat format) |
+
+---
+
+### Annotation (Confident AI)
+
+#### `AnnotationType` ★★
+*(import: `from deepeval.annotation.api import AnnotationType`)*
+
+Rating UI style used when humans annotate traces in the Confident AI dashboard.
+
+| Value | One-liner |
+|-------|-----------|
+| `THUMBS_RATING` | Binary thumbs up / thumbs down |
+| `FIVE_STAR_RATING` | 1–5 star scale |
+
+---
+
+### Telemetry
+
+#### `Feature` ★
+*(import: `from deepeval.telemetry import Feature`)*
+
+Internal feature flags used by DeepEval's opt-in telemetry. No action needed unless you're building on top of the SDK.
+
+| Value | One-liner |
+|-------|-----------|
+| `REDTEAMING` | Red-teaming / adversarial test generation |
+| `SYNTHESIZER` | `TestsetGenerator` usage |
+| `EVALUATION` | Standard `evaluate()` runs |
+| `COMPONENT_EVALUATION` | Per-component metric evaluation |
+| `GUARDRAIL` | Guardrail metric usage |
+| `BENCHMARK` | Public benchmark runs |
+| `CONVERSATION_SIMULATOR` | Conversational simulation |
+| `TRACING_INTEGRATION` | Framework auto-instrumentation |
+| `UNKNOWN` | Unclassified usage |
+
+---
+
+### Benchmarks
+
+DeepEval ships task enums for public NLP benchmarks. These are irrelevant to domain RAG eval but listed for completeness.
+
+| Enum | Benchmark | Use case |
+|------|-----------|---------|
+| `ARCMode` | ARC (AI2 Reasoning Challenge) | Science Q&A |
+| `BBQTask` | BBQ | Bias evaluation |
+| `BigBenchHardTask` | BIG-Bench Hard | Difficult reasoning |
+| `DROPTask` | DROP | Discrete reasoning over paragraphs |
+| `EquityMedQATask` | Equity-Med QA | Medical equity |
+| `HellaSwagTask` | HellaSwag | Commonsense NLI |
+| `HumanEvalTask` | HumanEval | Code generation |
+| `LogiQATask` | LogiQA | Logical reasoning |
+| `MathQATask` | MathQA | Math word problems |
+| `MMLUTask` | MMLU | Multi-subject knowledge |
+| `SQuADTask` | SQuAD | Reading comprehension |
+| `TruthfulQAMode` / `TruthfulQATask` | TruthfulQA | Truthfulness |
