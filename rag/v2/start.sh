@@ -20,6 +20,10 @@ echo "  ╔═══════════════════════
 echo "  ║   RAG v2 — Start                     ║"
 echo "  ╚══════════════════════════════════════╝"
 echo -e "${RESET}"
+echo -e "  Logs →  tail -f /tmp/rag-api.log   (API)"
+echo -e "          tail -f /tmp/rag-ui.log    (frontend)"
+echo -e "          docker compose logs -f      (postgres / redis)"
+echo ""
 
 # ── 1. .env ───────────────────────────────────────────────────────────────────
 step "1. Environment"
@@ -56,13 +60,29 @@ ok "venv ready"
 
 # ── 5. DB schemas ─────────────────────────────────────────────────────────────
 step "5. Database"
+
+# Wait for PostgreSQL to be ready (up to 15 s) before querying.
+# docker compose up -d returns immediately; the container may still be starting.
+PG_READY=0
+echo -n "  Waiting for postgres"
+for i in $(seq 1 15); do
+  if docker compose exec -T postgres pg_isready -q 2>/dev/null; then
+    echo ""; PG_READY=1; break
+  fi
+  echo -n "."; sleep 1
+done
+if [ "$PG_READY" -eq 0 ]; then
+  echo ""
+  warn "PostgreSQL not ready after 15 s — check: docker compose logs postgres"
+fi
+
 CHUNK_COUNT=$(uv run python - 2>/dev/null <<'PYEOF' | tail -1
 import asyncio, asyncpg, os
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 async def run():
     try:
-        conn = await asyncpg.connect(os.environ["DATABASE_URL"])
+        conn = await asyncpg.connect(os.environ["DATABASE_URL"], timeout=5)
         n = await conn.fetchval("SELECT COUNT(*) FROM chunks")
         await conn.close()
         print(n)
@@ -73,34 +93,11 @@ PYEOF
 ) || CHUNK_COUNT=0
 
 if [ "${CHUNK_COUNT:-0}" -eq 0 ]; then
-  warn "No chunks in DB — applying schemas and seeding sample documents"
-  uv run python - <<'PYEOF' 2>&1 | grep -v "^$"
-import asyncio, asyncpg, os, glob
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env", override=False)
-async def run():
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
-    for f in sorted(glob.glob("schema/*.sql")):
-        await conn.execute(open(f).read())
-    await conn.close()
-asyncio.run(run())
-PYEOF
-  uv run python scripts/seed.py --force 2>&1 | tail -10
-  CHUNK_COUNT=$(uv run python - 2>/dev/null <<'PYEOF' | tail -1
-import asyncio, asyncpg, os
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env", override=False)
-async def run():
-    conn = await asyncpg.connect(os.environ["DATABASE_URL"])
-    n = await conn.fetchval("SELECT COUNT(*) FROM chunks")
-    await conn.close()
-    print(n)
-asyncio.run(run())
-PYEOF
-  ) || CHUNK_COUNT=0
-  ok "${CHUNK_COUNT} chunks seeded"
+  warn "No chunks in DB — ingest sample docs with:"
+  echo  "          make seed                   (runs in foreground, ~2 min)"
+  echo  "          tail -f /tmp/rag-seed.log   (progress — if running in bg)"
 else
-  ok "${CHUNK_COUNT} chunks already in DB"
+  ok "${CHUNK_COUNT} chunks in DB"
 fi
 
 # ── 6. Kill stale processes ───────────────────────────────────────────────────
@@ -149,12 +146,54 @@ if [ "$UI_UP" -eq 0 ]; then
   warn "UI did not respond on :7200 — run: tail -50 /tmp/rag-ui.log"
 fi
 
-# ── 9. Sanity Q&A ─────────────────────────────────────────────────────────────
+# ── 9. Sanity check ───────────────────────────────────────────────────────────
 step "9. Sanity check"
-SANITY=$(uv run python - <<'PYEOF' 2>/dev/null
-import asyncio, os, sys
+uv run python - <<'PYEOF' 2>/dev/null
+import asyncio, os
+from dotenv import load_dotenv
+load_dotenv(".env", override=False)
 
-async def run():
+QUERY      = "What does NeuralFlow AI do?"
+CORPUS_ID  = "default"
+TENANT_ID  = "default"
+OK   = "\033[0;32m✓\033[0m"
+WARN = "\033[0;33m⚠\033[0m"
+FAIL = "\033[0;31m✗\033[0m"
+
+async def run() -> None:
+    from knowledge.config.settings import load_settings
+    from knowledge.ingestion.embedder import Embedder
+    from knowledge.store.vector import PostgresHybridStore
+
+    settings = load_settings()
+    vs       = PostgresHybridStore(settings=settings)
+    embedder = Embedder(settings=settings)
+    await vs.initialize()
+
+    # ── a. tsvector (BM25 full-text) ─────────────────────────────────────────
+    try:
+        rows = await vs.text_search(QUERY, CORPUS_ID, TENANT_ID, k=3)
+        if rows:
+            top = rows[0]["content"][:80].replace("\n", " ")
+            print(f"  {OK} tsvector  — {len(rows)} hit(s)  top: \"{top}…\"")
+        else:
+            print(f"  {WARN}  tsvector  — 0 hits (corpus empty? try: make seed)")
+    except Exception as e:
+        print(f"  {FAIL} tsvector  — {e}")
+
+    # ── b. pgvector (ANN cosine) ──────────────────────────────────────────────
+    try:
+        embedding = await embedder.embed(QUERY)
+        rows = await vs.semantic_search(embedding, CORPUS_ID, TENANT_ID, k=3)
+        if rows:
+            top_score = rows[0]["score"]
+            print(f"  {OK} pgvector  — {len(rows)} hit(s)  top score: {top_score:.4f}")
+        else:
+            print(f"  {WARN}  pgvector  — 0 hits (embeddings missing? try: make seed)")
+    except Exception as e:
+        print(f"  {FAIL} pgvector  — {e}")
+
+    # ── c. hybrid (RRF) via API ───────────────────────────────────────────────
     try:
         import httpx
         from knowledge.api.routes.auth import make_dev_token
@@ -162,35 +201,24 @@ async def run():
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 "http://localhost:8001/api/v2/search",
-                json={"query": "What does NeuralFlow AI do?", "corpus_ids": ["default"]},
+                json={"query": QUERY, "corpus_ids": [CORPUS_ID]},
                 headers={"Authorization": f"Bearer {token}"},
             )
         if r.status_code == 200:
-            data = r.json()
-            results = data.get("data", {}).get("results", [])
-            print(f"OK:{len(results)}")
+            results = r.json().get("data", {}).get("results", [])
+            if results:
+                print(f"  {OK} hybrid    — {len(results)} hit(s) via API (RRF)")
+            else:
+                print(f"  {WARN}  hybrid    — 0 hits via API")
         else:
-            print(f"FAIL:{r.status_code}")
+            print(f"  {WARN}  hybrid    — API returned HTTP {r.status_code}")
     except Exception as e:
-        print(f"ERR:{e}")
+        print(f"  {FAIL} hybrid    — {e}")
+
+    await vs.close()
 
 asyncio.run(run())
 PYEOF
-) || SANITY="ERR:sanity-script-failed"
-
-case "$SANITY" in
-  OK:0)
-    warn "Search returned 0 results — corpus may be empty; try: make seed" ;;
-  OK:*)
-    COUNT="${SANITY#OK:}"
-    ok "Search sanity passed — got ${COUNT} result(s) for test query" ;;
-  FAIL:*)
-    warn "Search returned HTTP ${SANITY#FAIL:} — check API logs" ;;
-  ERR:*)
-    warn "Sanity check error: ${SANITY#ERR:}" ;;
-  *)
-    warn "Unexpected sanity output: ${SANITY}" ;;
-esac
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""

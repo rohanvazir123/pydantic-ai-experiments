@@ -27,7 +27,8 @@ seed:
 	@echo "Applying database schemas..."
 	@$(MAKE) databaseschemas
 	@echo "Seeding default tenant, corpus, and sample documents..."
-	uv run python scripts/seed.py
+	@echo "(progress logged to /tmp/rag-seed.log — 'tail -f /tmp/rag-seed.log' in another terminal)"
+	uv run python scripts/seed.py --force 2>&1 | tee /tmp/rag-seed.log
 	@echo "Seed complete. Run 'make test-unit' to verify."
 
 dev-reset:

@@ -214,6 +214,15 @@ class DocumentIngestionPipeline:
 
         # ── Docling conversion (async.to_thread inside processor) ────────────
         conversion = await self._processor.process(file_path)
+
+        if conversion.format == "audio_error":
+            logger.warning("Skipping '%s' — audio transcription unavailable (install openai-whisper via: uv sync --extra audio)", file_path.name)
+            return IngestionResult(
+                document_id="", title=file_path.stem,
+                chunks_created=0,
+                processing_time_ms=(asyncio.get_event_loop().time() - t0) * 1000,
+            )
+
         title       = await asyncio.to_thread(_extract_title, conversion.markdown, file_path)
         metadata    = await asyncio.to_thread(_extract_metadata, conversion.markdown, file_path, content_hash)
 

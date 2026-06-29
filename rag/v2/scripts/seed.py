@@ -14,9 +14,17 @@ Incremental ingestion skips unchanged files on subsequent runs.
 
 import asyncio
 import json
+import logging
 import os
 import sys
+import warnings
 from pathlib import Path
+
+# Suppress noisy-but-harmless warnings from docling's HybridChunker and HF Hub
+warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
+warnings.filterwarnings("ignore", message=".*unauthenticated requests to the HF Hub.*")
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 # Ensure the rag/v2/ directory is on the path
 ROOT = Path(__file__).parent.parent

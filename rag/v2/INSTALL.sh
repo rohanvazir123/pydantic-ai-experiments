@@ -125,7 +125,7 @@ ok "uv $(uv --version)"
 # ─────────────────────────────────────────────────────────────────────────────
 step "Installing Python dependencies"
 uv venv --python 3.13 --clear .venv 2>/dev/null || uv venv --clear .venv
-uv sync --extra ingestion --extra observability
+uv sync --extra all
 ok "Python deps installed"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,7 +219,8 @@ PYEOF
 ok "Migrations complete"
 
 step "Seeding sample documents"
-uv run python scripts/seed.py
+echo "  (tail -f /tmp/rag-seed.log in another terminal to follow progress)"
+uv run python scripts/seed.py --force 2>&1 | tee /tmp/rag-seed.log
 ok "Seed complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
