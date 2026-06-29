@@ -179,3 +179,61 @@ class TestHybridSearchSQL:
         import inspect
         src = inspect.getsource(PostgresHybridStore.hybrid_search)
         assert '"raw_score_type": "rrf"' in src
+
+
+# ── OR-tsquery helper ─────────────────────────────────────────────────────────
+
+class TestToOrTsquery:
+    """_to_or_tsquery converts natural-language queries to OR-expanded websearch queries."""
+
+    def test_pto_query_produces_or_terms(self) -> None:
+        from knowledge.store.vector import _to_or_tsquery
+        result = _to_or_tsquery("What is the PTO and leave policy?")
+        assert " OR " in result
+        assert "PTO" in result
+        assert "leave" in result
+        assert "policy" in result
+
+    def test_stop_words_stripped(self) -> None:
+        from knowledge.store.vector import _to_or_tsquery
+        result = _to_or_tsquery("What is the company policy?")
+        assert "what" not in result.lower()
+        assert "the" not in result.lower()
+        assert "is" not in result.lower()
+        assert "company" in result.lower()
+        assert "policy" in result.lower()
+
+    def test_q4_query(self) -> None:
+        from knowledge.store.vector import _to_or_tsquery
+        result = _to_or_tsquery("Which business units performed best in Q4?")
+        assert "business" in result
+        assert "units" in result
+        assert "Q4" in result
+
+    def test_short_words_stripped(self) -> None:
+        from knowledge.store.vector import _to_or_tsquery
+        result = _to_or_tsquery("Do we have PTO?")
+        # "Do" and "we" are stop words; "have" is stop word; "PTO" keeps
+        assert "PTO" in result
+        tokens = result.split(" OR ")
+        assert all(len(t) >= 2 for t in tokens)
+
+    def test_empty_after_stop_removal_falls_back(self) -> None:
+        from knowledge.store.vector import _to_or_tsquery
+        # All stop words — falls back to original query
+        result = _to_or_tsquery("is the a an")
+        assert result == "is the a an"
+
+    def test_hybrid_search_uses_or_query(self) -> None:
+        import inspect
+        from knowledge.store.vector import PostgresHybridStore
+        src = inspect.getsource(PostgresHybridStore.hybrid_search)
+        assert "or_query" in src
+        assert "_to_or_tsquery" in src
+
+    def test_text_search_uses_or_query(self) -> None:
+        import inspect
+        from knowledge.store.vector import PostgresHybridStore
+        src = inspect.getsource(PostgresHybridStore.text_search)
+        assert "or_query" in src
+        assert "_to_or_tsquery" in src

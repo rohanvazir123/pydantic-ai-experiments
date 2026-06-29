@@ -14,6 +14,7 @@ Hybrid search uses Reciprocal Rank Fusion (k=60) to combine the two legs:
 
 import json
 import logging
+import re
 import sys
 import uuid as _uuid
 from contextlib import asynccontextmanager
@@ -27,6 +28,28 @@ from knowledge.config.settings import Settings, load_settings
 from knowledge.store.cache import RedisCache
 
 logger = logging.getLogger(__name__)
+
+# English stop words to strip before building the OR tsquery.
+# Keeping it small so we don't accidentally remove domain terms.
+_STOP_WORDS = frozenset(
+    "a an and are as at be been being by did do does "
+    "for from had has have he her how i if in is it its "
+    "of on or the their there they this to was we were what "
+    "which who will with you your".split()
+)
+
+
+def _to_or_tsquery(query: str) -> str:
+    """Convert a natural-language query to an OR websearch query for broader FTS recall.
+
+    'What is the PTO and leave policy?' → 'PTO OR leave OR policy'
+
+    websearch_to_tsquery('english', result) then stems each term and ORs them,
+    so any chunk containing *any* content word can be ranked and returned.
+    """
+    words = re.sub(r"[^\w\s]", " ", query).split()
+    keywords = [w for w in words if w.lower() not in _STOP_WORDS and len(w) >= 2]
+    return " OR ".join(keywords) if keywords else query
 
 RRF_K: int = 60
 
@@ -249,7 +272,13 @@ class PostgresHybridStore:
         tenant_id: str,
         k: int = 10,
     ) -> list[dict[str, Any]]:
-        """tsvector GIN BM25 search via ts_rank."""
+        """tsvector GIN BM25 search via ts_rank.
+
+        Uses OR-expanded keywords so any chunk containing *any* content word
+        is eligible for ranking — prevents zero-result AND failures when query
+        terms are spread across multiple fields (e.g. 'PTO leave policy').
+        """
+        or_query = _to_or_tsquery(query)
         async with self._conn(tenant_id) as conn:
             rows = await conn.fetch(
                 """
@@ -261,7 +290,7 @@ class PostgresHybridStore:
                 ORDER BY score DESC
                 LIMIT $3
                 """,
-                query, corpus_id, k,
+                or_query, corpus_id, k,
             )
         return [dict(r) for r in rows]
 
@@ -280,6 +309,7 @@ class PostgresHybridStore:
         confidence is set to None here — populated by the CrossEncoder reranker.
         """
         fetch = k * OVERFETCH_FACTOR
+        or_query = _to_or_tsquery(query)
 
         async with self._conn(tenant_id) as conn:
             rows = await conn.fetch(
@@ -321,7 +351,7 @@ class PostgresHybridStore:
                 ORDER BY r.score DESC
                 LIMIT $6
                 """,
-                query, query_embedding, corpus_id,
+                or_query, query_embedding, corpus_id,
                 fetch, RRF_K, k,
             )
 
