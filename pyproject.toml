@@ -50,9 +50,10 @@ reranker = [
 mem0 = [
     "mem0ai>=0.1.0",
 ]
-# NL-to-SQL query parsing
+# NL-to-SQL query parsing + eval runner
 nl2sql = [
     "sqlglot>=25.0.0",
+    "duckdb>=1.0.0",
 ]
 # Everything — recommended for development
 all = [
