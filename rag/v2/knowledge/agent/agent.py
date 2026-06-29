@@ -114,6 +114,7 @@ def _build_agent(settings: Settings, low_confidence: bool = False) -> Any:
         output_type=GenerationResult,
         model_settings=_ms,
         deps_type=RAGState,
+        retries=3,
     )
 
     @ag.tool
