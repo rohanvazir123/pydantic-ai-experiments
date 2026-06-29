@@ -71,16 +71,43 @@ File: `nl2sql/evals/gold.jsonl`
 
 Set `gold_sql: null` and `expected_error: "readonly"` for write-guard test cases — the pass condition is that the guardrail fires, not that a result set matches.
 
-### Coverage targets for v1 (20 rows)
+### All 20 gold rows (`nl2sql/evals/gold.jsonl`)
 
-| Category | Count | Examples |
-|----------|-------|---------|
-| Simple SELECT | 4 | total revenue, count rows, max quantity |
-| Aggregation | 5 | GROUP BY, HAVING, window functions |
-| Filtering | 3 | WHERE with date range, string match |
-| Subquery / multi-step | 3 | top-N per group, EXISTS |
-| Edge cases | 3 | empty result, single row, all NULLs |
-| Write-guard | 2 | DELETE, DROP TABLE |
+All SQL verified against the DuckDB sales fixture (`Laptop`/`Monitor`, 4 rows, `product`, `user_id`, `quantity`, `revenue`).
+
+```jsonl
+{"id": "0001", "question": "What is the total revenue per product?", "gold_sql": "SELECT product, SUM(revenue) AS total_revenue FROM sales GROUP BY product ORDER BY total_revenue DESC", "difficulty": "easy", "tags": ["aggregation", "group-by"], "expected_error": null}
+{"id": "0002", "question": "How many rows are in the sales table?", "gold_sql": "SELECT COUNT(*) AS row_count FROM sales", "difficulty": "easy", "tags": ["count"], "expected_error": null}
+{"id": "0003", "question": "What is the maximum quantity sold in a single transaction?", "gold_sql": "SELECT MAX(quantity) AS max_quantity FROM sales", "difficulty": "easy", "tags": ["aggregation"], "expected_error": null}
+{"id": "0004", "question": "List all distinct products", "gold_sql": "SELECT DISTINCT product FROM sales ORDER BY product", "difficulty": "easy", "tags": ["distinct"], "expected_error": null}
+{"id": "0005", "question": "What is the average revenue per transaction?", "gold_sql": "SELECT AVG(revenue) AS avg_revenue FROM sales", "difficulty": "easy", "tags": ["aggregation"], "expected_error": null}
+{"id": "0006", "question": "Which products have total revenue above 2000?", "gold_sql": "SELECT product, SUM(revenue) AS total_revenue FROM sales GROUP BY product HAVING SUM(revenue) > 2000 ORDER BY total_revenue DESC", "difficulty": "medium", "tags": ["aggregation", "having"], "expected_error": null}
+{"id": "0007", "question": "What is the total quantity sold per user?", "gold_sql": "SELECT user_id, SUM(quantity) AS total_quantity FROM sales GROUP BY user_id ORDER BY total_quantity DESC", "difficulty": "easy", "tags": ["aggregation", "group-by"], "expected_error": null}
+{"id": "0008", "question": "What percentage of total revenue does each product contribute?", "gold_sql": "SELECT product, ROUND(SUM(revenue) * 100.0 / (SELECT SUM(revenue) FROM sales), 2) AS revenue_pct FROM sales GROUP BY product ORDER BY revenue_pct DESC", "difficulty": "medium", "tags": ["aggregation", "subquery", "window"], "expected_error": null}
+{"id": "0009", "question": "Show total revenue and total quantity sold across all records", "gold_sql": "SELECT SUM(revenue) AS total_revenue, SUM(quantity) AS total_quantity FROM sales", "difficulty": "easy", "tags": ["aggregation", "multi-column"], "expected_error": null}
+{"id": "0010", "question": "Show all sales for Laptop", "gold_sql": "SELECT * FROM sales WHERE product = 'Laptop'", "difficulty": "easy", "tags": ["filter"], "expected_error": null}
+{"id": "0011", "question": "Which transactions had revenue greater than 1000 and quantity greater than 1?", "gold_sql": "SELECT * FROM sales WHERE revenue > 1000 AND quantity > 1", "difficulty": "easy", "tags": ["filter", "multi-condition"], "expected_error": null}
+{"id": "0012", "question": "Which users bought both Laptop and Monitor?", "gold_sql": "SELECT DISTINCT user_id FROM sales WHERE product = 'Laptop' INTERSECT SELECT DISTINCT user_id FROM sales WHERE product = 'Monitor'", "difficulty": "medium", "tags": ["set-operation", "intersect"], "expected_error": null}
+{"id": "0013", "question": "Which user spent the most in total?", "gold_sql": "SELECT user_id, SUM(revenue) AS total FROM sales GROUP BY user_id ORDER BY total DESC LIMIT 1", "difficulty": "medium", "tags": ["top-n", "aggregation"], "expected_error": null}
+{"id": "0014", "question": "How many distinct products were sold by users who bought more than 3 items in total?", "gold_sql": "SELECT COUNT(DISTINCT product) AS product_count FROM sales WHERE user_id IN (SELECT user_id FROM sales GROUP BY user_id HAVING SUM(quantity) > 3)", "difficulty": "hard", "tags": ["subquery", "having", "distinct"], "expected_error": null}
+{"id": "0015", "question": "What is the total revenue from users who have purchased more than one product type?", "gold_sql": "SELECT SUM(revenue) AS total_revenue FROM sales WHERE user_id IN (SELECT user_id FROM sales GROUP BY user_id HAVING COUNT(DISTINCT product) > 1)", "difficulty": "hard", "tags": ["subquery", "having"], "expected_error": null}
+{"id": "0016", "question": "Show sales for Tablet", "gold_sql": "SELECT * FROM sales WHERE product = 'Tablet'", "difficulty": "easy", "tags": ["edge-case", "empty-result"], "expected_error": null}
+{"id": "0017", "question": "What is the total revenue from user 3?", "gold_sql": "SELECT SUM(revenue) AS total_revenue FROM sales WHERE user_id = 3", "difficulty": "easy", "tags": ["filter", "aggregation"], "expected_error": null}
+{"id": "0018", "question": "Which transaction had the lowest revenue?", "gold_sql": "SELECT * FROM sales ORDER BY revenue ASC LIMIT 1", "difficulty": "easy", "tags": ["sort", "top-n"], "expected_error": null}
+{"id": "0019", "question": "Delete all Laptop records", "gold_sql": null, "difficulty": "easy", "tags": ["write-guard"], "expected_error": "readonly"}
+{"id": "0020", "question": "Drop the sales table", "gold_sql": null, "difficulty": "easy", "tags": ["write-guard"], "expected_error": "readonly"}
+```
+
+Coverage summary:
+
+| Category | IDs | Count |
+|----------|-----|-------|
+| Simple SELECT / single agg | 0002–0005, 0009 | 5 |
+| GROUP BY / HAVING | 0001, 0006, 0007, 0008 | 4 |
+| Filtering | 0010, 0011, 0017 | 3 |
+| Subquery / set ops | 0012, 0013, 0014, 0015 | 4 |
+| Edge cases | 0016, 0018 | 2 |
+| Write-guard | 0019, 0020 | 2 |
 
 ---
 
