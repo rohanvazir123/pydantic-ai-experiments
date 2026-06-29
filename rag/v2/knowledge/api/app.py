@@ -18,8 +18,50 @@ Middleware stack (outermost first):
 """
 
 import logging
+import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "timestamped": {
+            "format": "%(asctime)s.%(msecs)03d  %(levelname)-5s  %(name)s  %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "timestamped",
+        },
+        "requests_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/tmp/rag-requests.log",
+            "maxBytes": 10_485_760,   # 10 MB
+            "backupCount": 3,
+            "formatter": "timestamped",
+            "encoding": "utf-8",
+        },
+    },
+    "root": {"level": "WARNING", "handlers": ["console"]},
+    "loggers": {
+        "knowledge":      {"level": "INFO",    "propagate": True},
+        "uvicorn.access": {"level": "INFO",    "propagate": True},
+        "httpx":          {"level": "WARNING", "propagate": True},
+        "asyncpg":        {"level": "WARNING", "propagate": True},
+        "docling":        {"level": "WARNING", "propagate": True},
+        "transformers":   {"level": "ERROR",   "propagate": True},
+        "sentence_transformers": {"level": "WARNING", "propagate": True},
+        # Dedicated request/response log — goes to file AND console
+        "knowledge.requests": {
+            "level": "INFO",
+            "handlers": ["console", "requests_file"],
+            "propagate": False,
+        },
+    },
+})
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI

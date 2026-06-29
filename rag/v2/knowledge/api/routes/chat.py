@@ -8,6 +8,8 @@ which contains session_id, corpus_ids, and message_history. EventSource (GET-onl
 cannot carry a JSON body, so we use fetch + ReadableStream on the client.
 """
 
+import logging
+import time
 import uuid
 from typing import Any
 
@@ -23,6 +25,8 @@ from knowledge.api.middleware import (
 )
 from knowledge.api.schemas import APIResponse, ChatRequest, ChatResponse
 
+logger = logging.getLogger(__name__)
+req_log = logging.getLogger("knowledge.requests")
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
@@ -41,22 +45,33 @@ async def chat(body: ChatRequest, request: Request) -> APIResponse[ChatResponse]
     """
     pipeline   = _get_pipeline(request)
     request_id = get_request_id() or str(uuid.uuid4())
-    set_session_id(body.session_id)   # inject into structlog context for this request
-    # tenant_id will be set by JWT auth dependency in Phase 9;
-    # for now set it from corpus_ids prefix as a dev stub
+    set_session_id(body.session_id)
     tenant_hint = body.corpus_ids[0].split(":")[0] if body.corpus_ids else "default"
     set_tenant_id(get_tenant_id() or tenant_hint)
+    tenant_id = get_tenant_id() or "default"
+
+    t0 = time.monotonic()
+    req_log.info(
+        "[%s] CHAT  query=%r  corpus=%s  tenant=%s",
+        request_id, body.query[:120], body.corpus_ids, tenant_id,
+    )
 
     from knowledge.agent.pipeline import RAGResponse as PipelineResponse
     result: PipelineResponse = await pipeline.run(
         query=body.query,
         corpus_ids=body.corpus_ids,
-        tenant_id=get_tenant_id() or "default",
+        tenant_id=tenant_id,
         user_id=get_user_id() or "",
         session_id=body.session_id,
         model_tier=body.model_tier if body.model_tier != "auto" else "small",
         message_history=body.message_history,
         request_id=request_id,
+    )
+
+    total_ms = int((time.monotonic() - t0) * 1000)
+    req_log.info(
+        "[%s] DONE  status=%s  total=%dms  stages=%s",
+        request_id, result.status, total_ms, result.pipeline_latency_ms,
     )
 
     return APIResponse(
@@ -91,20 +106,46 @@ async def chat_stream(body: ChatRequest, request: Request) -> StreamingResponse:
       data: {"error": "..."} on failure
       data: {"abstained": true, "layer": 1, "reason": "..."} on gate fire
     """
-    pipeline = _get_pipeline(request)
+    pipeline   = _get_pipeline(request)
+    request_id = get_request_id() or str(uuid.uuid4())
+    tenant_id  = get_tenant_id() or "default"
 
     from collections.abc import AsyncGenerator
 
     async def _generate() -> AsyncGenerator[str]:
+        t0 = time.monotonic()
+        first_token_ms: int | None = None
+        token_count = 0
+
+        req_log.info(
+            "[%s] STREAM query=%r  corpus=%s  tenant=%s",
+            request_id, body.query[:120], body.corpus_ids, tenant_id,
+        )
+
         async for event in pipeline.run_stream(
             query=body.query,
             corpus_ids=body.corpus_ids,
-            tenant_id=get_tenant_id() or "default",
+            tenant_id=tenant_id,
             user_id=get_user_id() or "",
             session_id=body.session_id,
             model_tier=body.model_tier if body.model_tier != "auto" else "small",
             message_history=body.message_history,
         ):
+            # Track first-token latency and token count from delta events
+            if '"delta"' in event and first_token_ms is None:
+                first_token_ms = int((time.monotonic() - t0) * 1000)
+            if '"delta"' in event:
+                token_count += 1
+            if '"done"' in event or '"abstained"' in event or '"error"' in event:
+                total_ms = int((time.monotonic() - t0) * 1000)
+                req_log.info(
+                    "[%s] DONE   first_token=%s  total=%dms  tokens≈%d  event=%s",
+                    request_id,
+                    f"{first_token_ms}ms" if first_token_ms else "—",
+                    total_ms,
+                    token_count,
+                    event[:120].strip(),
+                )
             yield event
 
     return StreamingResponse(_generate(), media_type="text/event-stream")
