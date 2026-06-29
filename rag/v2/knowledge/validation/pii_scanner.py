@@ -70,6 +70,7 @@ async def scan_pii(text: str) -> list[str]:
             text=text,
             language="en",
             entities=_SENSITIVE_ENTITIES,
+            score_threshold=0.7,    # ignore low-confidence matches (e.g. "Q4" → US_DRIVER_LICENSE at 0.3)
         )
         return [r.entity_type for r in results]
     except Exception as exc:
