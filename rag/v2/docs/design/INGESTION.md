@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Ingestion Pipeline — Docling-Graph Parallel Paths](#ingestion-pipeline--docling-graph-parallel-paths)
+- [Chunking — HybridChunker strategy](#chunking--hybridchunker-strategy)
 - [Knowledge Graph Extraction — Ontology and docling-graph API](#knowledge-graph-extraction--ontology-and-docling-graph-api)
   - [The ontology is a Pydantic template](#the-ontology-is-a-pydantic-template)
   - [Entities vs Components — decision rule](#entities-vs-components--decision-rule)
@@ -51,6 +52,84 @@ DocumentConverter.convert(path)
         │
         ▼
   publish IngestCompleteEvent to Redis
+```
+
+---
+
+### Chunking — HybridChunker strategy
+
+#### How Docling HybridChunker works
+
+Docling's `HybridChunker` is **structure-aware semantic chunking**, not recursive character splitting. It uses the parsed `DoclingDocument` — which carries heading hierarchy, section boundaries, tables, and lists as first-class objects — to find natural split points. Adjacent segments are merged (`merge_peers=True`) until they would exceed the token budget. The result is variable-length chunks that respect document structure: a short section stays as one chunk; a long section is split only where necessary.
+
+`max_tokens` is an **upper limit**, not a target. A chunk can be much shorter than 512 tokens if its natural section is short.
+
+#### contextualize()
+
+After chunking, every chunk gets `contextualize()` called on it. This prepends the heading hierarchy to the chunk text:
+
+```
+# Employee Handbook
+## Benefits
+### PTO Policy
+
+Employees accrue 15 days of PTO per year...
+```
+
+This means retrieval queries like "PTO policy" can match the heading context even if the chunk body alone is sparse. **Never skip `contextualize()`** — omitting it degrades retrieval quality significantly.
+
+#### Token counting
+
+Token counts are computed using the `sentence-transformers/all-MiniLM-L6-v2` tokenizer:
+
+```python
+TOKENIZER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+```
+
+This tokenizer is different from the embedding model (`nomic-embed-text`). A chunk at MiniLM's 512-token limit may encode to a different count under Nomic's tokenizer. In practice the difference is small (both use WordPiece-style tokenization), but it means the 512-token budget is enforced with MiniLM vocabulary, not Nomic's.
+
+#### Configuration
+
+| Setting | Default | Env var | Notes |
+|---|---|---|---|
+| `max_tokens` | `512` | `CHUNK_MAX_TOKENS` | Upper token limit per chunk (MiniLM tokens) |
+| `merge_peers` | `True` | — | Merge adjacent small segments into one chunk |
+
+Set `CHUNK_MAX_TOKENS` in `.env` to change the budget. Lower values (256) produce more granular chunks useful for fact retrieval; higher values (1024) preserve more context per chunk at the cost of retrieval precision.
+
+#### Fallback — sliding window
+
+When no `DoclingDocument` is available (e.g. plain `.txt` files that bypass Docling, or a Docling conversion failure), the chunker falls back to a character-based sliding window:
+
+| Parameter | Value | Notes |
+|---|---|---|
+| `chunk_size` | 1000 chars | Hard-coded in `ChunkingConfig` |
+| `chunk_overlap` | 200 chars | Hard-coded in `ChunkingConfig` |
+| `min_chunk_size` | 100 chars | Minimum before a boundary scan |
+| Boundary scan | Last `.!?\n` in trailing 200 chars | Tries to end on a sentence |
+
+Fallback chunks carry `chunk_method: "simple_fallback"` in metadata. Monitor for this in logs — a high fallback rate indicates Docling is failing to parse documents.
+
+#### Decision tree
+
+```
+file ingested
+     │
+     ▼
+DoclingProcessor.process(file)
+     │
+     ├─ success → DoclingDocument present
+     │       │
+     │       ▼
+     │   HybridChunker.chunk(dl_doc)     ← semantic, structure-aware
+     │   → contextualize() each chunk    ← prepend heading hierarchy
+     │   → variable-length chunks, ≤ max_tokens each
+     │
+     └─ failure / plain text → no DoclingDocument
+             │
+             ▼
+         _simple_fallback_chunk()        ← sliding window, 1000 chars
+         → fixed-size chunks with overlap
 ```
 
 ---
