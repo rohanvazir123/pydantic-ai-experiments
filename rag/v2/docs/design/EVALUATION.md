@@ -185,5 +185,92 @@ uv run pytest tests/eval/test_deepeval_rag.py -v
 | `ContextualPrecisionMetric` | Yes | Retrieved nodes that are relevant rank above irrelevant ones |
 | `ContextualRecallMetric` | Yes | All ground-truth facts appear in retrieved context |
 | `ContextualRelevancyMetric` | No | Retrieved context is relevant to the question |
+| `GEval` | Yes | Custom criteria you write — catches what the above five miss |
 
-Use faithfulness + answer relevancy for corpora without ground truth. Add contextual precision/recall once you have gold answers.
+Use faithfulness + answer relevancy for corpora without ground truth. Add contextual precision/recall once you have gold answers. Add `GEval` when the domain has legally or semantically significant qualifiers.
+
+---
+
+## GEval — Custom Correctness Criteria
+
+`GEval` is a general-purpose LLM-as-judge metric. Instead of a fixed scoring rubric, you write the criteria yourself. The judge scores `actual_output` against `expected_output` according to your instructions.
+
+### Why the standard metrics aren't enough
+
+Consider this compliance-domain case:
+
+```python
+LLMTestCase(
+    input="What does GLBA require?",
+    actual_output="GLBA requires financial institutions to protect customer information.",
+    expected_output="GLBA requires financial institutions to protect nonpublic personal information.",
+    retrieval_context=[
+        "GLBA requires financial institutions to protect customers' nonpublic personal information.",
+        "The Safeguards Rule requires an information security program.",
+    ],
+)
+```
+
+| Metric | Score | Why |
+|--------|-------|-----|
+| Faithfulness | ~0.9 PASS | "customer information" is entailed by the context — no contradiction |
+| AnswerRelevancy | ~1.0 PASS | Directly answers the question |
+| ContextualPrecision | ~0.9 PASS | Most relevant chunk is ranked first |
+| ContextualRecall | ~1.0 PASS | Expected output is covered by context |
+
+Every metric passes. But the answer dropped **"nonpublic"** — a legally significant qualifier under GLBA. The Safeguards Rule applies to *nonpublic* personal information, not all customer information. A compliance audit would flag this.
+
+### GEval catches it
+
+```python
+from deepeval.metrics import GEval
+from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+
+legal_precision = GEval(
+    name="Legal Precision",
+    criteria=(
+        "The actual output must preserve legally significant qualifiers from the expected output. "
+        "Dropping 'nonpublic' from 'nonpublic personal information' is a failure. "
+        "Replacing specific regulatory terms with broader informal language is a failure."
+    ),
+    evaluation_params=[
+        LLMTestCaseParams.ACTUAL_OUTPUT,
+        LLMTestCaseParams.EXPECTED_OUTPUT,
+    ],
+    threshold=0.7,
+    model=judge,
+)
+
+legal_precision.measure(glba_case)
+# Score: ~0.2 FAIL — judge flags the dropped qualifier with a reason
+print(legal_precision.reason)
+# "The actual output uses 'customer information' where the expected output specifies
+#  'nonpublic personal information'. This omits a legally significant qualifier..."
+```
+
+### Adding GEval to the runner
+
+In `scripts/run_deepeval.py`, set `geval_criteria` on any test case that needs precision checking. GEval only runs when both `geval_criteria` and `expected_output` are present:
+
+```python
+{
+    "input": "What is the PTO and leave policy?",
+    "expected_output": (
+        "Employees receive paid time off that accrues over the year. "
+        "The policy covers vacation days, sick leave, and public holidays."
+    ),
+    "geval_criteria": (
+        "The actual output must preserve all specific leave categories from the expected output "
+        "(vacation days, sick leave, public holidays). Dropping any category or replacing "
+        "specific terms with vague phrases like 'various leave types' is a failure."
+    ),
+    "tags": ["hr", "benefits"],
+},
+```
+
+### Writing good criteria
+
+- **Be specific about what counts as a failure**, not just what counts as a pass. The judge reasons from failure cases.
+- **Name the exact terms that must be preserved** ("nonpublic", "20 days", "accrues monthly").
+- **One concern per criteria string** — if you have multiple independent checks, run multiple `GEval` instances.
+- **Avoid tautologies** like "the answer must be correct" — the judge has nothing to reason against.

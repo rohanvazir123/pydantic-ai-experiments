@@ -67,6 +67,11 @@ TEST_CASES: list[dict[str, Any]] = [
             "NeuralFlow AI builds AI-powered products and provides machine learning "
             "consulting services to enterprise clients."
         ),
+        "geval_criteria": (
+            "The actual output must accurately describe the company's core business. "
+            "Omitting either 'AI-powered products' or 'consulting services' is a failure. "
+            "Vague descriptions like 'technology company' without specifics are a failure."
+        ),
         "tags": ["company", "overview"],
     },
     {
@@ -74,6 +79,11 @@ TEST_CASES: list[dict[str, Any]] = [
         "expected_output": (
             "Employees receive paid time off that accrues over the year. "
             "The policy covers vacation days, sick leave, and public holidays."
+        ),
+        "geval_criteria": (
+            "The actual output must preserve all specific leave categories from the expected output "
+            "(vacation days, sick leave, public holidays). Dropping any category or replacing "
+            "specific terms with vague phrases like 'various leave types' is a failure."
         ),
         "tags": ["hr", "benefits"],
     },
@@ -292,6 +302,31 @@ def _score_test_case(
             scores[name] = None
             reasons[name] = f"ERROR: {exc}"
 
+    # GEval — custom correctness criteria defined per test case (opt-in)
+    geval_criteria = tc.get("geval_criteria")
+    if geval_criteria and expected:
+        from deepeval.metrics import GEval
+        from deepeval.test_case import LLMTestCaseParams
+
+        geval = GEval(
+            name="Custom Correctness",
+            criteria=geval_criteria,
+            evaluation_params=[
+                LLMTestCaseParams.ACTUAL_OUTPUT,
+                LLMTestCaseParams.EXPECTED_OUTPUT,
+            ],
+            threshold=0.7,
+            model=judge,
+        )
+        try:
+            geval.measure(test_case)
+            scores["geval_correctness"] = round(geval.score, 3)
+            reasons["geval_correctness"] = getattr(geval, "reason", "") or ""
+        except Exception as exc:
+            logger.warning("GEval failed for %r: %s", tc["input"][:60], exc)
+            scores["geval_correctness"] = None
+            reasons["geval_correctness"] = f"ERROR: {exc}"
+
     return {"scores": scores, "reasons": reasons}
 
 
@@ -305,6 +340,7 @@ METRIC_THRESHOLDS = {
     "contextual_relevancy": 0.6,
     "contextual_precision": 0.6,
     "contextual_recall":    0.6,
+    "geval_correctness":    0.7,
 }
 
 METRIC_LABELS = {
@@ -313,6 +349,7 @@ METRIC_LABELS = {
     "contextual_relevancy": "Contextual Relevancy",
     "contextual_precision": "Contextual Precision",
     "contextual_recall":    "Contextual Recall",
+    "geval_correctness":    "GEval Correctness",
 }
 
 
