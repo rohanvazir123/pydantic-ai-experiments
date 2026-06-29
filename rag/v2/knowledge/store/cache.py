@@ -216,6 +216,26 @@ class RedisCache:
             logger.warning("RedisCache.get_health failed: %s", exc)
             return None
 
+    async def flush(self) -> int:
+        """Delete all search and embedding cache entries (L2 clear-all).
+
+        Fingerprint keys (cache:doc_fingerprint:*) are intentionally preserved
+        so that incremental ingestion does not re-process unchanged documents.
+        Returns total keys deleted.
+        """
+        if not self._client:
+            return 0
+        deleted = 0
+        try:
+            for pattern in ("cache:search:*", "cache:embed:*"):
+                async for key in self._client.scan_iter(pattern, count=200):
+                    await self._client.delete(key)
+                    deleted += 1
+            logger.info("RedisCache.flush: deleted %d cache keys", deleted)
+        except Exception as exc:
+            logger.warning("RedisCache.flush failed: %s", exc)
+        return deleted
+
     async def set_health(self, service: str, data: dict[str, Any]) -> None:
         if not self._client:
             return

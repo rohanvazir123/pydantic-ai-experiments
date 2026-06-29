@@ -100,4 +100,6 @@ export const api = {
   patch:  <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  clearCache: () =>
+    request<{ cache_keys_deleted: number; message: string }>('/corpus/cache/clear', { method: 'POST' }),
 }

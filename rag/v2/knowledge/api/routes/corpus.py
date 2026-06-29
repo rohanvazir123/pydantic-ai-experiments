@@ -31,6 +31,22 @@ async def list_corpora(request: Request) -> APIResponse[list[CorpusInfo]]:
     return APIResponse(request_id=request_id, data=corpora)
 
 
+@router.post("/cache/clear", response_model=APIResponse[dict])
+async def clear_all_cache(request: Request) -> APIResponse[dict]:
+    """Flush all L2 Redis search + embedding cache entries (fingerprints kept)."""
+    cache      = getattr(request.app.state, "cache", None)
+    request_id = get_request_id() or str(uuid.uuid4())
+
+    deleted = 0
+    if cache:
+        deleted = await cache.flush()
+
+    return APIResponse(
+        request_id=request_id,
+        data={"cache_keys_deleted": deleted, "message": "Cache cleared"},
+    )
+
+
 @router.post("/{corpus_id}/cache/invalidate", response_model=APIResponse[dict])
 async def invalidate_cache(corpus_id: str, request: Request) -> APIResponse[dict]:
     """Flush L2 + L3 cache entries for a corpus."""
