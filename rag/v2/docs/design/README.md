@@ -28,3 +28,4 @@ Detailed design docs split out from [../RAGV2_DESIGN.md](../RAGV2_DESIGN.md). St
 | [SECURITY.md](SECURITY.md) | JWT RS256 auth, JWE payload encryption, HTTPS/TLS, RBAC, audit log, memory architecture |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker Compose local dev, packaging, cloud production deployment, SaaS model, log storage |
 | [EVALUATION.md](EVALUATION.md) | Offline eval system, retrieval metrics, faithfulness/relevance scoring, load & chaos testing, implementation phases |
+| [TOOL_ROUTING.md](TOOL_ROUTING.md) | LLM tool routing: when the agent calls `search_knowledge_base` vs `search_knowledge_graph`, model tier pre-routing, intent classifier, turn sequence examples |
