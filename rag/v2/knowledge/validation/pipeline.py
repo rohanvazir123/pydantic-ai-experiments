@@ -59,14 +59,22 @@ async def _v2_length_guard(query: str, settings: Settings) -> ValidationError | 
     return None
 
 
+def contains_injection(text: str) -> bool:
+    """Return True if the text matches any known prompt-injection pattern.
+
+    Used both for query validation (V4) and chunk-content scanning in
+    _format_context() to exclude poisoned documents from the LLM context.
+    """
+    return any(p.search(text) for p in _INJECTION_PATTERNS)
+
+
 async def _v4_injection_guard(query: str) -> ValidationError | None:
-    for pattern in _INJECTION_PATTERNS:
-        if pattern.search(query):
-            return ValidationError(
-                code="PROMPT_INJECTION_DETECTED",
-                message="Query was rejected by the security filter.",
-                status_code=422,
-            )
+    if contains_injection(query):
+        return ValidationError(
+            code="PROMPT_INJECTION_DETECTED",
+            message="Query was rejected by the security filter.",
+            status_code=422,
+        )
     return None
 
 

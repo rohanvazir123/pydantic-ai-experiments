@@ -34,6 +34,7 @@ from knowledge.agent.agent import (
 )
 from knowledge.agent.intent_classifier import classify_intent
 from knowledge.agent.judge import judge as run_judge
+from knowledge.validation.pipeline import contains_injection
 from knowledge.validation.pii_scanner import has_pii, scan_pii
 from knowledge.config.settings import Settings, load_settings
 from knowledge.hooks.context import HookContext
@@ -352,7 +353,8 @@ class ConfidenceAwarePipeline:
         # Build context-augmented prompt for the text streaming agent
         context_text = self._format_context(results)
         augmented_query = (
-            f"Use the following source passages to answer the question.\n\n"
+            f"Use the following source documents to answer the question. "
+            f"Each document is enclosed in <document> tags.\n\n"
             f"{context_text}\n\n"
             f"Question: {query}"
         )
@@ -420,11 +422,25 @@ class ConfidenceAwarePipeline:
 
     @staticmethod
     def _format_context(results: list[SearchResult]) -> str:
-        """Format retrieved chunks as context for the streaming agent."""
+        """Format retrieved chunks as context for the LLM.
+
+        Each chunk is enclosed in <document> tags so the model can distinguish
+        document data from prompt instructions.  Chunks whose content matches a
+        known injection pattern are silently dropped to prevent poisoned-document
+        attacks — a warning is logged so the omission is observable.
+        """
         lines = []
         for r in results:
-            lines.append(f"[{r.document_title}]\n{r.content[:2000]}")
-        return "\n\n---\n\n".join(lines)
+            content = r.content[:2000]
+            if contains_injection(content):
+                logger.warning(
+                    "Injection pattern in chunk %s (%s) — excluded from context",
+                    r.chunk_id,
+                    r.document_title,
+                )
+                continue
+            lines.append(f'<document title="{r.document_title}">\n{content}\n</document>')
+        return "\n\n".join(lines)
 
 
 def _sse(data: dict) -> str:
