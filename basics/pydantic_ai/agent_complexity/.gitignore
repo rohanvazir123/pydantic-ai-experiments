@@ -1,0 +1,7 @@
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Scratch run captures (curated results live in TEST_OUTPUT.md / LATENCY.md)
+.sample_runs/
