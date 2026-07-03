@@ -73,3 +73,7 @@ rag/v2/frontend/test-results/
 
 # DeepEval internal (telemetry opt-out file, not project state)
 rag/v2/.deepeval/
+
+# Node / Vite build artifacts (scaffolded per-machine, never tracked)
+**/node_modules/
+**/.vite/
