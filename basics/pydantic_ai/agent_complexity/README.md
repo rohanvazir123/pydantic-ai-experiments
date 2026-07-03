@@ -17,6 +17,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
   - [Decision guide](#decision-guide)
   - [Level-by-level: when to use, when not to](#level-by-level-when-to-use-when-not-to)
 - [Cost & latency at a glance (L1→L5)](#cost--latency-at-a-glance-l1l5)
+  - [What a real ticket costs in dollars](#what-a-real-ticket-costs-in-dollars)
 - [Level 5 deep-dive: multi-agent system design](#level-5-deep-dive-multi-agent-system-design)
   - [Cost & latency: what's realistic (p50/p95/p99)](#cost--latency-whats-realistic-p50p95p99)
   - [Why multi-agent is slow *despite* parallelism](#why-multi-agent-is-slow-despite-parallelism)
@@ -206,6 +207,45 @@ orchestrator *and* each specialist each carry their own growing context. Tokens 
 not code — are the cost, and they scale with sequential calls. Percentile
 breakdowns (p50/p95/p99) and the reasons the tail blows out are in the
 [Level 5 deep-dive](#level-5-deep-dive-multi-agent-system-design).
+
+### What a real ticket costs in dollars
+
+The table above uses this repo's *toy* token counts (tiny KB, terse prompts). A
+**production** multi-agent ticket — real system prompts + retrieved context +
+longer tool outputs — runs **~100–150k tokens** per resolution (see the
+[Level 5 deep-dive](#cost--latency-whats-realistic-p50p95p99)). That split is
+heavily input-weighted (~85% input, because each of the ~12–20 calls re-sends the
+accumulated context), i.e. ~85–130k input + ~15–22k output. In dollars:
+
+| Pricing tier (in / out per 1M) | 100k tokens | 150k tokens |
+|---|--:|--:|
+| Cheap / small (~$0.30 / $1.20) | ~$0.04 | ~$0.07 |
+| Mid-tier (~$3 / $15) | ~$0.48 | ~$0.72 |
+| Frontier / all-large (~$10 / $40) | ~$1.45 | ~$2.15 |
+| Local Ollama (this repo) | ~$0 | ~$0 |
+
+Formula: `cost = input_tok × in_price + output_tok × out_price`. So budget
+**~$0.50–$0.75 per ticket at mid-tier**, ranging ~$0.05 (cheap/tiered) to ~$2
+(all-frontier). At scale that's ~**$500–750 per 1,000 tickets** mid-tier.
+
+**Two levers cut it 5–10×:**
+
+- **Prompt caching.** ~85% of the tokens are the *same context re-sent every
+  turn*; cached input reads bill at ~10% of full price, dropping a mid-tier
+  ticket from ~$0.60 to **~$0.20–0.35**. Biggest single win for multi-agent.
+- **Tiering** (see [Model tiers](#model-tiers-tiered-llms)). Route the many cheap
+  sub-calls (draft, check, triage) to a small model, reserve the large model for
+  reasoning/tools — **½ to ⅓** of all-large cost.
+
+**Is 100–150k/ticket reasonable?** Per token, yes — it's just ~15 context-heavy
+calls; it's large *for one query* only because "3 delegations" fans out into many
+re-sending calls. Economically, easily: a human support agent runs ~$5–12 per
+handled ticket, so even the $2 all-frontier case is 3–6× cheaper, and the
+tiered+cached ~$0.25 case is ~20–50× cheaper. **The catch:** that math only holds
+if the run actually *resolves* (or safely deflects) the ticket — a 150k-token run
+that then escalates to a human is pure overhead. That's why the golden rule is
+"use the lowest level that works" and keep human-in-the-loop gates for high-risk
+actions.
 
 ## Level 5 deep-dive: multi-agent system design
 
