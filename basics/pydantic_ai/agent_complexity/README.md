@@ -27,7 +27,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Model tiers (tiered LLMs)](#model-tiers-tiered-llms)
-  - [Running Level 5: models & hardware](#running-level-5-models--hardware)
+  - [Models & hardware per level (L1→L5)](#models--hardware-per-level-l1l5)
 - [Running the examples](#running-the-examples)
 - [Debuggability & observability (L1→L5)](#debuggability--observability-l1l5)
   - [Viewing Pydantic AI Logfire traces](#viewing-pydantic-ai-logfire-traces)
@@ -493,53 +493,64 @@ saver — a few `large` calls plus several `small`/`nano` calls instead of `larg
 everywhere. The deterministic test suite pins the *intent* (each role's requested
 tier) and the *policy* (default pins `large`) so neither can drift silently.
 
-### Running Level 5: models & hardware
+### Models & hardware per level (L1→L5)
 
-Level 5 is the demanding case — the orchestrator and researcher both need
-reliable tool-calling + structured output, which locally means a capable model.
+**Which models each level's roles need** (local = Ollama; hosted = any Pydantic
+AI / OpenAI-compatible provider):
 
-**Which models each L5 role needs:**
+| Level | Role(s) → *ideal* tier | Local (Ollama) | Hosted |
+|-------|------------------------|----------------|--------|
+| **L1** Augmented | classifier → small | `qwen2.5:14b`† | cheap+fast — Claude Haiku / mini |
+| **L2** Chains | classifier → nano; handlers → small | `qwen2.5:14b`† | classifier cheap; handlers mid (Sonnet-class) |
+| **L3** Tool-Calling | agent → large | `qwen2.5:14b` | frontier (tool calls) — Sonnet / GPT-class |
+| **L4** Harness | triage → nano; harness → large | triage `qwen2.5:14b`†; harness `qwen2.5:14b` | triage cheap; harness frontier |
+| **L5** Multi-Agent | orch/researcher → large; drafter/compliance → small | orch/researcher `qwen2.5:14b`; drafter/compliance `qwen2.5:7b`†† (else `14b`) | orch/researcher frontier; drafter/compliance cheap+fast |
 
-| Role | Needs | Local (Ollama) | Hosted |
-|------|-------|----------------|--------|
-| orchestrator | tool calls + structured synthesis | `qwen2.5:14b` (or larger) | frontier reasoning — Claude Sonnet / GPT-class |
-| researcher | reliable multi-tool calls | `qwen2.5:14b` | frontier reasoning |
-| drafter | text generation | `qwen2.5:7b`\* (else `14b`) | cheap+fast — Claude Haiku / mini-class |
-| compliance | text check vs policy | `qwen2.5:7b`\* (else `14b`) | cheap+fast |
+† The *ideal* cheap tier isn't reliable locally: `llama3.2:3b` and `qwen2.5:0.5b`
+failed tool/structured output here (see the table above). So the pinned default
+uses **`qwen2.5:14b` for every role at every level**.
+†† A capable ~7B (e.g. `qwen2.5:7b`) is the smallest we'd trust for the text-only
+roles; below that, pin `large`.
 
-\* On this box `llama3.2:3b` and `qwen2.5:0.5b` were **not** reliable (see table
-above). A capable ~7B (e.g. `qwen2.5:7b`) is the smallest we'd trust for the text
-roles; below that, pin `large`. **Locally, the practical default is `qwen2.5:14b`
-for every L5 role** (that's what the pinned config does).
+**The key local takeaway:** because the small tiers don't work, the pinned config
+runs **all five levels on one `qwen2.5:14b`** — so the **hardware floor is the same
+for L1–L5**. Climbing the ladder costs more *time and energy* (more sequential
+model calls), **not more memory**. You only need a *second* resident model when you
+turn on real tiering (`AGENT_STRICT_TIERS=1`) for L2 / L4 / L5 with a capable small
+model; L1 and L3 use a single tier and never need two.
 
-**Local hardware estimates** (running L5 via Ollama):
+**Local hardware estimates** (via Ollama):
 
-| Setup | GPU / accelerator | VRAM | System RAM | CPU | Disk |
-|-------|-------------------|:----:|:----------:|:---:|:----:|
-| **L5 pinned large** (one 14B) | 1 GPU, or Apple Silicon | **~10–12 GB** (16 comfortable) | 16 GB min / **32 GB rec** | 4+ cores | ~9 GB |
-| **L5 true tiering** (14B + 7B resident) | 1 big GPU, or Apple Silicon | **~16–20 GB** (24 comfortable) | **32 GB** | 4+ cores | ~14 GB |
-| **CPU-only** (no GPU) | — | — | **32 GB+** | 8+ cores (AVX2) | ~9 GB |
+| Setup (applies to) | GPU / accelerator | VRAM | System RAM | CPU | Disk |
+|--------------------|-------------------|:----:|:----------:|:---:|:----:|
+| **Pinned large — L1–L5 default** (one 14B) | 1 GPU, or Apple Silicon | **~10–12 GB** (16 comfortable) | 16 GB min / **32 GB rec** | 4+ cores | ~9 GB |
+| **Strict tiering — L2/L4/L5** (14B + 7B resident) | 1 big GPU, or Apple Silicon | **~16–20 GB** (24 comfortable) | **32 GB** | 4+ cores | ~14 GB |
+| **CPU-only — any level** (no GPU) | — | — | **32 GB+** | 8+ cores (AVX2) | ~9 GB |
 
 Notes:
+- **What changes up the ladder:** not the memory floor but the run — L1 is one
+  call (~seconds), L5 is 10–20 sequential calls (~minutes locally). Same 14B, same
+  VRAM; more wall-clock and energy per case.
 - **Concrete GPUs:** RTX 3060 12 GB / 4070 → pin-large (tight); RTX 3090 / 4090
   24 GB → tiering with headroom. Apple Silicon **M1–M4 with 16 GB** unified memory
   runs `qwen2.5:14b` (~10–11 GB used); **32–36 GB+** for two resident models.
   *(This repo was developed on Apple Silicon.)*
 - **Unified memory (Apple Silicon):** VRAM = system RAM. 16 GB works for
-  pin-large; 32 GB+ for real tiering (two models loaded at once).
+  pin-large (all levels); 32 GB+ for real tiering (two models loaded at once).
 - **A single GPU serializes** and, if two models don't both fit in VRAM, Ollama
   **swaps** them per call — adding seconds each switch. For tiering to actually
-  help, keep both models resident (24 GB+ VRAM / 32 GB+ unified), or run two
-  Ollama instances / GPUs. See the [Level 5 deep-dive](#why-multi-agent-is-slow-despite-parallelism).
-- **CPU-only** runs a 14B but slowly (~a few tok/s → an L5 case can take many
+  help, keep both models resident (24 GB+ VRAM / 32 GB+ unified) or run two Ollama
+  instances / GPUs. See the [Level 5 deep-dive](#why-multi-agent-is-slow-despite-parallelism).
+- **CPU-only** runs a 14B but slowly (~a few tok/s → L4/L5 cases take many
   minutes). Fine for a one-off test, not interactive use.
 
-**Hosted (no local hardware):** set `AGENT_STRICT_TIERS=1` and point the tiers at
-hosted models — orchestrator/researcher on a frontier reasoning model,
-drafter/compliance on a cheap fast one. Hosted small models tool-call reliably,
-so tiering genuinely saves cost there. Any Pydantic AI-supported / OpenAI-compatible
-provider works via the model string; latest **Claude** models (Sonnet for the
-reasoning roles, Haiku for the cheap roles) are a strong default.
+**Hosted (no local hardware):** set `AGENT_STRICT_TIERS=1` and point each tier at
+a hosted model — the `large` roles (L3 agent, L4 harness, L5 orchestrator/
+researcher) on a frontier reasoning model, the cheap roles (L1/L2 classifier, L4
+triage, L5 drafter/compliance) on a fast small model. Hosted small models
+tool-call reliably, so tiering genuinely saves cost there. Latest **Claude**
+models (Sonnet for the reasoning roles, Haiku for the cheap roles) are a strong
+default; any OpenAI-compatible provider works via the model string.
 
 ## Running the examples
 
