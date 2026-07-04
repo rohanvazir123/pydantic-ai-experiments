@@ -14,6 +14,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
 - [Why this exists](#why-this-exists)
 - [The five levels](#the-five-levels)
 - [Choosing a level: use cases & trade-offs](#choosing-a-level-use-cases--trade-offs)
+  - [Autonomy scale](#autonomy-scale)
   - [Decision guide](#decision-guide)
   - [Level-by-level: when to use, when not to](#level-by-level-when-to-use-when-not-to)
 - [Cost & latency at a glance (L1→L5)](#cost--latency-at-a-glance-l1l5)
@@ -123,7 +124,7 @@ more agents" — it is "let a model orchestrate other models."
 \* *Deterministic in shape (always one call, one schema); the model's content
 still varies unless you pin `temperature=0`, which these examples do.*
 
-**Autonomy scale:**
+### Autonomy scale
 
 | Level | Autonomy | What the model decides on its own |
 |-------|----------|-----------------------------------|
