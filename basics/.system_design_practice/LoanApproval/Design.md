@@ -347,7 +347,7 @@ most common mistake on this problem:
 | Contract | Credit bureau + ID provider API surface stability | Pact / recorded fixtures |
 | Load | 120 req/s peak; queue drain under burst | Locust / k6 |
 | Decision-quality eval | Tier accuracy vs. labeled outcomes; fair-lending adverse-impact ratio; calibration | Offline backtest + PSI drift check |
-| Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, PII/bias leakage, latency regression | DeepEval (`HallucinationMetric`, `GEval`, `BiasMetric`, `LatencyMetric`) + golden set + human sample |
+| Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, prohibited-basis/PII/bias leakage, latency regression | DeepEval — built-in (`HallucinationMetric`, `BiasMetric`, `LatencyMetric`), `GEval` (coherence), `DAGMetric` (prohibited-basis), custom `BaseMetric` (PII) + golden set + human sample |
 
 See **Deep Dive 5** for the full evaluation pipeline architecture, golden-set
 construction, the delayed-label problem, and the CI regression gate.
@@ -627,6 +627,16 @@ LLMTestCase(
 `context` is the key mapping: it's the `RiskSignal` struct restated as ground-truth
 facts, which is exactly what `HallucinationMetric` diffs the explanation against.
 
+DeepEval has three tiers of metric, and this system deliberately uses all three —
+picking the tier per check, not defaulting to one:
+
+| Tier | Mechanism | Used here for |
+|------|-----------|---------------|
+| Built-in default | Pre-built, no config beyond a threshold | `HallucinationMetric`, `BiasMetric`, `LatencyMetric` |
+| `GEval` (custom, subjective) | Natural-language rubric, auto-generated CoT, LLM-judged | Coherence / actionability — genuinely a matter of judgment |
+| `DAGMetric` (custom, objective) | Decision-tree LLM-as-judge, deterministic branching | Prohibited-basis scan — closer to a checklist than a judgment call |
+| `BaseMetric` (fully custom) | Subclassed, self-coded, no LLM call required | PII restatement check — plain regex, no reason to pay judge cost |
+
 - **Faithfulness / groundedness** → `HallucinationMetric(context=...)`. Flags any
   claim in the explanation that contradicts or goes beyond `context` — the
   hallucination detector, not a style check. Value-level, not just key-level (see
@@ -637,18 +647,27 @@ facts, which is exactly what `HallucinationMetric` diffs the explanation against
   [INPUT, ACTUAL_OUTPUT])`. Calibrated against the golden set of ~200–500
   hand-labeled (signals → explanation) pairs rated 1–5 by underwriters — GEval's
   score is checked for correlation with those human ratings, not trusted blind.
-- **Prohibited-basis scan** → a second, narrower `GEval(criteria="must not
-  reference age, marital status, race, or other ECOA-prohibited factors even if
-  present in the input")`, plus `BiasMetric` for general demographic-bias
-  language. Catches the subtle case where a legally irrelevant attribute leaks
-  into the explanation even though it was present in the input data.
+  This is a genuinely subjective criterion, which is exactly what GEval's
+  free-form rubric is for.
+- **Prohibited-basis scan** → deliberately **not** GEval. Whether an explanation
+  references age, marital status, race, or another ECOA-prohibited factor is
+  closer to a checklist than a judgment call — and a compliance-critical check
+  should be as deterministic and auditable as possible, not subject to a free-form
+  rubric's run-to-run variance. `DAGMetric`'s decision-tree structure (branch on
+  "does the text mention factor X" per prohibited factor) gives a reproducible,
+  inspectable score path — an auditor can see exactly which branch fired, which
+  matters more here than for the coherence check. `BiasMetric` runs alongside it
+  for general demographic-bias language the checklist doesn't enumerate.
 - **Judge calibration**: periodically measure inter-rater agreement (Cohen's
   kappa) between DeepEval's metrics and human raters on a held-out sample. If
   agreement drops, the *judge* is miscalibrated — a distinct failure mode from the
   underlying explanation quality degrading (Deep Dive 5 §7).
-- **PII scan**: a separate deterministic regex/classifier pass (not an LLM
-  metric — no reason to pay judge-call cost for a bounded pattern match) checks
-  every explanation never restates SSN/DOB before storage.
+- **PII scan** → a fully custom `BaseMetric` subclass wrapping a regex/PII
+  classifier, not an LLM call — no reason to pay judge-call cost for a bounded
+  pattern match. Subclassing (rather than a side script outside DeepEval) means it
+  still runs inside the same `evaluate()` call and the same CI report as every
+  other metric, so a PII regression shows up in the same gate, not a separate
+  pipeline someone has to remember to check.
 - **Latency regression** → `LatencyMetric(max_latency=...)`. Unlike the
   quality metrics above, this isn't LLM-judged — DeepEval just asserts a
   `latency` value you measured yourself against a threshold:

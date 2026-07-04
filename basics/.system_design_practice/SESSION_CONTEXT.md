@@ -73,6 +73,23 @@ Explanation quality maps cleanly onto DeepEval's `LLMTestCase`:
   Observability (real traffic distribution vs. per-case CI assertion). Budget it
   as a slice of the overall 90s p95 end-to-end target.
 
+**DeepEval's three metric tiers — pick per check, don't default to one.** Be ready
+to name all three unprompted:
+1. **Built-in default** (no config beyond a threshold) — `HallucinationMetric`,
+   `BiasMetric`, `LatencyMetric`.
+2. **`GEval`** (DeepEval's own definition of "custom metric") — natural-language
+   rubric, auto-generated CoT, LLM-judged. Used for coherence/actionability —
+   genuinely subjective, free-form rubric is the right tool.
+3. **`DAGMetric`** (decision-tree LLM-as-judge, deterministic branching) — used
+   for the prohibited-basis scan instead of GEval, on purpose: a compliance-
+   critical check should be auditable/reproducible (see exactly which branch
+   fired), not subject to free-form-rubric variance. Objective/checklist-like
+   criteria → DAGMetric; subjective criteria → GEval.
+4. **`BaseMetric`** (fully custom, subclassed, no LLM required) — used for the
+   PII restatement check (plain regex, no reason to pay judge-call cost).
+   Subclassing rather than a side script means it still runs inside the same
+   `evaluate()` call and CI report as everything else.
+
 **Section 7 — edge cases in the eval pipeline itself (staff+ framing).** Distinct
 from the system's own Fault Analysis table: these are second-order failures of the
 *evaluator*, where the eval reports green while the real system degrades. Be ready
