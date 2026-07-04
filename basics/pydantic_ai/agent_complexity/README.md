@@ -36,6 +36,9 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
   - [Validate at every boundary](#validate-at-every-boundary)
   - [Design context deliberately](#design-context-deliberately)
   - [Progressive tool disclosure](#progressive-tool-disclosure)
+    - [1. Phase-gated tool sets](#1-phase-gated-tool-sets)
+    - [2. Dynamic tool injection via `prepare`](#2-dynamic-tool-injection-via-prepare)
+    - [3. Sub-agent specialization](#3-sub-agent-specialization)
   - [Instrument before you ship](#instrument-before-you-ship)
   - [Build the degraded path first](#build-the-degraded-path-first)
   - [Keep humans in the loop for high-risk actions](#keep-humans-in-the-loop-for-high-risk-actions)
@@ -695,9 +698,11 @@ additional tools only when the agent reaches a stage that needs them.
 
 Three practical patterns in Pydantic AI:
 
-**1. Phase-gated tool sets.** Run the agent in explicit phases, each with its own
-restricted tool set. When phase 1 finishes, re-enter the agent with the phase-2
-tools added. The model never sees write tools during the read phase:
+#### 1. Phase-gated tool sets
+
+Run the agent in explicit phases, each with its own restricted tool set. When phase
+1 finishes, re-enter the agent with the phase-2 tools added. The model never sees
+write tools during the read phase:
 
 ```python
 from pydantic_ai import Agent
@@ -711,10 +716,12 @@ resolver = Agent(model, tools=[issue_refund, send_email])
 result = await resolver.run(finding.output)
 ```
 
-**2. Dynamic tool injection via `prepare`.** Pydantic AI's `prepare` parameter on
-`@agent.tool` lets you conditionally include or exclude a tool on each call based on
-current context — for example, only offering `issue_refund` if the investigation
-phase has already set a `can_refund` flag in deps:
+#### 2. Dynamic tool injection via `prepare`
+
+Pydantic AI's `prepare` parameter on `@agent.tool` lets you conditionally include or
+exclude a tool on each call based on current context — for example, only offering
+`issue_refund` if the investigation phase has already set a `can_refund` flag in
+deps:
 
 ```python
 async def only_if_approved(ctx: RunContext[Deps], tool_def: ToolDefinition):
@@ -727,12 +734,14 @@ async def issue_refund(ctx: RunContext[Deps], charge_id: str, amount: float) -> 
 
 The tool is invisible to the model — zero tokens — until the condition is met.
 
-**3. Sub-agent specialization.** In a multi-agent system, keep each sub-agent's tool
-set to exactly what its role needs. The researcher gets file + gateway tools; the
-drafter gets template tools only; the compliance agent gets policy-lookup tools only.
-No agent sees tools outside its domain. This is the natural expression of progressive
-disclosure at the orchestration layer: tools are disclosed to the agent whose *role*
-requires them, not broadcast to all agents.
+#### 3. Sub-agent specialization
+
+In a multi-agent system, keep each sub-agent's tool set to exactly what its role
+needs. The researcher gets file + gateway tools; the drafter gets template tools only;
+the compliance agent gets policy-lookup tools only. No agent sees tools outside its
+domain. This is the natural expression of progressive disclosure at the orchestration
+layer: tools are disclosed to the agent whose *role* requires them, not broadcast to
+all agents.
 
 **Why this matters at scale.** A 20-tool agent system prompt might spend 800–1500
 tokens on tool definitions per call. At 15 calls per L5 run that's 12k–22k tokens of
