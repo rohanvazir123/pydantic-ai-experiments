@@ -54,11 +54,14 @@
 ```
 # Key endpoints / messages / mutations
 
-POST   /resource          — create
+POST   /resource          — create (not idempotent — each call creates a new resource)
 GET    /resource/:id      — read
-PATCH  /resource/:id      — update
-DELETE /resource/:id      — delete (if applicable)
+PUT    /resource/:id      — full replace (idempotent — safe to retry)
+DELETE /resource/:id      — delete (idempotent — deleting twice is the same as once)
 ```
+
+> Prefer PUT over PATCH for update operations where retries matter.
+> PATCH is not guaranteed idempotent — avoid it on operations with side effects.
 
 **Auth:** JWT / API key / mTLS
 
@@ -129,6 +132,135 @@ CREATE TABLE resource (
 **Indexes:** what queries need to be fast?
 
 **Partitioning / sharding strategy:** if relevant at scale.
+
+---
+
+## Infrastructure Choices
+
+| Component | Choice | Notes |
+|-----------|--------|-------|
+| Database | | |
+| Message Queue | | |
+| Cache | | |
+| Workflow Engine | | |
+| Rate Limiter | | |
+| Circuit Breaker | | |
+
+---
+
+### Database
+
+| Option | When to choose |
+|--------|---------------|
+| PostgreSQL | Default — relational, ACID, pgvector for embeddings, good at joins and transactions |
+| DynamoDB / Cassandra | Write-heavy, wide column, high throughput key-value at scale |
+| Redis (primary) | Ephemeral state only — not a source of truth |
+
+**Choice for this system:**
+
+**Partitioning strategy:**
+
+### Message Queue
+
+| Option | When to choose |
+|--------|---------------|
+| Kafka | High throughput, durable, replay, fan-out to multiple consumers |
+| SQS / SQS FIFO | Simpler ops; FIFO for ordering guarantees; AWS-native |
+| RabbitMQ | Lower throughput, complex routing rules |
+
+**Choice for this system:**
+
+**Partition / topic design:**
+
+**Backpressure handling:** how does the system slow down producers when consumers lag?
+
+### Redis Caching
+
+| Use case | TTL | Eviction policy |
+|----------|-----|----------------|
+| Idempotency keys | 24h | none (explicit delete on expiry) |
+| Session / auth tokens | per JWT exp | allkeys-lru |
+| Hot read cache (e.g. rules, config) | 5–60min | allkeys-lru |
+| Rate limit counters | per window | volatile-ttl |
+
+**What is NOT cached:** source-of-truth financial records, audit log, decision records.
+
+### Workflow Engine (if multi-step processing required)
+
+Use when: the processing pipeline has multiple sequential steps, each of which can
+fail independently, and you need durable retry, step-level checkpointing, and
+visibility into in-flight workflows without building it yourself.
+
+| Option | When to choose |
+|--------|---------------|
+| **Temporal** | Long-running workflows, durable execution, step-level replay, strong consistency guarantees. Best for workflows that span minutes to days and touch paid side effects. |
+| **Prefect / Airflow** | Data pipelines, scheduled batch jobs, DAG-oriented work |
+| **Celery** | Shorter async task queues, Python-native, simpler ops. Good for job scheduling and background tasks that don't need durable multi-step state. |
+
+**Choice for this system:**
+
+**Why:** justify based on workflow duration, failure recovery needs, and operational
+complexity tolerance.
+
+> Rule of thumb: if a failed step needs to resume from where it left off (not restart
+> from scratch), and the steps touch external paid side effects, reach for Temporal.
+> If it's fire-and-forget background tasks or scheduled jobs, Celery is sufficient.
+
+### Rate Limiter
+
+Prevents any single client or tenant from overwhelming the system. Apply at the API
+Gateway layer before requests hit any service.
+
+| Algorithm | When to choose |
+|-----------|---------------|
+| **Token bucket** | Allows short bursts above the rate; good for APIs where clients occasionally spike |
+| **Fixed window** | Simplest; suffers boundary burst (2× rate at window edge) |
+| **Sliding window log** | Precise; memory-heavy at scale |
+| **Sliding window counter** | Good balance — approximate but cheap |
+
+**Scope of limiting:**
+- Per tenant / API key (primary)
+- Per IP (secondary, for unauthenticated endpoints)
+- Per endpoint (e.g. tighter limits on expensive operations like document upload)
+
+**Storage:** Redis counters with TTL = window size. Atomic `INCR` + `EXPIRE`.
+
+**On limit exceeded:** return `429 Too Many Requests` with `Retry-After` header.
+Never silently drop — the client must know to back off.
+
+**Choice for this system:**
+
+### Circuit Breaker
+
+Prevents cascading failure when an external dependency (credit bureau, ID provider,
+downstream service) is degraded or down. Without it, slow dependencies cause thread
+exhaustion and latency amplification across the whole system.
+
+**States:**
+
+```
+CLOSED ──(N consecutive failures)──▶ OPEN ──(cooldown elapsed)──▶ HALF-OPEN
+  ▲                                                                     │
+  └──────────────────(probe succeeds)──────────────────────────────────┘
+                      (probe fails → back to OPEN)
+```
+
+| State | Behavior |
+|-------|---------|
+| **Closed** | Normal operation; failures are counted |
+| **Open** | Fail fast immediately; no calls to the dependency |
+| **Half-open** | Allow one probe request; success → Closed, failure → Open |
+
+**Per dependency:** one breaker per external integration (credit bureau, ID provider,
+document processor, LLM endpoint). Do not share a breaker across unrelated services.
+
+**Failure threshold:** tune per dependency — a credit bureau that times out 3×
+in 30s is down; an LLM endpoint may need a higher threshold for transient errors.
+
+**On open circuit:** route to the fallback path (underwriter queue, cached response,
+degraded mode) — never surface a raw error to the client if a safe fallback exists.
+
+**Choice for this system:**
 
 ---
 
