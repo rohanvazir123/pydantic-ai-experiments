@@ -45,6 +45,7 @@ htmlcov/
 .venv
 *.out.txt
 kg/evals/*.json
+nl2sql/evals/results/
 relevant_notebooks/
 notebooks_backup/
 anaconda_projects/
