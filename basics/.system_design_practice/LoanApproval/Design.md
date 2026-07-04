@@ -327,16 +327,30 @@ old partitions can be archived to cold storage after the regulatory retention wi
 
 ## Test & Evaluation Framework
 
+Two fundamentally different things need evaluating here, and conflating them is the
+most common mistake on this problem:
+
+1. **Decision/routing policy** (code — thresholds + rules engine). Not an LLM at
+   all, but still needs rigorous evaluation: fair-lending compliance (ECOA)
+   requires demonstrating the decision boundary doesn't produce disparate impact
+   across protected classes, and any threshold change must be backtested against
+   labeled historical outcomes before it ships.
+2. **LLM-generated explanation** (the judge). The only genuinely "AI" evaluation
+   surface in this system. Needs eval for faithfulness (grounded in the structured
+   `RiskSignal` it was given — no fabricated facts), coherence/actionability for
+   the underwriter, and stability across model version upgrades.
+
 | Layer | What it covers | Tooling |
 |-------|---------------|---------|
 | Unit | DTI computation, routing thresholds, idempotency key logic | pytest |
 | Integration | Orchestrator DAG, DB writes, queue publish/consume | Real DB + testcontainers |
 | Contract | Credit bureau + ID provider API surface stability | Pact / recorded fixtures |
 | Load | 120 req/s peak; queue drain under burst | Locust / k6 |
-| Eval (AI) | Risk agent decision quality vs labeled historical outcomes; explanation coherence | LLM-as-judge + golden set |
+| Decision-quality eval | Tier accuracy vs. labeled outcomes; fair-lending adverse-impact ratio; calibration | Offline backtest + PSI drift check |
+| Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, PII/bias leakage, latency regression | DeepEval (`HallucinationMetric`, `GEval`, `BiasMetric`, `LatencyMetric`) + golden set + human sample |
 
-**Regression gate for model upgrades:** run golden set before/after; block promotion
-if decision tier distribution shifts > 2% or any hard-fail case is misclassified.
+See **Deep Dive 5** for the full evaluation pipeline architecture, golden-set
+construction, the delayed-label problem, and the CI regression gate.
 
 ---
 
@@ -489,6 +503,272 @@ scalable. Size the worker pool to activity throughput (same math as the queue wo
 pool in Deep Dive 3). Temporal Server itself needs a production deployment (clustered,
 with its own PostgreSQL or Cassandra persistence) — plan for this operational overhead.
 
+### Deep Dive 5: Evaluation pipeline — decision quality and explanation quality
+
+**Why this needs its own pipeline, not just "add an eval script":** ground truth
+for a loan decision doesn't exist at decision time. Whether an approved loan was a
+good decision is only knowable months (early delinquency) to years (full loan
+term) later. Any eval design that assumes same-day labels is wrong for this
+domain. The pipeline has to operate at three time horizons at once:
+
+```
+Pre-deploy (seconds–minutes)      Near-real-time (hours–days)         Long-horizon (months–quarters)
+───────────────────────────       ───────────────────────────         ──────────────────────────────
+Golden-set replay                  Explanation faithfulness sample     Actual loan performance
+  → gates CI / merge                 (sampled % of live traffic)          reconciliation
+Synthetic adversarial cases        Underwriter override rate           → gates threshold / policy
+  → known edge cases covered       Tier-distribution drift (PSI)          revisions
+                                      → gates alerting                 → feeds back into golden set
+```
+
+**1. Golden-set construction**
+
+*Bootstrapping from zero* — the honest answer to "you have no eval dataset yet, go
+build one" is: don't start from volume, start from the decision boundary. Concretely:
+
+```
+Step 1 — Define the coverage matrix before collecting anything.
+  Cross product: {tier: auto-approve / gray-zone / deny}
+               × {loan_type} × {state}
+               × {known failure mode: income mismatch, employment conflict,
+                  boundary DTI, conflicting docs, fraud flag, sanctions hit}
+  This matrix IS the spec for the dataset — every cell needs at least a
+  handful of cases. A dataset with 10,000 easy cases and zero boundary
+  cases is worse than 100 cases that hit every cell.
+
+Step 2 — Fill each cell from the cheapest available source first:
+  (a) Real historical data, stratified-sampled per cell (not uniform —
+      uniform sampling under-represents rare cells like fraud/hard-fail).
+  (b) Hand-authored synthetic cases for cells real data can't fill
+      (rare-but-critical: sanctions hit, boundary DTI exactly at threshold).
+  (c) LLM-assisted perturbation of real cases to scale a thin cell cheaply
+      (e.g. take a real approved case, perturb stated income by +25% to
+      synthesize an income-mismatch variant) — always human-reviewed
+      before being trusted as ground truth; LLM-generated labels grading
+      LLM-generated inputs is circular and hides bias.
+
+Step 3 — Label with redundancy, not a single pass.
+  2–3 independent raters (underwriters) per case in the human-labeled
+  subset; adjudicate disagreements; track inter-rater agreement (Cohen's
+  kappa) as a first-class number. Eval quality can never exceed label
+  quality — a noisy golden set produces a noisy regression gate.
+
+Step 4 — Ship small, then grow via the feedback loop (Section 6 below).
+  A first cut of 50–100 hand-curated boundary cases + a few hundred
+  stratified historical cases is enough to catch obvious regressions on
+  day one. Production overrides and quarterly reconciliation add real
+  cases the coverage matrix missed — the dataset is never "finished."
+```
+
+- **Historical labeled outcomes** — resolved applications with known performance
+  (paid, delinquent, defaulted). This is the *slow* label — see the delayed-label
+  problem above.
+- **Underwriter-decision proxy labels** — for near-term eval, use whether a human
+  underwriter agreed with or overrode the model's tier recommendation. Available
+  in hours, not months; catches regressions long before performance data arrives.
+- **Stratified adverse-impact sample** — enough volume per `(state, loan_type)` ×
+  protected-class-proxy bucket to detect disparate impact statistically. Race and
+  gender are not collected for underwriting decisions (ECOA); fair-lending
+  analysis uses approved proxy methods (e.g. BISG — Bayesian Improved Surname
+  Geocoding) applied *only* in the offline eval pipeline, never in the decision
+  path itself.
+- **Synthetic adversarial cases** — hand-authored: self-employed income,
+  co-signer structures, DTI exactly at the gray-zone boundary, conflicting
+  stated-vs-verified income. Real historical data under-represents rare-but-
+  important edge cases.
+- **Versioning** — the golden set is append-only. A case is never deleted, only
+  deprecated with a recorded reason — an evaluator must be able to reconstruct
+  what was tested at the time any threshold changed (audit requirement).
+
+**2. Decision-quality evaluation (fair-lending focus)**
+
+- **Confusion matrix vs. outcome**: approved-good / approved-defaulted /
+  denied-correctly / denied-would-have-been-good. The last cell is never directly
+  observed — addressed with **reject inference** (standard credit-industry
+  technique: model the counterfactual performance of denied applicants from the
+  accepted population's score-to-outcome relationship, extrapolated into the
+  denied score range).
+- **Calibration**: within each score band, does the actual default rate match the
+  rate implied by the score? Reliability diagram + Brier score.
+- **Adverse impact ratio**: approval rate for each protected-class-proxy group ÷
+  approval rate for the reference group. Four-fifths rule adapted from EEOC
+  guidance — ratio < 0.8 blocks promotion regardless of accuracy improvement.
+  This gate is non-negotiable and sits above accuracy metrics in priority.
+- **Tier-distribution drift**: Population Stability Index (PSI) week-over-week,
+  replacing a flat "±5%" rule of thumb. PSI > 0.1 → investigate; PSI > 0.25 →
+  block auto-approve and page compliance.
+
+**3. Explanation-quality evaluation (LLM-as-judge, via DeepEval)**
+
+This is deliberately the *only* track that reaches for an LLM-eval framework.
+Decision quality (Section 2) is deterministic code output — plain `pytest`
+parametrization over `(features, expected_tier)` plus a stats pass for PSI /
+adverse-impact ratio is the right tool there. Forcing routing decisions through an
+LLM-judge framework would be solving a code-correctness problem with the wrong
+tool. The explanation, by contrast, is genuinely generated text, which is exactly
+DeepEval's `LLMTestCase` model:
+
+```python
+LLMTestCase(
+    input=prompt,                      # serialized RiskSignal handed to the judge LLM
+    actual_output=explanation,         # the judge LLM's generated text — under test
+    expected_output=gold_explanation,  # human-authored reference, for GEval comparison
+    context=[                          # ground-truth facts — NOT retrieval_context;
+        "dti_ratio: 0.42",             # there's no retrieval step, this IS the RiskSignal
+        "regulatory_check: pass (rule v2.3)",
+        "fraud_flag: false",
+        "anomaly: stated_income_mismatch +24%",
+        "anomaly: employment_type_conflict",
+        "score: 61 (gray zone)",
+    ],
+)
+```
+
+`context` is the key mapping: it's the `RiskSignal` struct restated as ground-truth
+facts, which is exactly what `HallucinationMetric` diffs the explanation against.
+
+- **Faithfulness / groundedness** → `HallucinationMetric(context=...)`. Flags any
+  claim in the explanation that contradicts or goes beyond `context` — the
+  hallucination detector, not a style check. Value-level, not just key-level (see
+  Deep Dive 5 §7 on the judge-checks-keys-not-values edge case) — assert the
+  *number* cited matches, not merely that some DTI-shaped field was referenced.
+- **Coherence / actionability** → `GEval(criteria="a coherent, actionable summary
+  for an underwriter, referencing DTI, flags, and score", evaluation_params=
+  [INPUT, ACTUAL_OUTPUT])`. Calibrated against the golden set of ~200–500
+  hand-labeled (signals → explanation) pairs rated 1–5 by underwriters — GEval's
+  score is checked for correlation with those human ratings, not trusted blind.
+- **Prohibited-basis scan** → a second, narrower `GEval(criteria="must not
+  reference age, marital status, race, or other ECOA-prohibited factors even if
+  present in the input")`, plus `BiasMetric` for general demographic-bias
+  language. Catches the subtle case where a legally irrelevant attribute leaks
+  into the explanation even though it was present in the input data.
+- **Judge calibration**: periodically measure inter-rater agreement (Cohen's
+  kappa) between DeepEval's metrics and human raters on a held-out sample. If
+  agreement drops, the *judge* is miscalibrated — a distinct failure mode from the
+  underlying explanation quality degrading (Deep Dive 5 §7).
+- **PII scan**: a separate deterministic regex/classifier pass (not an LLM
+  metric — no reason to pay judge-call cost for a bounded pattern match) checks
+  every explanation never restates SSN/DOB before storage.
+- **Latency regression** → `LatencyMetric(max_latency=...)`. Unlike the
+  quality metrics above, this isn't LLM-judged — DeepEval just asserts a
+  `latency` value you measured yourself against a threshold:
+  `LLMTestCase(..., latency=measured_seconds)` +
+  `assert_test(test_case, metrics=[LatencyMetric(max_latency=3.0)])`. Budget
+  it as a slice of the pipeline's overall p95 (Non-Functional Requirements) —
+  the LLM Judge activity is one L1 call inside a 90s p95 end-to-end target, so
+  a few seconds of headroom here still leaves room for the parallel
+  verification activities and the router. This is a **pre-deploy** check (did
+  this PR make the judge call slower on the golden set) and is complementary
+  to, not a replacement for, the production p95/p99 latency tracked in
+  Observability — that's real traffic distribution; this is a per-case
+  threshold assertion at CI time.
+
+**4. Automated regression gate (CI)**
+
+A PR that changes the prompt, swaps the explanation model, or edits a routing
+threshold triggers:
+
+```
+1. Run golden set through prod version and candidate version, side by side
+   — decision-quality golden set: pytest parametrized over (features, expected_tier)
+   — explanation-quality golden set: DeepEval's EvaluationDataset of LLMTestCases,
+     run via `deepeval test run` in the CI job
+2. Diff decision-quality metrics: tier distribution shift (PSI), adverse-impact
+   ratio delta, any hard-fail case that flips outcome
+3. Diff explanation-quality metrics: HallucinationMetric / GEval score deltas,
+   plus LatencyMetric flags on any golden-set case that got slower
+4. Hard gate: a single misclassified hard-fail case (fraud/sanctions) = automatic
+   block — this is a compliance case, not an average-case metric
+5. Soft gate: PSI / adverse-impact / DeepEval metric thresholds — block merge,
+   require compliance sign-off to override
+```
+
+DeepEval's dataset versioning (or a pinned local JSONL, if not using their hosted
+platform) satisfies the append-only golden-set requirement from Section 1 for the
+explanation track specifically — the decision-quality golden set is separate and
+plain (a features → expected_tier table), since it isn't LLM-graded at all.
+
+Threshold or rules-engine changes require compliance sign-off even when every
+automated gate passes — a regulatory step, not an ML nicety.
+
+**5. Shadow deployment for model upgrades**
+
+A new explanation model runs in **shadow mode** on live traffic: output is logged
+but never shown to underwriters or allowed to affect routing. Compared against
+production output (plus a human-rated sample) over a bake period (e.g. 2 weeks /
+N applications) before promotion. This is only safe *because* of the L1
+LLM-as-judge design decision made earlier — the explanation model can never
+affect routing, so shadow mode carries zero decision-path risk. Contrast with a
+hypothetical L3 tool-calling risk agent, where shadow mode would be far harder to
+reason about since the model's own tool calls could have side effects.
+
+**6. Production monitoring & feedback loop**
+
+- **Underwriter override rate** per segment — a fast leading indicator of policy
+  drift, available in hours, long before loan-performance labels exist.
+- **Quarterly reconciliation** — replay every decided application against actual
+  loan performance once available; misclassified cases feed back into the golden
+  set, closing the loop back to Step 1.
+
+**7. Edge cases in the eval pipeline itself**
+
+Everything above answers "does the eval pipeline catch a bad model." A staff+
+discussion has to go one level deeper: what makes the *eval pipeline itself*
+silently wrong, so it reports green while the real system degrades. These are
+second-order failure modes — of the evaluator, not the loan pipeline — and they're
+the ones worth raising unprompted.
+
+- **Survivorship bias / circularity in the historical golden set.** Historical
+  outcomes only exist for applications the *old* policy approved. A new policy
+  evaluated against this golden set is really being scored on "how well does it
+  resemble the old policy's blind spots," not "is it actually better." Reject
+  inference (Section 2) mitigates this for aggregate metrics but doesn't fully
+  escape it — the honest fix is a small, deliberately randomized "test and learn"
+  cohort (fund a controlled sample of near-boundary denials to get real ground
+  truth) rather than trusting extrapolation alone.
+- **Goodhart's law — the golden set gets taught to, not tested against.** Once
+  engineers can see which cases are in the golden set, prompt/threshold tuning
+  starts optimizing for those specific cases rather than generalizing. Mitigation:
+  split into a visible dev set (used during iteration) and a held-out set never
+  exposed to whoever is tuning the prompt or thresholds — refreshed on a cadence
+  the tuning team doesn't control.
+- **Proxy-metric decay.** Underwriter override rate is a fast proxy label (Section
+  1), but it decays as a signal exactly when you need it most: if underwriters are
+  overloaded, they rubber-stamp the model's recommendation (automation bias), and
+  override rate silently drops to near-zero even as the model degrades. This looks
+  identical to "the model got better." Mitigation: audit a random sample of
+  underwriter decisions independent of whether they overrode, and track
+  time-to-decision as a secondary signal for rubber-stamping.
+- **The faithfulness judge checks claim *keys*, not claim *values*.** A
+  groundedness check that verifies "the explanation references a field that
+  exists in `RiskSignal`" will pass an explanation that cites the right field
+  name with a transposed or subtly wrong number. This is the adversarial-
+  robustness gap in the judge itself, not the explanation model. Mitigation:
+  value-level verification (does the cited number match the input field's actual
+  value, not just its presence).
+- **Multiple-comparisons inflation in the fairness gate.** Checking adverse-impact
+  ratio across every `(state, loan_type, protected-class-proxy)` combination on
+  every PR means dozens of statistical tests per merge — at a 5% false-positive
+  rate per test, *something* fails by chance most of the time. Mitigation:
+  pre-register a small set of primary gates that hard-block, treat the rest as
+  advisory with a minimum-N requirement before a segment is even eligible to
+  trigger a block (a low-volume state/loan_type cell will otherwise produce a
+  noisy ratio that swings wildly on a handful of cases).
+- **Silent vendor-side model drift bypasses the CI trigger entirely.** The
+  regression gate (Section 4) only fires on an internal PR. If the LLM provider
+  updates what's behind a pinned alias (or deprecates a checkpoint and
+  auto-routes to a replacement), explanation quality can shift with zero internal
+  code change to trigger the gate. Mitigation: pin exact model versions/hashes,
+  not aliases, and run the faithfulness/coherence checks continuously in
+  production on a sample — not only when a PR asks for it.
+- **Adversarial gaming of a known boundary.** If the gray-zone threshold is
+  effectively discoverable (via repeated applications, shared knowledge among
+  fraud rings, or a leaked rule version), bad actors can craft applications that
+  sit deliberately just inside the lighter-scrutiny band. A static, well-known
+  cliff is a target. Mitigation: randomized secondary review sampling even within
+  the auto-approve band, and treat "applications clustering suspiciously close to
+  a threshold" itself as a fraud signal fed back into the risk synthesis step.
+
 ---
 
 ## Fault Analysis / Edge Cases
@@ -505,6 +785,8 @@ with its own PostgreSQL or Cassandra persistence) — plan for this operational 
 | Signal sent to completed workflow | Signal lost | Temporal rejects signals to closed workflows; Application Service checks workflow status before signaling |
 | Temporal server down | No new workflows start; in-flight workflows pause | Temporal is clustered (HA); in-flight workflows resume automatically on recovery — durable state preserved |
 | Queue consumer lag spike | Processing SLA breach | HPA auto-scales Temporal workers on activity queue depth; alert at 2× normal lag |
+| LLM explanation contains an ungrounded/hallucinated claim | Underwriter misled by an inaccurate summary | Faithfulness check (second LLM-judge/NLI pass) before display; flagged explanations route to manual review, never shown as-is |
+| Model upgrade silently shifts the decision boundary | Fair-lending exposure, inconsistent outcomes across cohorts | Golden-set regression gate in CI (Deep Dive 5); shadow-mode bake period before promotion; PSI drift alert in production |
 
 ---
 
@@ -523,3 +805,6 @@ with its own PostgreSQL or Cassandra persistence) — plan for this operational 
 | Idempotency key in Redis | Redis + TTL | DB-only | O(1) lookup at 1M/day throughput; DB `processed_ops` as durable fallback |
 | Workflow engine | Temporal | Queue + worker | Multi-step durable execution, step-level retry, HIL signals, SLA timers — queue alone can't do this cleanly |
 | HIL wait mechanism | Temporal signal + timer | DB polling / cron | Workflow suspends free; timer fires automatically; no polling loop to maintain |
+| Denied-applicant outcome eval | Reject inference (statistical extrapolation) | Ignore denied population | True performance is never observed for denials; extrapolation from the accepted population is the industry-standard alternative to no signal at all |
+| Model-upgrade rollout | Shadow deployment (parallel, no production effect) | Direct canary (partial live traffic) | Explanation is advisory-only (L1 judge) — shadow mode carries zero decision-path risk; canary would be needed if the model controlled routing |
+| Fair-lending metric in the CI gate | Adverse impact ratio (4/5 rule) as a hard block | Accuracy-only regression gate | Regulatory requirement overrides accuracy gains — a more "accurate" model that fails the 4/5 rule cannot ship |
