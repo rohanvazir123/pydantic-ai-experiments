@@ -347,7 +347,8 @@ most common mistake on this problem:
 | Contract | Credit bureau + ID provider API surface stability | Pact / recorded fixtures |
 | Load | 120 req/s peak; queue drain under burst | Locust / k6 |
 | Decision-quality eval | Tier accuracy vs. labeled outcomes; fair-lending adverse-impact ratio; calibration | Offline backtest + PSI drift check |
-| Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, prohibited-basis/PII/bias leakage, latency regression | DeepEval — built-in (`HallucinationMetric`, `BiasMetric`, `LatencyMetric`), `GEval` (coherence), `DAGMetric` (prohibited-basis), custom `BaseMetric` (PII) + golden set + human sample |
+| Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, prohibited-basis/PII/bias leakage | DeepEval — built-in (`HallucinationMetric`, `BiasMetric`, `PIILeakageMetric`), `GEval` (coherence), `DAGMetric` (prohibited-basis), custom `BaseMetric` (SSN/DOB pre-filter) + golden set + human sample |
+| Judge-call latency regression | Did this PR make the explanation call slower on the golden set | Plain `pytest` threshold on measured latency — not a DeepEval metric |
 
 See **Deep Dive 5** for the full evaluation pipeline architecture, golden-set
 construction, the delayed-label problem, and the CI regression gate.
@@ -632,10 +633,10 @@ picking the tier per check, not defaulting to one:
 
 | Tier | Mechanism | Used here for |
 |------|-----------|---------------|
-| Built-in default | Pre-built, no config beyond a threshold | `HallucinationMetric`, `BiasMetric`, `LatencyMetric` |
+| Built-in default | Pre-built, no config beyond a threshold | `HallucinationMetric`, `BiasMetric`, `PIILeakageMetric` |
 | `GEval` (custom, subjective) | Natural-language rubric, auto-generated CoT, LLM-judged | Coherence / actionability — genuinely a matter of judgment |
 | `DAGMetric` (custom, objective) | Decision-tree LLM-as-judge, deterministic branching | Prohibited-basis scan — closer to a checklist than a judgment call |
-| `BaseMetric` (fully custom) | Subclassed, self-coded, no LLM call required | PII restatement check — plain regex, no reason to pay judge cost |
+| `BaseMetric` (fully custom) | Subclassed, self-coded, no LLM call required | Deterministic SSN/DOB pattern pre-filter — cheap defense-in-depth alongside `PIILeakageMetric` |
 
 - **Faithfulness / groundedness** → `HallucinationMetric(context=...)`. Flags any
   claim in the explanation that contradicts or goes beyond `context` — the
@@ -662,25 +663,25 @@ picking the tier per check, not defaulting to one:
   kappa) between DeepEval's metrics and human raters on a held-out sample. If
   agreement drops, the *judge* is miscalibrated — a distinct failure mode from the
   underlying explanation quality degrading (Deep Dive 5 §7).
-- **PII scan** → a fully custom `BaseMetric` subclass wrapping a regex/PII
-  classifier, not an LLM call — no reason to pay judge-call cost for a bounded
-  pattern match. Subclassing (rather than a side script outside DeepEval) means it
-  still runs inside the same `evaluate()` call and the same CI report as every
-  other metric, so a PII regression shows up in the same gate, not a separate
-  pipeline someone has to remember to check.
-- **Latency regression** → `LatencyMetric(max_latency=...)`. Unlike the
-  quality metrics above, this isn't LLM-judged — DeepEval just asserts a
-  `latency` value you measured yourself against a threshold:
-  `LLMTestCase(..., latency=measured_seconds)` +
-  `assert_test(test_case, metrics=[LatencyMetric(max_latency=3.0)])`. Budget
-  it as a slice of the pipeline's overall p95 (Non-Functional Requirements) —
-  the LLM Judge activity is one L1 call inside a 90s p95 end-to-end target, so
-  a few seconds of headroom here still leaves room for the parallel
-  verification activities and the router. This is a **pre-deploy** check (did
-  this PR make the judge call slower on the golden set) and is complementary
-  to, not a replacement for, the production p95/p99 latency tracked in
-  Observability — that's real traffic distribution; this is a per-case
-  threshold assertion at CI time.
+- **PII scan** → DeepEval's built-in `PIILeakageMetric` — an LLM-judge metric
+  that extracts statements from the explanation and classifies each for PII, not
+  a plain regex. Threshold on the proportion of PII-free statements. Because SSN
+  and DOB are strictly formatted (unlike free-text PII), a cheap deterministic
+  regex pre-filter, implemented as a custom `BaseMetric` subclass, still earns
+  its place *alongside* it: catch the fixed-format cases for free before paying
+  for a judge call, and rely on `PIILeakageMetric` for the harder unstructured
+  cases (addresses, names in context) a regex can't reliably catch.
+- **Latency**: **not a DeepEval concern** — worth stating plainly, since it's
+  tempting to look for an LLM-eval-framework metric for everything once you're
+  using one for quality. DeepEval evaluates generated *content*; call latency is
+  measured with plain instrumentation (`time.perf_counter()` around the judge
+  call) and asserted with an ordinary `pytest` threshold, budgeted as a slice of
+  the pipeline's overall p95 (Non-Functional Requirements) — the LLM Judge
+  activity is one L1 call inside a 90s p95 end-to-end target. This is a
+  **pre-deploy** check (did this PR make the judge call slower on the golden
+  set) and is complementary to, not a replacement for, the production p95/p99
+  latency already tracked in Observability — that's real traffic distribution;
+  this is a per-case threshold assertion at CI time.
 
 **4. Automated regression gate (CI)**
 
@@ -694,8 +695,9 @@ threshold triggers:
      run via `deepeval test run` in the CI job
 2. Diff decision-quality metrics: tier distribution shift (PSI), adverse-impact
    ratio delta, any hard-fail case that flips outcome
-3. Diff explanation-quality metrics: HallucinationMetric / GEval score deltas,
-   plus LatencyMetric flags on any golden-set case that got slower
+3. Diff explanation-quality metrics: HallucinationMetric / GEval / DAGMetric /
+   PIILeakageMetric score deltas from the DeepEval run, plus a plain pytest
+   latency-threshold check on the measured judge-call time per case
 4. Hard gate: a single misclassified hard-fail case (fraud/sanctions) = automatic
    block — this is a compliance case, not an average-case metric
 5. Soft gate: PSI / adverse-impact / DeepEval metric thresholds — block merge,

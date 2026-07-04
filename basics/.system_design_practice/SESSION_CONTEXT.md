@@ -62,21 +62,30 @@ Explanation quality maps cleanly onto DeepEval's `LLMTestCase`:
   1–5 human ratings) AND a separate narrower GEval for the ECOA prohibited-basis
   scan.
 - `BiasMetric` = general demographic-bias language check.
-- PII restatement check is a plain regex/classifier pass, not a DeepEval metric —
-  no reason to pay judge-call cost for a bounded pattern match.
+- `PIILeakageMetric` = built-in metric for PII in the explanation (LLM-judge —
+  extracts statements, classifies each for PII; NOT a plain regex under the
+  hood). A custom `BaseMetric` regex pre-filter for strictly-formatted PII
+  (SSN, DOB) still earns its place alongside it — cheap, catches fixed-format
+  cases before paying for a judge call.
 - `EvaluationDataset` + `deepeval test run` in CI satisfies the append-only golden
   set + regression-gate requirement, for the explanation track specifically.
-- `LatencyMetric(max_latency=...)` — not LLM-judged, just asserts a `latency`
-  value you measured yourself (`LLMTestCase(..., latency=measured_seconds)`)
-  against a threshold. Pre-deploy check (did this PR slow down the judge call on
-  the golden set) — complements, doesn't replace, the production p95/p99 in
-  Observability (real traffic distribution vs. per-case CI assertion). Budget it
-  as a slice of the overall 90s p95 end-to-end target.
+- **Latency is NOT a DeepEval concern** — corrected mid-session after checking
+  the primary source (see verification note below). Measure with plain
+  `time.perf_counter()` + a `pytest` threshold, not an LLM-eval-framework metric.
+
+**Verification note (self-correction):** I initially cited a `LatencyMetric` for
+DeepEval based on blog posts, without checking the primary source — wrong. GitHub
+code search on confident-ai/deepeval found zero hits for `LatencyMetric` in the
+actual metrics package (`deepeval/metrics/`, ~40 metric folders — no `latency`
+one; the only repo hit was a stale 2024 changelog entry). Lesson: verify library
+claims against the source repo/official docs, not secondary blog posts, before
+they go in an interview-prep doc. `PIILeakageMetric`, by contrast, WAS verified
+this way and is real.
 
 **DeepEval's three metric tiers — pick per check, don't default to one.** Be ready
 to name all three unprompted:
 1. **Built-in default** (no config beyond a threshold) — `HallucinationMetric`,
-   `BiasMetric`, `LatencyMetric`.
+   `BiasMetric`, `PIILeakageMetric`.
 2. **`GEval`** (DeepEval's own definition of "custom metric") — natural-language
    rubric, auto-generated CoT, LLM-judged. Used for coherence/actionability —
    genuinely subjective, free-form rubric is the right tool.
@@ -85,10 +94,12 @@ to name all three unprompted:
    critical check should be auditable/reproducible (see exactly which branch
    fired), not subject to free-form-rubric variance. Objective/checklist-like
    criteria → DAGMetric; subjective criteria → GEval.
-4. **`BaseMetric`** (fully custom, subclassed, no LLM required) — used for the
-   PII restatement check (plain regex, no reason to pay judge-call cost).
-   Subclassing rather than a side script means it still runs inside the same
-   `evaluate()` call and CI report as everything else.
+4. **`BaseMetric`** (fully custom, subclassed, no LLM required) — used for a
+   deterministic SSN/DOB regex pre-filter alongside `PIILeakageMetric`, and
+   generally the right tier whenever a check doesn't need a judge call at all
+   (non-LLM scorers, bounded pattern matches). Subclassing rather than a side
+   script means it still runs inside the same `evaluate()` call and CI report as
+   everything else.
 
 **Section 7 — edge cases in the eval pipeline itself (staff+ framing).** Distinct
 from the system's own Fault Analysis table: these are second-order failures of the
