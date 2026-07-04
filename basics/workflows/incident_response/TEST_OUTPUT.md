@@ -6,7 +6,7 @@
 
 ```bash
 # from repo root
-uv run python -m pytest basics/workflows/incident_response/tests/ -v
+uv run python -m pytest basics/workflows/incident_response/tests/ basics/workflows/deployment_saga/tests/ -v
 ```
 
 Uses `WorkflowEnvironment.start_time_skipping()` (in-process Temporal) and
@@ -45,20 +45,31 @@ uv run python -m basics.workflows.incident_response.run_live --worker-only
 platform darwin -- Python 3.13.14, pytest-9.1.0, pluggy-1.6.0
 asyncio: mode=Mode.STRICT
 
-collected 5 items
+collected 14 items
 
-tests/test_incident_workflow.py::test_happy_path_restart_resolves              PASSED
-tests/test_incident_workflow.py::test_first_action_fails_second_resolves       PASSED
-tests/test_incident_workflow.py::test_compensation_scale_up_worsens_then_clear_cache_resolves PASSED
-tests/test_incident_workflow.py::test_escalation_after_all_actions_fail        PASSED
-tests/test_incident_workflow.py::test_llm_reroutes_to_rollback                 PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_happy_path_restart_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_first_action_fails_second_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_compensation_scale_up_worsens_then_clear_cache_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_escalation_after_all_actions_fail PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_llm_reroutes_to_rollback PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_llm_escalation PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_queue_exhaustion PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_happy_path_all_stages_succeed PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_llm_nogo_rollbacks_staging_and_resources PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_staging_fails_rollbacks_only_resources PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_production_fails_rollbacks_staging_and_resources PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_dns_fails_full_three_stage_rollback PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_provision_fails_no_compensations PASSED
+basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_dns_fails_rollback_order_is_exactly_reversed PASSED
 
-============================== 5 passed in 1.14s ===============================
+============================== 14 passed in 1.09s ==============================
 ```
 
 ---
 
 ## Scenario coverage
+
+### Incident Response (7 tests)
 
 | Test | Scenario | Outcome |
 |------|----------|---------|
@@ -67,6 +78,20 @@ tests/test_incident_workflow.py::test_llm_reroutes_to_rollback                 P
 | `test_compensation_scale_up_worsens_then_clear_cache_resolves` | `scale_up` succeeds but worsens error rate (0.45→0.60 > 0.45×1.2); compensation `scale_down` fires automatically; then `clear_cache` resolves | `resolved=True`, `compensations=["scale_down (compensating scale_up)"]` |
 | `test_escalation_after_all_actions_fail` | All three actions fail; LLM eventually says escalate; `page_oncall` spy records the alert ID | `resolved=False`, `escalated=True`, `final_status="escalated"`, on-call paged |
 | `test_llm_reroutes_to_rollback` | LLM triage suggests `restart_service`; after it barely helps, assessment redirects to `rollback_deployment` which resolves | `resolved=True`, both actions in `actions_taken`, `compensations=[]` |
+| `test_saga_chain_fires_on_llm_escalation` | `scale_up` enters saga chain; LLM escalates on first assessment → `scale_down` compensation fires before `page_oncall` | `escalated=True`, `compensations=["scale_down (compensating scale_up)"]` |
+| `test_saga_chain_fires_on_queue_exhaustion` | `scale_up` enters saga chain; action queue empties after assessment (no next_action) → loop exits → compensation fires | `final_status="escalated_max_actions"`, `compensations=["scale_down (compensating scale_up)"]` |
+
+### Deployment Saga (7 tests)
+
+| Test | Scenario | Outcome |
+|------|----------|---------|
+| `test_happy_path_all_stages_succeed` | All 5 stages succeed; LLM says proceed | `succeeded=True`, 5 completed stages, no compensations |
+| `test_llm_nogo_rollbacks_staging_and_resources` | LLM says no-go after integration tests | `aborted_at="evaluate_test_results"`, compensations: `[undeploy_staging, deprovision_resources]` |
+| `test_staging_fails_rollbacks_only_resources` | `deploy_to_staging` raises | `aborted_at="deploy_to_staging"`, compensations: `[deprovision_resources]` |
+| `test_production_fails_rollbacks_staging_and_resources` | `deploy_to_production` raises | compensations: `[undeploy_staging, deprovision_resources]` |
+| `test_dns_fails_full_three_stage_rollback` | `update_dns` raises after all prior stages succeed | compensations: `[undeploy_production, undeploy_staging, deprovision_resources]` |
+| `test_provision_fails_no_compensations` | First stage fails immediately | `completed_stages=[]`, `compensations_run=[]` |
+| `test_dns_fails_rollback_order_is_exactly_reversed` | `update_dns` fails; spy activities record call order | call_order verified == `[undeploy_production, undeploy_staging, deprovision_resources]` |
 
 ---
 
@@ -82,3 +107,13 @@ tests/test_incident_workflow.py::test_llm_reroutes_to_rollback                 P
   Temporal expects a single argument.
 - Compensation is structural — workflow detects metric regression after `scale_up`
   and fires `scale_down` before proceeding to the next LLM assessment.
+- `COMPENSATIONS` dict + `_run_compensation_chain` — the saga pattern: each successful
+  state-changing action is pushed onto a chain as `(action, compensation)`. On abort,
+  the chain runs in exact reverse order. Actions with `comp=None` are stateless/safe
+  and never enter the chain (e.g. `clear_cache`, `run_integration_tests`).
+- Module-scoped `temporal_env` fixture — one ephemeral Temporal server per test module
+  avoids port-conflict races when tests start servers back-to-back. Each test still
+  creates its own `Worker` with specific activities.
+- `DeploymentSagaWorkflow` (`deployment_saga/`) — a second example demonstrating the
+  same saga pattern in a sequential 5-stage deployment pipeline with an LLM go/no-go
+  gate after integration tests.

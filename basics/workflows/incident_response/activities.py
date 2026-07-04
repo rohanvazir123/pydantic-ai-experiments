@@ -92,10 +92,36 @@ class InfraActivities:
 # LLM activities
 # ---------------------------------------------------------------------------
 
+_SERVICE_RUNBOOK: dict[str, str] = {
+    "payment-service": (
+        "DB connection pool exhaustion is the most common cause of 5xx spikes here after a deploy. "
+        "restart_service usually clears it; if error rate stays high afterwards, prefer "
+        "rollback_deployment over scale_up."
+    ),
+    "auth-service": (
+        "Latency spikes are usually stale token cache after a config push. "
+        "clear_cache resolves most auth-service incidents."
+    ),
+    "checkout-service": (
+        "Errors here often cascade from payment-service. Check payment-service health "
+        "before scaling checkout-service."
+    ),
+}
+
+
+def get_service_runbook(service: str) -> str:
+    """Look up known failure modes and remediation notes for a service."""
+    return _SERVICE_RUNBOOK.get(
+        service, f"No runbook entry for '{service}'. Use general SRE judgement."
+    )
+
+
 _TRIAGE_SYSTEM = (
     "You are an SRE incident response agent. "
     "Given a production alert, assess its severity and recommend an ordered list "
     "of remediation actions to try. "
+    "Use the get_service_runbook tool to check known failure modes for the affected "
+    "service before deciding. "
     "Actions MUST be chosen only from: restart_service, scale_up, clear_cache, rollback_deployment."
 )
 
@@ -115,6 +141,7 @@ class LLMActivities:
             model,  # type: ignore[arg-type]
             output_type=Triage,
             system_prompt=_TRIAGE_SYSTEM,
+            tools=[get_service_runbook],
         )
         self._assess_agent: Agent[None, IncidentAssessment] = Agent(
             model,  # type: ignore[arg-type]
