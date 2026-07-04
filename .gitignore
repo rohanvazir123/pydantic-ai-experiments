@@ -78,3 +78,6 @@ rag/v2/.deepeval/
 # Node / Vite build artifacts (scaffolded per-machine, never tracked)
 **/node_modules/
 **/.vite/
+
+# Local private notes — never push
+.basics/
