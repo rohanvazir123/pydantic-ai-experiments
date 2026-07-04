@@ -16,6 +16,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
 - [Choosing a level: use cases & trade-offs](#choosing-a-level-use-cases--trade-offs)
   - [Autonomy scale](#autonomy-scale)
   - [When does full autonomy justify its cost?](#when-does-full-autonomy-justify-its-cost)
+  - [Why multi-agent is slow despite parallelism](#why-multi-agent-is-slow-despite-parallelism)
   - [Decision guide](#decision-guide)
   - [Level-by-level: when to use, when not to](#level-by-level-when-to-use-when-not-to)
 - [Cost & latency at a glance (L1→L5)](#cost--latency-at-a-glance-l1l5)
