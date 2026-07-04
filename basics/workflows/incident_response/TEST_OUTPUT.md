@@ -1,4 +1,40 @@
-# Test Output — Incident Response Workflow
+# Incident Response Workflow — Temporal + Pydantic AI
+
+## Running the examples
+
+### Tests (no Temporal server, no LLM required)
+
+```bash
+# from repo root
+uv run python -m pytest basics/workflows/incident_response/tests/ -v
+```
+
+Uses `WorkflowEnvironment.start_time_skipping()` (in-process Temporal) and
+`TestModel` (no real LLM). Completes in ~1–2s.
+
+### Live run (Temporal server + Ollama required)
+
+```bash
+# 1. Start Temporal dev server (separate terminal)
+temporal server start-dev
+
+# 2. Ensure Ollama is running with the model pulled
+ollama serve
+ollama pull qwen2.5:14b
+
+# 3. Run the workflow (worker + execution in one process)
+uv run python -m basics.workflows.incident_response.run_live
+
+# Run with a different model
+AGENT_LARGE_MODEL=qwen2.5:7b uv run python -m basics.workflows.incident_response.run_live
+
+# Run worker only (then trigger via Temporal UI or CLI in another terminal)
+uv run python -m basics.workflows.incident_response.run_live --worker-only
+```
+
+---
+
+## Test Output
 
 **Runtime:** Pydantic AI 1.107.0 · Temporal 1.28.0 · Python 3.13.14  
 **Mode:** `WorkflowEnvironment.start_time_skipping()` — no real Temporal server  
