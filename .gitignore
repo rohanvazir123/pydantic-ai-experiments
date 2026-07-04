@@ -79,5 +79,3 @@ rag/v2/.deepeval/
 **/node_modules/
 **/.vite/
 
-# Local private notes — never push
-.basics/
