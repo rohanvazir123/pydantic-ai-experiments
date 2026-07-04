@@ -116,17 +116,30 @@ def get_service_runbook(service: str) -> str:
     )
 
 
+# Default data returned by investigation tools. Tests may override via LLMActivities(data={...}).
+DEFAULT_DATA: dict[str, object] = {
+    "metrics":      {"error_rate": 0.45, "latency_p99_ms": 3200, "cpu_pct": 88},
+    "deployments":  [
+        {"tag": "v1.4.2", "deployed_at": "2024-01-15T14:30:00Z", "status": "success"},
+        {"tag": "v1.4.1", "deployed_at": "2024-01-14T09:00:00Z", "status": "success"},
+    ],
+    "dependencies": {"postgres": "healthy", "redis": "healthy", "kafka": "degraded"},
+}
+
+
 _TRIAGE_SYSTEM = (
     "You are an SRE incident response agent. "
     "Given a production alert, assess its severity and recommend an ordered list "
     "of remediation actions to try. "
-    "Use the get_service_runbook tool to check known failure modes for the affected "
-    "service before deciding. "
+    "Use get_service_runbook to check known failure modes for the affected service. "
+    "Use get_service_metrics, get_recent_deployments, and check_dependency_health to "
+    "investigate the current state before recommending actions. "
     "Actions MUST be chosen only from: restart_service, scale_up, clear_cache, rollback_deployment."
 )
 
 _ASSESS_SYSTEM = (
     "You are assessing whether a remediation action resolved a production incident. "
+    "Use get_current_metrics to fetch the current state before deciding. "
     "Given the original alert and the action result (with updated metrics), decide: "
     "is the incident resolved? If not, what action to try next (or should we escalate)? "
     "Escalate only if the situation is getting worse or you have run out of ideas."
@@ -136,17 +149,41 @@ _ASSESS_SYSTEM = (
 class LLMActivities:
     """LLM-powered triage and assessment.  Inject any Pydantic AI model."""
 
-    def __init__(self, model: object) -> None:
+    def __init__(self, model: object, data: dict | None = None) -> None:
+        _data: dict[str, object] = data or DEFAULT_DATA
+
+        async def get_service_metrics(service: str) -> dict:  # type: ignore[type-arg]
+            """Return current error rate, latency, and CPU for the service."""
+            return _data["metrics"]  # type: ignore[return-value]
+
+        async def get_recent_deployments(service: str) -> list:  # type: ignore[type-arg]
+            """Return recent deployment history for the service."""
+            return _data["deployments"]  # type: ignore[return-value]
+
+        async def check_dependency_health(service: str) -> dict:  # type: ignore[type-arg]
+            """Return health status of upstream dependencies (DB, cache, queues)."""
+            return _data["dependencies"]  # type: ignore[return-value]
+
+        async def get_current_metrics(service: str) -> dict:  # type: ignore[type-arg]
+            """Return the latest metrics for the service after remediation."""
+            return _data["metrics"]  # type: ignore[return-value]
+
         self._triage_agent: Agent[None, Triage] = Agent(
             model,  # type: ignore[arg-type]
             output_type=Triage,
             system_prompt=_TRIAGE_SYSTEM,
-            tools=[get_service_runbook],
+            tools=[
+                get_service_runbook,
+                get_service_metrics,
+                get_recent_deployments,
+                check_dependency_health,
+            ],
         )
         self._assess_agent: Agent[None, IncidentAssessment] = Agent(
             model,  # type: ignore[arg-type]
             output_type=IncidentAssessment,
             system_prompt=_ASSESS_SYSTEM,
+            tools=[get_current_metrics],
         )
 
     @activity.defn(name="triage_incident")

@@ -45,15 +45,8 @@ uv run python -m basics.workflows.incident_response.run_live --worker-only
 platform darwin -- Python 3.13.14, pytest-9.1.0, pluggy-1.6.0
 asyncio: mode=Mode.STRICT
 
-collected 14 items
+collected 18 items
 
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_happy_path_restart_resolves PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_first_action_fails_second_resolves PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_compensation_scale_up_worsens_then_clear_cache_resolves PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_escalation_after_all_actions_fail PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_llm_reroutes_to_rollback PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_llm_escalation PASSED
-basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_queue_exhaustion PASSED
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_happy_path_all_stages_succeed PASSED
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_llm_nogo_rollbacks_staging_and_resources PASSED
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_staging_fails_rollbacks_only_resources PASSED
@@ -61,15 +54,26 @@ basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_production_
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_dns_fails_full_three_stage_rollback PASSED
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_provision_fails_no_compensations PASSED
 basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_dns_fails_rollback_order_is_exactly_reversed PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_happy_path_restart_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_first_action_fails_second_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_compensation_scale_up_worsens_then_clear_cache_resolves PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_escalation_after_all_actions_fail PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_llm_reroutes_to_rollback PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_llm_escalation PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_saga_chain_fires_on_queue_exhaustion PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_triage_agent_has_investigation_tools PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_self_heal_sequence_triggers_after_action_failure PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_self_heal_only_fires_once PASSED
+basics/workflows/incident_response/tests/test_incident_workflow.py::test_self_heal_not_triggered_for_heal_sequence_actions PASSED
 
-============================== 14 passed in 1.09s ==============================
+============================== 18 passed in 0.87s ==============================
 ```
 
 ---
 
 ## Scenario coverage
 
-### Incident Response (7 tests)
+### Incident Response (11 tests)
 
 | Test | Scenario | Outcome |
 |------|----------|---------|
@@ -80,6 +84,10 @@ basics/workflows/deployment_saga/tests/test_deployment_saga.py::test_dns_fails_r
 | `test_llm_reroutes_to_rollback` | LLM triage suggests `restart_service`; after it barely helps, assessment redirects to `rollback_deployment` which resolves | `resolved=True`, both actions in `actions_taken`, `compensations=[]` |
 | `test_saga_chain_fires_on_llm_escalation` | `scale_up` enters saga chain; LLM escalates on first assessment → `scale_down` compensation fires before `page_oncall` | `escalated=True`, `compensations=["scale_down (compensating scale_up)"]` |
 | `test_saga_chain_fires_on_queue_exhaustion` | `scale_up` enters saga chain; action queue empties after assessment (no next_action) → loop exits → compensation fires | `final_status="escalated_max_actions"`, `compensations=["scale_down (compensating scale_up)"]` |
+| `test_triage_agent_has_investigation_tools` | Unit check — triage agent wired with ≥4 tools (runbook + metrics + deployments + deps); assess agent wired with ≥1 (current metrics) | Tool registration verified; no Temporal needed |
+| `test_self_heal_sequence_triggers_after_action_failure` | `scale_up` fails → self-heal prepends `[clear_cache, restart_service]`; `clear_cache` resolves | `resolved=True`, `escalated=False`; self-heal prevented escalation |
+| `test_self_heal_only_fires_once` | `scale_up` fails (heal fires); `clear_cache` (from heal) also fails (no second heal); `restart_service` (from heal) succeeds | `resolved=True`; exactly 1 `clear_cache` in `actions_taken` |
+| `test_self_heal_not_triggered_for_heal_sequence_actions` | `clear_cache` (in `SELF_HEAL_SEQUENCE`) fails → no heal triggered (avoids loop); LLM escalates | `escalated=True`; exactly 1 `clear_cache` in `actions_taken` |
 
 ### Deployment Saga (7 tests)
 
