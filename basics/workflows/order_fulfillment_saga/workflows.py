@@ -15,9 +15,17 @@ Pipeline stages:
   2. reserve_inventory         → compensation: release_inventory
   3. send_confirmation_email   → stateless (no compensation) — but completing
                                   it means a delivery promise is now outstanding
-  4. ship_order                → stateless; if the warehouse can't fulfill by
-                                  the target date, this step fails and the
-                                  saga unwinds everything still on the chain
+  4. ship_order                → stateless; if the primary warehouse can't
+                                  fulfill by the target date, this step fails
+  5. ship_order_backup_warehouse → SELF-HEAL: tried once, forward-recovery
+                                  attempt before giving up. If it also fails,
+                                  the saga unwinds everything still on the chain
+
+Self-heal vs. saga compensation — two different responses to failure:
+  - Self-heal (step 5) is forward recovery: try an alternate path once
+    before giving up.
+  - Saga compensation (_rollback) is backward recovery: undo whatever
+    already succeeded, because nothing else is left to try.
 
 Temporal guarantees each step runs durably. Saga chain guarantees rollback order.
 """
@@ -42,6 +50,7 @@ COMPENSATIONS: dict[str, str | None] = {
     "reserve_inventory": "release_inventory",
     "send_confirmation_email": None,
     "ship_order": None,
+    "ship_order_backup_warehouse": None,
 }
 
 
@@ -144,12 +153,24 @@ class OrderFulfillmentSagaWorkflow:
         try:
             await _step("ship_order")
         except ActivityError as exc:
-            # SAGA: this is the failure from the motivating example — the
-            # warehouse can't fulfill by the promised date, policy says
-            # cancel + refund. Since send_confirmation_email already ran,
-            # _rollback applies the broken-delivery-promise penalty.
-            workflow.logger.error("ship_order failed", extra={"err": str(exc)})
-            return (await _rollback("ship_order")).model_dump_json()
+            # SELF-HEAL: the primary warehouse couldn't fulfill — try the
+            # backup warehouse once before giving up. This is forward
+            # recovery, distinct from the backward-recovery rollback below.
+            workflow.logger.warning(
+                "ship_order failed — attempting backup warehouse", extra={"err": str(exc)}
+            )
+            try:
+                await _step("ship_order_backup_warehouse")
+            except ActivityError as backup_exc:
+                # SAGA: this is the failure from the motivating example — no
+                # warehouse can fulfill by the promised date, policy says
+                # cancel + refund. Since send_confirmation_email already ran,
+                # _rollback applies the broken-delivery-promise penalty.
+                workflow.logger.error(
+                    "Backup warehouse also failed — rolling back",
+                    extra={"err": str(backup_exc)},
+                )
+                return (await _rollback("ship_order")).model_dump_json()
 
         # ── Success ──────────────────────────────────────────────────────────
         workflow.logger.info("Order fulfilled", extra={"order_id": order.order_id})

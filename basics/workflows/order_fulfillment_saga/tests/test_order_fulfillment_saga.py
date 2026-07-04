@@ -1,16 +1,18 @@
 """
 Tests for OrderFulfillmentSagaWorkflow.
 
-Six scenarios:
+Seven scenarios:
   1. Happy path              — all 4 stages succeed, order fulfilled
   2. Payment fails           — charge_payment raises → no saga chain, immediate cancel
   3. Inventory fails         — reserve_inventory raises → refund only, no penalty
                                 (confirmation email never sent, so no promise was broken)
   4. Confirmation fails      — send_confirmation_email raises → release + refund, no
                                 penalty (the email that would create the promise never sent)
-  5. Shipping fails          — ship_order raises after confirmation went out → release +
+  5. Backup warehouse heals  — ship_order raises, ship_order_backup_warehouse succeeds →
+                                self-heal recovers, order fulfilled, no compensations
+  6. Shipping fails          — ship_order AND the backup warehouse both raise → release +
                                 refund WITH the 10% broken-delivery-promise penalty
-  6. Rollback order check    — verifies exact reverse order via spy activities
+  7. Rollback order check    — verifies exact reverse order via spy activities
 
 One ephemeral Temporal server is shared across the module via the temporal_env fixture.
 """
@@ -45,6 +47,7 @@ def _all_activities(order_acts: OrderActivities) -> list[object]:
         order_acts.release_inventory,
         order_acts.send_confirmation_email,
         order_acts.ship_order,
+        order_acts.ship_order_backup_warehouse,
     ]
 
 
@@ -171,16 +174,13 @@ async def test_confirmation_email_fails_refunds_without_penalty(
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Shipping fails → refund WITH broken-delivery-promise penalty
+# Test 5: Backup warehouse self-heal recovers the order
 # ---------------------------------------------------------------------------
 
 
-async def test_shipping_fails_refunds_with_penalty(temporal_env: WorkflowEnvironment) -> None:
-    """ship_order raises after the confirmation email already promised a ship
-    date → saga chain = [charge_payment, reserve_inventory] → release_inventory
-    then refund_payment WITH the 10% penalty. This is the motivating scenario:
-    payment succeeded, a promise was made, a later step fails, and the
-    compensation for the earlier successful step reflects that broken promise."""
+async def test_backup_warehouse_self_heal_recovers(temporal_env: WorkflowEnvironment) -> None:
+    """ship_order raises, but ship_order_backup_warehouse succeeds → self-heal
+    recovers the order without ever touching the compensation chain."""
     order_acts = OrderActivities(scenario={"ship_order": False})
 
     async with Worker(
@@ -197,6 +197,43 @@ async def test_shipping_fails_refunds_with_penalty(temporal_env: WorkflowEnviron
         )
 
     report = OrderReport.model_validate_json(result_json)
+    assert report.succeeded is True
+    assert report.final_status == "fulfilled"
+    assert report.compensations_run == []
+    assert "ship_order_backup_warehouse" in report.completed_stages
+    assert "ship_order" not in report.completed_stages
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Shipping fails everywhere → refund WITH broken-delivery-promise penalty
+# ---------------------------------------------------------------------------
+
+
+async def test_shipping_fails_refunds_with_penalty(temporal_env: WorkflowEnvironment) -> None:
+    """ship_order AND the backup warehouse both raise, after the confirmation
+    email already promised a ship date → saga chain = [charge_payment,
+    reserve_inventory] → release_inventory then refund_payment WITH the 10%
+    penalty. This is the motivating scenario: payment succeeded, a promise
+    was made, every recovery path is exhausted, and the compensation for the
+    earlier successful step reflects that broken promise."""
+    order_acts = OrderActivities(
+        scenario={"ship_order": False, "ship_order_backup_warehouse": False}
+    )
+
+    async with Worker(
+        temporal_env.client,
+        task_queue=TASK_QUEUE,
+        workflows=[OrderFulfillmentSagaWorkflow],
+        activities=_all_activities(order_acts),
+    ):
+        result_json = await temporal_env.client.execute_workflow(
+            OrderFulfillmentSagaWorkflow.run,
+            ORDER.model_dump_json(),
+            id="test-order-saga-006",
+            task_queue=TASK_QUEUE,
+        )
+
+    report = OrderReport.model_validate_json(result_json)
     assert report.succeeded is False
     assert report.aborted_at == "ship_order"
     assert report.compensations_run == ["release_inventory", "refund_payment"]
@@ -204,14 +241,14 @@ async def test_shipping_fails_refunds_with_penalty(temporal_env: WorkflowEnviron
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Rollback order check — verify exact reverse order via spies
+# Test 7: Rollback order check — verify exact reverse order via spies
 # ---------------------------------------------------------------------------
 
 
 async def test_rollback_order_is_exactly_reversed(temporal_env: WorkflowEnvironment) -> None:
-    """When ship_order fails, compensations must run in exact reverse insertion
-    order: release_inventory (reserve_inventory's compensation) before
-    refund_payment (charge_payment's compensation)."""
+    """When shipping fails everywhere, compensations must run in exact reverse
+    insertion order: release_inventory (reserve_inventory's compensation)
+    before refund_payment (charge_payment's compensation)."""
     call_order: list[str] = []
 
     @_activity.defn(name="release_inventory")
@@ -228,7 +265,9 @@ async def test_rollback_order_is_exactly_reversed(temporal_env: WorkflowEnvironm
             stage="refund_payment", success=True, message="done", refund_amount=220.0
         ).model_dump_json()
 
-    order_acts = OrderActivities(scenario={"ship_order": False})
+    order_acts = OrderActivities(
+        scenario={"ship_order": False, "ship_order_backup_warehouse": False}
+    )
 
     async with Worker(
         temporal_env.client,
@@ -241,12 +280,13 @@ async def test_rollback_order_is_exactly_reversed(temporal_env: WorkflowEnvironm
             spy_release_inventory,
             order_acts.send_confirmation_email,
             order_acts.ship_order,
+            order_acts.ship_order_backup_warehouse,
         ],
     ):
         result_json = await temporal_env.client.execute_workflow(
             OrderFulfillmentSagaWorkflow.run,
             ORDER.model_dump_json(),
-            id="test-order-saga-006",
+            id="test-order-saga-007",
             task_queue=TASK_QUEUE,
         )
 

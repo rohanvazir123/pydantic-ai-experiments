@@ -16,6 +16,7 @@ _DEFAULT_SCENARIO: dict[str, bool] = {
     "reserve_inventory": True,
     "send_confirmation_email": True,
     "ship_order": True,
+    "ship_order_backup_warehouse": True,
 }
 
 # Refund penalty applied when the customer already received a confirmation
@@ -97,4 +98,18 @@ class OrderActivities:
         )
         return StepResult(
             stage="ship_order", success=True, message=f"shipped {order.order_id}"
+        ).model_dump_json()
+
+    @activity.defn(name="ship_order_backup_warehouse")
+    async def ship_order_backup_warehouse(self, order: OrderInput) -> str:
+        """Self-heal fallback tried once if the primary warehouse can't ship."""
+        self._check(
+            "ship_order_backup_warehouse",
+            order.order_id,
+            f"backup warehouse also could not fulfill by {order.target_ship_date}, simulated",
+        )
+        return StepResult(
+            stage="ship_order_backup_warehouse",
+            success=True,
+            message=f"shipped {order.order_id} from backup warehouse",
         ).model_dump_json()
