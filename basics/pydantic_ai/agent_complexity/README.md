@@ -24,6 +24,22 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
   - [Resiliency & self-healing](#resiliency--self-healing)
   - [Other system-design trade-offs](#other-system-design-trade-offs)
   - [When NOT to go multi-agent](#when-not-to-go-multi-agent)
+- [Why multi-agent systems fail in production](#why-multi-agent-systems-fail-in-production)
+  - [Reliability & error propagation](#reliability--error-propagation)
+  - [Context & memory](#context--memory)
+  - [Cost & resource runaway](#cost--resource-runaway)
+  - [Observability & debugging](#observability--debugging)
+  - [Engineering & design failures](#engineering--design-failures)
+- [Mitigating production failures](#mitigating-production-failures)
+  - [Make every side effect idempotent](#make-every-side-effect-idempotent)
+  - [Bound everything](#bound-everything)
+  - [Validate at every boundary](#validate-at-every-boundary)
+  - [Design context deliberately](#design-context-deliberately)
+  - [Instrument before you ship](#instrument-before-you-ship)
+  - [Build the degraded path first](#build-the-degraded-path-first)
+  - [Keep humans in the loop for high-risk actions](#keep-humans-in-the-loop-for-high-risk-actions)
+  - [Test failure modes, not just the happy path](#test-failure-modes-not-just-the-happy-path)
+  - [The one-slide summary](#the-one-slide-summary)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Model tiers (tiered LLMs)](#model-tiers-tiered-llms)
@@ -401,6 +417,374 @@ roles — distinct expertise, conflicting instructions, or independent parallel
 work. If the "roles" are just steps, that's Level 2. If they're just tools,
 that's Level 3. Most "multi-agent" designs are a tool-calling agent with a good
 prompt — cheaper, faster, and far easier to keep correct.
+
+## Why multi-agent systems fail in production
+
+This is the section that follows naturally from "when NOT to go multi-agent." You
+decided to go multi-agent anyway — here is what bites teams in production, and why.
+
+### Reliability & error propagation
+
+**Multiplicative failure is the default math.** If each model call succeeds 97% of
+the time, a 20-call L5 run completes without a single error only ~54% of the time
+(0.97²⁰). Every extra agent or tool added multiplies the failure surface. Most teams
+build multi-agent systems assuming near-100% per-call reliability without accounting
+for the compound. The fix: retry budgets, graceful degradation, and explicit failure
+policies per stage — not optimism.
+
+**Retries without idempotency cause double side effects.** When a tool call fails
+mid-run (network blip, timeout, validation error) and the agent retries, it may
+re-execute an action that already completed. A refund already issued gets issued
+again; a message already sent gets sent twice. Idempotency keys (ticket ID + charge
+ID, request fingerprint) on every side-effectful tool call are not optional. This is
+the single most dangerous failure mode because it is silent — the agent "succeeds"
+and nothing looks wrong until the customer complains.
+
+**Validation errors cascade.** One sub-agent returning a malformed response (wrong
+JSON, missing field, unexpected schema) breaks every downstream agent that depends on
+it. Without per-agent output validation and an explicit partial-failure policy
+(required vs. optional stages), one specialist's bad output kills the whole run. The
+orchestrator's error message is typically unhelpful ("expected field X") while the
+real root cause is three levels deeper.
+
+**Tool argument hallucination.** Agents — especially smaller models — occasionally
+call real tools with plausible-looking but wrong arguments: a customer ID that
+doesn't exist, a charge amount that doesn't match the record, a file path outside the
+sandbox. Without argument validation at the tool boundary (not just the schema),
+these calls silently fail or silently succeed with wrong data. Check inputs at the
+tool, not just at the model.
+
+**Unbounded loops exhaust budgets.** An agent that hasn't quite solved the task keeps
+looping. Without `max_turns`, a wall-clock budget, and a cost ceiling, one
+pathological run can consume tokens equivalent to a thousand normal ones. The first
+time you see a $40 single-case bill is usually the last time you forget to add
+`max_turns`.
+
+### Context & memory
+
+**Context window overflow mid-run.** Agents accumulate context: system prompt, tool
+results, prior model turns, sub-agent findings. A run that starts at 5k tokens can
+grow to 50k–150k before it finishes. When the context hits the model's limit, the
+run dies mid-task — after you've already paid for everything up to that point.
+Mitigations: sliding history windows, trimming tool outputs to summaries after
+reading, keeping sub-agent contexts isolated. Most teams discover this at p95, not
+p50.
+
+**Context poisoning / instruction drift.** An early tool result (a long, confusingly
+formatted file; a sub-agent's verbose summary) overwrites the agent's attention on
+the actual task. Later decisions silently diverge. This is especially bad with small
+models: the system prompt that worked for a 5-turn run breaks at 15 turns because the
+model's "attention" on the instructions fades as context grows. Test long runs, not
+just the happy path.
+
+**Shared context causes cross-contamination.** When sub-agents share a context
+(delegation via `usage=ctx.usage` passes the shared dependency pool), one agent's
+tool results pollute another's reasoning. The researcher's raw findings appear in the
+drafter's context even when the drafter only needs the summary. Isolate sub-agent
+contexts when roles genuinely conflict; pay the extra token cost for clean
+separation.
+
+**Isolated context causes information loss.** The mirror problem: isolating agents
+too aggressively means the orchestrator must explicitly re-pack every piece of
+context into each delegation call. A researcher finding that is critical for
+compliance gets lost because the handoff prompt was too terse. Multi-agent systems
+need an explicit information-passing contract at every delegation boundary.
+
+**No persistent memory across runs.** Most agent systems are stateless between runs.
+A ticket that spans multiple sessions (customer follows up a day later) restarts from
+zero: the agent re-reads every file, re-calls every API, re-derives conclusions the
+previous run already reached. Without explicit checkpointing or a memory store, every
+retry of a long case starts cold.
+
+### Cost & resource runaway
+
+**Token cost scales with call count, not complexity.** Every model call re-sends the
+full accumulated context. A 15-turn run does not cost 15× a single call — the context
+grows, so later calls are the most expensive. A 3-delegation L5 run expands to ~10–20
+model requests by the time each sub-agent runs its own loop. Teams budget for "3
+agents" and get billed for 20 calls worth of tokens.
+
+**Tail runs dwarf median runs.** The median run costs $0.50. The p99 run — where one
+sub-agent looped 8 extra times, another timed out and retried, and the orchestrator
+re-delegated twice — costs $8. Billing alarms and per-case token budgets are
+non-negotiable; the tail, not the median, determines your actual spend at scale.
+
+**Prompt caching misses on dynamic content.** Prompt caching can drop input token
+cost to ~10% — but only if the cached prefix is stable across calls. If your system
+prompt includes timestamps, request IDs, or dynamic context that changes every call,
+the cache never hits. Structure prompts so the stable prefix (instructions, persona,
+policy) comes first and dynamic content (the current ticket, tool results) comes
+last.
+
+**Runaway fan-out.** An orchestrator that spawns sub-agents in a loop (e.g.,
+"research each of these N documents") with no concurrency cap can fan out to N
+simultaneous agents. On a hosted API that's N× the per-call cost hitting at once;
+internally it can exhaust connection pools or trigger rate limits. Cap fan-out
+explicitly.
+
+### Observability & debugging
+
+**"It gave a wrong answer" is undebuggable without traces.** With 20 model calls
+across 5 agents, eyeballing the final output tells you nothing about where the
+reasoning went wrong. Which sub-agent produced the bad finding? Which tool returned
+unexpected data? Which turn caused context drift? Without per-agent, per-tool span
+traces (e.g., Logfire), the answer is "re-run it and hope" — which is not a
+debugging strategy.
+
+**Flaky failures are hard to reproduce.** Non-determinism at temperature > 0 means
+the failure you saw at 14:37 may not reproduce at 14:42. Add structured logging (not
+just print statements) to every tool call, capture full `all_messages()` on failure,
+and log the random seed or full prompt if you need reproducibility. Without this, you
+spend hours chasing a ghost.
+
+**Errors surface at the wrong layer.** The orchestrator raises `ValidationError:
+expected field 'refund_id'`. The actual bug: the researcher passed a customer ID that
+didn't exist, the payment gateway returned an empty response, the drafter hallucinated
+a `refund_id` field that was never populated. Three layers removed from the root
+cause, and the error message points to none of them. Instrument at every boundary, not
+just the top level.
+
+**Silent successes hide wrong behavior.** The run completed. The structured output
+validated. The customer got a reply. And the refund was for $0 because the agent
+misread the charge amount. Structural validity and semantic correctness are different
+things. Evaluation — either LLM-as-judge or golden-set regression — is necessary
+once you care about output quality, not just output shape.
+
+### Engineering & design failures
+
+**Over-engineering is the most common failure.** The team builds a 5-agent
+orchestration system for a task that a single tool-calling agent with a good prompt
+would handle reliably at 10× lower cost and latency. Every agent added is a new
+failure mode, a new prompt to maintain, and a new thing to debug. Most "multi-agent"
+designs in production are a Level 3 solution wearing a Level 5 costume. Start at the
+lowest level that works.
+
+**Prompt/version coupling across agents.** Five agent prompts that must stay mutually
+consistent — the orchestrator's delegation language must match each specialist's
+expected input format; the compliance agent's policy references must match the
+researcher's output schema. A model upgrade (new version, different tokenizer) can
+silently break one prompt while leaving the others intact, and the failure only
+appears in production edge cases. Version all prompts together; regression-test them
+as a set.
+
+**No human-in-the-loop for high-risk actions.** The agent issues a $500 refund
+autonomously because the escalation threshold was set to "$200" in a config file that
+nobody updated after a policy change. High-risk actions — above a dollar threshold,
+affecting more than N records, touching billing or auth — need an approval gate. Build
+the gate into the tool, not into the hope that the model reads the policy correctly
+every time.
+
+**Determinism traded away without accounting for it.** Lower-level systems (L1/L2)
+are auditable and repeatable. Multi-agent systems are neither, by default. If a
+regulator, auditor, or test suite needs a reproducible decision trace, "the LLM
+decided" is not a sufficient answer. Push auditable logic (routing rules, thresholds,
+required fields) into code rather than prompts. What the model controls should be
+limited to what genuinely requires language understanding.
+
+**No fallback when a sub-agent is unavailable.** The compliance agent's model
+endpoint is down. The orchestrator raises an unhandled exception and the whole ticket
+fails. A $0 cost defensive fallback — queue the case for async human review, drop to
+a simpler level (L3), or proceed with a conservative default — often exists; it just
+wasn't designed in. Treat sub-agent availability the same way you treat external API
+availability: assume it will go down, plan the degraded path.
+
+**Runaway abstraction.** Teams add a "meta-orchestrator" to coordinate the
+orchestrators, a "router agent" to decide which orchestration pipeline to use, and a
+"result validator agent" to check the orchestrator's output. Each layer is a new
+prompt, new failure mode, and new token cost. Complexity compounds. If you find
+yourself adding agents to manage agents, the design has escaped its justification —
+stop and ask what the actual task requires.
+
+## Mitigating production failures
+
+Each mitigation maps directly to a failure class above. The pattern: **make the
+common case cheap and the failure case safe.** None of these are novel; they are the
+same reliability engineering principles that apply to distributed systems — applied
+to a system where one of the nodes is a language model.
+
+### Make every side effect idempotent
+
+Attach an idempotency key to every tool that writes, charges, sends, or deletes.
+Derive it deterministically from inputs the agent already has (ticket ID + action
+type + charge ID), not from a random UUID generated inside the tool. On retry, the
+tool checks the key, sees the action already completed, and returns the original
+result without re-executing. This is the single highest-leverage mitigation for
+multi-agent systems that take real actions.
+
+```python
+@agent.tool
+async def issue_refund(ctx: RunContext[Deps], charge_id: str, amount: float) -> str:
+    key = f"{ctx.deps.ticket_id}:refund:{charge_id}"
+    if await ctx.deps.gateway.already_processed(key):
+        return f"Refund already issued for {charge_id} (idempotent)"
+    return await ctx.deps.gateway.refund(charge_id, amount, idempotency_key=key)
+```
+
+### Bound everything
+
+Set explicit limits at every layer. Without them, one bad run consumes the resources
+of a thousand normal ones.
+
+| Layer | What to bound | How |
+|-------|--------------|-----|
+| Per agent | tool-calling loop | `Agent(retries=3, max_turns=15)` |
+| Per tool | execution time | `asyncio.wait_for(tool_fn(), timeout=10)` |
+| Per case | total token spend | check `ctx.usage.total_tokens` inside a tool and raise if over budget |
+| Per case | wall-clock time | outer `asyncio.wait_for` wrapping the orchestrator run |
+| Per tenant/day | aggregate cost | billing quota checked before each run starts |
+
+Retries should use exponential backoff with jitter for transient failures (429, 503,
+network timeouts) and a hard cap on total attempts. Infinite retries turn a blip into
+an outage.
+
+### Validate at every boundary
+
+Validation has three distinct layers — do all three:
+
+1. **Schema validation** (Pydantic, automatic): the model's structured output matches
+   the declared `output_type`. Pydantic AI handles this and retries on failure.
+
+2. **Semantic validation** (your code): the values make sense given the context —
+   the customer ID actually exists, the refund amount is ≤ the original charge, the
+   file path is inside the sandbox. Do this inside the tool, not inside the prompt.
+
+3. **Output evaluation** (LLM-as-judge or golden set): the final answer is *correct*,
+   not just structurally valid. A `refund_amount=0.0` passes schema validation but is
+   wrong. Run a lightweight judge agent on a sample, or maintain a golden-set eval
+   that runs on every model upgrade.
+
+Don't rely on prompts alone to enforce any of these — models drift, are upgraded, and
+get confused by long contexts. Put invariants in code.
+
+### Design context deliberately
+
+Context mismanagement is the subtlest and most common failure class. A few concrete
+rules:
+
+**Trim tool outputs to summaries after reading.** If the researcher reads a 20-page
+policy document, inject a 3-sentence summary into the orchestrator's context — not
+the full text. Full documents re-sent every turn are the main driver of context
+window overflow and late-turn instruction drift.
+
+**Put the stable prefix first.** Instructions, persona, and policy go at the top of
+the system prompt (so prompt caching covers them). Dynamic content — the current
+ticket, prior tool results — goes at the bottom. Mixing them defeats caching and
+makes the stable instructions harder for the model to attend to.
+
+**Isolate contexts when roles conflict.** If two sub-agents have contradictory
+instructions (the drafter is told "be empathetic and verbose"; the compliance agent
+is told "be terse and legal"), they should not share a context. Isolation costs
+tokens but prevents one agent's framing from polluting the other's reasoning.
+
+**Checkpoint long runs.** Persist state after each completed sub-agent stage (to a
+DB, Redis, or a durable workflow engine like Temporal). A crash at stage 3 of 5
+should resume from stage 3, not restart from zero — paying again for research and
+drafting that already succeeded.
+
+### Instrument before you ship
+
+Without traces, a failed multi-agent run is a black box. Wire observability in during
+development, not after the first production incident.
+
+**Minimum viable instrumentation:**
+- One structured log line per tool call: agent name, tool name, arguments, result
+  summary, latency, token delta.
+- `result.all_messages()` captured and stored on any run that ends in error or
+  unexpected output.
+- `result.usage` totals (input tokens, output tokens, request count) logged per case,
+  not just in aggregate.
+
+**Logfire (first-class Pydantic AI support):** `logfire.instrument_pydantic_ai()`
+gives you a span tree of every agent run, model request, and tool call with timings
+and token counts — including nested sub-agent spans. Enable it with `AGENT_LOGFIRE=1`
+(see [Debuggability & observability](#debuggability--observability-l1l5)). The web UI
+lets you see exactly which sub-agent and which tool call dominated a slow or expensive
+run.
+
+**Alert on tail behavior, not just errors.** A run that completes but takes 5× the
+median cost is a canary for a prompt regression or a model that started looping.
+Alert on p95 latency and p95 token spend, not only on exceptions.
+
+### Build the degraded path first
+
+Every sub-agent and external dependency will go down. Design the failure path before
+the happy path.
+
+**Degradation ladder** (implement in this order):
+1. **Retry once** with backoff on the same sub-agent/model.
+2. **Fall back to a simpler level** — if the L5 compliance agent is unavailable, run
+   the compliance check as a direct L3 tool call against a policy file.
+3. **Proceed with a conservative default** — if compliance cannot be reached and the
+   refund is under the auto-approve threshold, approve it and flag for async audit.
+4. **Escalate to a human** — if none of the above applies, queue the ticket for a
+   human agent rather than failing the whole case.
+
+Never let one specialist's outage hard-fail the entire orchestration if a safe partial
+result exists. Make the fallback policy explicit in the orchestrator's system prompt
+and in code — not in a comment.
+
+**Circuit breakers per dependency:** after N consecutive failures, trip open and fail
+fast for a cooldown window instead of letting callers pile up latency on a dead
+endpoint. Half-open state probes recovery. See `rag/v2/knowledge/bus` for a
+production implementation.
+
+### Keep humans in the loop for high-risk actions
+
+Autonomy should be proportional to confidence and reversibility. Define thresholds in
+code:
+
+```python
+HUMAN_APPROVAL_THRESHOLD_USD = 100.0
+
+@agent.tool
+async def issue_refund(ctx: RunContext[Deps], charge_id: str, amount: float) -> str:
+    if amount > HUMAN_APPROVAL_THRESHOLD_USD:
+        await ctx.deps.queue_for_human_review(charge_id, amount)
+        return f"Refund of ${amount} queued for human approval (exceeds auto-approve threshold)"
+    ...
+```
+
+Pydantic AI supports deferred / approval-gated tools for this pattern. The gate
+belongs in the tool implementation, not in the prompt — prompts drift and are
+upgraded; code doesn't change unless you change it.
+
+Keep the threshold in config (not hard-coded), and make it per-action-type: a $200
+refund may be fine to auto-approve; a $200 account deletion is not.
+
+### Test failure modes, not just the happy path
+
+The deterministic test suite in this repo uses `TestModel` and `FunctionModel` to
+test the *wiring* — routing, delegation, tool registration, schema correctness. Extend
+it to cover failure paths:
+
+| Failure to test | How |
+|----------------|-----|
+| Sub-agent returns malformed output | `FunctionModel` that returns a bad schema |
+| Tool raises an exception | tool that raises `ValueError` or `httpx.TimeoutException` |
+| Idempotency key prevents double execution | call the tool twice, assert single side effect |
+| Refund above threshold queues for review | mock the gateway, assert the human-review queue was called |
+| Context overflow gracefully degrades | inject a very long tool result, assert the agent still completes |
+| `max_turns` cutoff produces a safe output | configure a very low `max_turns`, assert a fallback result |
+
+Test the degraded path with the same rigour as the success path. Failures in
+production are always in the paths you didn't test.
+
+### The one-slide summary
+
+| Failure class | Mitigation |
+|---|---|
+| Multiplicative reliability failure | Retry budgets + per-call validation |
+| Double side effects on retry | Idempotency keys on every write |
+| Unbounded loops | `max_turns` + token budget + wall-clock timeout |
+| Context window overflow | Trim outputs to summaries; checkpoint long runs |
+| Instruction drift in long runs | Stable prefix first; test at p95 turn counts |
+| Undetectable wrong answers | LLM-as-judge eval + golden-set regression |
+| Undebuggable failures | Per-tool structured logging + Logfire traces |
+| Sub-agent outage kills the run | Degradation ladder: retry → fallback level → human |
+| High-risk autonomous actions | Approval gates in tool code, not in prompts |
+| Runaway cost at the tail | Per-case token/cost ceiling + billing alerts on p95 |
+| Prompt coupling across agents | Version prompts together; eval as a set on model upgrades |
+| Over-engineering | Start at L1; only climb when the lower level demonstrably fails |
 
 ## Quick start
 
