@@ -15,6 +15,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
 - [The five levels](#the-five-levels)
 - [Choosing a level: use cases & trade-offs](#choosing-a-level-use-cases--trade-offs)
   - [Autonomy scale](#autonomy-scale)
+  - [When does full autonomy justify its cost?](#when-does-full-autonomy-justify-its-cost)
   - [Decision guide](#decision-guide)
   - [Level-by-level: when to use, when not to](#level-by-level-when-to-use-when-not-to)
 - [Cost & latency at a glance (L1→L5)](#cost--latency-at-a-glance-l1l5)
@@ -140,6 +141,54 @@ themselves model calls. L4 is highly autonomous within a single agent's scope; L
 extends that autonomy to the coordination layer. More autonomy = more capability and
 more ways to go wrong — which is why the golden rule is to stay at the lowest level
 that actually needs it.
+
+### When does full autonomy justify its cost?
+
+It often doesn't. Most tasks that look like they need L5 are actually L3 with a
+better prompt. Full autonomy earns its cost only when one or more of the following
+is genuinely true — not assumed:
+
+**1. The decomposition itself is unknown until the model sees the problem.**
+If you can write the steps in a DAG before the task runs, that's L2. Full autonomy
+is for problems where the subtasks can't be enumerated in advance — a legal discovery
+request where relevant issues surface only during research, a production incident
+where the affected systems aren't known until logs are read. The orchestrator figures
+out what work exists; you couldn't have scripted it.
+
+**2. Conflicting instructions can't coexist in one system prompt.**
+A drafter told "be warm and empathetic" and a compliance agent told "flag every
+liability risk tersely" have genuinely contradictory objectives. Putting both in one
+prompt degrades both — the model averages them. Isolation is the only way to get
+full performance from each role. If your "specialists" don't actually conflict, one
+agent with a good prompt covers it.
+
+**3. The task exceeds a single context window.**
+Some work — processing 200 contracts, a multi-day research synthesis, auditing an
+entire codebase — is simply too large to fit in one context. Breaking it into
+isolated sub-agents, each working a scoped slice, is the only way to handle it.
+This is a hard technical constraint, not a design preference.
+
+**4. Genuine parallel independence compresses wall-clock time.**
+If sub-tasks are truly independent — scan these 50 documents simultaneously, run
+security checks while drafting the response — parallel autonomous agents reduce
+end-to-end latency even at higher token cost. The key word is *genuinely*
+independent. Sequential dependencies (researcher → drafter → reviewer) don't
+benefit; you pay the multi-agent overhead and still wait in series (see
+[Why multi-agent is slow despite parallelism](#why-multi-agent-is-slow-despite-parallelism)).
+
+**5. Specialization quality matters more than cost.**
+A specialist agent with a tightly focused system prompt outperforms a generalist on
+its domain. If the compliance review on your support tickets requires depth that a
+generalist consistently gets wrong, a dedicated compliance agent with its own
+prompt, policy retrieval tools, and output schema is the right call — even knowing
+it costs more.
+
+**The honest answer for most teams:** none of these apply. The task has known
+stages (L2), or a bounded tool set covers it (L3), or one agent exploring freely
+is enough (L4). Full autonomy is for the top slice of genuinely complex,
+multi-domain problems where the alternatives have already been tried and failed.
+The latency and reliability costs are real — justify them with evidence, not
+intuition.
 
 ### Decision guide
 
