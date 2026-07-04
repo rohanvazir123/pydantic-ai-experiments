@@ -145,8 +145,12 @@ stored in Redis with TTL = 24h.
   L1 structured  L1 structured       L1 structured
   output         output              output
         │
-        └─── [all three results assembled] ──▶ [Risk Synthesis Activity]
-                                                     L3 tool-calling
+        └─── [all three results assembled] ──▶ [Risk Signal Activity]  — code
+                                                  dti, rules, fraud, anomalies, score
+                                                          │
+                                                          ▼
+                                                  [LLM Judge Activity]  — L1 single call
+                                                  explanation field only; no routing effect
                                                           │
                                                           ▼
                                                      [Router Activity]  — code
@@ -176,8 +180,11 @@ stored in Redis with TTL = 24h.
    - **DocumentActivity** — Docling over uploaded files; writes `IncomeVerification`.
 4. Workflow waits for all three activities. If any exhaust retries → workflow routes
    directly to HIL (underwriter), never auto-decides on missing data.
-5. **RiskSynthesisActivity** (L3 agent) receives assembled results; runs tool loop;
-   produces `RiskDecision { score, tier, flags, explanation }`.
+5. **RiskSignalActivity** (code) computes all signals deterministically: DTI ratio,
+   regulatory rule check, fraud indicator lookup, anomaly flags, composite score.
+   **LLMJudgeActivity** (L1 — single model call, no tool loop) receives the structured
+   signals and produces the `explanation` field only. The explanation is advisory —
+   it does not affect score, tier, or routing.
 6. **RouterActivity** (code) reads score and flags:
    - Auto-approve → workflow completes; decision written; status updated.
    - Hard fail → deny + compliance log; workflow completes.
@@ -198,25 +205,58 @@ are free — the workflow is suspended in Temporal's durable state, consuming no
 
 ## Agentic AI Components
 
-| Step | Level | Tools | Who controls flow |
-|------|:-----:|-------|------------------|
-| Identity verification | L1 | None — single structured call | Code |
-| Credit summary | L1 | None — single structured call | Code |
-| Document extraction | L1 | None — single structured call | Code |
-| Risk Synthesis Agent | L3 | `get_dti_ratio`, `check_regulatory_rules(state, loan_type)`, `flag_anomalies`, `lookup_fraud_indicators` | Model (bounded loop) |
-| Routing decision | — | None | Code (hardcoded thresholds) |
+| Step | Level | Who does the work | Output |
+|------|:-----:|------------------|--------|
+| Identity verification | L1 | Code (structured call to ID provider) | `IdentityVerification` record |
+| Credit summary | L1 | Code (structured call to bureau) | `CreditReport` record |
+| Document extraction | L1 | Code (Docling) | `IncomeVerification` record |
+| Risk signal computation | — | **Code** | DTI ratio, rule check, fraud flag, anomaly list |
+| Risk explanation | L1 | **LLM-as-judge** (single call, no tool loop) | Human-readable summary for underwriter |
+| Routing decision | — | **Code** (hardcoded thresholds) | Lane: auto-approve / underwriter / deny |
 
-**Autonomy boundary:** the Risk Synthesis Agent decides *which tools to call and in
-what order* within a fixed bounded set. It does not control thresholds, regulatory
-cutoffs, or lane assignment — those live in code. Regulators need auditable,
-deterministic routing.
+### Why LLM-as-judge, not L3 tool-calling
 
-**Idempotency for agent side effects:** the agent's tools are read-only (lookups,
-computations). The only write with a side effect (credit pull) is guarded at the
-orchestrator layer before the agent runs.
+All risk signals are computed deterministically by code:
+
+```
+Code computes:
+  dti_ratio:            0.42
+  regulatory_check:     pass (rule v2.3)
+  fraud_flag:           false
+  anomalies:            ["stated_income_mismatch: +24%", "employment_type_conflict"]
+  score:                61  (gray zone: 60–70)
+        │
+        ▼
+LLM receives structured input, produces one output:
+  explanation: "Application scores 61/100. DTI is within limits and no fraud
+                indicators were found. However, stated income exceeds verified
+                income by 24% and employment documentation conflicts with the
+                stated employment type. Recommend underwriter review of income
+                sources before approval."
+        │
+        ▼
+Code routes based on score + flags — LLM output does not affect routing.
+```
+
+The LLM acts as a **judge**: it synthesizes structured signals into a coherent,
+context-aware explanation that a human can act on quickly. It does not make the
+decision, control any tool, or influence the routing outcome. If the model produces
+a poor explanation, the routing is still correct — the LLM only touches the
+`explanation` field, which is advisory.
+
+This is the safer choice for a regulated financial system:
+- The *decision* (score, tier, routing) is fully deterministic and auditable
+- The *explanation* is LLM-generated but has no effect on the outcome
+- No hallucination risk on the critical path
+- No tool loop latency on every application
+
+**Autonomy boundary:** the LLM receives structured inputs and returns structured
+output (`explanation: str`). Code controls everything else.
+
+**Idempotency:** the LLM call is stateless and read-only — safe to retry on failure.
 
 **Human-in-the-loop gates:** gray-zone applications enter the underwriter queue with
-the agent's explanation pre-populated. Underwriter decisions are written via
+the LLM-generated explanation pre-populated. Underwriter decisions are written via
 `PUT /applications/:id/underwriter-decision` (idempotent) and recorded as human
 actions in the audit log. High-value loans (> $500k) always route through underwriter
 regardless of score.
@@ -474,6 +514,7 @@ with its own PostgreSQL or Cassandra persistence) — plan for this operational 
 |----------|--------|-------------|-----|
 | Async queue-backed processing | Kafka / SQS | Sync request/response | Decouples client from 30–90s processing; handles 120 req/s burst without client timeout |
 | L2 outer loop (code DAG) | Code controls flow | L5 orchestrator model | Regulators need auditable, deterministic routing; model handles interpretation only |
+| LLM role in risk synthesis | LLM-as-judge (explanation only) | L3 tool-calling agent | All signals are deterministic — no tool loop needed; LLM only synthesizes the explanation; routing stays in code |
 | Parallel verification steps | All three at once | Sequential | Genuinely independent — real latency win; critical at p95 |
 | Rules engine for compliance | DB-backed versioned table | Model encodes rules | Rules change without retraining; compliance team edits directly; version tied to each decision |
 | PUT over PATCH for documents | Full replace (idempotent) | Partial update | Safe to retry; simpler conflict resolution |
