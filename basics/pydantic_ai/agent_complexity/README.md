@@ -35,6 +35,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
   - [Bound everything](#bound-everything)
   - [Validate at every boundary](#validate-at-every-boundary)
   - [Design context deliberately](#design-context-deliberately)
+  - [Progressive tool disclosure](#progressive-tool-disclosure)
   - [Instrument before you ship](#instrument-before-you-ship)
   - [Build the degraded path first](#build-the-degraded-path-first)
   - [Keep humans in the loop for high-risk actions](#keep-humans-in-the-loop-for-high-risk-actions)
@@ -681,6 +682,67 @@ DB, Redis, or a durable workflow engine like Temporal). A crash at stage 3 of 5
 should resume from stage 3, not restart from zero — paying again for research and
 drafting that already succeeded.
 
+### Progressive tool disclosure
+
+Loading every tool into every agent turn is the default — and a context bloat trap.
+Each tool definition (name, description, parameter schema) consumes tokens in the
+system prompt on *every* model call. An agent with 20 registered tools spends those
+tokens whether it ever calls 18 of them or not, and the long tool list competes with
+your instructions for the model's attention.
+
+**Progressive disclosure** flips this: start with the minimal tool set, and surface
+additional tools only when the agent reaches a stage that needs them.
+
+Three practical patterns in Pydantic AI:
+
+**1. Phase-gated tool sets.** Run the agent in explicit phases, each with its own
+restricted tool set. When phase 1 finishes, re-enter the agent with the phase-2
+tools added. The model never sees write tools during the read phase:
+
+```python
+from pydantic_ai import Agent
+
+# Phase 1: investigation only — no write tools in scope
+investigator = Agent(model, tools=[get_customer, get_charges, check_policy])
+finding = await investigator.run(ticket)
+
+# Phase 2: action tools unlocked, scoped to what investigation found
+resolver = Agent(model, tools=[issue_refund, send_email])
+result = await resolver.run(finding.output)
+```
+
+**2. Dynamic tool injection via `prepare`.** Pydantic AI's `prepare` parameter on
+`@agent.tool` lets you conditionally include or exclude a tool on each call based on
+current context — for example, only offering `issue_refund` if the investigation
+phase has already set a `can_refund` flag in deps:
+
+```python
+async def only_if_approved(ctx: RunContext[Deps], tool_def: ToolDefinition):
+    return tool_def if ctx.deps.can_refund else None
+
+@agent.tool(prepare=only_if_approved)
+async def issue_refund(ctx: RunContext[Deps], charge_id: str, amount: float) -> str:
+    ...
+```
+
+The tool is invisible to the model — zero tokens — until the condition is met.
+
+**3. Sub-agent specialization.** In a multi-agent system, keep each sub-agent's tool
+set to exactly what its role needs. The researcher gets file + gateway tools; the
+drafter gets template tools only; the compliance agent gets policy-lookup tools only.
+No agent sees tools outside its domain. This is the natural expression of progressive
+disclosure at the orchestration layer: tools are disclosed to the agent whose *role*
+requires them, not broadcast to all agents.
+
+**Why this matters at scale.** A 20-tool agent system prompt might spend 800–1500
+tokens on tool definitions per call. At 15 calls per L5 run that's 12k–22k tokens of
+pure overhead — before any context or reasoning. With phase-gating or `prepare`
+filtering, a run that only ever uses 4 tools pays for 4 tools.
+
+The pattern also reduces hallucinated tool calls: a model that can only see 3 tools
+relevant to the current phase has a much smaller space of wrong choices than one
+staring at 20.
+
 ### Instrument before you ship
 
 Without traces, a failed multi-agent run is a black box. Wire observability in during
@@ -778,6 +840,7 @@ production are always in the paths you didn't test.
 | Unbounded loops | `max_turns` + token budget + wall-clock timeout |
 | Context window overflow | Trim outputs to summaries; checkpoint long runs |
 | Instruction drift in long runs | Stable prefix first; test at p95 turn counts |
+| Context bloat from tool definitions | Progressive disclosure — phase-gated or `prepare`-filtered tool sets |
 | Undetectable wrong answers | LLM-as-judge eval + golden-set regression |
 | Undebuggable failures | Per-tool structured logging + Logfire traces |
 | Sub-agent outage kills the run | Degradation ladder: retry → fallback level → human |
