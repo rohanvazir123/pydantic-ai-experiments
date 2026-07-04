@@ -114,6 +114,7 @@ more agents" — it is "let a model orchestrate other models."
 | **What model controls** | Content only | Content of each step | Which tools to call & when | Which files/APIs to explore & how | Which specialists to delegate to & how to synthesize |
 | **Steps known in advance** | Yes — exactly 1 | Yes — by you | No — model decides | No — model explores | No — model decomposes |
 | **Tools per agent** | None | None (agents are the units) | Fixed, bounded set | Broad, open-ended set | Scoped per specialist |
+| **Autonomy** | None | None | Partial | High | Full |
 | **Cost** | $ | $ | $$ | $$$ | $$$$ |
 | **Latency** | 1 call | N fixed calls | 3–7 calls | 6–14 calls | 10–20+ calls across agents |
 | **Reliability** | Deterministic\* | High | High | Medium | Lower |
@@ -121,6 +122,23 @@ more agents" — it is "let a model orchestrate other models."
 
 \* *Deterministic in shape (always one call, one schema); the model's content
 still varies unless you pin `temperature=0`, which these examples do.*
+
+**Autonomy scale:**
+
+| Level | Autonomy | What the model decides on its own |
+|-------|----------|-----------------------------------|
+| L1 | None | Nothing — one call, code drives the whole interaction |
+| L2 | None | Content of each step only; code decides which step runs |
+| L3 | Partial | Which tools to call and in what order, within a fixed bounded set |
+| L4 | High | Which files/APIs to open, what to look for, when to stop — open-ended exploration |
+| L5 | **Full** | How to decompose the task, which specialists to delegate to, how to synthesize their results — a model orchestrating models |
+
+L5 is the only fully autonomous level: the orchestrator makes meta-decisions (who
+should do this? is the result good enough? do I need another delegation?) that are
+themselves model calls. L4 is highly autonomous within a single agent's scope; L5
+extends that autonomy to the coordination layer. More autonomy = more capability and
+more ways to go wrong — which is why the golden rule is to stay at the lowest level
+that actually needs it.
 
 ### Decision guide
 
