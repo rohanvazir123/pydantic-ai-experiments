@@ -97,44 +97,83 @@ Level 5   request ──▶ orchestrator ─┬▶ researcher  (fs + gateway)
 
 ## Choosing a level: use cases & trade-offs
 
+The levels differ on two axes that matter most in practice:
+
+1. **Who controls flow** — code (predictable, auditable) vs model (flexible, non-deterministic)
+2. **Who controls sequencing** — a fixed DAG in your code, or a model that decides what to call next
+
+Note: *agent count is not the distinguishing axis.* L2 already uses multiple agents —
+a classifier agent, one or more handler agents, a validator. What makes it L2 is that
+**your code decides which agent runs next**, not a model. The jump to L5 is not "add
+more agents" — it is "let a model orchestrate other models."
+
 | | L1 Augmented | L2 Chains | L3 Tool-Calling | L4 Harness | L5 Multi-Agent |
 |---|---|---|---|---|---|
+| **Agents involved** | 1 | Multiple | 1 | 1 | Multiple |
+| **Who controls flow** | Code (1 call, done) | Code (fixed DAG) | Model (bounded loop) | Model (open loop) | Orchestrator model |
+| **What model controls** | Content only | Content of each step | Which tools to call & when | Which files/APIs to explore & how | Which specialists to delegate to & how to synthesize |
+| **Steps known in advance** | Yes — exactly 1 | Yes — by you | No — model decides | No — model explores | No — model decomposes |
+| **Tools per agent** | None | None (agents are the units) | Fixed, bounded set | Broad, open-ended set | Scoped per specialist |
 | **Cost** | $ | $ | $$ | $$$ | $$$$ |
-| **Latency** | ~1 call | N fixed calls | a few calls | many calls | many × agents |
+| **Latency** | 1 call | N fixed calls | 3–7 calls | 6–14 calls | 10–20+ calls across agents |
 | **Reliability** | Deterministic\* | High | High | Medium | Lower |
-| **Control flow** | none | code | model (bounded) | model (open) | orchestrator |
-| **Best when** | answer is in the input | known stages | needs a few actions | needs exploration | needs parallel expertise |
+| **Best when** | Answer is in the input | Stages are known and auditable | A bounded set of actions covers it | Open-ended exploration needed | Distinct expert roles must work in parallel |
 
 \* *Deterministic in shape (always one call, one schema); the model's content
 still varies unless you pin `temperature=0`, which these examples do.*
 
 ### Decision guide
 
+The real question at each fork is not "how many agents?" but "who should be in
+charge of this decision?"
+
 ```
-Is the answer derivable from the input alone (classify / extract / rewrite)?
+Does the answer come entirely from the input — no lookups, no actions?
 │
-├─ YES ─────────────────────────────────────────────▶ Level 1 (Augmented LLM)
+├─ YES ──────────────────────────────────────────────────────▶ L1 Augmented LLM
+│         One call. Model controls content only. You control everything else.
 │
-└─ NO ─ Does it follow known, fixed stages you can hard-code?
+└─ NO ─ Are the stages fixed and enumerable in advance?
+        Can you write: classify → route → handle → validate in code?
         │
-        ├─ YES ─────────────────────────────────────▶ Level 2 (Prompt Chains)
+        ├─ YES ──────────────────────────────────────────────▶ L2 Prompt Chains
+        │         Multiple single-purpose agents. Code controls which runs next.
+        │         Model controls the content of each stage. Fully auditable.
+        │         (The classifier, each handler, and the validator are all
+        │         separate agents — L2 is already multi-agent. The difference
+        │         from L5 is that *your code* is the orchestrator.)
         │
-        └─ NO ─ Can a *small, fixed* set of tools do it?
+        └─ NO ─ Can a small, fixed set of tools cover all the actions needed?
+                Does the model need to decide *which* tools to call and in what order,
+                but the tool set itself won't change run-to-run?
                 │
-                ├─ YES ─────────────────────────────▶ Level 3 (Tool-Calling)
+                ├─ YES ──────────────────────────────────────▶ L3 Tool-Calling Agent
+                │         One agent, bounded tool set. Model controls sequencing.
+                │         Code controls what the tools can do. The tool set is the guardrail.
                 │
-                └─ NO ─ Does it need open-ended exploration
-                        over files / systems you can't script?
+                └─ NO ─ Does it need open-ended exploration — reading files,
+                        grepping logs, calling APIs the model discovers at runtime?
+                        You cannot enumerate the steps in advance.
                         │
-                        ├─ YES ─ one perspective enough? ─▶ Level 4 (Harness)
+                        ├─ YES ─ Can one agent hold all the expertise?  ──▶ L4 Harness
+                        │         One agent with a broad runtime. Model explores freely.
+                        │         This is the shape of coding agents (Claude Code, Cursor).
                         │
-                        └─ needs distinct expert roles
-                          working in concert? ───────────▶ Level 5 (Multi-Agent)
+                        └─ NO ─ Do the sub-tasks need genuinely distinct
+                                instructions, tool sets, or conflicting constraints
+                                that can't coexist in one system prompt?
+                                Do they benefit from running in parallel?
+                                │
+                                └─ YES ─────────────────────────────────▶ L5 Multi-Agent
+                                          An orchestrator model delegates to specialists,
+                                          each with their own prompt + tools. The model
+                                          controls decomposition and synthesis.
 ```
 
 **Golden rule: start at the lowest level that works and only climb when it
 demonstrably can't do the job.** Each climb multiplies cost, latency, and the
-number of ways a run can go wrong.
+number of ways a run can go wrong. If the "distinct roles" in your L5 design are
+really just steps, that's L2. If they're just tools, that's L3.
 
 ### Level-by-level: when to use, when not to
 
