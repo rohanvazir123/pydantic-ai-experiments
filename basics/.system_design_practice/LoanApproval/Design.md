@@ -918,6 +918,18 @@ scalable. Size the worker pool to activity throughput (same math as the queue wo
 pool in Deep Dive 3). Temporal Server itself needs a production deployment (clustered,
 with its own PostgreSQL or Cassandra persistence) — plan for this operational overhead.
 
+**Why no Transactional Outbox pattern here.** The [outbox pattern](../patterns/transactional_outbox.md)
+exists to solve the *dual-write* problem — atomically commit DB state *and* publish
+an event to a broker without 2PC. Temporal already subsumes that: side effects
+(credit pull, notifications, downstream events) are **activities** the engine
+retries until success (at-least-once) and that we make **idempotent**, with the
+workflow's durable event history as the source of truth. There's no unguarded
+"DB-commit-then-publish" gap for an outbox to close — the workflow won't advance
+past a side effect until it succeeds, and replays never lose the intent. Adding an
+outbox table + CDC/Debezium would duplicate reliability Temporal provides. (Outbox
+would only re-enter if a *non-Temporal* service did a plain DB-write + Kafka-publish
+in one step — which this design doesn't.)
+
 ### Deep Dive 5: Evaluation pipeline — decision quality and explanation quality
 
 **Why this needs its own pipeline, not just "add an eval script":** ground truth
@@ -1239,6 +1251,7 @@ the ones worth raising unprompted.
 | Monthly range partitions | Partition by created_at | Single table | 30M rows/partition manageable; old partitions archive cleanly after retention window |
 | Idempotency key in Redis | Redis + TTL | DB-only | O(1) lookup at 1M/day throughput; DB `processed_ops` as durable fallback |
 | Workflow engine | Temporal | Queue + worker | Multi-step durable execution, step-level retry, HIL signals, SLA timers — queue alone can't do this cleanly |
+| Reliable event/side-effect emission | Temporal durable activities + idempotency | Transactional Outbox (outbox table + CDC/Debezium/Kafka) | Temporal already gives durable, retried, at-least-once side effects — outbox would duplicate the engine's guarantees; no unguarded DB-write-then-publish to close (see Deep Dive 4) |
 | HIL wait mechanism | Temporal signal + timer | DB polling / cron | Workflow suspends free; timer fires automatically; no polling loop to maintain |
 | Denied-applicant outcome eval | Reject inference (statistical extrapolation) | Ignore denied population | True performance is never observed for denials; extrapolation from the accepted population is the industry-standard alternative to no signal at all |
 | Model-upgrade rollout | Shadow deployment (parallel, no production effect) | Direct canary (partial live traffic) | Explanation is advisory-only (L1 judge) — shadow mode carries zero decision-path risk; canary would be needed if the model controlled routing |
