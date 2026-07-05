@@ -12,6 +12,7 @@
 - [API Design](#api-design)
 - [High-Level Architecture](#high-level-architecture)
 - [Data Flow & Services](#data-flow--services)
+- [Sequence Diagrams](#sequence-diagrams)
 - [Agentic AI Components](#agentic-ai-components)
 - [Guardrails at Every Step](#guardrails-at-every-step)
 - [Data Model](#data-model)
@@ -117,40 +118,177 @@ fail-safes.
 
 **Interface style:** **REST + streaming (SSE)** for the customer-facing
 conversation (turn-based, needs token streaming); **event-driven internally**
-(case events on a bus); **signed webhooks** for external callbacks (card network,
+(case events on Kafka); **signed webhooks** for external callbacks (card network,
 bureau). gRPC between internal services optional; not customer-facing.
 
+**Endpoint-surface review.** The first cut covered conversation + case-read +
+inbound webhooks + control plane. It was missing pieces the flows require —
+added below:
+
+| Added endpoint | Why it's required |
+|----------------|-------------------|
+| `POST …/cases/{id}/documents/upload-url` + `PUT …/documents` | Loan cases need document upload; files can't ride in a chat turn. |
+| `POST …/conversations/{id}/feedback` | The eval feedback loop (👍/👎 → golden set) needs an ingestion point. |
+| `GET /v1/conversations`, `GET /v1/cases` | Customer/app needs to list their conversations and cases. |
+| `GET /admin/cases/{id}/audit` | Operators/compliance need the immutable audit trail per case. |
+| `GET /admin/approvals/{task_id}` | Operator UI needs the full context of a pending approval before deciding. |
+
+### Conventions (all endpoints)
+
+- **Base path** `/v1` (customer), `/internal` (mTLS), `/admin` (control plane).
+- **Auth:** customer → JWT (short-lived; `sub`=customer_id, `tenant_id`); internal
+  → mTLS; webhooks → HMAC `X-Signature`; operators → mTLS + RBAC.
+- **Idempotency:** `Idempotency-Key` required on `POST …/messages` (a retried turn
+  must not spawn a second case) and on any state-changing write. Keys in Redis,
+  TTL 24h.
+- **PUT over PATCH** for state updates (safe to retry).
+- **Pagination:** cursor-based (`?cursor=&limit=`, ≤100) → `next_cursor`.
+- **Rate limit:** `429` + `Retry-After`. **Error envelope** (every 4xx/5xx):
+
+```json
+{ "error": { "code": "not_awaiting_approval", "message": "…", "trace_id": "…" } }
 ```
-# Customer plane (JWT auth, rate-limited, PII-masked at the edge)
-POST /v1/conversations                      → { conversation_id }         (create)
-POST /v1/conversations/{id}/messages        → SSE stream of assistant turn (Idempotency-Key)
-                                              may emit { case_id } when a case opens
-GET  /v1/conversations/{id}                 → conversation + latest state
-GET  /v1/cases/{id}                         → case status / timeline       (customer-visible subset)
 
-# Internal (service-to-service; PUT = idempotent, safe to retry)
-PUT  /internal/cases/{id}                   → upsert case state
-PUT  /internal/cases/{id}/steps/{n}         → record an agent step
-
-# External callbacks (HMAC-signed, verified at the edge)
-POST /v1/webhooks/card-network              → dispute lifecycle update
-POST /v1/webhooks/bureau                    → async credit report ready
-
-# Operator control plane (separate service, mTLS + RBAC, fully audited)
-POST /admin/kill-switch                     → halt all autonomous actions (scope: global|tool|tenant)
-PUT  /admin/policy/thresholds               → runtime risk limits / confidence cutoffs
-GET  /admin/review-queue                    → escalations + sampled auto-resolutions
-POST /admin/approvals/{task_id}             → approve | reject (resumes the workflow)
-```
-
-> **PUT over PATCH** for all internal state updates so retries are safe.
-> **Idempotency-Key** required on message POSTs (a retried customer turn must not
-> spawn a second case).
 > The **operator control plane is a physically separate service** with its own
 > authz — the agent can never call it.
 
-**Auth:** customer → JWT (short-lived); internal → mTLS; webhooks → HMAC
-signature; operators → mTLS + RBAC.
+### Customer plane
+
+**`POST /v1/conversations`** — start a conversation.
+
+```jsonc
+// Request                                    // 201 Created
+{ "channel": "web", "locale": "en-US" }       { "conversation_id": "cnv_8k...",
+                                                "status": "active", "created_at": "…" }
+```
+`401` · `429`.
+
+**`POST /v1/conversations/{id}/messages`** — send a turn; response **streams** as
+SSE. Headers: `Authorization`, `Idempotency-Key`, `Accept: text/event-stream`.
+
+```jsonc
+// Request
+{ "content": "I didn't make this $2,400 charge on Feb 1 at ACME.",
+  "attachments": [] }                          // optional [{ upload_id, type }]
+```
+```
+// 200 OK  Content-Type: text/event-stream
+event: token        data: {"delta":"I can help with that…"}
+event: tool         data: {"name":"get_transaction","status":"ok"}   // transparency
+event: case_opened  data: {"case_id":"case_5m...","type":"dispute"}   // if a case starts
+event: handoff      data: {"reason":"amount_over_auto_limit"}         // if escalated
+event: done         data: {"message_id":"msg_9x...","finish_reason":"stop"}
+```
+Non-stream fallback: `Accept: application/json` → `200` with the full turn.
+`400` · `401` · `404` (conversation) · `409` (idempotency-key reused w/ different body) · `422` · `429`.
+
+**`GET /v1/conversations/{id}`** — conversation + latest state.
+
+```jsonc
+// 200 OK
+{ "conversation_id": "cnv_8k...", "status": "active", "channel": "web",
+  "active_case_id": "case_5m...",
+  "messages": [ { "role": "user", "content": "…", "ts": "…" },
+                { "role": "assistant", "content": "…", "ts": "…" } ],
+  "created_at": "…", "updated_at": "…" }
+```
+`403` · `404`.
+
+**`GET /v1/conversations`** — list the caller's conversations (cursor-paginated).
+`200 { "items": [...], "next_cursor": "…" }`.
+
+**`GET /v1/cases/{id}`** — case status / timeline (customer-visible subset).
+
+```jsonc
+// 200 OK
+{ "case_id": "case_5m...", "type": "dispute", "status": "awaiting_network",
+  // open | awaiting_approval | awaiting_network | resolved | declined
+  "timeline": [ { "step": "dispute_filed", "ts": "…", "summary": "Filed with network" },
+                { "step": "provisional_credit", "ts": "…", "summary": "$2,400 credited" } ],
+  "resolution": null,
+  "created_at": "…", "updated_at": "…" }
+```
+`403` · `404`.
+
+**`GET /v1/cases`** — list the caller's cases. `200 { items, next_cursor }`.
+
+**`POST /v1/cases/{id}/documents/upload-url`** — presigned upload URLs (loan docs).
+
+```jsonc
+// Request                                     // 200 OK
+{ "documents": [ { "type": "pay_stub" } ] }    { "uploads": [ { "type": "pay_stub",
+                                                   "upload_id": "up_1a...",
+                                                   "url": "https://s3…/PUT?sig=…",
+                                                   "expires_at": "…" } ] }
+```
+
+**`PUT /v1/cases/{id}/documents`** — attach uploaded documents (idempotent).
+`{ "documents": [ { "type": "pay_stub", "upload_id": "up_1a..." } ] }` → `200
+{ documents: [{ type, upload_id, status: "attached" }] }`. `404` · `409` (case closed).
+
+**`POST /v1/conversations/{id}/feedback`** — customer 👍/👎 (feeds the eval loop).
+
+```jsonc
+// Request                                                     // 202 Accepted
+{ "message_id": "msg_9x...", "rating": "down",                { "recorded": true }
+  "comment": "Didn't actually resolve it." }
+```
+
+### Internal plane (mTLS; PUT = idempotent)
+
+**`PUT /internal/cases/{id}`** — upsert case state (from workflow). `200`.
+**`PUT /internal/cases/{id}/steps/{n}`** — record an `AgentStep`
+(`{ thought, tool_call, tool_result, tokens, latency_ms }`). `200`.
+
+### External callbacks (HMAC-signed, verified at the edge)
+
+**`POST /v1/webhooks/card-network`** — dispute lifecycle update; signals the case.
+
+```jsonc
+// Request (signed X-Signature)                // 200 OK
+{ "event": "dispute.updated", "network_ref": "dn_77...",   { "received": true }
+  "outcome": "won", "amount_cents": 240000 }   // won | lost | pending
+```
+`401` (bad signature) · `404` (unknown `network_ref`) · `409` (duplicate → idempotent ack).
+
+**`POST /v1/webhooks/bureau`** — async credit report ready; signals the loan case.
+`{ "event": "report.ready", "bureau_ref": "br_22..." }` → `200`.
+
+### Operator control plane (separate service, mTLS + RBAC, fully audited)
+
+**`POST /admin/kill-switch`** — halt autonomous actions instantly.
+
+```jsonc
+// Request                                                    // 200 OK
+{ "scope": "tool", "target": "issue_refund", "enabled": true } { "scope": "tool",
+                                                                 "target": "issue_refund",
+// scope: global | tool | tenant                                "enabled": true,
+                                                                 "actor": "ops:o_3",
+                                                                 "ts": "…" }
+```
+
+**`PUT /admin/policy/thresholds`** — runtime risk limits / confidence cutoffs.
+`{ "auto_approve_limit_cents": 50000, "confidence_cutoff": 0.75 }` → `200`.
+
+**`GET /admin/review-queue`** — escalations + sampled auto-resolutions (paginated).
+`200 { items: [{ task_id, case_id, kind, risk_tier, created_at }], next_cursor }`.
+
+**`GET /admin/approvals/{task_id}`** — full context for a pending approval.
+`200 { task_id, case_id, kind, proposed_action, evidence, agent_explanation, status }`.
+`404`.
+
+**`POST /admin/approvals/{task_id}`** — approve/reject; **signals the workflow to resume**.
+
+```jsonc
+// Request                                        // 200 OK
+{ "decision": "approve", "reason": "Verified.",   { "task_id": "tsk_4d...",
+  "conditions": [] }                               "status": "approved", "resumed": true }
+// decision: approve | reject
+```
+`400` · `403` · `404` · **`409 not_awaiting_approval`** (task already decided / case closed — signal to a closed workflow is rejected).
+
+**`GET /admin/cases/{id}/audit`** — immutable audit trail.
+`200 { case_id, events: [{ actor, action, target, reason, ts }] }`.
 
 ---
 
@@ -244,6 +382,176 @@ Channels (web / mobile / email / IVR)
 inline. Anything that (a) touches money, (b) calls a slow external system
 (network/bureau), or (c) needs HITL is a **durable async case** — never blocked on
 in the request path.
+
+---
+
+## Sequence Diagrams
+
+All major flows as Mermaid sequence diagrams (render on GitHub).
+
+### 1. Simple query — synchronous fast track (SSE)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant GW as API Gateway
+    participant CONV as Conversation Svc
+    participant R as Redis (working mem)
+    participant TR as Triage (cheap LLM)
+    participant CA as Conversation Agent
+    participant CORE as Core Banking (read)
+
+    C->>GW: POST /conversations/{id}/messages (SSE)
+    GW->>GW: authN, rate limit, PII mask
+    GW->>CONV: turn
+    CONV->>R: load working memory
+    CONV->>TR: classify intent + risk tier
+    TR-->>CONV: intent=balance_inquiry, tier=1
+    Note over CONV: read-only → stay synchronous (fast track)
+    CONV->>CA: bounded tool loop
+    CA->>CORE: get_balance (read-only, scope-checked)
+    CORE-->>CA: balance
+    CA-->>C: SSE tokens (streamed answer)
+    CONV->>R: append masked turn, update memory
+    Note over CONV: no case opened · p95 < 6s
+```
+
+### 2. Disputed charge — async durable case (Reg E timer + network webhook)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant CONV as Conversation Svc
+    participant TR as Triage
+    participant CM as Case Orchestrator (Temporal)
+    participant DA as Dispute Agent
+    participant GE as Guardrails Engine
+    participant NET as Card Network
+    participant DB as Postgres
+    participant N as Notifier
+
+    C->>CONV: "dispute this $2,400 charge"
+    CONV->>TR: classify
+    TR-->>CONV: intent=dispute, tier=2
+    CONV->>CM: start DisputeWorkflow(case_id)
+    CONV-->>C: ack + case_id (time-to-ack < 3s)
+    CM->>DA: verify transaction + eligibility (Reg E)
+    DA->>GE: propose file_dispute + provisional_credit
+    GE-->>DA: allowed (≤ disputed amount)
+    DA->>NET: file dispute (idempotency key)
+    DA->>DB: provisional credit + audit
+    CM->>CM: start Reg E SLA timer, then await outcome
+    Note over CM: workflow suspended (durable, days)
+    NET->>CONV: POST /webhooks/card-network (won)
+    CONV->>CM: signal dispute.updated(won)
+    CM->>DB: finalize (credit permanent) + audit
+    CM->>N: notify customer
+```
+
+### 3. Loan application — docs + KYC + bureau + HITL
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant CONV as Conversation Svc
+    participant CM as Case Orchestrator (Temporal)
+    participant LA as Loan Agent
+    participant KYC as KYC / ID
+    participant BUR as Credit Bureau
+    participant GE as Guardrails Engine
+    actor OPS as Operator
+    participant DB as Postgres
+    participant N as Notifier
+
+    C->>CONV: "apply for a personal loan"
+    CONV->>CM: start LoanWorkflow(case_id)
+    CONV-->>C: ack + case_id + request documents
+    C->>CONV: upload docs (see flow 6)
+    CM->>LA: collect docs → KYC → bureau pull
+    LA->>KYC: verify identity
+    LA->>BUR: credit pull (idempotency key)
+    BUR-->>LA: report
+    LA->>GE: propose decision
+    alt within auto limits + high confidence
+        GE-->>CM: auto-approve allowed
+        CM->>DB: decision approved + audit
+    else irreversible / low confidence
+        GE-->>CM: requires approval
+        CM->>DB: ApprovalTask, status=awaiting_approval
+        Note over CM: workflow durably waits
+        OPS->>CM: POST /admin/approvals/{id} (approve)
+        CM->>DB: decision + audit (human actor)
+    end
+    CM->>N: notify (approved / declined + adverse-action notice)
+```
+
+### 4. Guardrail block → HITL approval → resume
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Domain Agent
+    participant GE as Guardrails Engine
+    participant CM as Case Orchestrator
+    participant DB as Postgres
+    actor OPS as Operator
+    participant N as Notifier
+
+    AG->>GE: propose refund $2,400 (auto-limit $500)
+    GE-->>AG: BLOCKED (exceeds auto-approve limit)
+    AG->>CM: escalate
+    CM->>DB: ApprovalTask + status=awaiting_approval + audit(blocked)
+    Note over CM: no autonomous write proceeds — durable wait
+    OPS->>CM: POST /admin/approvals/{id}
+    alt approved
+        CM->>DB: execute action (idempotent) + audit
+        CM->>N: notify customer
+    else rejected
+        CM->>DB: close + audit
+        CM->>N: notify customer (declined)
+    end
+```
+
+### 5. Operator kill switch (control plane)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor OPS as Operator
+    participant CP as Control Plane
+    participant GE as Guardrails Engine
+    participant AG as Domain Agent
+    participant Q as Human Queue
+
+    OPS->>CP: POST /admin/kill-switch (scope=tool, issue_refund)
+    CP->>GE: set runtime toggle (no deploy) + audit
+    Note over AG,GE: subsequent proposals hit the toggle
+    AG->>GE: propose issue_refund
+    GE-->>AG: DENIED (kill switch active)
+    AG->>Q: route to human queue
+```
+
+### 6. Document upload (loan)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant CONV as Conversation Svc
+    participant S3 as Object Store
+
+    C->>CONV: POST /cases/{id}/documents/upload-url
+    CONV-->>C: 200 { presigned PUT URLs }
+    loop per document
+        C->>S3: PUT file bytes (presigned URL)
+        S3-->>C: 200
+    end
+    C->>CONV: PUT /cases/{id}/documents { upload_ids }
+    CONV-->>C: 200 { attached }
+```
 
 ---
 

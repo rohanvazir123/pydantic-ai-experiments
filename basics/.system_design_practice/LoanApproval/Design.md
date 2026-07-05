@@ -1,5 +1,24 @@
 # System Design: Multi-Step Risk-Aware Loan Application Router
 
+## Table of Contents
+
+- [Problem Statement](#problem-statement)
+- [Requirements](#requirements)
+- [Capacity Estimation](#capacity-estimation)
+- [Core Entities](#core-entities)
+- [API Design](#api-design)
+- [Infrastructure Choices](#infrastructure-choices)
+- [High-Level Architecture](#high-level-architecture)
+- [Data Flow & Services](#data-flow--services)
+- [Sequence Diagrams](#sequence-diagrams)
+- [Agentic AI Components](#agentic-ai-components)
+- [Data Model](#data-model)
+- [Test & Evaluation Framework](#test--evaluation-framework)
+- [Observability / Debuggability / Telemetry](#observability--debuggability--telemetry)
+- [Deep Dives](#deep-dives)
+- [Fault Analysis / Edge Cases](#fault-analysis--edge-cases)
+- [Tradeoffs Summary](#tradeoffs-summary)
+
 ---
 
 ## Problem Statement
@@ -88,25 +107,235 @@ Queue throughput:
 
 ## API Design
 
-**Interface style:** REST — decisions are resource-oriented; CRUD maps cleanly;
-well-understood by all integrating partner systems.
+**Interface style:** REST/JSON over HTTPS — resource-oriented, CRUD maps cleanly,
+well understood by integrating partner systems. Processing is async, so submission
+returns **`202 Accepted`** and the caller either **polls** `GET` or subscribes to a
+**webhook** for the terminal decision.
 
+**Endpoint-surface review.** The original five (`POST /applications`,
+`GET /applications/:id`, `GET …/decision`, `PUT …/documents`, `PUT …/withdraw`)
+cover only the applicant happy path. They are **not enough** — the design already
+depends on endpoints that weren't exposed. Added below:
+
+| Added endpoint | Why it's required |
+|----------------|-------------------|
+| `PUT …/underwriter-decision` | Referenced in Data Flow step 7 + the Temporal signal, but was never in the API surface. Without it the HIL loop can't close. |
+| `POST …/documents/upload-url` | Files can't go in a JSON body; partners need presigned upload URLs before attaching. |
+| `GET /applications` | Partner portals + underwriter queues need list/search with pagination. |
+| `GET …/audit` | Compliance/underwriter need the append-only audit trail per application. |
+| `POST /webhooks` (+ outbound callbacks) | Submission is `202`; polling forever is wasteful — partners need push on `decision.ready`. |
+
+### Conventions (all endpoints)
+
+- **Base path:** `/v1`. **Auth:** JWT (RS256); claims carry `tenant_id`, `sub`,
+  and `roles`. Applicant routes require `role:applicant` scoped to their own
+  `applicant_id`; `underwriter-decision`/`audit` require `role:underwriter` (or
+  `compliance`).
+- **Idempotency:** `Idempotency-Key` (UUID) required on `POST /applications`.
+  Same key + same body → original response replayed (no re-processing); same key +
+  different body → `409`. Keys in Redis, TTL 24h.
+- **PUT over PATCH** for updates where retries matter (not guaranteed idempotent).
+- **Pagination:** cursor-based — `?cursor=&limit=` (limit ≤ 100) → `next_cursor`.
+- **Rate limit:** `429 Too Many Requests` + `Retry-After` header.
+- **Error envelope** (every 4xx/5xx):
+
+```json
+{ "error": { "code": "validation_failed", "message": "amount_cents must be > 0",
+             "fields": { "amount_cents": "must be > 0" }, "trace_id": "a1b2c3" } }
 ```
-POST   /applications                     — submit new application (not idempotent)
-GET    /applications/:id                 — poll status
-GET    /applications/:id/decision        — fetch decision + explanation
-PUT    /applications/:id/documents       — upload/replace supporting docs (idempotent)
-PUT    /applications/:id/withdraw        — applicant withdraws (idempotent)
+
+### Applicant / partner endpoints
+
+**`POST /v1/applications`** — submit a new application.
+Headers: `Authorization`, `Idempotency-Key`.
+
+```jsonc
+// Request
+{
+  "loan_type": "mortgage",            // personal | mortgage | auto
+  "amount_cents": 35000000,
+  "state": "CA",
+  "loan_purpose": "home_purchase",
+  "applicant": {
+    "first_name": "Sarah", "last_name": "Johnson",
+    "dob": "1985-04-12",
+    "ssn": "xxx-xx-xxxx",             // TLS in transit; tokenized server-side, never logged
+    "email": "sarah@example.com", "phone": "+14155550123",
+    "stated_income_cents": 12000000,
+    "employment_type": "employed",    // employed | self_employed | unemployed | retired
+    "employer_name": "NeuralFlow AI",
+    "stated_address": { "line1": "1 Main St", "city": "SF", "state": "CA", "zip": "94105" }
+  },
+  "documents": [                       // optional: attach previously uploaded files
+    { "type": "pay_stub", "upload_id": "up_9f..." },
+    { "type": "bank_statement", "upload_id": "up_3k..." }
+  ]
+}
 ```
 
-> Prefer PUT over PATCH for update operations where retries matter.
-> PATCH is not guaranteed idempotent — avoid it on operations with side effects.
+```jsonc
+// 202 Accepted  (accepted for async processing)
+{
+  "application_id": "app_7Yk2...",
+  "status": "pending",
+  "status_url":   "/v1/applications/app_7Yk2.../",
+  "decision_url": "/v1/applications/app_7Yk2.../decision",
+  "created_at": "2026-07-05T18:02:11Z"
+}
+```
 
-**Auth:** JWT (RS256) — `tenant_id` and `applicant_id` embedded in claims.
+| Status | When |
+|-------:|------|
+| `202` | Accepted for processing |
+| `200` | Idempotent replay (same key+body) — returns the original `202` body |
+| `400` | Malformed body / schema violation |
+| `401` | Missing/invalid JWT |
+| `409` | `Idempotency-Key` reused with a different body |
+| `422` | Semantically invalid (unsupported `state`×`loan_type`, amount ≤ 0) |
+| `429` | Rate limited (`Retry-After`) |
 
-**Idempotency header:** `Idempotency-Key` required on `POST /applications`. Replayed
-requests with the same key return the original response without re-processing. Keys
-stored in Redis with TTL = 24h.
+**`GET /v1/applications/:id`** — poll status.
+
+```jsonc
+// 200 OK
+{
+  "application_id": "app_7Yk2...",
+  "status": "processing",             // pending | processing | awaiting_underwriter | decided | withdrawn
+  "current_stage": "credit_pull",     // last completed / in-flight workflow step
+  "loan_type": "mortgage", "amount_cents": 35000000, "state": "CA",
+  "decision_available": false,
+  "created_at": "2026-07-05T18:02:11Z", "updated_at": "2026-07-05T18:02:29Z"
+}
+```
+`401` · `403` (not your application) · `404`.
+
+**`GET /v1/applications/:id/decision`** — decision + explanation.
+
+```jsonc
+// 200 OK  (only when decided)
+{
+  "application_id": "app_7Yk2...",
+  "tier": "underwriter",              // auto_approve | underwriter | deny
+  "decision": "approved",            // approved | denied | pending_review
+  "score": 61.0,
+  "flags": ["stated_income_mismatch:+24%", "employment_type_conflict"],
+  "explanation": "Application scores 61/100. DTI within limits, no fraud indicators…",
+  "adverse_action_reasons": [],       // populated (FCRA/ECOA) when decision = denied
+  "rule_version": "reg-v2.3",
+  "decided_at": "2026-07-05T18:04:40Z",
+  "decided_by": "underwriter:u_88"    // or "system" for auto lanes
+}
+```
+`401` · `403` · `404` · **`409 decision_not_ready`** (still processing — body carries `status` + `Retry-After`).
+
+**`POST /v1/applications/:id/documents/upload-url`** — get presigned upload URLs.
+
+```jsonc
+// Request
+{ "documents": [ { "type": "pay_stub" }, { "type": "bank_statement" } ] }
+// 200 OK
+{ "uploads": [
+  { "type": "pay_stub", "upload_id": "up_9f...", "url": "https://s3…/PUT?sig=…", "expires_at": "…" },
+  { "type": "bank_statement", "upload_id": "up_3k...", "url": "https://s3…/PUT?sig=…", "expires_at": "…" }
+] }
+```
+Client `PUT`s bytes directly to each `url`. `401` · `403` · `404`.
+
+**`PUT /v1/applications/:id/documents`** — attach/replace the document set (idempotent — full replace).
+
+```jsonc
+// Request
+{ "documents": [ { "type": "pay_stub", "upload_id": "up_9f..." },
+                 { "type": "bank_statement", "upload_id": "up_3k..." } ] }
+// 200 OK
+{ "application_id": "app_7Yk2...", "documents": [
+  { "type": "pay_stub", "upload_id": "up_9f...", "status": "attached" },
+  { "type": "bank_statement", "upload_id": "up_3k...", "status": "attached" } ] }
+```
+`400` (unknown `upload_id`) · `404` · **`409`** (application already `decided` — docs frozen).
+
+**`PUT /v1/applications/:id/withdraw`** — applicant withdraws (idempotent).
+
+```jsonc
+// Request
+{ "reason": "applicant_request" }
+// 200 OK
+{ "application_id": "app_7Yk2...", "status": "withdrawn", "withdrawn_at": "…" }
+```
+`403` · `404` · **`409`** (already `decided` — cannot withdraw). Repeat withdraw of an
+already-withdrawn app returns `200` (idempotent).
+
+**`GET /v1/applications`** — list/search (partner + underwriter).
+Query: `status`, `loan_type`, `state`, `applicant_id`, `from`, `to`, `cursor`, `limit`.
+
+```jsonc
+// 200 OK
+{ "items": [ { "application_id": "app_7Yk2...", "status": "awaiting_underwriter",
+               "loan_type": "mortgage", "amount_cents": 35000000, "created_at": "…" } ],
+  "next_cursor": "eyJvIjoxMDB9" }
+```
+
+### Underwriter / compliance endpoints
+
+**`PUT /v1/applications/:id/underwriter-decision`** — submit the human decision
+(idempotent). Requires `role:underwriter`. Sends a Temporal **signal** to the
+suspended workflow.
+
+```jsonc
+// Request  (underwriter identity comes from the JWT, not the body)
+{
+  "decision": "approved",             // approved | denied
+  "reason": "Income sources verified via 2023 tax return.",
+  "conditions": ["proof_of_reserves"],       // optional approval conditions
+  "adverse_action_reasons": []               // REQUIRED (non-empty) when decision = denied
+}
+// 200 OK
+{ "application_id": "app_7Yk2...", "status": "decided", "decision": "approved",
+  "recorded_at": "…" }
+```
+
+| Status | When |
+|-------:|------|
+| `200` | Decision recorded, workflow resumed |
+| `400` | `denied` without `adverse_action_reasons` (ECOA/FCRA) |
+| `403` | Caller is not an underwriter / not assigned |
+| `404` | Application not found |
+| `409` | Not in `awaiting_underwriter` (workflow already completed / SLA-escalated) — signal to a closed workflow is rejected |
+
+**`GET /v1/applications/:id/audit`** — append-only audit trail. `role:underwriter|compliance`.
+
+```jsonc
+// 200 OK
+{ "application_id": "app_7Yk2...", "events": [
+  { "event": "submitted",       "actor": "applicant",        "ts": "…", "payload_hash": "…" },
+  { "event": "credit_pull",     "actor": "system",           "ts": "…", "payload_hash": "…" },
+  { "event": "routed:underwriter","actor": "system",         "ts": "…", "payload_hash": "…" },
+  { "event": "underwriter_decision","actor": "underwriter:u_88","ts":"…","payload_hash": "…" } ] }
+```
+
+### Webhooks (async completion)
+
+**`POST /v1/webhooks`** — register a callback (per tenant).
+
+```jsonc
+// Request
+{ "url": "https://partner.example.com/hooks/loans",
+  "events": ["decision.ready", "status.changed"],
+  "secret": "whsec_…" }        // used to HMAC-sign deliveries
+// 201 Created
+{ "webhook_id": "wh_1a...", "events": ["decision.ready","status.changed"], "active": true }
+```
+
+**Outbound delivery** (system → partner), signed `X-Signature: sha256=…` (HMAC over
+body with the shared secret; partner must verify):
+
+```jsonc
+// POST <registered url>
+{ "event": "decision.ready", "application_id": "app_7Yk2...",
+  "tier": "auto_approve", "decision": "approved", "decided_at": "…" }
+```
+Delivery is **at-least-once** with retries + exponential backoff; consumers must be
+idempotent on `application_id`+`event`.
 
 ---
 
@@ -200,6 +429,191 @@ stored in Redis with TTL = 24h.
 **Sync vs async:** submission is async; workflow runs durably in Temporal workers.
 Each activity is independently retried without replaying the whole pipeline. HIL waits
 are free — the workflow is suspended in Temporal's durable state, consuming no threads.
+
+---
+
+## Sequence Diagrams
+
+Every data flow in the system, as Mermaid sequence diagrams (render on GitHub).
+
+### 1. Submission → auto-approve (happy path, with idempotency)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client / Partner
+    participant GW as API Gateway
+    participant APP as Application Svc
+    participant R as Redis
+    participant DB as PostgreSQL
+    participant TW as Temporal WF
+    participant ID as Identity Act
+    participant CB as Credit Act
+    participant DOC as Document Act
+    participant RS as Risk Signal (code)
+    participant J as LLM Judge
+
+    C->>GW: POST /v1/applications (Idempotency-Key)
+    GW->>GW: verify JWT, rate limit
+    GW->>R: GET idempotency key
+    alt key already seen
+        R-->>GW: cached response
+        GW-->>C: 200 (replay, no re-processing)
+    else new key
+        GW->>R: SET key (TTL 24h)
+        GW->>APP: create application
+        APP->>DB: INSERT loan_application (pending)
+        APP->>TW: start LoanApplicationWorkflow(app_id)
+        APP-->>C: 202 Accepted (status_url, decision_url)
+    end
+    par parallel verification
+        TW->>ID: identity_activity
+        ID-->>TW: IdentityVerification
+    and
+        TW->>CB: credit_bureau_activity (idempotent)
+        CB-->>TW: CreditReport
+    and
+        TW->>DOC: document_activity (Docling)
+        DOC-->>TW: IncomeVerification
+    end
+    TW->>RS: risk_signal_activity(results)
+    RS-->>TW: score, flags, DTI
+    TW->>J: llm_judge_activity(signals)
+    J-->>TW: explanation (advisory only)
+    Note over TW: Router (code): score in auto-approve band
+    TW->>DB: INSERT risk_decision (auto_approve) + audit
+    C->>APP: GET /applications/:id/decision
+    APP-->>C: 200 { tier: auto_approve, decision, explanation }
+```
+
+### 2. Gray-zone → underwriter (human-in-the-loop)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant TW as Temporal WF
+    participant DB as PostgreSQL
+    actor UW as Underwriter
+    participant APP as Application Svc
+
+    Note over TW: Router (code): score 60–70 (gray zone)
+    TW->>DB: status = awaiting_underwriter + audit
+    TW->>TW: wait_condition(decision) + start SLA timer (3d)
+    Note over TW: workflow suspended — durable, no thread held
+    UW->>APP: PUT /applications/:id/underwriter-decision
+    APP->>DB: verify status == awaiting_underwriter
+    APP->>TW: signal underwriter_decision(decision)
+    TW->>DB: INSERT risk_decision (human) + audit
+    TW-->>APP: workflow completes
+    APP-->>UW: 200 recorded
+```
+
+### 3. SLA timer breach → escalation
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant TW as Temporal WF
+    participant ESC as Escalation Act
+    participant DB as PostgreSQL
+    actor SUW as Senior Underwriter
+
+    Note over TW: awaiting_underwriter — SLA timer running (3d)
+    TW->>TW: SLA timer fires (no decision received)
+    TW->>ESC: escalate_activity(app_id)
+    ESC->>DB: promote to senior queue + audit(sla_breach)
+    ESC-->>SUW: page / alert
+    Note over TW: durable timer fires even after worker restarts
+```
+
+### 4. Activity failure → retry → underwriter fallback
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant TW as Temporal WF
+    participant CB as Credit Act
+    participant BRK as Circuit Breaker
+    participant BUR as Credit Bureau
+    participant DB as PostgreSQL
+
+    TW->>CB: credit_bureau_activity
+    CB->>DB: check idempotency key (no prior success)
+    CB->>BRK: call bureau
+    BRK->>BUR: hard inquiry
+    BUR--xBRK: timeout
+    Note over TW,CB: Temporal retries activity (backoff, max 3)
+    CB->>BRK: retry
+    BRK--xCB: circuit OPEN — fail fast
+    CB-->>TW: activity fails (retries exhausted)
+    Note over TW: never auto-decide on missing data
+    TW->>DB: route to underwriter + audit(credit_unavailable)
+```
+
+### 5. Document upload (presign → direct upload → attach)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant APP as Application Svc
+    participant S3 as Object Store
+
+    C->>APP: POST /applications/:id/documents/upload-url
+    APP-->>C: 200 { presigned PUT URLs }
+    loop per document
+        C->>S3: PUT file bytes (presigned URL)
+        S3-->>C: 200
+    end
+    C->>APP: PUT /applications/:id/documents { upload_ids }
+    APP->>APP: validate app not yet decided
+    APP-->>C: 200 { documents: attached }
+```
+
+### 6. Async completion — polling and webhook
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant APP as Application Svc
+    participant TW as Temporal WF
+    participant WD as Webhook Dispatcher
+    participant P as Partner Endpoint
+
+    opt polling
+        loop until decided
+            C->>APP: GET /applications/:id
+            APP-->>C: 200 { status: processing }
+        end
+    end
+    Note over TW: decision reached
+    TW->>WD: emit decision.ready
+    WD->>P: POST callback (HMAC X-Signature)
+    P-->>WD: 200 (verify sig, idempotent on app_id+event)
+    C->>APP: GET /applications/:id/decision
+    APP-->>C: 200 { tier, decision, explanation }
+```
+
+### 7. Withdrawal
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant APP as Application Svc
+    participant TW as Temporal WF
+    participant DB as PostgreSQL
+
+    C->>APP: PUT /applications/:id/withdraw
+    alt already decided
+        APP-->>C: 409 conflict (cannot withdraw)
+    else in progress
+        APP->>TW: cancel workflow
+        APP->>DB: status = withdrawn + audit
+        APP-->>C: 200 { withdrawn }
+    end
+```
 
 ---
 
