@@ -378,7 +378,7 @@ idempotent on `application_id`+`event`.
                                                   dti, rules, fraud, anomalies, score
                                                           │
                                                           ▼
-                                                  [LLM Judge Activity]  — L1 single call
+                                                  [LLM Narrator Activity]  — L1 single call
                                                   explanation field only; no routing effect
                                                           │
                                                           ▼
@@ -411,7 +411,7 @@ idempotent on `application_id`+`event`.
    directly to HIL (underwriter), never auto-decides on missing data.
 5. **RiskSignalActivity** (code) computes all signals deterministically: DTI ratio,
    regulatory rule check, fraud indicator lookup, anomaly flags, composite score.
-   **LLMJudgeActivity** (L1 — single model call, no tool loop) receives the structured
+   **LLMNarratorActivity** (L1 — single model call, no tool loop) receives the structured
    signals and produces the `explanation` field only. The explanation is advisory —
    it does not affect score, tier, or routing.
 6. **RouterActivity** (code) reads score and flags:
@@ -451,7 +451,7 @@ sequenceDiagram
     participant CB as Credit Act
     participant DOC as Document Act
     participant RS as Risk Signal (code)
-    participant J as LLM Judge
+    participant N as LLM Narrator
 
     C->>GW: POST /v1/applications (Idempotency-Key)
     GW->>GW: verify JWT, rate limit
@@ -478,8 +478,8 @@ sequenceDiagram
     end
     TW->>RS: risk_signal_activity(results)
     RS-->>TW: score, flags, DTI
-    TW->>J: llm_judge_activity(signals)
-    J-->>TW: explanation (advisory only)
+    TW->>N: llm_narrator_activity(signals)
+    N-->>TW: explanation (advisory only)
     Note over TW: Router (code): score in auto-approve band
     TW->>DB: INSERT risk_decision (auto_approve) + audit
     C->>APP: GET /applications/:id/decision
@@ -625,10 +625,10 @@ sequenceDiagram
 | Credit summary | L1 | Code (structured call to bureau) | `CreditReport` record |
 | Document extraction | L1 | Code (Docling) | `IncomeVerification` record |
 | Risk signal computation | — | **Code** | DTI ratio, rule check, fraud flag, anomaly list |
-| Risk explanation | L1 | **LLM-as-judge** (single call, no tool loop) | Human-readable summary for underwriter |
+| Risk explanation | L1 | **LLM narrator** (single call, no tool loop) | Human-readable summary for underwriter |
 | Routing decision | — | **Code** (hardcoded thresholds) | Lane: auto-approve / underwriter / deny |
 
-### Why LLM-as-judge, not L3 tool-calling
+### Why LLM narrator, not L3 tool-calling
 
 All risk signals are computed deterministically by code:
 
@@ -652,7 +652,7 @@ LLM receives structured input, produces one output:
 Code routes based on score + flags — LLM output does not affect routing.
 ```
 
-The LLM acts as a **judge**: it synthesizes structured signals into a coherent,
+The LLM acts as a **narrator**: it synthesizes structured signals into a coherent,
 context-aware explanation that a human can act on quickly. It does not make the
 decision, control any tool, or influence the routing outcome. If the model produces
 a poor explanation, the routing is still correct — the LLM only touches the
@@ -749,7 +749,7 @@ most common mistake on this problem:
    requires demonstrating the decision boundary doesn't produce disparate impact
    across protected classes, and any threshold change must be backtested against
    labeled historical outcomes before it ships.
-2. **LLM-generated explanation** (the judge). The only genuinely "AI" evaluation
+2. **LLM-generated explanation** (the narrator). The only genuinely "AI" evaluation
    surface in this system. Needs eval for faithfulness (grounded in the structured
    `RiskSignal` it was given — no fabricated facts), coherence/actionability for
    the underwriter, and stability across model version upgrades.
@@ -762,7 +762,7 @@ most common mistake on this problem:
 | Load | 120 req/s peak; queue drain under burst | Locust / k6 |
 | Decision-quality eval | Tier accuracy vs. labeled outcomes; fair-lending adverse-impact ratio; calibration | Offline backtest + PSI drift check |
 | Explanation-quality eval | Faithfulness (grounded in structured signals), coherence, prohibited-basis/PII/bias leakage | DeepEval — built-in (`HallucinationMetric`, `BiasMetric`, `PIILeakageMetric`), `GEval` (coherence), `DAGMetric` (prohibited-basis), custom `BaseMetric` (SSN/DOB pre-filter) + golden set + human sample |
-| Judge-call latency regression | Did this PR make the explanation call slower on the golden set | Plain `pytest` threshold on measured latency — not a DeepEval metric |
+| Narrator-call latency regression | Did this PR make the explanation call slower on the golden set | Plain `pytest` threshold on measured latency — not a DeepEval metric |
 
 See **Deep Dive 5** for the full evaluation pipeline architecture, golden-set
 construction, the delayed-label problem, and the CI regression gate.
@@ -1099,8 +1099,8 @@ DeepEval's `LLMTestCase` model:
 
 ```python
 LLMTestCase(
-    input=prompt,                      # serialized RiskSignal handed to the judge LLM
-    actual_output=explanation,         # the judge LLM's generated text — under test
+    input=prompt,                      # serialized RiskSignal handed to the narrator LLM
+    actual_output=explanation,         # the narrator LLM's generated text — under test
     expected_output=gold_explanation,  # human-authored reference, for GEval comparison
     context=[                          # ground-truth facts — NOT retrieval_context;
         "dti_ratio: 0.42",             # there's no retrieval step, this IS the RiskSignal
@@ -1162,11 +1162,11 @@ picking the tier per check, not defaulting to one:
 - **Latency**: **not a DeepEval concern** — worth stating plainly, since it's
   tempting to look for an LLM-eval-framework metric for everything once you're
   using one for quality. DeepEval evaluates generated *content*; call latency is
-  measured with plain instrumentation (`time.perf_counter()` around the judge
+  measured with plain instrumentation (`time.perf_counter()` around the narrator
   call) and asserted with an ordinary `pytest` threshold, budgeted as a slice of
-  the pipeline's overall p95 (Non-Functional Requirements) — the LLM Judge
+  the pipeline's overall p95 (Non-Functional Requirements) — the LLM Narrator
   activity is one L1 call inside a 90s p95 end-to-end target. This is a
-  **pre-deploy** check (did this PR make the judge call slower on the golden
+  **pre-deploy** check (did this PR make the narrator call slower on the golden
   set) and is complementary to, not a replacement for, the production p95/p99
   latency already tracked in Observability — that's real traffic distribution;
   this is a per-case threshold assertion at CI time.
@@ -1185,7 +1185,7 @@ threshold triggers:
    ratio delta, any hard-fail case that flips outcome
 3. Diff explanation-quality metrics: HallucinationMetric / GEval / DAGMetric /
    PIILeakageMetric score deltas from the DeepEval run, plus a plain pytest
-   latency-threshold check on the measured judge-call time per case
+   latency-threshold check on the measured narrator-call time per case
 4. Hard gate: a single misclassified hard-fail case (fraud/sanctions) = automatic
    block — this is a compliance case, not an average-case metric
 5. Soft gate: PSI / adverse-impact / DeepEval metric thresholds — block merge,
@@ -1206,7 +1206,7 @@ A new explanation model runs in **shadow mode** on live traffic: output is logge
 but never shown to underwriters or allowed to affect routing. Compared against
 production output (plus a human-rated sample) over a bake period (e.g. 2 weeks /
 N applications) before promotion. This is only safe *because* of the L1
-LLM-as-judge design decision made earlier — the explanation model can never
+LLM narrator design decision made earlier — the explanation model can never
 affect routing, so shadow mode carries zero decision-path risk. Contrast with a
 hypothetical L3 tool-calling risk agent, where shadow mode would be far harder to
 reason about since the model's own tool calls could have side effects.
@@ -1305,7 +1305,7 @@ the ones worth raising unprompted.
 |----------|--------|-------------|-----|
 | Async queue-backed processing | Kafka / SQS | Sync request/response | Decouples client from 30–90s processing; handles 120 req/s burst without client timeout |
 | L2 outer loop (code DAG) | Code controls flow | L5 orchestrator model | Regulators need auditable, deterministic routing; model handles interpretation only |
-| LLM role in risk synthesis | LLM-as-judge (explanation only) | L3 tool-calling agent | All signals are deterministic — no tool loop needed; LLM only synthesizes the explanation; routing stays in code |
+| LLM role in risk synthesis | LLM narrator (explanation only) | L3 tool-calling agent | All signals are deterministic — no tool loop needed; LLM only synthesizes the explanation; routing stays in code |
 | Parallel verification steps | All three at once | Sequential | Genuinely independent — real latency win; critical at p95 |
 | Rules engine for compliance | DB-backed versioned table | Model encodes rules | Rules change without retraining; compliance team edits directly; version tied to each decision |
 | PUT over PATCH for documents | Full replace (idempotent) | Partial update | Safe to retry; simpler conflict resolution |
@@ -1316,5 +1316,5 @@ the ones worth raising unprompted.
 | Reliable event/side-effect emission | Temporal durable activities + idempotency | Transactional Outbox (outbox table + CDC/Debezium/Kafka) | Temporal already gives durable, retried, at-least-once side effects — outbox would duplicate the engine's guarantees; no unguarded DB-write-then-publish to close (see Deep Dive 4) |
 | HIL wait mechanism | Temporal signal + timer | DB polling / cron | Workflow suspends free; timer fires automatically; no polling loop to maintain |
 | Denied-applicant outcome eval | Reject inference (statistical extrapolation) | Ignore denied population | True performance is never observed for denials; extrapolation from the accepted population is the industry-standard alternative to no signal at all |
-| Model-upgrade rollout | Shadow deployment (parallel, no production effect) | Direct canary (partial live traffic) | Explanation is advisory-only (L1 judge) — shadow mode carries zero decision-path risk; canary would be needed if the model controlled routing |
+| Model-upgrade rollout | Shadow deployment (parallel, no production effect) | Direct canary (partial live traffic) | Explanation is advisory-only (L1 narrator) — shadow mode carries zero decision-path risk; canary would be needed if the model controlled routing |
 | Fair-lending metric in the CI gate | Adverse impact ratio (4/5 rule) as a hard block | Accuracy-only regression gate | Regulatory requirement overrides accuracy gains — a more "accurate" model that fails the 4/5 rule cannot ship |

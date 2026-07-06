@@ -13,7 +13,7 @@ Determinism boundary (the one rule that matters in Temporal)
   env/config. It orchestrates: calls activities, branches, waits, handles signals.
   Use ``workflow.now()``, ``workflow.logger``, ``workflow.uuid4()`` if needed.
 * **Activity code is where all I/O lives** (DB, credit bureau, ID provider,
-  Docling, the LLM judge). Activities can be non-deterministic and are retried
+  Docling, the LLM narrator). Activities can be non-deterministic and are retried
   independently by the engine.
 
 Recommended production split (kept in one file here for readability)::
@@ -58,7 +58,7 @@ from temporalio.exceptions import ApplicationError
 
 TASK_QUEUE = "loan-application"
 
-# Routing bands (deterministic — see Design.md "Why LLM-as-judge").
+# Routing bands (deterministic — see Design.md "Why LLM narrator").
 AUTO_APPROVE_MIN = 70.0  # score >= 70            -> auto-approve
 GRAY_ZONE_MIN = 60.0     # 60 <= score < 70       -> underwriter (HIL)
                          # score < 60             -> deny
@@ -69,7 +69,7 @@ IDENTITY_TIMEOUT = timedelta(seconds=30)
 CREDIT_TIMEOUT = timedelta(seconds=30)
 DOCUMENT_TIMEOUT = timedelta(seconds=60)
 RISK_TIMEOUT = timedelta(seconds=120)
-JUDGE_TIMEOUT = timedelta(seconds=30)
+NARRATOR_TIMEOUT = timedelta(seconds=30)
 PERSIST_TIMEOUT = timedelta(seconds=15)
 
 # Regulatory SLA for a human underwriter decision (Design.md step 6/8).
@@ -240,8 +240,8 @@ async def risk_signal_activity(
 
 
 @activity.defn
-async def llm_judge_activity(signal: RiskSignal) -> str:
-    """LLM-as-judge (L1, single call, no tool loop). Turns the structured
+async def llm_narrator_activity(signal: RiskSignal) -> str:
+    """LLM narrator (L1, single call, no tool loop). Turns the structured
     RiskSignal into a human-readable ``explanation`` for the underwriter.
 
     ADVISORY ONLY — the return value never affects score/tier/routing. Stateless
@@ -249,7 +249,7 @@ async def llm_judge_activity(signal: RiskSignal) -> str:
     back to a templated explanation if the model is unavailable rather than
     stalling the pipeline.
     """
-    activity.logger.info("llm judge", extra={"application_id": signal.application_id})
+    activity.logger.info("llm narrator", extra={"application_id": signal.application_id})
     # TODO: single Pydantic AI / model call with the serialized signal as context.
     raise NotImplementedError
 
@@ -356,8 +356,8 @@ class LoanApplicationWorkflow:
         self._state.stage = "explanation"
         try:
             explanation = await workflow.execute_activity(
-                llm_judge_activity, signal,
-                start_to_close_timeout=JUDGE_TIMEOUT,
+                llm_narrator_activity, signal,
+                start_to_close_timeout=NARRATOR_TIMEOUT,
                 retry_policy=RetryPolicy(maximum_attempts=2),
             )
         except ApplicationError:
@@ -509,7 +509,7 @@ async def run_worker() -> None:
             credit_bureau_activity,
             document_activity,
             risk_signal_activity,
-            llm_judge_activity,
+            llm_narrator_activity,
             persist_decision_activity,
             set_status_activity,
             escalate_activity,
