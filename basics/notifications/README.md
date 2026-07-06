@@ -233,3 +233,52 @@ Decision tree:
 3. **Process vs connection lifetime** — match them; a long process ⇒ decouple, don't hold a socket.
 
 One-liner: **latency-critical + interactive → WebSocket; live one-way view → SSE; must-not-lose or server-to-server → webhook/queue + a `GET` to reconcile; everything else → request/response.**
+
+## Scaling to millions of connections
+
+The reframe first: **holding many idle connections is memory-bound and largely solved; the
+real bottleneck is usually the work behind them** (DB, LLM inference, downstream calls). Most
+connections are idle at any instant, so scale the connection tier and the work tier on
+**different signals** — connection count vs *active* concurrency.
+
+**Split the connection tier from the logic tier.**
+
+```
+clients ──L4(NLB)──▶ [edge/gateway fleet]  ── bus ──▶ [work tier: heavy/expensive]
+                     holds WS/SSE, event-driven   (Kafka/SQS/NATS)   autoscaled on active load
+                                  ▲──── pub/sub backplane ────┘
+```
+
+- **Edge/gateway nodes** do one job: terminate connections and shuffle bytes. Event-driven
+  (epoll/kqueue; async runtime, never thread-per-connection), each holding 100k–1M connections.
+  Cheap to scale horizontally.
+- **Work tier** is the expensive part — decoupled, so an idle-connection spike never touches it.
+
+**Scaling the connection tier**
+- **L4 (NLB)** to spread connections — WS at scale wants L4 (no `Upgrade`-stripping, long idle,
+  transparent), per the routing table above.
+- **OS/process tuning:** raise file-descriptor limits, tune TCP buffers and ephemeral ports.
+- Prefer **SSE for one-way** streams — lighter than holding a bidirectional WS.
+
+**The hard part — fan-out across N gateway nodes.** A client's socket lives on node 7; an event
+for it arrives at some backend. Routing it there:
+- **Connection registry** — `user_id → node` in Redis; backends target the right gateway. Precise, but state to keep consistent.
+- **Pub/sub backplane** — backend publishes; every gateway subscribes and delivers to its *local* connections (Redis Pub/Sub, Kafka, NATS). Simpler, costs fan-out bandwidth.
+- **Affinity** — consistent hashing so a client reliably lands on a known node, cutting cross-node routing.
+
+**Scaling the work tier (the actual limit)**
+- Autoscale on **active concurrency**, not connection count; **queue + backpressure** when saturated.
+- **Admission control at the edge:** when the work tier is full, shed/queue *new* work at the gateway — never let overload cascade into crashes.
+- **Degrade gracefully** (cheaper path, slower cadence) rather than error; circuit-break downstreams.
+
+**Failure modes that appear only at scale**
+- **Reconnect storms** — a gateway dies and all its connections reconnect at once, hammering the
+  LB and siblings. Mitigate with **jittered exponential backoff** on the client + capacity headroom.
+  This is often the real outage, not the original fault.
+- **Stateful deploys** — you can't just restart; **drain connections gradually**, roll slowly, lean
+  on client reconnect (with jitter).
+
+One-liner: **cheap horizontally-scaled edge fleet behind L4 holds the connections; a bus +
+pub/sub backplane decouples it from an expensive work tier; scale the two on different signals;
+and design for reconnect storms and stateful deploys — at scale those, not the connection count,
+are what break you.**
