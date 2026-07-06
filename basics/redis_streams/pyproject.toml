@@ -1,0 +1,28 @@
+[project]
+name = "redis-streams-bus"
+version = "0.1.0"
+description = "Minimal at-least-once work queue on Redis Streams (consume + reclaim + idempotency + DLQ)"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "redis>=5.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "fakeredis>=2.26",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
