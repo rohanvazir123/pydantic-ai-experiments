@@ -145,7 +145,7 @@ async def socket(ws: WebSocket):
 
 ---
 
-## Picking one (the interview answer)
+## Picking one (how to choose)
 
 - **Reachability:** SSE & long-poll are plain HTTP — sail through proxies/firewalls. WS needs an `Upgrade` and proxy support (`proxy_buffering off` for SSE too).
 - **Reconnect:** SSE auto-reconnects with `Last-Event-ID`; WS you reconnect yourself.

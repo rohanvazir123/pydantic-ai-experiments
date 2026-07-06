@@ -2,7 +2,7 @@
 
 ## What we're working on
 
-System design interview prep. Two problems being designed and deep-dived:
+System design practice. Two problems being designed and deep-dived:
 
 1. **Multi-Step Risk-Aware Loan Application Router** — `LoanApproval/Design.md`
 2. **Automated Transaction Dispute Pipeline** — not yet started (next)
@@ -79,7 +79,7 @@ code search on confident-ai/deepeval found zero hits for `LatencyMetric` in the
 actual metrics package (`deepeval/metrics/`, ~40 metric folders — no `latency`
 one; the only repo hit was a stale 2024 changelog entry). Lesson: verify library
 claims against the source repo/official docs, not secondary blog posts, before
-they go in an interview-prep doc. `PIILeakageMetric`, by contrast, WAS verified
+they go in a design-notes doc. `PIILeakageMetric`, by contrast, WAS verified
 this way and is real.
 
 **DeepEval's three metric tiers — pick per check, don't default to one.** Be ready

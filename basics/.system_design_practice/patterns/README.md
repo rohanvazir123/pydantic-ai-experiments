@@ -2,7 +2,7 @@
 
 Reusable system-design pattern notes — reference material shared across the
 designs in `.system_design_practice/` (LoanApproval, AutonomousCustomerSupportAgent,
-…). Each file is a condensed, interview-ready write-up: what the pattern is, how
+…). Each file is a condensed, reference write-up: what the pattern is, how
 it works, and the trade-offs with justifications.
 
 ## Table of Contents
