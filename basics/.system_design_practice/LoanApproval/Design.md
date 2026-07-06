@@ -913,6 +913,68 @@ class LoanApplicationWorkflow:
   activity input/output, signal received, and timer fired — queryable per workflow.
   Complements (not replaces) the application's own `audit_log` table.
 
+**How the HIL wait actually works (the gray-zone case).** A gray-zone application
+can sit for *days* waiting on a human underwriter — the textbook long-running task.
+The thing to internalize: in Temporal, **"waiting for days" means nothing is
+running.** A suspended workflow holds no thread, no memory on any worker, no polling
+loop — it is just rows in Temporal's persistence. That's why it scales to millions of
+concurrent pending applications: a pending one is nearly free. Contrast a naive
+design where a wait costs a blocked thread or a cron loop scanning the DB every few
+seconds.
+
+Temporal is **event-sourced** — the source of truth is an append-only *event
+history* in its persistence layer (PostgreSQL/Cassandra), not any worker's process
+memory. The gray-zone lifecycle:
+
+```
+1. Workflow runs on a worker up to:
+       await workflow.wait_condition(
+           lambda: self._human_decision is not None,
+           timeout=UNDERWRITER_SLA,          # 3-day durable timer
+       )
+2. Worker records "waiting on: (a) a signal, (b) a timer at T+3d" → tells the
+   Temporal Service → Temporal EVICTS the workflow from worker memory.  ← nothing held
+3. Workflow is now dormant: just history rows + a scheduled durable timer.
+   The worker is free to run thousands of other workflows.
+4. Something wakes it (signal OR timer). Temporal schedules a workflow task; ANY
+   worker picks it up, REPLAYS the event history to rebuild state up to the await
+   point, delivers the new event, and the code resumes from exactly that line.
+```
+
+Step 4 is *why* workflow code must be deterministic — on wake-up Temporal
+reconstructs state by re-executing the code against recorded history.
+
+`wait_condition(predicate, timeout=...)` is a race between two durable events:
+1. **The `underwriter_decision` signal** — sent by the Application Service on
+   `PUT /applications/:id/underwriter-decision`. The signal handler *only* mutates
+   state (`self._human_decision = decision`); it must not block or call activities.
+   Setting it makes the predicate true → `wait_condition` returns → the main `run`
+   coroutine resumes and does the real work (persist decision, audit).
+2. **The durable SLA timer** — if 3 days pass with no signal, the timer fires first
+   and `wait_condition` raises `TimeoutError` → the escalation branch runs.
+
+**Durability guarantees (the payoff):**
+
+| Scenario | What happens |
+|----------|--------------|
+| All workers restart / a deploy lands mid-wait | Nothing lost — the workflow isn't *on* a worker, it's in persistence; new workers resume it |
+| A Temporal server node fails | Clustered/HA; timer + history survive failover |
+| Signal arrives while no worker is free | Written to history, delivered when a worker is available — **signals are not lost** |
+| Signal races ahead of the wait (arrives before code reaches `wait_condition`) | Buffered in history and applied — no lost decision on a race |
+| Signal sent to an already-closed workflow (SLA fired / auto-decided) | Temporal **rejects** it → Application Service maps to **HTTP 409**; check workflow status before signaling |
+
+The "timer fires even after every worker restarted" property is the whole reason
+Temporal beats cron/polling for a regulatory SLA — the deadline is a durable fact,
+not a running process that can die. All of this — the wait, the timer, the
+durability, the replay — is what a non-Temporal stack has to hand-build (a
+`status=awaiting_signal` row + `due_at` column + a scheduler scanning for due
+timers + re-enqueue on signal); Temporal collapses it into one `wait_condition(...)`.
+
+**Scale caveat:** each signal/timer/activity appends to event history. A 3-day wait
+with a handful of events is trivial. Workflows that live *months* or accumulate
+thousands of events should use **Continue-As-New** to compact history and keep
+replay fast — not needed for this loan case, but know it exists.
+
 **Operational note at 1M/day:** Temporal workers are stateless and horizontally
 scalable. Size the worker pool to activity throughput (same math as the queue worker
 pool in Deep Dive 3). Temporal Server itself needs a production deployment (clustered,
