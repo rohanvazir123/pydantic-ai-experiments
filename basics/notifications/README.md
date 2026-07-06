@@ -166,6 +166,8 @@ async def socket(ws: WebSocket):
 - **Send heartbeats** (`: ping\n\n`) so idle intermediaries don't close the stream; handle `Last-Event-ID` on reconnect for resume/dedup.
 
 **WebSocket**
+- **Starts as HTTP, then stops being HTTP.** Handshake is an HTTP/1.1 `GET` with `Upgrade: websocket` → server `101 Switching Protocols`; after that the same TCP connection carries WebSocket frames (RFC 6455), *not* HTTP. HTTP-aware intermediaries (corporate proxies, WAFs, L7 gateways, some API gateways) may strip `Upgrade`/`Connection` headers or refuse to pass the `101`, killing the handshake. SSE never hits this — it stays plain HTTP end to end.
+- **Use `wss://` (TLS/443) for reachability, not just security.** Encrypted frames can't be inspected or stripped by intermediaries, so WSS traverses corporate firewalls / deep-packet-inspection far better than plaintext `ws://` (which is frequently blocked, especially on non-standard ports). Production WS = always WSS.
 - **No auto-reconnect** — you implement backoff + resume yourself.
 - **Broadcast needs a backplane.** With N server instances, a message on server A won't reach clients on server B without a Redis/pub-sub fan-out; sticky sessions usually required.
 - **Auth on connect, not per-message**, and browsers can't set headers on the `WebSocket` constructor — pass the token via query param / subprotocol / cookie.
