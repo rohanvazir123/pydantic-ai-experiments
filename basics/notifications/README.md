@@ -5,6 +5,7 @@ Four ways a server pushes/serves updates, cheapest → richest:
 **SSE** (server→client stream, one-way) · **WebSocket** (full duplex).
 
 Each pattern below shows **client** and **server**, in **JS and Python**.
+Server handle is instantiated once: `app = FastAPI()` (Python) · `const app = express()` (JS).
 
 | Pattern | Direction | Connection | Use when |
 |---------|-----------|------------|----------|
@@ -59,9 +60,9 @@ while True:
     cursor = data['cursor']
 ```
 ```js
-// SERVER (JS, Express) — hold ~25s waiting for an event, else return empty
+// SERVER (JS, Express) — hold ~50s (under the 60s infra timeout), else return empty
 app.get('/api/updates', async (req, res) => {
-  const events = await waitForEvent(req.query.since, 25_000); // resolves early on new data
+  const events = await waitForEvent(req.query.since, 50_000); // resolves early on new data
   res.json({ events, cursor: nextCursor(events) });
 });
 ```
@@ -69,7 +70,7 @@ app.get('/api/updates', async (req, res) => {
 # SERVER (Python, FastAPI)
 @app.get('/api/updates')
 async def updates(since: str):
-    events = await wait_for_event(since, timeout=25)  # returns early when something arrives
+    events = await wait_for_event(since, timeout=50)  # under the 60s infra timeout; returns early on data
     return {'events': events, 'cursor': next_cursor(events)}
 ```
 
@@ -150,3 +151,22 @@ async def socket(ws: WebSocket):
 - **Reconnect:** SSE auto-reconnects with `Last-Event-ID`; WS you reconnect yourself.
 - **Scale cost:** each SSE/WS pins a connection (and often a worker) — plan for connection count, not just RPS. Long poll trades held connections for repeated requests.
 - **Voice/chat mapping:** stream agent tokens/status → **SSE**; interactive turn + barge-in (client interrupts) → **WebSocket**.
+
+## Gotchas
+
+**Long poll**
+- **Hold < the tightest timeout in the path** (LB/proxy/router) or you get 504s instead of clean empties; here 50s under a 60s ceiling.
+- **Client timeout must exceed the hold** or the client aborts a valid in-progress request.
+- **Async server only.** A held request on a sync worker-per-request model (gunicorn sync, default `--timeout 30`) ties up a whole worker → pool exhaustion. Cheap on uvicorn/async (just a suspended coroutine).
+
+**SSE**
+- **~6 connections/domain on HTTP/1.1** (browser cap) — 6 tabs and the 7th hangs. HTTP/2 multiplexing removes it.
+- **Disable proxy buffering** (`proxy_buffering off` / `X-Accel-Buffering: no`) or events are buffered and never flush to the client.
+- **One-way + text only.** Client can't reply on the same channel (needs a separate POST); no binary frames.
+- **Send heartbeats** (`: ping\n\n`) so idle intermediaries don't close the stream; handle `Last-Event-ID` on reconnect for resume/dedup.
+
+**WebSocket**
+- **No auto-reconnect** — you implement backoff + resume yourself.
+- **Broadcast needs a backplane.** With N server instances, a message on server A won't reach clients on server B without a Redis/pub-sub fan-out; sticky sessions usually required.
+- **Auth on connect, not per-message**, and browsers can't set headers on the `WebSocket` constructor — pass the token via query param / subprotocol / cookie.
+- **Heartbeats still required** (ping/pong) — idle timeouts apply to WS too; and stateful connections make deploys harder (drain on restart).
