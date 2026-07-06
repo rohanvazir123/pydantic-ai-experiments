@@ -234,6 +234,8 @@ A topic made this list if it satisfies at least two of:
 - Post-generation faithfulness check: claim decomposition + NLI entailment or LLM judge ($0.002/query)
 - Temperature 0: removes random sampling, grounds generation in the immediate context
 - Token cost of faithfulness checking: small model, $0.002/query — worth running on 100%
+- Hybrid judge in practice: a secondary LLM-as-judge is strong, but pair it with a deterministic layer — regex/rule checks for known-bad patterns plus a prebuilt FAQ fast-path for common queries — so not every decision is left to the model
+- The core tension: pure-LLM (flexible, non-deterministic, costly) vs secondary-LLM + rules engine/regex (predictable, cheaper, but the FAQ/rules can feel like they defeat the "just let the LLM do it" purpose); most production systems settle on the hybrid
 
 **Full answer:** [06_generation_hallucination.md](06_generation_hallucination.md#q26)
 
