@@ -7,7 +7,7 @@ import asyncio
 from temporalio.worker import Worker
 
 from app.config import get_settings
-from app.store.postgres import PostgresOrderRepository
+from app.store.sqlmodel_repo import SqlModelOrderRepository, create_engine, init_db
 from app.temporal.activities import OrderActivities
 from app.temporal.client import connect
 from app.temporal.workflow import OrderWorkflow
@@ -15,8 +15,9 @@ from app.temporal.workflow import OrderWorkflow
 
 async def main() -> None:
     settings = get_settings()
-    repo = PostgresOrderRepository(settings.database_url)
-    await repo.connect()
+    engine = create_engine(settings.database_url)
+    await init_db(engine)
+    repo = SqlModelOrderRepository(engine)
     client = await connect(settings.temporal_target)
     activities = OrderActivities(repo)
     worker = Worker(

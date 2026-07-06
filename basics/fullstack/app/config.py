@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql://orderflow:orderflow@localhost:5432/orderflow"
+    database_url: str = "postgresql+asyncpg://orderflow:orderflow@localhost:5432/orderflow"
     temporal_target: str = "localhost:7233"
     task_queue: str = "order-processing"
     api_host: str = "0.0.0.0"

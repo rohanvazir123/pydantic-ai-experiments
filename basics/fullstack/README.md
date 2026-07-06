@@ -70,8 +70,8 @@ both are swapped for lightweight fakes/in-memory impls in tests.
 | Frontend | Jinja2 server-rendered templates + **SSE** (live status, no polling) |
 | Queuing / decoupling | **Temporal task queue** — API enqueues (`start_workflow`), worker consumes. No Redis Streams (would be redundant with Temporal; see note). |
 | Orchestration | **Temporal** (`temporalio`) — workflow, activities, signals, SLA timer |
-| Database | PostgreSQL 16 via **asyncpg** (SQL-first), behind a repository interface |
-| Models / config | Pydantic + pydantic-settings |
+| Database | **SQLModel** (Pydantic-native ORM on async SQLAlchemy) over PostgreSQL 16 (asyncpg), behind a repository interface |
+| Models / config | **SQLModel** (the `Order` table model doubles as the API schema) + pydantic-settings |
 | Tests | pytest + pytest-asyncio, Temporal **time-skipping test server**, httpx ASGI |
 | Quality | ruff + mypy |
 | Packaging | uv |
@@ -89,10 +89,10 @@ both are swapped for lightweight fakes/in-memory impls in tests.
 fullstack/
 ├── app/
 │   ├── domain.py          # pure business logic (validation, pricing, high-value rule)
-│   ├── models.py          # Pydantic DTOs
+│   ├── models.py          # SQLModel models (Order table=True + request/response DTOs)
 │   ├── config.py          # pydantic-settings
 │   ├── main.py            # entrypoint: `python -m app.main api|worker`
-│   ├── store/             # OrderRepository: in-memory (tests) + Postgres (prod)
+│   ├── store/             # OrderRepository: SQLModel (prod) + in-memory (test double)
 │   ├── temporal/          # activities, workflow, client/starter, worker
 │   ├── api/               # FastAPI app factory + SSE + asgi.py (prod entrypoint)
 │   └── web/templates/     # Jinja2 pages (order page uses EventSource for live status)
@@ -163,6 +163,7 @@ in-memory/fake behind their interfaces.
 |-------|--------|-------|
 | `test_domain.py` | pricing, validation, high-value rule | nothing |
 | `test_store.py` | in-memory repository CRUD | nothing |
+| `test_sqlmodel_repo.py` | **production SQLModel repo** against in-memory SQLite | nothing |
 | `test_activities.py` | activities (direct call, in-memory repo) | nothing |
 | `test_workflow.py` | confirm / reject / **HIL approve, reject, SLA timeout** | Temporal test server (in-process) |
 | `test_integration.py` | real `TemporalWorkflowStarter` wiring | Temporal test server |
@@ -178,7 +179,7 @@ make check      # ruff + mypy + pytest
 See [TEST_REPORT.md](TEST_REPORT.md). Latest run:
 
 ```
-38 passed in ~1.7s   (ruff: clean · mypy: clean)
+43 passed in ~2.6s   (ruff: clean · mypy: clean)
 ```
 
 All tests are **included and green** — nothing was dropped.

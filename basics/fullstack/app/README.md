@@ -18,10 +18,10 @@ layer, the Temporal orchestration layer, and the FastAPI surface.
 | Path | Responsibility |
 |------|----------------|
 | `domain.py` | Pure business logic — validation, pricing, high-value rule, enums. No I/O. |
-| `models.py` | Pydantic DTOs shared across API, store, and Temporal payloads. |
+| `models.py` | SQLModel models — `Order` (`table=True`, doubles as API schema) + request/response DTOs. |
 | `config.py` | `pydantic-settings` configuration (env / `.env`). |
 | `main.py` | Entrypoint — `python -m app.main api|worker`. |
-| `store/` | `OrderRepository` interface + in-memory and Postgres implementations. |
+| `store/` | `OrderRepository` interface + SQLModel (prod) and in-memory (test double) implementations. |
 | `temporal/` | Activities, workflow, client/starter, worker. |
 | `api/` | FastAPI app factory + the `WorkflowStarter` protocol. |
 | `web/` | Jinja2 templates. |

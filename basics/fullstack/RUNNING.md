@@ -60,8 +60,9 @@ Give them a few seconds; check they're healthy:
 docker compose ps
 ```
 
-The database schema is created automatically on first connect (the repository runs
-`CREATE TABLE IF NOT EXISTS`), so there's no separate migration step.
+The database schema is created automatically on startup (`init_db` runs SQLModel's
+`create_all`), so there's no separate migration step for local runs. (In production
+you'd manage schema changes with Alembic.)
 
 ## 4. Start the worker
 

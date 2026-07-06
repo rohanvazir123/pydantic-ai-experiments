@@ -12,7 +12,7 @@
 
 | Gate | Result |
 |------|--------|
-| **pytest** | ✅ **38 passed** in ~1.7s |
+| **pytest** | ✅ **43 passed** in ~2.6s |
 | **ruff** (lint) | ✅ All checks passed |
 | **mypy** (types, `app/`) | ✅ Success: no issues in 18 source files |
 
@@ -35,9 +35,10 @@ tests/test_api.py .............         [ 13 ]  all FastAPI routes + SSE stream
 tests/test_domain.py .........          [  9 ]  pure domain logic
 tests/test_e2e.py .                     [  1 ]  full HTTP -> Temporal -> worker -> repo -> HTTP
 tests/test_integration.py ..            [  2 ]  real TemporalWorkflowStarter wiring
+tests/test_sqlmodel_repo.py .....       [  5 ]  production SQLModel repo vs in-memory SQLite
 tests/test_store.py .....               [  5 ]  in-memory repository CRUD
 tests/test_workflow.py .....            [  5 ]  workflow: confirm / reject / HIL approve+reject+SLA
-======================== 38 passed in ~1.7s ========================
+======================== 43 passed in ~2.6s ========================
 ```
 
 Slowest: the full-stack HTTP e2e (~0.22s) and Temporal test-server startups (~0.11s each).
@@ -46,7 +47,9 @@ Slowest: the full-stack HTTP e2e (~0.22s) and Temporal test-server startups (~0.
 
 - **Domain rules** — line-total math, order validation (empty item, non-positive
   quantity, negative price), high-value boundary at exactly $1,000.
-- **Persistence** — create/get/list/set-status; missing-key error.
+- **Persistence** — create/get/list/set-status + missing-key error, on **both** the
+  in-memory double and the **production SQLModel repo** (async SQLAlchemy vs SQLite,
+  incl. `OrderStatus` enum round-trip).
 - **Activities** — `load_order` (incl. non-retryable not-found), `mark_status`.
 - **Workflow** (real Temporal engine):
   - low-value order → `confirmed`

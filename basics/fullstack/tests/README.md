@@ -23,6 +23,7 @@ in-memory/fake behind their interfaces. Shared fixtures live in `conftest.py`
 |------|--------|
 | `test_domain.py` | Pure domain logic. |
 | `test_store.py` | In-memory repository CRUD. |
+| `test_sqlmodel_repo.py` | Production SQLModel repo against in-memory SQLite. |
 | `test_activities.py` | Activities called directly with an in-memory repo. |
 | `test_workflow.py` | Workflow: confirm, reject, and all three HIL outcomes. |
 | `test_integration.py` | Real `TemporalWorkflowStarter` wiring. |
