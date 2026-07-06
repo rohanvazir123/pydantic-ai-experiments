@@ -74,9 +74,9 @@ Opinionated defaults — swap per project.
 | Transport | **HTTPS** (TLS at ingress) · **SSE** for streaming · **WebSocket** for bidirectional |
 | Frontend | **Jinja2** templates (+ **HTMX** optional) |
 | DB | **PostgreSQL 16** (ACID; JSONB; pgvector if RAG) |
-| External data | **SQL/MED FDWs** (`postgres_fdw`, `file_fdw`) — foreign tables for read federation |
-| DB access | **asyncpg**, SQL-first (SQLAlchemy Core optional); Pydantic at the edge |
-| Migrations | versioned SQL files or Alembic; forward-only, expand/contract |
+| External data | **SQLModel over an external read-replica engine** + guarded API clients (§9) — replicas via a *second* async engine; side-effecting integrations via typed API clients, not direct DB access |
+| DB access | **SQLModel** (Pydantic-native ORM over SQLAlchemy) on **asyncpg** — one class = table + API-edge schema; drop to SQLAlchemy Core / raw SQL for hot paths |
+| Migrations | **Alembic** (autogenerate from SQLModel metadata); forward-only, expand/contract |
 | Cache | **Redis** (idempotency keys, hot config, rate-limit counters, sessions) |
 | Queue / bus | **Redis Streams** (consumer groups; PEL + XAUTOCLAIM for redelivery) |
 | Durable orchestration | **Postgres state machine + Redis Streams workers** (code-owned, §8) |
@@ -113,7 +113,7 @@ One codebase, multiple **run modes** (api / worker / scheduler) off the same ima
 │   ├── workers/        # Redis Streams consumers
 │   ├── scheduler/      # timer/SLA scanner (§8)
 │   ├── agents/         # Pydantic AI agents, tools, guardrails (§11)
-│   ├── store/          # SQL repos, foreign-table access, Redis clients
+│   ├── store/          # SQLModel models + repositories, external read-replica engine, Redis clients
 │   ├── integrations/   # external clients + breakers
 │   ├── reliability/    # rate limiter, breaker, idempotency, retry (§9)
 │   ├── config/         # pydantic-settings
@@ -147,9 +147,8 @@ in `domain` so a model can't bypass them.
 
 ## 6. Data Layer
 
-- **Source of truth:** versioned SQL migrations; Pydantic at the API edge.
-- **Migrations:** forward-only; expand/contract for zero-downtime.
-- **External data:** mount via **FDW** foreign tables (see below).
+- **Source of truth:** **SQLModel** classes (Pydantic-native ORM) — same class is the table *and* the API-edge schema. **Alembic** autogenerates migrations from their metadata; forward-only, expand/contract (review every revision).
+- **External data:** map read-only external replicas (bureau/ledger/partner DBs) to SQLModel models on a **second async engine**; side-effecting externals stay guarded API clients (§9).
 - **Stack machinery tables** (beyond domain tables): durable workflow state +
   per-step checkpoint, idempotency dedup, outbox, append-only audit.
 
@@ -192,19 +191,31 @@ CREATE TABLE audit_log (              -- append-only; no UPDATE/DELETE grants
 
 > **▸ Loan / ▸ ACSA:** add each design's domain tables; the four above are shared machinery.
 
-### SQL/MED — external data as foreign tables
+### SQLModel — models, repositories, and external reads
 
-```sql
-CREATE EXTENSION IF NOT EXISTS postgres_fdw;
-CREATE SERVER bureau_ro FOREIGN DATA WRAPPER postgres_fdw
-    OPTIONS (host 'bureau-replica', dbname 'bureau', port '5432');
-CREATE USER MAPPING FOR app SERVER bureau_ro OPTIONS (user 'ro', password '***');
-IMPORT FOREIGN SCHEMA public LIMIT TO (credit_scores) FROM SERVER bureau_ro INTO ext;
--- then: SELECT * FROM ext.credit_scores WHERE ssn_hash = $1;
+One `SQLModel` class is both the ORM table and the Pydantic schema:
+
+```python
+class LoanApplication(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    status: str = Field(index=True)
+    amount: Decimal
+    state: dict = Field(default_factory=dict, sa_column=Column(JSONB))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+async def get_run(session: AsyncSession, run_id: uuid.UUID) -> LoanApplication | None:
+    return await session.get(LoanApplication, run_id)
 ```
 
-- **Use for:** read federation over replicas/warehouses/partner DBs/files (SQL joins beat N API calls).
-- **Do NOT use for:** side-effecting actions (refund, billable credit *pull*, KYC) → those stay guarded idempotent API clients + breakers (§9); live OLTP externals (point at a replica); anything needing distributed transactions. Set `statement_timeout`; treat foreign data as untrusted.
+Read-only external replicas → their own SQLModel models on a **second async engine**
+(`create_async_engine(BUREAU_REPLICA_URL)`), read with the same ORM.
+
+**Boundary (be honest):**
+- Reads (domain + external replicas) → SQLModel repositories.
+- Hot-path / analytical → drop to SQLAlchemy Core / raw SQL.
+- **Side-effecting externals** (refund, billable credit *pull*, KYC) → guarded idempotent API clients + breakers (§9), never an ORM write into someone else's DB.
+- No cross-database joins (two engines) — join in app code or cache locally first.
+- Set `statement_timeout` on the external engine; least-privilege/read-only; treat external data as untrusted.
 
 ---
 
