@@ -173,6 +173,30 @@ async def socket(ws: WebSocket):
 - **Auth on connect, not per-message**, and browsers can't set headers on the `WebSocket` constructor — pass the token via query param / subprotocol / cookie.
 - **Heartbeats still required** (ping/pong) — idle timeouts apply to WS too; and stateful connections make deploys harder (drain on restart).
 
+## Routing: L4 vs L7
+
+Deciding principle: **many independent requests → L7; one long-lived connection → L4.**
+- **L7** (HTTP-aware): terminates + routes *per request* by path/host/header, TLS term, WAF.
+- **L4** (TCP): transparently tunnels the connection — no HTTP awareness, forwards bytes, zero L7 interference.
+
+| Transport | Routing | Why / caveats |
+|-----------|---------|---------------|
+| HTTP req/res | **L7** | many discrete requests → per-request routing, path/host, TLS, WAF (the default) |
+| Long poll | **L7** | still discrete HTTP; **raise the L7 idle/read timeout above the ~50s hold** or it 504s |
+| SSE | **L7 (carefully); L4 works** | one long HTTP response → **disable buffering** + long idle timeout + heartbeats; L4 avoids buffering but loses path routing |
+| WebSocket | **L7 *with* Upgrade support, or L4** | after `101` it's not HTTP → L7 must pass `Upgrade`/`Connection`; high-scale WS often prefers **L4 (NLB)** — transparent, no header-stripping, long idle, but no path routing (TLS at app/passthrough) |
+
+**The pivotal contrast:** SSE **stays HTTP**, so a normal L7 LB routes it (just turn buffering
+off). WebSocket **stops being HTTP** after the upgrade, so L7 must *explicitly* support WS or
+you drop to L4 and tunnel it — the same "WS stops speaking HTTP" fact, now at the LB layer.
+
+**AWS mapping:** `ALB` (L7) handles all four *if configured* (60s default idle → raise it);
+`NLB` (L4) is the common pick for **WebSocket at scale** (350s idle, transparent, TLS passthrough).
+
+> A WS/SSE connection is pinned to one backend for its whole life on either L4 or L7 (it's one
+> TCP connection), so stickiness is automatic *for the connection*; the concern is only
+> **reconnects** landing where the session state lives → needs a shared backplane.
+
 ## Which transport for which system
 
 > These three are **client-facing** transports (browser/mobile ↔ your server). When the
