@@ -170,3 +170,40 @@ async def socket(ws: WebSocket):
 - **Broadcast needs a backplane.** With N server instances, a message on server A won't reach clients on server B without a Redis/pub-sub fan-out; sticky sessions usually required.
 - **Auth on connect, not per-message**, and browsers can't set headers on the `WebSocket` constructor — pass the token via query param / subprotocol / cookie.
 - **Heartbeats still required** (ping/pong) — idle timeouts apply to WS too; and stateful connections make deploys harder (drain on restart).
+
+## Which transport for which system
+
+> These three are **client-facing** transports (browser/mobile ↔ your server). When the
+> consumer is another **server**, the answer is usually **webhooks or a message queue**,
+> not any of them.
+
+Decision tree:
+- **Server-to-server?** → **webhook / queue** (durable, retried, signed) — not SSE/WS/long-poll.
+- **Browser-facing?** one-way live view → **SSE**; interactive / client sends a lot → **WebSocket**; just "is it done?" → **request/response** (poll if needed).
+
+**Payment processor (Stripe)** — optimizes for durability, not latency; never miss "charge succeeded."
+- Backbone = **webhooks**: signed (HMAC `Stripe-Signature`), retried with backoff for ~3 days, idempotent by event id. A dropped socket frame is gone; a webhook is redelivered until you `200`.
+- Checkout client = **request/response + redirects** (3DS); the browser **polls** your API for final status.
+- SSE appears only as a *live view* on the merchant dashboard. **No WebSocket** — there's no high-frequency client→server traffic to justify its stateful cost.
+- Lesson: the **durable event log is the truth; any socket is just a reconcilable window** onto it.
+
+**RAG / LLM chatbot** — chose **SSE over WebSocket**.
+- Traffic is overwhelmingly **server→client**: streaming generated tokens as they're produced. One-way.
+- The client sends infrequently (one prompt per turn) — a plain `POST /chat` handles that; no need for a persistent bidirectional channel for an occasional send.
+- SSE is simpler and more robust: plain HTTP (sails through proxies/CDNs), built-in auto-reconnect (`Last-Event-ID`), no `Upgrade` handshake, no sticky sessions or pub/sub backplane.
+- WebSocket would be overkill — stateful connections + a backplane + manual reconnect for what is essentially one-way streaming.
+- Pattern: `POST /chat` (prompt) → **SSE** stream of `token` / `tool` / `done` events; cancel = close the stream or a separate `POST /cancel`.
+- **When WS would flip it:** genuine bidirectional real-time — voice with **barge-in** (client interrupts mid-generation), or two-way typing/presence. For text chat with token streaming, SSE wins.
+
+**Loan approval (long-running, human-in-the-loop, multi-day SLA)** — match transport to *process lifetime*.
+- Applicant status → **polling** `GET` + out-of-band notify (email/push, or a **webhook** for partner systems); optional **short-lived SSE** only during the seconds-long auto-decision window.
+- Underwriter queue → **SSE** push of newly-queued items + a plain `PUT` for the decision.
+- Internal step→step → the **workflow engine / queue**, not a client transport.
+- **Anti-pattern:** holding a WS/SSE across a days-long human step — decouple durable backend from ephemeral view.
+
+**Three axes that decide it:**
+1. **Direction / interactivity** — don't pay WebSocket's stateful cost unless the client genuinely sends.
+2. **Delivery guarantee** — SSE/WS are best-effort and ephemeral; *must-not-lose* ⇒ durable webhook/queue + a `GET` to reconcile.
+3. **Process vs connection lifetime** — match them; a long process ⇒ decouple, don't hold a socket.
+
+One-liner: **latency-critical + interactive → WebSocket; live one-way view → SSE; must-not-lose or server-to-server → webhook/queue + a `GET` to reconcile; everything else → request/response.**

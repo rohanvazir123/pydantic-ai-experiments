@@ -302,6 +302,21 @@ suspended workflow.
 | `404` | Application not found |
 | `409` | Not in `awaiting_underwriter` (workflow already completed / SLA-escalated) — signal to a closed workflow is rejected |
 
+**`GET /v1/underwriter/queue/stream`** — **SSE** live feed of applications entering
+`awaiting_underwriter` plus SLA-warning events, for the assigned underwriter's open
+dashboard. `role:underwriter`. One-way server→client; the decision itself is the separate
+`PUT …/underwriter-decision` (SSE carries no client→server channel). Falls back to polling
+`GET /v1/applications?status=awaiting_underwriter` when SSE is unavailable.
+
+```jsonc
+// event: queued
+// data:
+{ "application_id": "app_7Yk2...", "tier": "underwriter", "sla_due_at": "…",
+  "amount_cents": 35000000, "state": "CA", "queued_at": "…" }
+// event: sla_warning
+// data: { "application_id": "app_7Yk2...", "sla_due_at": "…", "minutes_left": 30 }
+```
+
 **`GET /v1/applications/:id/audit`** — append-only audit trail. `role:underwriter|compliance`.
 
 ```jsonc
@@ -336,6 +351,26 @@ body with the shared secret; partner must verify):
 ```
 Delivery is **at-least-once** with retries + exponential backoff; consumers must be
 idempotent on `application_id`+`event`.
+
+### Notification & real-time transport (rationale)
+
+Process lifetime here spans **seconds to days** (instant auto-decisions vs a 3-day
+underwriter SLA), so each channel is matched to *who is watching and for how long* —
+never a socket held across a human step.
+
+| Consumer | Transport | Why |
+|----------|-----------|-----|
+| Applicant UI | `GET …/:id` + `…/decision` **polling** (`Retry-After`) | status is checked on-demand; a days-pending app must not pin a connection |
+| Applicant / partner **system** | **Webhooks** (`decision.ready`, signed, retried) | server-to-server; at-least-once + idempotent so a decision is never missed |
+| Underwriter queue | **SSE** (`…/queue/stream`) + `PUT` decision | one-way live queue push while the dashboard is open; the action is a separate request |
+| Internal step→step | **Temporal / Kafka** (not a client transport) | orchestration, not notification |
+
+**Deliberately not used:** WebSockets — the only client→server action is an occasional
+underwriter decision (a plain `PUT`), so there's no bidirectional traffic to justify a
+stateful socket + backplane; and **long-held streams across the multi-day SLA** — the
+anti-pattern of coupling a connection's lifetime to a long-running process. The durable
+state (Postgres + Temporal) is the source of truth; every client channel is a reconcilable
+view over it (a reconnect resyncs via a plain `GET`).
 
 ---
 
