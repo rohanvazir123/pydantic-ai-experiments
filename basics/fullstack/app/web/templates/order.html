@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Order {{ order.id }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; }
+    dl { display: grid; grid-template-columns: 160px 1fr; gap: 6px; }
+    dt { font-weight: 600; }
+    .status { text-transform: uppercase; }
+    form { margin-top: 1rem; display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <p><a href="/">&larr; All orders</a></p>
+  <h1>Order {{ order.id }}</h1>
+  <dl>
+    <dt>Item</dt><dd>{{ order.item }}</dd>
+    <dt>Quantity</dt><dd>{{ order.quantity }}</dd>
+    <dt>Unit price (cents)</dt><dd>{{ order.unit_price_cents }}</dd>
+    <dt>Total (cents)</dt><dd>{{ order.total_cents }}</dd>
+    <dt>Status</dt><dd class="status" id="status">{{ order.status.value }}</dd>
+    <dt>Created</dt><dd>{{ order.created_at }}</dd>
+  </dl>
+
+  {% if order.status.value == "awaiting_approval" %}
+  <h2>Manager approval required</h2>
+  <form method="post" action="/api/orders/{{ order.id }}/approval" onsubmit="return false;">
+    <em>High-value order — approve or reject via
+    <code>POST /api/orders/{{ order.id }}/approval</code>.</em>
+  </form>
+  {% endif %}
+
+  <script>
+    // Live status via Server-Sent Events (no polling).
+    const es = new EventSource("/api/orders/{{ order.id }}/events");
+    es.addEventListener("status", (e) => {
+      const d = JSON.parse(e.data);
+      document.getElementById("status").textContent = d.status;
+      if (d.status === "confirmed" || d.status === "rejected") es.close();
+    });
+    es.onerror = () => es.close();
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: orderflow
+      POSTGRES_PASSWORD: orderflow
+      POSTGRES_DB: orderflow
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Temporal dev server (in-memory), Web UI on http://localhost:8233
+  temporal:
+    image: temporalio/temporal:latest
+    command: ["server", "start-dev", "--ip", "0.0.0.0"]
+    ports:
+      - "7233:7233"   # gRPC (client/worker connect here)
+      - "8233:8233"   # Web UI

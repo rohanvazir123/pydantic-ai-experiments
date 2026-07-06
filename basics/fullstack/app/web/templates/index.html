@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OrderFlow</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+    form { display: grid; gap: 8px; max-width: 320px; }
+    .status { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>OrderFlow</h1>
+  <p>Submit an order. Orders over $1,000 require manager approval before confirmation.</p>
+
+  <h2>New order</h2>
+  <form method="post" action="/orders">
+    <label>Item <input name="item" required></label>
+    <label>Quantity <input name="quantity" type="number" value="1" min="1" required></label>
+    <label>Unit price (cents) <input name="unit_price_cents" type="number" value="0" min="0" required></label>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h2>Orders</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Item</th><th>Qty</th><th>Total (cents)</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for o in orders %}
+      <tr>
+        <td><a href="/orders/{{ o.id }}">{{ o.id }}</a></td>
+        <td>{{ o.item }}</td>
+        <td>{{ o.quantity }}</td>
+        <td>{{ o.total_cents }}</td>
+        <td class="status">{{ o.status.value }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No orders yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
