@@ -1,6 +1,11 @@
-To implement a distributed Token Bucket rate limiter in Python and Redis without using Lua scripts, you must handle the classic "read-modify-write" race condition. Without Lua, the standard approach is to use a Redis transaction (MULTI/EXEC) with optimistic locking (WATCH). This ensures that if another application instance modifies the client's bucket while your code is calculating tokens, the transaction safely aborts and retries. [1, 2, 3, 4]
+'''To implement a distributed Token Bucket rate limiter in Python and Redis without using Lua scripts, you must handle the classic "read-modify-write" race condition. Without Lua, the standard approach is to use a Redis transaction (MULTI/EXEC) with optimistic locking (WATCH). This ensures that if another application instance modifies the client's bucket while your code is calculating tokens, the transaction safely aborts and retries. [1, 2, 3, 4]
 Core Implementation
-The following complete, thread-safe, and distributed token bucket implementation utilizes redis-py with a WATCH block to handle concurrency safely: [5]
+The following complete, thread-safe, and distributed token bucket implementation utilizes redis-py with a WATCH block to handle concurrency safely:
+'''
+
+'''
+Rate Limiter: Implement a thread-safe distributed rate limiter (e.g., token bucket) that can handle millions of incoming requests from ground contro
+'''
 
 import time
 import redis
@@ -91,38 +96,3 @@ for i in range(12):
     else:
         print(f"Request {i+1}: Rate Limited (429)")
     time.sleep(0.1)
-
-
-How This System Works Without Lua
-Lazy Refills: Instead of running a background cron job to add tokens, the bucket updates dynamically upon a request's arrival (elapsed * refill_rate). This eliminates system overhead. [1, 6]
-The WATCH Command: Tells Redis to monitor our specific key. If another application server calls hset on this key before our transaction (pipeline.execute()) finishes, Redis automatically drops our update and raises a WatchError. [1]
-The Retry Loop: The while True loop catches the WatchError and immediately retries the operation with the updated data.
-Automatic Memory Cleanup: The expire command ensures that inactive or dead clients do not permanently bloat Redis memory. [3]
-Performance Trade-off to Keep in Mind
-Feature
-Lua Script Approach
-Optimistic Locking (WATCH)
-Network Round Trips
-1 trip total
-2+ trips per request
-High Concurrency Behavior
-Locks execution; never fails.
-May cause retries under high contention.
-Complexity
-Requires writing Lua script syntax.
-Pure Python code logic.
-Cloud/Cluster Compatibility
-Blocked on some restrictive Redis proxies.
-Universally supported across environments.
-
-If you plan to utilize this under high traffic conditions, please let me know:
-What framework you use (e.g., FastAPI, Flask, or Django) so I can write custom middleware?
-If you need an asynchronous (asyncio) version of this rate limiter?
-
-[1] https://www.youtube.com
-[2] https://medium.com
-[3] https://dev.to
-[4] https://oneuptime.com
-[5] https://redis.io
-[6] https://www.percona.com
-
