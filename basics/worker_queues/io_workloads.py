@@ -3,7 +3,6 @@
 # =====================================================================
 import asyncio
 from dbm import sqlite3
-from pyclbr import Class
 import queue
 
 from pydantic import BaseModel
