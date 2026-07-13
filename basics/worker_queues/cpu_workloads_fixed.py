@@ -6,6 +6,11 @@
 # unchanged for reference; this file corrects the logic bugs and makes the
 # pool safe under the ``spawn`` start method (macOS/Windows default).
 #
+# Responsibilities are split into three classes:
+#   * ``ImageProcessor``  — the actual CPU-bound work (stateless, unit-testable)
+#   * ``CpuWorker``       — one worker process's consume loop
+#   * ``CpuWorkerPool``  — owns the queues and the pool of worker processes
+#
 # Bugs fixed vs the original
 # --------------------------
 # 1. Deadlock: the original joined the worker processes *before* sending the
@@ -13,15 +18,12 @@
 #    never terminated. Here ``shutdown()`` sends one sentinel per worker first,
 #    then joins.
 # 2. Attribute access before validation: the original read ``payload.image_id``
-#    before checking ``isinstance(...)`` (and again inside the "invalid"
-#    branch), crashing on any non-``ImageProcessingRequest`` payload. Here the
-#    type check happens before any attribute access.
+#    before checking ``isinstance(...)``. Here the type check happens first.
 # 3. Spawn safety: the original used ``target=self.process_task``, which pickles
-#    the whole instance (including the queue) on spawn. Here the worker loop is
-#    a module-level function and the queues are passed as explicit arguments,
-#    which multiprocessing knows how to hand to children.
-# 4. Results are now returned via a dedicated result queue, and the demo is
-#    guarded by ``if __name__ == "__main__"`` (required for spawn).
+#    the whole *manager* instance — including its list of ``Process`` objects,
+#    which cannot be pickled. Here the ``Process`` target is a ``CpuWorker``
+#    instance whose only state is the (spawn-picklable) queues, an int id, and
+#    the processor — it never references the pool manager.
 
 from __future__ import annotations
 
@@ -42,67 +44,87 @@ class ProcessedImage(BaseModel):
     size_bytes: int
 
 
-def process_image(payload: ImageProcessingRequest) -> ProcessedImage:
-    """Placeholder for the actual CPU-bound work (decode/resize/filter…).
+class ImageProcessor:
+    """The CPU-bound work itself, isolated from any queue/transport concerns.
 
-    Kept as a small pure function so it can be unit-tested directly without
-    spinning up any worker processes.
+    Stateless and picklable, so it can be handed to worker processes and can be
+    unit-tested directly without spinning up the pool. Swap in a subclass to do
+    real decoding/resizing/filtering.
     """
-    return ProcessedImage(image_id=payload.image_id, size_bytes=len(payload.image_data))
+
+    def process(self, payload: ImageProcessingRequest) -> ProcessedImage:
+        # Placeholder for real image work (decode/resize/filter…).
+        return ProcessedImage(image_id=payload.image_id, size_bytes=len(payload.image_data))
 
 
-def _cpu_worker_loop(
-    task_queue: JoinableQueue,
-    result_queue: Queue | None,
-    worker_id: int,
-) -> None:
-    """Consumer loop run in each worker process.
+class CpuWorker:
+    """One worker process's consume loop.
 
-    Module-level (not a bound method) so it pickles cleanly under ``spawn``.
-    Pulls payloads until it receives a ``None`` sentinel. Every ``get()`` is
-    balanced by exactly one ``task_done()`` via the ``finally`` block, so
-    ``JoinableQueue.join()`` in the parent unblocks correctly.
+    Holds only spawn-picklable state (the queues, an int id, and the
+    processor), so its :meth:`run` method can be used directly as a
+    ``Process`` target under the ``spawn`` start method.
     """
-    print(f"CPU worker {worker_id} started.")
-    while True:
-        payload = task_queue.get()
-        try:
-            if payload is None:  # poison pill -> shut this worker down
-                break
 
-            # Validate BEFORE touching any attributes (fixes the original crash).
-            if not isinstance(payload, ImageProcessingRequest):
-                print(f"CPU worker {worker_id}: skipping invalid payload {payload!r}")
-                continue
+    def __init__(
+        self,
+        task_queue: JoinableQueue,
+        result_queue: Queue | None,
+        worker_id: int,
+        processor: ImageProcessor,
+    ) -> None:
+        self.task_queue = task_queue
+        self.result_queue = result_queue
+        self.worker_id = worker_id
+        self.processor = processor
 
-            result = process_image(payload)
-            if result_queue is not None:
-                result_queue.put(result)
-        finally:
-            task_queue.task_done()  # balances every get(), incl. sentinel/invalid
+    def run(self) -> None:
+        """Pull payloads until a ``None`` sentinel; balance every get with a done."""
+        print(f"CPU worker {self.worker_id} started.")
+        while True:
+            payload = self.task_queue.get()
+            try:
+                if payload is None:  # poison pill -> shut this worker down
+                    break
+
+                # Validate BEFORE touching any attributes (fixes the original crash).
+                if not isinstance(payload, ImageProcessingRequest):
+                    print(f"CPU worker {self.worker_id}: skipping invalid {payload!r}")
+                    continue
+
+                result = self.processor.process(payload)
+                if self.result_queue is not None:
+                    self.result_queue.put(result)
+            finally:
+                self.task_queue.task_done()  # balances every get(), incl. sentinel/invalid
 
 
-class CpuWorkerQueue:
-    """A pool of worker processes consuming CPU-bound tasks from a queue."""
+class CpuWorkerPool:
+    """Owns the task/result queues and the pool of :class:`CpuWorker` processes."""
 
-    def __init__(self, num_workers: int | None = None, collect_results: bool = True) -> None:
+    def __init__(
+        self,
+        num_workers: int | None = None,
+        collect_results: bool = True,
+        processor: ImageProcessor | None = None,
+    ) -> None:
         # Task queue (parent -> workers) and optional result queue (workers -> parent).
         self.task_queue: JoinableQueue = JoinableQueue()
         self.result_queue: Queue | None = Queue() if collect_results else None
 
         # Default to one worker per core; overridable for tests.
         self.num_workers = num_workers or multiprocessing.cpu_count()
+        self.processor = processor or ImageProcessor()
 
+        # Each worker is its own object; only worker state crosses to the child.
         self.workers = [
-            Process(
-                target=_cpu_worker_loop,
-                args=(self.task_queue, self.result_queue, i),
-            )
+            CpuWorker(self.task_queue, self.result_queue, i, self.processor)
             for i in range(self.num_workers)
         ]
+        self.processes = [Process(target=worker.run) for worker in self.workers]
+
         print(f"Starting {self.num_workers} CPU worker processes.")
-        for worker in self.workers:
-            worker.start()
+        for process in self.processes:
+            process.start()
 
     def insert_cpu_tasks(self, raw_payloads: list[ImageProcessingRequest]) -> None:
         """Producer entry point. Blocks if the queue's maxsize is reached."""
@@ -134,8 +156,8 @@ class CpuWorkerQueue:
         """
         for _ in range(self.num_workers):
             self.task_queue.put(None)
-        for worker in self.workers:
-            worker.join()
+        for process in self.processes:
+            process.join()
 
     def drain_extra_results(self) -> list[ProcessedImage]:
         """Best-effort drain of any results not consumed by ``collect_results``."""
@@ -151,7 +173,7 @@ class CpuWorkerQueue:
 
 
 if __name__ == "__main__":
-    pool = CpuWorkerQueue(num_workers=4)
+    pool = CpuWorkerPool(num_workers=4)
 
     payloads = [
         ImageProcessingRequest(image_id=f"image_{i}", image_data=b"fake_image_data" * (i + 1))

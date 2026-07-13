@@ -10,6 +10,7 @@ Run from the repo root with the project venv:
   assert rows are actually persisted via ``aiosqlite``.
 """
 
+import asyncio
 import sqlite3
 
 import pytest
@@ -22,10 +23,10 @@ import io_workloads_fixed as io_mod
 # ---------------------------------------------------------------------------
 
 
-def test_process_image_reports_byte_size() -> None:
-    """The pure processing function returns the payload size."""
+def test_image_processor_reports_byte_size() -> None:
+    """The isolated processor returns the payload size, no pool needed."""
     req = cpu.ImageProcessingRequest(image_id="img", image_data=b"abcd")
-    result = cpu.process_image(req)
+    result = cpu.ImageProcessor().process(req)
     assert result.image_id == "img"
     assert result.size_bytes == 4
 
@@ -36,7 +37,7 @@ def test_pool_processes_all_tasks_and_shuts_down() -> None:
     This is the regression test for the original deadlock: ``shutdown()`` sends
     sentinels before joining, so ``worker.join()`` returns instead of hanging.
     """
-    pool = cpu.CpuWorkerQueue(num_workers=2)
+    pool = cpu.CpuWorkerPool(num_workers=2)
     payloads = [
         cpu.ImageProcessingRequest(image_id=f"img_{i}", image_data=b"x" * i)
         for i in range(8)
@@ -52,12 +53,31 @@ def test_pool_processes_all_tasks_and_shuts_down() -> None:
     by_id = {r.image_id: r.size_bytes for r in results}
     assert by_id["img_5"] == 5
     # Every worker process has terminated.
-    assert all(not w.is_alive() for w in pool.workers)
+    assert all(not p.is_alive() for p in pool.processes)
+
+
+class DoublingProcessor(cpu.ImageProcessor):
+    """Custom processor defined at module level so it pickles under ``spawn``."""
+
+    def process(self, payload: cpu.ImageProcessingRequest) -> cpu.ProcessedImage:
+        return cpu.ProcessedImage(
+            image_id=payload.image_id, size_bytes=len(payload.image_data) * 2
+        )
+
+
+def test_pool_uses_injected_processor() -> None:
+    """A custom ImageProcessor subclass is honored by the pool."""
+    pool = cpu.CpuWorkerPool(num_workers=1, processor=DoublingProcessor())
+    pool.insert_cpu_tasks([cpu.ImageProcessingRequest(image_id="d", image_data=b"abc")])
+    pool.join_tasks()
+    results = pool.collect_results(1)
+    pool.shutdown()
+    assert results[0].size_bytes == 6  # 3 bytes doubled
 
 
 def test_pool_skips_invalid_payload_without_crashing() -> None:
     """A non-request payload is skipped (not crashing on attribute access)."""
-    pool = cpu.CpuWorkerQueue(num_workers=1)
+    pool = cpu.CpuWorkerPool(num_workers=1)
     pool.task_queue.put("not-a-request")  # invalid item
     pool.insert_cpu_tasks([cpu.ImageProcessingRequest(image_id="ok", image_data=b"hi")])
     pool.join_tasks()
@@ -82,20 +102,59 @@ def _count_rows(db_path: str) -> int:
 
 
 @pytest.mark.asyncio
-async def test_write_telemetry_persists_row(tmp_path) -> None:
-    """A single write lands in the database."""
+async def test_telemetry_writer_persists_row(tmp_path) -> None:
+    """The writer lands a row using a connection borrowed from the pool."""
     db_path = str(tmp_path / "telemetry.db")
-    q = io_mod.IoWorkerQueue(num_workers=1, db_path=db_path)
-    await q._write_telemetry(io_mod.TelemetryData(device_id="d1", metric={"t": 1}))
-    await q.shutdown()
+    pool = io_mod.SqliteConnectionPool(
+        db_path, size=1, init_statements=[io_mod.TELEMETRY_DDL]
+    )
+    await pool.open()
+    writer = io_mod.TelemetryWriter(pool)
+    await writer.write(io_mod.TelemetryData(device_id="d1", metric={"t": 1}))
+    await pool.close()
     assert _count_rows(db_path) == 1
+
+
+@pytest.mark.asyncio
+async def test_pool_lends_and_returns_connections(tmp_path) -> None:
+    """acquire() checks out a connection and returns it on context exit."""
+    db_path = str(tmp_path / "telemetry.db")
+    pool = io_mod.SqliteConnectionPool(db_path, size=2)
+    await pool.open()
+    assert pool.available() == 2
+    async with pool.acquire():
+        assert pool.available() == 1
+        async with pool.acquire():
+            assert pool.available() == 0  # both in use
+        assert pool.available() == 1  # inner returned
+    assert pool.available() == 2  # outer returned
+    await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_pool_handles_concurrent_writes(tmp_path) -> None:
+    """Many overlapping writes through a shared pool all persist safely."""
+    db_path = str(tmp_path / "telemetry.db")
+    pool = io_mod.SqliteConnectionPool(
+        db_path, size=3, init_statements=[io_mod.TELEMETRY_DDL]
+    )
+    await pool.open()
+    writer = io_mod.TelemetryWriter(pool)
+    await asyncio.gather(
+        *(
+            writer.write(io_mod.TelemetryData(device_id=f"d{i}", metric={"i": i}))
+            for i in range(15)
+        )
+    )
+    await pool.close()
+    assert _count_rows(db_path) == 15
 
 
 @pytest.mark.asyncio
 async def test_all_tasks_are_persisted(tmp_path) -> None:
     """Every inserted telemetry item is written and the pool shuts down."""
     db_path = str(tmp_path / "telemetry.db")
-    q = io_mod.IoWorkerQueue(maxsize=50, num_workers=3, db_path=db_path)
+    q = io_mod.IoWorkerPool(maxsize=50, num_workers=3, db_path=db_path)
 
     for i in range(20):
         await q.insert_io_task(
@@ -112,7 +171,7 @@ async def test_all_tasks_are_persisted(tmp_path) -> None:
 async def test_invalid_item_is_skipped(tmp_path) -> None:
     """An invalid queue item is skipped without breaking the join/shutdown."""
     db_path = str(tmp_path / "telemetry.db")
-    q = io_mod.IoWorkerQueue(num_workers=1, db_path=db_path)
+    q = io_mod.IoWorkerPool(num_workers=1, db_path=db_path)
 
     await q.io_queue.put("not-telemetry")  # invalid, should be skipped
     await q.insert_io_task(io_mod.TelemetryData(device_id="ok", metric={"t": 1}))
@@ -131,7 +190,7 @@ async def test_insert_respects_backpressure(tmp_path) -> None:
     ``await put`` rather than a ``put_nowait`` that would raise ``QueueFull``.
     """
     db_path = str(tmp_path / "telemetry.db")
-    q = io_mod.IoWorkerQueue(maxsize=1, num_workers=0, db_path=db_path)
+    q = io_mod.IoWorkerPool(maxsize=1, num_workers=0, db_path=db_path)
 
     await q.insert_io_task(io_mod.TelemetryData(device_id="d", metric={"t": 1}))
     assert q.io_queue.full()

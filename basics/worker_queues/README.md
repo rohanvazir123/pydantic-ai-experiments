@@ -38,10 +38,12 @@ while leaving the originals unchanged for comparison.
    Fixed: `shutdown()` sends one sentinel per worker, then joins.
 2. **Crash on invalid payload** — it read `payload.image_id` before the
    `isinstance` check. Fixed: validate before touching attributes.
-3. **Spawn safety** — `target=self.process_task` pickles the whole instance
-   (incl. the queue) under the `spawn` start method (macOS/Windows default).
-   Fixed: the worker loop is a module-level function, queues are passed as
-   arguments, and the demo is guarded by `if __name__ == "__main__"`.
+3. **Spawn safety** — `target=self.process_task` pickled the whole *manager*
+   instance (incl. its list of `Process` objects, which can't be pickled) under
+   the `spawn` start method (macOS/Windows default). Fixed: the `Process`
+   target is a `CpuWorker` instance whose only state is the (spawn-picklable)
+   queues, an int id, and the processor — it never references the manager. The
+   demo is guarded by `if __name__ == "__main__"`.
 
 **`io_workloads.py` → `io_workloads_fixed.py`**
 
@@ -57,12 +59,21 @@ while leaving the originals unchanged for comparison.
 
 ## CPU-bound Pool
 
-`CpuWorkerQueue` starts one process per core (overridable), each running a
-module-level consumer loop that pulls `ImageProcessingRequest` payloads from a
-`JoinableQueue`, processes them, and pushes results to a result queue. Lifecycle:
+Split into three classes:
+
+- **`ImageProcessor`** — the CPU-bound work itself (stateless, unit-testable;
+  subclass or inject to do real work).
+- **`CpuWorker`** — one worker process's consume loop; holds only
+  spawn-picklable state so its `run` method is a valid `Process` target.
+- **`CpuWorkerPool`** — owns the task/result queues and the pool of processes.
+
+`CpuWorkerPool` starts one process per core (overridable), each running a
+`CpuWorker` that pulls `ImageProcessingRequest` payloads from a `JoinableQueue`,
+processes them via the injected `ImageProcessor`, and pushes results to a result
+queue. Lifecycle:
 
 ```python
-pool = CpuWorkerQueue(num_workers=4)
+pool = CpuWorkerPool(num_workers=4)
 pool.insert_cpu_tasks(payloads)
 pool.join_tasks()                       # wait for all work to finish
 results = pool.collect_results(len(payloads))
@@ -71,12 +82,46 @@ pool.shutdown()                         # sentinels first, then join
 
 ## IO-bound Pool
 
-`IoWorkerQueue` starts N `asyncio` tasks that consume `TelemetryData` from an
-`asyncio.Queue` and persist each row with `aiosqlite`. Construction must happen
+Same shape as the CPU pool, plus a connection pool:
+
+- **`TelemetryData`** — the message model.
+- **`SqliteConnectionPool`** — a bounded, coroutine-safe pool of reusable
+  `aiosqlite` connections (opened once, borrowed per write).
+- **`TelemetryWriter`** — the async persistence work; holds no connection of
+  its own, just borrows one from the pool per `write()`.
+- **`IoWorker`** — one asyncio worker's consume loop (creates its own writer
+  over the *shared* pool).
+- **`IoWorkerPool`** — owns the queue, the connection pool, and the workers.
+
+`IoWorkerPool` starts N `asyncio` tasks, each an `IoWorker` that consumes
+`TelemetryData` from an `asyncio.Queue` and persists each row by borrowing a
+connection from the shared `SqliteConnectionPool`. Construction must happen
 inside a running event loop.
 
+### Connections, concurrency & SQLite nuances
+
+- **Reuse, don't reconnect** — connections are opened once and reused across
+  writes, instead of `connect()`-ing per row.
+- **Coroutine-safe, not thread-safe — deliberately.** The pool is safe for
+  concurrent *coroutines* on **one event loop** (which is exactly what this
+  asyncio design needs), because the backing `asyncio.Queue`/`Lock` are
+  loop-bound. It is **not** OS-thread-safe, and deliberately so: those
+  primitives are loop-bound, and a SQLite connection generally can't be used
+  from a thread other than the one that created it. If you truly need
+  cross-thread sharing, the right pattern is a **pool (or loop) per thread**,
+  not one pool shared across threads.
+- **Pooling doesn't speed up writes.** SQLite serializes *all* writers behind a
+  single database-level lock, no matter how many connections you open. The
+  pool's real wins are: avoiding reconnect overhead, concurrent **reads**, and
+  capping open handles.
+- **Graceful degradation under contention.** Each pooled connection enables
+  **WAL** (readers don't block the single writer) and a **`busy_timeout`**
+  (wait-and-retry instead of an immediate "database is locked" error).
+- **Tested** — `test_pool_handles_concurrent_writes` drives 15 overlapping
+  writes through a 3-connection pool and asserts they all persist.
+
 ```python
-q = IoWorkerQueue(num_workers=5, db_path="telemetry.db")
+q = IoWorkerPool(num_workers=5, db_path="telemetry.db")
 await q.insert_io_task(TelemetryData(device_id="d1", metric={"temp": 21}))
 await q.shutdown()                      # drain, sentinel each worker, gather
 ```
