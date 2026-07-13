@@ -17,9 +17,11 @@ class CpuWorkerQueue:
         # Singleton multiprocessing queue for CPU-bound tasks
         self.cpu_queue = multiprocessing.JoinableQueue()
 
-        # Start CPU worker processes based on the number of CPU cores available
+        # Gwet the number of CPU cores available on the machine
         self.num_cpu_workers = multiprocessing.cpu_count()
-        self.cpu_workers = [multiprocessing.Process(target=self.process_cpu_tasks) for _ in range(self.num_cpu_workers)]
+
+        # Create a pool of CPU worker processes
+        self.cpu_workers = [multiprocessing.Process(target=self.process_task, args=(i,)) for i in range(self.num_cpu_workers)]
 
         print(f"Starting {self.num_cpu_workers} CPU worker processes.")
         for worker in self.cpu_workers:
@@ -31,20 +33,25 @@ class CpuWorkerQueue:
     # =====================================================================
 
     # The Consumer Pool Loop
-    def process_cpu_tasks(self):
+    def process_task(self, worker_id: int):
+        print(f"CPU Worker {worker_id} started processing CPU tasks.")
         while True:
             payload = self.cpu_queue.get()
             if payload is None:                # Sentinel/Poison Pill check
                 self.cpu_queue.task_done()
                 break
 
+            print(f"Processing CPU task for image ID: {payload.image_id}")
+
             # Check if payload is an instance of ImageProcessingRequest
             if not isinstance(payload, ImageProcessingRequest):
                 print(f"Invalid CPU task: {payload}. Expected ImageProcessingRequest instance.")
                 self.cpu_queue.task_done()
+                print(f"Marking invalid CPU task for image ID: {payload.image_id} as done.")
                 continue
 
             # Worker needs to process the image data (CPU-bound task)
+    
             try:
                 print(f"Processing image data for image ID: {payload.image_id}")
                 image_id = payload.image_id
@@ -60,6 +67,7 @@ class CpuWorkerQueue:
     def insert_cpu_tasks(self, raw_payloads: list[ImageProcessingRequest]):
         # Direct queue insertion. Blocks thread if queue maxsize is reached.
         for payload in raw_payloads:
+            print(f"Inserting CPU task for image ID: {payload.image_id} into CPU queue.")
             self.cpu_queue.put(payload)
 
 

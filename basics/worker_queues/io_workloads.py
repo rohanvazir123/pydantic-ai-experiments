@@ -3,6 +3,7 @@
 # =====================================================================
 import asyncio
 from dbm import sqlite3
+import io
 import queue
 
 from pydantic import BaseModel
@@ -15,16 +16,13 @@ class TelemetryData(BaseModel):
 
 class IoWorkerQueue:
     def __init__(self, maxsize=100, num_workers=5):
+
+        #  Create a singleton asyncio queue for IO-bound tasks
         self.io_queue = asyncio.Queue(maxsize)  # Limit the queue size to 10
     
-        # 2. Spin up a fixed-size worker pool
-        self.workers = [
-            asyncio.create_task(self.process_io_work(i)) 
-            for i in range(num_workers)
-        ]
-
-        # Are multiple workers neeeded? For now, we are using a single worker for simplicity.
-        #     # If needed, we can create multiple workers by starting multiple tasks here.
+        # Create a pool of IO  tasks workers
+        self.num_workers = num_workers
+        self.workers = [ asyncio.create_task(self.process_io_work(i))  for i in range(num_workers) ]
 
     def insert_io_task(self, telemetry_data: TelemetryData):
         # Direct queue insertion. Blocks thread if queue maxsize is reached.
@@ -79,11 +77,11 @@ async def main():
     # Create an instance of the IoWorkerQueue and start the IO worker
     io_worker_queue = IoWorkerQueue()
 
-    # Simulate producing telemetry data
+    # Insert multiple IO tasks into the queue
     for i in range(100):
         device_id = f"device_{i}"
         metric = {"temperature": 20 + i, "humidity": 50 + i}
-        await io_worker_queue.produce_io_telemetry(device_id, metric)
+        await io_worker_queue.insert_io_task(TelemetryData(device_id=device_id, metric=metric))
 
     # Wait for all IO tasks to complete
     await io_worker_queue.io_queue.join()
