@@ -20,11 +20,79 @@ kind of work:
 
 | File | Purpose |
 |------|---------|
+| `base.py` | Shared abstractions both pools inherit: `Job` (self-processing), `Worker`, `WorkerPool` (pydantic). |
 | `cpu_workloads.py` | Original CPU draft (kept for reference; do not build on it). |
 | `cpu_workloads_fixed.py` | Reviewed, corrected `multiprocessing` worker pool. |
 | `io_workloads.py` | Original IO draft (kept for reference; do not build on it). |
-| `io_workloads_fixed.py` | Reviewed, corrected `asyncio` + `aiosqlite` worker pool. |
-| `test_worker_queues_fixed.py` | Pytest suite for both fixed pools. |
+| `io_workloads_fixed.py` | Reviewed `asyncio` pool with a **SQLAlchemy** (in-memory SQLite) sink. |
+
+Tests live in `basics/telemetry/tests/` (see [Running the Tests](#running-the-tests)).
+
+### Scalable DB via SQLAlchemy
+
+The IO pool persists through **SQLAlchemy Core** against `sqlite:///:memory:`.
+SQLAlchemy is DB-agnostic and manages its own connection pool, so there's no
+hand-rolled pool — and the "work against a scalable database" answer is a
+one-liner: **swap the engine URL for `postgresql://...`** and the pool/writer
+code is unchanged. Talk levers on top of that: pool sized to write concurrency,
+batched / `COPY` inserts, partition/shard by device or time, Timescale for
+telemetry. (In-memory SQLite specifics: `StaticPool` + `check_same_thread=False`
+so the `asyncio.to_thread` worker threads share one DB, and a `threading.Lock`
+serialises writes — both drop away under Postgres.)
+
+### Shared abstractions (`base.py`)
+
+Both pools have the same shape — a typed message on a queue, N workers consuming
+it until a sentinel — so that shape lives in one place:
+
+| Base | Kind | Subclasses | Why this kind |
+|------|------|-----------|---------------|
+| `Job` | pydantic `BaseModel` | `ImageProcessingRequest`, `TelemetryData` | a job is **data** — validated, serialisable, picklable across the process boundary; a compute job also **processes itself** via `process()` |
+| `Worker` | `ABC` | `CpuWorker`, `IoWorker` | a worker is **behaviour** over non-serialisable runtime state (queues, connections) — not a model |
+| `WorkerPool` | `ABC` | `CpuWorkerPool`, `IoWorkerPool` | owns the queue + N workers; holds shared `num_workers`, declares the lifecycle contract |
+
+`Job` (the merged base — formerly `WorkItem` + `Job`) carries an auto-generated
+`job_id` for tracking/cancellation plus an optional `type` label. A job
+overrides `process(...)` to do its own work, so the worker branches on nothing
+and holds no processor — it just calls `job.process(<resource>)` (Command
+pattern; new job types = new subclasses). The **resource** passed in is the
+infrastructure the worker owns but the job needs: the CPU worker passes its
+**sink registry** (`job.process(self.sinks)` — the job routes its result to
+`file` or `http`), the IO worker passes its **writer** (`job.process(self.writer)`
+— the job persists itself to the DB). Pure-compute calls (`job.process()` with
+no resource) still work and just return the result — handy for unit tests. The
+one thing the ABCs can't hide: the CPU side is **synchronous** (runs in child
+processes) and the IO side is **asynchronous** (coroutines on one loop), so
+`run` / `shutdown` (and `process`) are sync in the CPU subclasses and `async` in
+the IO subclasses — same contract, two colours.
+
+### Job lifecycle: `insert_job` / `cancel_job` / `get_job_status`
+
+`WorkerPool` declares three more abstract methods so callers can manage
+individual jobs by `job_id`, tracked through a `JobStatus` enum
+(`QUEUED → RUNNING → DONE`, or `CANCELLED`, or `UNKNOWN`):
+
+| Method | CPU (sync) | IO (async for `insert_job`) |
+|--------|-----------|------------------------------|
+| `insert_job(job)` | mark `QUEUED`, `put` on the queue | same, `await put` (backpressure) |
+| `cancel_job(job_id) -> bool` | flag + mark `CANCELLED` if still `QUEUED` | same |
+| `get_job_status(job_id) -> JobStatus` | read the status map | read the status map |
+
+Two design points worth calling out:
+
+- **Cancellation is lazy.** You can't pull a specific item out of a
+  `multiprocessing`/`asyncio` queue, so `cancel_job` just *flags* the id; the
+  worker checks the flag when it reaches the job and skips it, marking it
+  `CANCELLED`. It only succeeds while the job is still `QUEUED` (returns `False`
+  for unknown/running/done) — best-effort by nature. (Same lazy-deletion idea as
+  a priority-queue tombstone.)
+- **Where the status lives differs by model.** The IO pool keeps a plain
+  `dict[str, JobStatus]` + `set[str]` — safe because every worker is a coroutine
+  on one loop. The CPU pool's workers run in **separate processes**, so a plain
+  dict wouldn't be visible to them; it uses a `multiprocessing.Manager()` whose
+  proxy `dict`s are shared live across the parent and all workers (and are torn
+  down in `shutdown()`). This is the same "declare state to match the concurrency
+  model" theme as the pools themselves.
 
 ### Why the `_fixed` files exist
 
@@ -41,105 +109,129 @@ while leaving the originals unchanged for comparison.
 3. **Spawn safety** — `target=self.process_task` pickled the whole *manager*
    instance (incl. its list of `Process` objects, which can't be pickled) under
    the `spawn` start method (macOS/Windows default). Fixed: the `Process`
-   target is a `CpuWorker` instance whose only state is the (spawn-picklable)
-   queues, an int id, and the processor — it never references the manager. The
+   target is a `CpuWorker` instance whose only state is spawn-picklable (the
+   queues, the sinks, an int id, the manager proxies) — it never references the
+   pool manager. The
    demo is guarded by `if __name__ == "__main__"`.
 
 **`io_workloads.py` → `io_workloads_fixed.py`**
 
-1. **Fake-async SQLite** — the original `await`ed the synchronous `sqlite3` API,
-   which raises `TypeError`. Fixed: genuinely async access via `aiosqlite`.
+1. **Fake-async DB** — the original `await`ed the synchronous `sqlite3` API,
+   which raises `TypeError`. Fixed: a **SQLAlchemy** sink; the blocking driver
+   runs off the loop via `asyncio.to_thread`.
 2. **Wrong `task_done` target** — it called `queue.task_done()` on the imported
    `queue` *module* (and even `await`ed it). Fixed: `self.io_queue.task_done()`
    in a `finally`.
-3. **`insert_io_task`** is now a coroutine using `await put`, so it applies
-   backpressure at `maxsize` and can be awaited as callers expect.
+3. **`insert_job`** is a coroutine using `await put`, so it applies backpressure
+   at `maxsize` and can be awaited as callers expect.
 4. Removed the bogus `from dbm import sqlite3` / unused `import io`, and moved
    the type check before attribute access.
 
 ## CPU-bound Pool
 
-Split into three classes:
-
-- **`ImageProcessor`** — the CPU-bound work itself (stateless, unit-testable;
-  subclass or inject to do real work).
-- **`CpuWorker`** — one worker process's consume loop; holds only
-  spawn-picklable state so its `run` method is a valid `Process` target.
-- **`CpuWorkerPool`** — owns the task/result queues and the pool of processes.
+- **`ImageProcessingRequest`** — a self-processing CPU job: `process(sinks)`
+  does the compute **and** routes its result into the sink it names.
+- **`ResultSink`** — where a result goes, chosen *per job*: `FileWriter`
+  (durable, one JSON line, Manager lock for cross-process appends) or
+  `HttpResponder` (POST back to a callback URL; stubbed as an outbox list).
+- **`CpuWorker`** — one worker process's consume loop; holds the sink registry
+  and only spawn-picklable state, so its `run` method is a valid `Process` target.
+- **`CpuWorkerPool`** — owns the task/result queues, the sinks, and the processes.
 
 `CpuWorkerPool` starts one process per core (overridable), each running a
 `CpuWorker` that pulls `ImageProcessingRequest` payloads from a `JoinableQueue`,
-processes them via the injected `ImageProcessor`, and pushes results to a result
+calls `job.process(self.sinks)`, and (optionally) pushes results to a result
 queue. Lifecycle:
 
 ```python
 pool = CpuWorkerPool(num_workers=4)
-pool.insert_cpu_tasks(payloads)
+pool.insert_cpu_tasks(payloads)         # each job carries result_sink="file"|"http"
 pool.join_tasks()                       # wait for all work to finish
 results = pool.collect_results(len(payloads))
+stored = read_results(pool.result_path) # what the file sink persisted
 pool.shutdown()                         # sentinels first, then join
 ```
 
-## IO-bound Pool
+### Result sinks + FastAPI
 
-Same shape as the CPU pool, plus a connection pool:
-
-- **`TelemetryData`** — the message model.
-- **`SqliteConnectionPool`** — a bounded, coroutine-safe pool of reusable
-  `aiosqlite` connections (opened once, borrowed per write).
-- **`TelemetryWriter`** — the async persistence work; holds no connection of
-  its own, just borrows one from the pool per `write()`.
-- **`IoWorker`** — one asyncio worker's consume loop (creates its own writer
-  over the *shared* pool).
-- **`IoWorkerPool`** — owns the queue, the connection pool, and the workers.
-
-`IoWorkerPool` starts N `asyncio` tasks, each an `IoWorker` that consumes
-`TelemetryData` from an `asyncio.Queue` and persists each row by borrowing a
-connection from the shared `SqliteConnectionPool`. Construction must happen
-inside a running event loop.
-
-### Connections, concurrency & SQLite nuances
-
-- **Reuse, don't reconnect** — connections are opened once and reused across
-  writes, instead of `connect()`-ing per row.
-- **Coroutine-safe, not thread-safe — deliberately.** The pool is safe for
-  concurrent *coroutines* on **one event loop** (which is exactly what this
-  asyncio design needs), because the backing `asyncio.Queue`/`Lock` are
-  loop-bound. It is **not** OS-thread-safe, and deliberately so: those
-  primitives are loop-bound, and a SQLite connection generally can't be used
-  from a thread other than the one that created it. If you truly need
-  cross-thread sharing, the right pattern is a **pool (or loop) per thread**,
-  not one pool shared across threads.
-- **Pooling doesn't speed up writes.** SQLite serializes *all* writers behind a
-  single database-level lock, no matter how many connections you open. The
-  pool's real wins are: avoiding reconnect overhead, concurrent **reads**, and
-  capping open handles.
-- **Graceful degradation under contention.** Each pooled connection enables
-  **WAL** (readers don't block the single writer) and a **`busy_timeout`**
-  (wait-and-retry instead of an immediate "database is locked" error).
-- **Tested** — `test_pool_handles_concurrent_writes` drives 15 overlapping
-  writes through a 3-connection pool and asserts they all persist.
+Where a result goes is a property of the **job** (`result_sink`), not the
+worker — so one image persists to a file while another is sent back over HTTP,
+with no branching in the worker (it just calls `job.process(self.sinks)`). That
+makes the pool a drop-in **FastAPI service layer**: the lifecycle methods map
+1:1 onto routes, and because every `Job` is a pydantic model it *is* the request
+body.
 
 ```python
-q = IoWorkerPool(num_workers=5, db_path="telemetry.db")
-await q.insert_io_task(TelemetryData(device_id="d1", metric={"temp": 21}))
-await q.shutdown()                      # drain, sentinel each worker, gather
+pool = CpuWorkerPool()
+
+@app.post("/jobs")                       # ImageProcessingRequest is the body
+def submit(job: ImageProcessingRequest) -> dict[str, str]:
+    pool.insert_job(job)                 # returns immediately
+    return {"job_id": job.job_id}
+
+@app.get("/jobs/{job_id}")               # poll status
+def status(job_id: str) -> dict[str, str]:
+    return {"status": pool.get_job_status(job_id)}
+
+@app.delete("/jobs/{job_id}")            # best-effort lazy cancel
+def cancel(job_id: str) -> dict[str, bool]:
+    return {"cancelled": pool.cancel_job(job_id)}
 ```
+
+The result comes back either by the `http` sink POSTing to the caller's callback
+URL (push), or the `file` sink persisting it for a later `GET` (poll). Same
+`Job` → `Worker` → `WorkerPool` shape works under FastAPI, a CLI, or a consumer.
+
+## IO-bound Pool
+
+Same shape as the CPU pool, over a SQLAlchemy sink:
+
+- **`TelemetryData`** — the message model; `process(writer)` persists itself
+  (async, since the work is I/O) via the writer it's handed.
+- **`TelemetryWriter`** — persists a row via SQLAlchemy, off the loop with
+  `asyncio.to_thread`.
+- **`IoWorker`** — one asyncio worker's consume loop; hands each job the writer
+  and calls `job.process(writer)` — no SQL, no branching.
+- **`IoWorkerPool`** — owns the `asyncio.Queue`, the engine/writer, and the
+  workers, plus the job-status/cancel bookkeeping.
+
+`IoWorkerPool` starts N `asyncio` tasks, each an `IoWorker` that consumes
+`TelemetryData` from an `asyncio.Queue` and persists it. Construction must happen
+inside a running event loop.
+
+```python
+q = IoWorkerPool(num_workers=5)                       # in-memory SQLite by default
+await q.insert_job(TelemetryData(device_id="d1", metric={"temp": 21}))
+await q.shutdown()                                    # drain, sentinel each, gather
+```
+
+Swap the store by passing an engine: `IoWorkerPool(engine=make_engine("postgresql://..."))`.
+
+### SQLite write nuance (worth naming)
+
+The in-memory SQLite sink serialises writes (one `StaticPool` connection + a
+`threading.Lock`; SQLite has a single writer lock regardless). So more workers
+don't buy write throughput *here* — that's a property of the store, not the
+pool. Point the same pool at **PostgreSQL** (row-level locking) and N workers
+become genuine N-way write concurrency, bounded by the connection pool. Rule of
+thumb: size workers to the store's real write concurrency, and never run more
+than the connection pool allows.
 
 ## Running the Demos
 
 ```bash
-python cpu_workloads_fixed.py          # spins up a process pool, processes 20 images
-python io_workloads_fixed.py           # writes 100 telemetry rows to telemetry.db
+python cpu_workloads_fixed.py          # process pool, processes 20 images
+python io_workloads_fixed.py           # asyncio pool, writes 10 rows via SQLAlchemy
 ```
 
 ## Running the Tests
 
-From the repo root, using the project venv:
+All telemetry tests live in `basics/telemetry/tests/`. From the repo root:
 
 ```bash
-.venv/bin/python -m pytest basics/worker_queues/test_worker_queues_fixed.py -v
+.venv/bin/python -m pytest basics/telemetry/tests/ -v
 ```
 
-Dependencies: `pydantic`, `aiosqlite`, `pytest`, `pytest-asyncio`. The CPU tests
-start real worker processes; the IO tests write to a temporary SQLite file.
+Dependencies: `pydantic`, `sqlalchemy`, `fakeredis`, `pytest`, `pytest-asyncio`.
+The CPU tests start real worker processes; the IO tests use an in-memory SQLite
+DB (nothing written to disk).

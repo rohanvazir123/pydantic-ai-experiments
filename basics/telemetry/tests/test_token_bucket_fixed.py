@@ -12,7 +12,6 @@ under test, making refill behavior deterministic (no ``sleep``).
 
 import fakeredis
 import pytest
-
 import token_bucket_fixed as tb
 
 

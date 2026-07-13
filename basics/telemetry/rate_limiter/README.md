@@ -59,7 +59,7 @@ No Redis server required — the suite uses `fakeredis` and a monkeypatched cloc
 so refill/expiry behavior is deterministic. From the repo root:
 
 ```bash
-.venv/bin/python -m pytest basics/redis/rate_limiter/test_token_bucket_fixed.py -v
+.venv/bin/python -m pytest basics/telemetry/tests/test_token_bucket_fixed.py -v
 ```
 
 Dependencies: `redis`, `fakeredis`, `pytest`.

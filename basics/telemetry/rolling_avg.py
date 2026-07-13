@@ -19,6 +19,8 @@ class TelemetryRollingAverage:
     def add_batch(self, sorted_batch: list):
         """Adds a sorted batch of telemetry data points."""
         if not sorted_batch:
+            # No new data to add, just evict expired elements
+            self.evict_expired()
             return
 
         # 1. Add new points to running stats BEFORE merging
@@ -30,8 +32,7 @@ class TelemetryRollingAverage:
         self.buffer.extend(sorted_batch)
         self.buffer.sort(key=lambda x: x['timestamp'])
 
-        
-# 3. Evict expired elements and subtract them from running stats
+        # 3. Evict expired elements and subtract them from running stats
         self.evict_expired()
 
     def evict_expired(self):
@@ -59,8 +60,10 @@ class TelemetryRollingAverage:
 
     def get_moving_average(self) -> float:
         """Returns the current moving average in O(1) constant time."""
-        # Make sure to call evict_expired() before this if you want 
-        # up-to-the-second accuracy even when no new data is arriving.
+
+        # Evict expired elements first to ensure the average is correct
+        self.evict_expired()
+
         if self.running_count == 0:
             return 0.0
         return self.running_sum / self.running_count
