@@ -254,15 +254,15 @@ class IoWorkerPool:
 
 
 async def main() -> None:
-    io_worker_queue = IoWorkerPool()
+    io_worker_pool = IoWorkerPool()
 
     for i in range(100):
         metric = {"temperature": 20 + i, "humidity": 50 + i}
-        await io_worker_queue.insert_io_task(
+        await io_worker_pool.insert_io_task(
             TelemetryData(device_id=f"device_{i}", metric=metric)
         )
 
-    await io_worker_queue.shutdown()
+    await io_worker_pool.shutdown()
 
 
 if __name__ == "__main__":
