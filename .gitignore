@@ -79,3 +79,5 @@ rag/v2/.deepeval/
 **/node_modules/
 **/.vite/
 
+
+basics/telemetry/.prep

@@ -1,31 +1,71 @@
-"""Deterministic tests for Level 5 — Multi-Agent Orchestration (delegation).
+"""Deterministic tests for Level 5 — an orchestrator-workers workflow.
 
-Verifies the orchestrator delegates to each specialist (research -> draft ->
-review) and that delegation actually invokes the sub-agents, all without Ollama.
-Every agent involved is overridden so no live inference occurs.
+Level 5 is a plain async `Orchestrator` (no graph): it owns the state, handles
+retries (via tenacity in `reliable_run`), and routes, while dumb specialist agents
+(research/draft/compliance) do one job each. These tests verify the coordination,
+the redraft/escalation policy, and the retry layer without Ollama — every model is
+overridden, so no live inference occurs.
+
+Coverage:
+  * specialists still expose their own sandboxed toolsets
+  * the orchestrator runs research → draft → compliance → resolve in order
+  * a compliance rejection loops back to a redraft, bounded by ``max_redrafts``
+  * beyond the budget the workflow escalates instead of looping forever
+  * :func:`reliable_run` retries transient failures (tenacity) and reraises
+  * usage accumulates across every specialist call
 """
 
 from __future__ import annotations
 
 from contextlib import ExitStack
+from typing import TYPE_CHECKING
 
 import l5_multi_agent as l5
-from pydantic_ai import ModelRequest, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.messages import ToolReturnPart
+import pytest
+from pydantic_ai import Agent, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
+from tenacity import wait_fixed
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
-def _deps() -> l5.CaseDeps:
-    return l5.CaseDeps(root=l5.KNOWLEDGE_DIR)
+@pytest.fixture(autouse=True)
+def _instant_retries() -> Iterator[None]:
+    """Zero the tenacity between-retry wait so the retry tests don't sleep.
+
+    The @retry decorator bakes wait_fixed(_RETRY_WAIT_SECONDS) at import time, so
+    we mutate the decorator's live retry controller rather than the constant.
+    """
+    original = l5.reliable_run.retry.wait
+    l5.reliable_run.retry.wait = wait_fixed(0)
+    yield
+    l5.reliable_run.retry.wait = original
 
 
-def test_orchestrator_exposes_delegation_tools() -> None:
-    tm = TestModel(call_tools=[])
-    with l5.orchestrator.override(model=tm):
-        l5.orchestrator.run_sync("resolve", deps=_deps())
-    registered = {t.name for t in tm.last_model_request_parameters.function_tools}
-    assert registered == {"research", "draft_response", "review_compliance"}
+def _input() -> l5.CaseInput:
+    return l5.CaseInput(customer_id="cust_12345", issue="A duplicate charge.")
+
+
+def _deps(**kw) -> l5.CaseDeps:
+    return l5.CaseDeps(root=l5.KNOWLEDGE_DIR, **kw)
+
+
+def _structured(**fields) -> FunctionModel:
+    """A model that immediately emits the agent's structured-output tool call."""
+
+    def respond(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name=info.output_tools[0].name, args=fields)]
+        )
+
+    return FunctionModel(respond)
+
+
+# --- Static wiring -----------------------------------------------------------
 
 
 def test_specialists_have_their_own_toolsets() -> None:
@@ -41,116 +81,196 @@ def test_specialists_have_their_own_toolsets() -> None:
         assert registered == expected
 
 
-def test_orchestrator_delegates_to_every_specialist() -> None:
-    """Scripted orchestrator calls each delegate; sub-agents return canned text."""
-    calls: list[str] = []
+# --- Happy path: deterministic order, deterministic assembly -----------------
 
-    def orchestrate(messages: list, info: AgentInfo) -> ModelResponse:
-        returns = [
-            p
-            for m in messages
-            if isinstance(m, ModelRequest)
-            for p in m.parts
-            if isinstance(p, ToolReturnPart)
-        ]
-        step = len(returns)
-        if step == 0:
-            return ModelResponse(
-                parts=[ToolCallPart(tool_name="research", args={"question": "investigate cust_12345"})]
-            )
-        if step == 1:
-            return ModelResponse(
-                parts=[ToolCallPart(tool_name="draft_response", args={"findings": returns[-1].content})]
-            )
-        if step == 2:
-            return ModelResponse(
-                parts=[ToolCallPart(tool_name="review_compliance", args={"proposal": returns[-1].content})]
-            )
+
+@pytest.mark.asyncio
+async def test_workflow_runs_in_order_and_assembles_from_state() -> None:
+    findings = _structured(
+        summary="Duplicate charge confirmed on Feb bill.",
+        duplicate_confirmed=True,
+        refund_eligible=True,
+        refund_amount=49.99,
+    )
+    email = _structured(subject="Refund on the way", body="Hi Sarah, resolved.")
+    approve = _structured(approved=True, issues="")
+
+    with ExitStack() as stack:
+        stack.enter_context(l5.researcher.override(model=findings))
+        stack.enter_context(l5.drafter.override(model=email))
+        stack.enter_context(l5.compliance.override(model=approve))
+        result = await l5.run_case(_input())
+
+    assert result.duplicate_confirmed is True
+    assert result.refund_amount == 49.99
+    assert result.compliance_approved is True
+    assert result.redrafts == 0
+    assert result.escalated is False
+    assert result.customer_email.subject == "Refund on the way"
+    assert "Refund of $49.99" in result.final_action
+
+
+# --- The feedback loop: compliance rejection routes back to a redraft ---------
+
+
+@pytest.mark.asyncio
+async def test_compliance_rejection_loops_back_to_redraft_then_approves() -> None:
+    draft_calls = {"n": 0}
+
+    def draft_respond(messages: list, info: AgentInfo) -> ModelResponse:
+        draft_calls["n"] += 1
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name=info.output_tools[0].name,
+                    args={"subject": f"draft-{draft_calls['n']}", "body": "..."},
+                )
+            ]
+        )
+
+    review_calls = {"n": 0}
+
+    def review_respond(messages: list, info: AgentInfo) -> ModelResponse:
+        review_calls["n"] += 1
+        approved = review_calls["n"] >= 2  # reject once, then approve
         return ModelResponse(
             parts=[
                 ToolCallPart(
                     tool_name=info.output_tools[0].name,
                     args={
-                        "research_summary": "duplicate confirmed",
-                        "duplicate_confirmed": True,
-                        "refund_amount": 49.99,
-                        "compliance_approved": True,
-                        "final_action": "refund issued",
-                        "customer_email": {
-                            "subject": "Refund processed",
-                            "body": "Hi Sarah, done.",
-                        },
+                        "approved": approved,
+                        "issues": "" if approved else "Tone too curt.",
                     },
                 )
             ]
         )
 
-    # Specialists have output_type=str, so a plain TextPart ends their run.
-    def specialist_str(tag: str) -> FunctionModel:
-        def respond(messages: list, info: AgentInfo) -> ModelResponse:
-            calls.append(tag)
-            return ModelResponse(parts=[TextPart(content=f"{tag} findings")])
-
-        return FunctionModel(respond)
+    findings = _structured(
+        summary="s", duplicate_confirmed=True, refund_eligible=True, refund_amount=10.0
+    )
 
     with ExitStack() as stack:
-        stack.enter_context(l5.orchestrator.override(model=FunctionModel(orchestrate)))
-        stack.enter_context(l5.researcher.override(model=specialist_str("researcher")))
-        stack.enter_context(l5.drafter.override(model=specialist_str("drafter")))
-        stack.enter_context(l5.compliance.override(model=specialist_str("compliance")))
-        result = l5.orchestrator.run_sync("resolve the case", deps=_deps())
+        stack.enter_context(l5.researcher.override(model=findings))
+        stack.enter_context(l5.drafter.override(model=FunctionModel(draft_respond)))
+        stack.enter_context(l5.compliance.override(model=FunctionModel(review_respond)))
+        result = await l5.run_case(_input())
 
-    # All three specialists were actually invoked, in order.
-    assert calls == ["researcher", "drafter", "compliance"]
-    assert result.output.compliance_approved is True
-    assert result.output.refund_amount == 49.99
-
-    # The orchestrator's history shows the three delegation tool calls.
-    delegated = [
-        p.tool_name
-        for m in result.all_messages()
-        if isinstance(m, ModelResponse)
-        for p in m.parts
-        if isinstance(p, ToolCallPart) and p.tool_name in {"research", "draft_response", "review_compliance"}
-    ]
-    assert delegated == ["research", "draft_response", "review_compliance"]
+    assert draft_calls["n"] == 2  # drafted, rejected, redrafted
+    assert review_calls["n"] == 2  # reviewed twice
+    assert result.redrafts == 1
+    assert result.escalated is False
+    assert result.compliance_approved is True
 
 
-def test_delegation_shares_usage_totals() -> None:
-    """usage=ctx.usage means sub-agent calls roll into the orchestrator total."""
+@pytest.mark.asyncio
+async def test_persistent_rejection_escalates_within_budget() -> None:
+    findings = _structured(
+        summary="s", duplicate_confirmed=True, refund_eligible=True, refund_amount=10.0
+    )
+    reject = _structured(approved=False, issues="Never compliant.")
+    policy = l5.RetryPolicy(max_redrafts=2)
 
-    def orchestrate(messages: list, info: AgentInfo) -> ModelResponse:
-        returns = [
-            p
-            for m in messages
-            if isinstance(m, ModelRequest)
-            for p in m.parts
-            if isinstance(p, ToolReturnPart)
-        ]
-        if not returns:
-            return ModelResponse(parts=[ToolCallPart(tool_name="research", args={"question": "q"})])
+    draft_calls = {"n": 0}
+
+    def draft_respond(messages: list, info: AgentInfo) -> ModelResponse:
+        draft_calls["n"] += 1
         return ModelResponse(
             parts=[
                 ToolCallPart(
                     tool_name=info.output_tools[0].name,
-                    args={
-                        "research_summary": "s",
-                        "duplicate_confirmed": True,
-                        "refund_amount": 49.99,
-                        "compliance_approved": True,
-                        "final_action": "done",
-                        "customer_email": {"subject": "s", "body": "b"},
-                    },
+                    args={"subject": "s", "body": "b"},
                 )
             ]
         )
 
     with ExitStack() as stack:
-        stack.enter_context(l5.orchestrator.override(model=FunctionModel(orchestrate)))
-        stack.enter_context(l5.researcher.override(model=TestModel(call_tools=[])))
-        stack.enter_context(l5.drafter.override(model=TestModel(call_tools=[])))
-        stack.enter_context(l5.compliance.override(model=TestModel(call_tools=[])))
-        result = l5.orchestrator.run_sync("resolve", deps=_deps())
+        stack.enter_context(l5.researcher.override(model=findings))
+        stack.enter_context(l5.drafter.override(model=FunctionModel(draft_respond)))
+        stack.enter_context(l5.compliance.override(model=reject))
+        result = await l5.run_case(_input(), policy=policy)
 
-    # More than one model request happened (orchestrator + delegated researcher).
-    assert result.usage.requests >= 2
+    assert result.escalated is True
+    assert result.redrafts == 2  # bounded — did not loop forever
+    assert draft_calls["n"] == 3  # initial + 2 redrafts
+    assert result.compliance_approved is False
+    assert result.refund_amount == 0.0  # no refund when not approved
+    assert "Escalated" in result.final_action
+
+
+# --- Reliability layer: tenacity retries (orchestrator owns retries) ---------
+
+
+def _flaky(fail_times: int, exc: BaseException) -> tuple[FunctionModel, dict]:
+    calls = {"n": 0}
+
+    async def respond(messages: list, info: AgentInfo) -> ModelResponse:
+        calls["n"] += 1
+        if calls["n"] <= fail_times:
+            raise exc
+        return ModelResponse(parts=[TextPart(content="ok")])
+
+    return FunctionModel(respond), calls
+
+
+@pytest.mark.asyncio
+async def test_reliable_run_retries_transient_failure_then_succeeds() -> None:
+    agent: Agent[l5.CaseDeps, str] = Agent(
+        "test", deps_type=l5.CaseDeps, output_type=str
+    )
+    model, calls = _flaky(2, ModelAPIError("x", "boom"))
+
+    with agent.override(model=model):
+        result = await l5.reliable_run(agent, "go", deps=_deps(), usage=RunUsage())
+
+    assert result.output == "ok"
+    assert calls["n"] == 3  # failed twice, succeeded on the third (stop_after_attempt=3)
+
+
+@pytest.mark.asyncio
+async def test_reliable_run_reraises_after_exhausting_attempts() -> None:
+    agent: Agent[l5.CaseDeps, str] = Agent(
+        "test", deps_type=l5.CaseDeps, output_type=str
+    )
+    model, calls = _flaky(99, ModelAPIError("x", "boom"))
+
+    with agent.override(model=model), pytest.raises(ModelAPIError):
+        await l5.reliable_run(agent, "go", deps=_deps(), usage=RunUsage())
+
+    assert calls["n"] == 3  # exactly _RETRY_ATTEMPTS tries, then reraise
+
+
+@pytest.mark.asyncio
+async def test_reliable_run_retries_timeout_errors() -> None:
+    # Without asyncio.wait_for, a timeout is just another retryable exception
+    # (a ModelSettings timeout surfaces as httpx.TimeoutException ⊂ TransportError).
+    agent: Agent[l5.CaseDeps, str] = Agent(
+        "test", deps_type=l5.CaseDeps, output_type=str
+    )
+    model, calls = _flaky(99, TimeoutError("timed out"))
+
+    with agent.override(model=model), pytest.raises(TimeoutError):
+        await l5.reliable_run(agent, "go", deps=_deps(), usage=RunUsage())
+
+    assert calls["n"] == 3  # timeout is retryable, then reraised
+
+
+# --- Shared usage tally ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_usage_accumulates_across_specialist_calls() -> None:
+    findings = _structured(
+        summary="s", duplicate_confirmed=True, refund_eligible=True, refund_amount=10.0
+    )
+    email = _structured(subject="s", body="b")
+    approve = _structured(approved=True, issues="")
+
+    state = l5.CaseState(case=_input())
+    with ExitStack() as stack:
+        stack.enter_context(l5.researcher.override(model=findings))
+        stack.enter_context(l5.drafter.override(model=email))
+        stack.enter_context(l5.compliance.override(model=approve))
+        await l5.Orchestrator(state=state, deps=_deps()).run()
+
+    # research + draft + compliance each made at least one request.
+    assert state.usage.requests >= 3

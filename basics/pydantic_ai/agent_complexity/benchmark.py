@@ -67,8 +67,11 @@ def _run_l4() -> tuple[int, int]:
 
 
 def _run_l5() -> tuple[int, int]:
-    r = asyncio.run(l5.run_orchestrator(_CASE))
-    return (r.usage.requests, r.usage.tool_calls)
+    case = l5.CaseInput(customer_id="cust_12345", issue=_CASE)
+    state = l5.CaseState(case=case)
+    deps = l5.CaseDeps(root=l5.KNOWLEDGE_DIR)
+    asyncio.run(l5.Orchestrator(state=state, deps=deps).run())
+    return (state.usage.requests, state.usage.tool_calls)
 
 
 @dataclass

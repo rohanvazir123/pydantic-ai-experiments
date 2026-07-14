@@ -38,7 +38,7 @@ def test_role_tier_intents() -> None:
     assert l3.AGENT_TIER == "large"  # tool calling -> top tier
     assert l4.TRIAGE_TIER == "nano"  # fast triage -> cheapest
     assert l4.HARNESS_TIER == "large"  # open-ended reasoning -> top tier
-    assert l5.ORCHESTRATOR_TIER == "large"
+    # L5's orchestrator is now a deterministic code node (no model/tier).
     assert l5.RESEARCHER_TIER == "large"
     assert l5.DRAFTER_TIER == "small"  # drafting text -> standard
     assert l5.COMPLIANCE_TIER == "small"  # checking text -> standard
@@ -56,7 +56,6 @@ def test_default_policy_pins_large() -> None:
         l3.billing_agent,
         l4.triage_agent,
         l4.harness_agent,
-        l5.orchestrator,
         l5.researcher,
         l5.drafter,
         l5.compliance,

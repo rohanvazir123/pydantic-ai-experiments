@@ -110,14 +110,16 @@ def test_level4_live(latency: None) -> None:
 
 @pytest.mark.level("L5 multi-agent")
 def test_level5_live(latency: None) -> None:
-    result = asyncio.run(
-        l5.run_orchestrator(
-            "Customer cust_12345 reports a duplicate charge on their February bill. "
-            "Have the researcher investigate, the drafter prepare a response, and "
-            "compliance review before we send it."
+    state = l5.CaseState(
+        case=l5.CaseInput(
+            customer_id="cust_12345",
+            issue="A duplicate charge on their February bill.",
         )
     )
-    assert isinstance(result.output, l5.OrchestratorOutput)
-    assert isinstance(result.output.customer_email, l5.CustomerEmail)
-    # Delegation means several model requests happened (orchestrator + specialists).
-    assert result.usage.requests >= 2
+    deps = l5.CaseDeps(root=l5.KNOWLEDGE_DIR)
+    result = asyncio.run(l5.Orchestrator(state=state, deps=deps).run())
+
+    assert isinstance(result, l5.CaseResolution)
+    assert isinstance(result.customer_email, l5.CustomerEmail)
+    # The workflow ran several specialists, so usage rolled up across nodes.
+    assert state.usage.requests >= 3

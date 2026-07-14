@@ -22,6 +22,7 @@ with native Pydantic AI patterns so the whole ladder runs on a local model.
 - [Cost & latency at a glance (L1→L5)](#cost--latency-at-a-glance-l1l5)
   - [What a real ticket costs in dollars](#what-a-real-ticket-costs-in-dollars)
 - [Level 5 deep-dive: multi-agent system design](#level-5-deep-dive-multi-agent-system-design)
+  - [How L5 is built: a plain-async orchestrator](#how-l5-is-built-a-plain-async-orchestrator)
   - [Cost & latency: what's realistic (p50/p95/p99)](#cost--latency-whats-realistic-p50p95p99)
   - [Why multi-agent is slow *despite* parallelism](#why-multi-agent-is-slow-despite-parallelism)
   - [Resiliency & self-healing](#resiliency--self-healing)
@@ -79,7 +80,7 @@ support ticket for customer `cust_12345`.**
 | 2 | Prompt Chains & Routing | [`l2_prompt_chains.py`](l2_prompt_chains.py) | Content of each step (code controls flow) |
 | 3 | Tool-Calling Agent | [`l3_tool_calling_agent.py`](l3_tool_calling_agent.py) | Which tools to call, and when |
 | 4 | Agent Harness | [`l4_agent_harness.py`](l4_agent_harness.py) | Open-ended exploration over a runtime |
-| 5 | Multi-Agent Orchestration | [`l5_multi_agent.py`](l5_multi_agent.py) | Decomposition + delegation to specialists |
+| 5 | Multi-Agent Orchestration | [`l5_multi_agent.py`](l5_multi_agent.py) | Content of each specialist step (a code orchestrator coordinates them) |
 
 ```
 Level 1   input ──▶ [system prompt + schema] ──▶ LLM ──▶ structured output
@@ -93,9 +94,12 @@ Level 3   task ──▶ agent ⇄ {balance, charges, policy, refund} ──▶ 
 Level 4   task ──▶ agent ⇄ {list/read/grep files + billing API} ──▶ report
                    (model explores a runtime autonomously)
 
-Level 5   request ──▶ orchestrator ─┬▶ researcher  (fs + gateway)
-                                    ├▶ drafter     (fs: templates)
-                                    └▶ compliance  (fs: policies)  ──▶ decision
+Level 5   request ──▶ Orchestrator (deterministic code coordinator; plain async loop)
+                        │  calls one worker at a time and saves each result
+                        ├▶ researcher   (fs + gateway)   ─┐
+                        ├▶ drafter      (fs: templates)  ─┤ each a dumb sub-agent
+                        ├▶ compliance   (fs: policies)   ─┘  with its own tool loop
+                        └▶ on rejection: bounded redraft loop, else escalate ──▶ decision
 ```
 
 ## Choosing a level: use cases & trade-offs
@@ -108,19 +112,29 @@ The levels differ on two axes that matter most in practice:
 Note: *agent count is not the distinguishing axis.* L2 already uses multiple agents —
 a classifier agent, one or more handler agents, a validator. What makes it L2 is that
 **your code decides which agent runs next**, not a model. The jump to L5 is not "add
-more agents" — it is "let a model orchestrate other models."
+more agents" — it is a **coordinator dispatching to specialist sub-agents**, each a
+full tool-using agent in its own right, with a feedback loop between them.
+
+That coordinator can itself be a model ("let a model orchestrate other models") or
+deterministic code. **This repo's L5 deliberately uses a *code* coordinator** — a
+plain async orchestrator that owns state, retries, and routing — because a model
+deciding control flow is the least reliable part of a multi-agent system: no
+guaranteed step order, nowhere to hang a timeout, no retry policy. Keeping
+orchestration in code buys back that reliability while still getting parallel domain
+expertise from the sub-agents. See
+[How L5 is built](#how-l5-is-built-a-plain-async-orchestrator).
 
 | | L1 Augmented | L2 Chains | L3 Tool-Calling | L4 Harness | L5 Multi-Agent |
 |---|---|---|---|---|---|
 | **Agents involved** | 1 | Multiple | 1 | 1 | Multiple |
-| **Who controls flow** | Code (1 call, done) | Code (fixed DAG) | Model (bounded loop) | Model (open loop) | Orchestrator model |
-| **What model controls** | Content only | Content of each step | Which tools to call & when | Which files/APIs to explore & how | Which specialists to delegate to & how to synthesize |
-| **Steps known in advance** | Yes — exactly 1 | Yes — by you | No — model decides | No — model explores | No — model decomposes |
+| **Who controls flow** | Code (1 call, done) | Code (fixed DAG) | Model (bounded loop) | Model (open loop) | Code (async orchestrator) + model within each worker |
+| **What model controls** | Content only | Content of each step | Which tools to call & when | Which files/APIs to explore & how | Content of each specialist step (code coordinates them) |
+| **Steps known in advance** | Yes — exactly 1 | Yes — by you | No — model decides | No — model explores | Workflow yes (the orchestrator); each worker's tool calls no |
 | **Tools per agent** | None | None (agents are the units) | Fixed, bounded set | Broad, open-ended set | Scoped per specialist |
-| **Autonomy** | None | None | Partial | High | Full |
+| **Autonomy** | None | None | Partial | High | High per specialist; coordination is code |
 | **Cost** | $ | $ | $$ | $$$ | $$$$ |
 | **Latency** | 1 call | N fixed calls | 3–7 calls | 6–14 calls | 10–20+ calls across agents |
-| **Reliability** | Deterministic\* | High | High | Medium | Lower |
+| **Reliability** | Deterministic\* | High | High | Medium | Medium — code-orchestrated, `reliable_run` retries |
 | **Best when** | Answer is in the input | Stages are known and auditable | A bounded set of actions covers it | Open-ended exploration needed | Distinct expert roles must work in parallel |
 
 \* *Deterministic in shape (always one call, one schema); the model's content
@@ -134,12 +148,13 @@ still varies unless you pin `temperature=0`, which these examples do.*
 | L2 | None | Content of each step only; code decides which step runs |
 | L3 | Partial | Which tools to call and in what order, within a fixed bounded set |
 | L4 | High | Which files/APIs to open, what to look for, when to stop — open-ended exploration |
-| L5 | **Full** | How to decompose the task, which specialists to delegate to, how to synthesize their results — a model orchestrating models |
+| L5 | **High, scoped** | The content of each specialist step. Coordination (who runs next, redraft vs. escalate) is deterministic *code*, not a model — see [How L5 is built](#how-l5-is-built-a-plain-async-orchestrator) |
 
-L5 is the only fully autonomous level: the orchestrator makes meta-decisions (who
-should do this? is the result good enough? do I need another delegation?) that are
-themselves model calls. L4 is highly autonomous within a single agent's scope; L5
-extends that autonomy to the coordination layer. More autonomy = more capability and
+Each specialist is highly autonomous within its own scope (like an L4 harness), but
+the *coordination* layer is deliberately **not** a model — the canonical "orchestrator
+model making meta-decisions" is the naive design this repo avoids for reliability. L4
+is highly autonomous within a single agent's scope; L5 adds more specialists but keeps
+the glue between them in code. More worker autonomy = more capability and
 more ways to go wrong — which is why the golden rule is to stay at the lowest level
 that actually needs it.
 
@@ -234,9 +249,10 @@ Does the answer come entirely from the input — no lookups, no actions?
                                 Do they benefit from running in parallel?
                                 │
                                 └─ YES ─────────────────────────────────▶ L5 Multi-Agent
-                                          An orchestrator model delegates to specialists,
-                                          each with their own prompt + tools. The model
-                                          controls decomposition and synthesis.
+                                          A plain-async code coordinator calls dumb
+                                          specialists, each with their own prompt + tools,
+                                          with a bounded redraft loop. Code owns the flow;
+                                          the models own each step's content.
 ```
 
 **Golden rule: start at the lowest level that works and only climb when it
@@ -289,16 +305,21 @@ iterate. This is the shape of coding agents (Claude Code, Cursor).
 - Real example: read the customer file + policy, verify via the gateway, refund,
   and draft a personalized reply — without being told which files to open.
 
-**Level 5 — Multi-Agent Orchestration.** An orchestrator decomposes the task and
-delegates to specialist agents, each with its own prompt, tools, and model.
-- ✅ Use for: tasks needing *parallel domain expertise* — distinct roles
-  (research, drafting, compliance) with different instructions/tools — plus a
-  coordinator to synthesize.
+**Level 5 — Multi-Agent Orchestration.** A plain-async orchestrator in the
+orchestrator-workers shape: a deterministic `Orchestrator` (owning state, retries,
+and routing) coordinates dumb specialist sub-agents (research, drafting,
+compliance), each with its own prompt, tools, and model. Control flow lives in
+code, not in a model.
+- ✅ Use for: tasks needing *parallel domain expertise* — distinct roles with
+  different instructions/tools — plus quality gates and a feedback loop (e.g.
+  compliance bouncing a draft back for a bounded number of redrafts).
 - ❌ Avoid when: a single tool-calling agent can hold all the roles. This is the
-  most capable **and** the most expensive and least deterministic level; every
-  added agent adds latency and failure modes.
+  most capable **and** the most expensive level; every added agent adds latency
+  and failure modes. (Determinism is recovered by orchestrating in code — see
+  [How L5 is built](#how-l5-is-built-a-plain-async-orchestrator).)
 - Real example: researcher investigates → drafter writes the reply → compliance
-  reviews → orchestrator issues the final decision.
+  reviews → orchestrator either accepts (and assembles the decision) or routes
+  back for a redraft, escalating if it can't be satisfied.
 
 ## Cost & latency at a glance (L1→L5)
 
@@ -382,6 +403,124 @@ Level 5 is where the interesting engineering lives — and where most teams
 over-invest. This section is the "when you really do need it, here's what you're
 signing up for" guide. Measured latency numbers for this repo are in
 [`LATENCY.md`](LATENCY.md) (regenerate with `python benchmark.py`).
+
+### How L5 is built: a plain-async orchestrator
+
+The naive way to "go multi-agent" is to hand a big model a bag of sub-agent tools
+and let it decide the order. But then the *orchestration itself* is a
+non-deterministic LLM guess: no guaranteed step order, no place to hang a timeout,
+no retry policy, no feedback loop when a step fails review. That is not
+orchestration; it is hope.
+
+[`l5_multi_agent.py`](l5_multi_agent.py) instead makes the **orchestrator** a
+first-class object in the **orchestrator-workers** shape — the same division of
+labor as a Temporal workflow vs. its activities:
+
+- the **`Orchestrator`** is the only smart component: it *owns the state*, *handles
+  retries*, and *routes*;
+- the **specialists** (`researcher`/`drafter`/`compliance`) are *dumb workers* —
+  prompt in, structured result out, no state, no retries, no knowledge of one
+  another.
+
+It's a plain `async` class with a `while` loop — **no graph framework.** (An earlier
+draft used [`pydantic_graph`](https://ai.pydantic.dev/graph/), but for control flow
+this simple — a linear pipeline with one bounded loop — a one-node graph is pure
+ceremony over a `while`. Reach for `pydantic_graph` when the workflow is a genuine
+*multi-node* state machine; here it isn't.)
+
+```
+    Orchestrator.run()  ── owns state, retries, routing ──┐
+        │  researcher  → save findings                    │
+        │  drafter     → save draft                       │  loops until
+        │  compliance  → save verdict                     │  resolved /
+        │  approved?   → resolve                          │  escalated
+        └  rejected & within budget → redraft ────────────┘
+           rejected & over budget   → escalate → resolve
+```
+
+**The orchestrator owns state and routing.** One method inspects the state it owns
+and decides what happens next — run the next missing step (calling a dumb specialist
+and *saving* the result), or, once a verdict is in, resolve / redraft / escalate.
+The specialists never see or touch the state:
+
+```python
+@dataclass
+class Orchestrator:
+    state: CaseState          # the orchestrator is the sole owner + writer of state
+    deps: CaseDeps
+
+    async def run(self) -> CaseResolution:
+        s = self.state
+        while True:
+            if s.findings is None:                        # run the pipeline in order;
+                s.findings = (await reliable_run(researcher, s.case.to_brief(),
+                              deps=self.deps, usage=s.usage)).output   # …save each result
+                continue
+            if s.draft is None:
+                s.draft = (await reliable_run(drafter, self._draft_prompt(),
+                           deps=self.deps, usage=s.usage)).output
+                continue
+            if s.verdict is None:
+                s.verdict = (await reliable_run(compliance, self._review_prompt(),
+                             deps=self.deps, usage=s.usage)).output
+                continue
+            if s.verdict.approved:                        # verdict in → decide outcome
+                return self._resolve()
+            if s.redrafts >= self.deps.retry.max_redrafts:
+                s.escalated = True
+                return self._resolve()
+            s.redrafts += 1                               # rejected within budget →
+            s.feedback, s.draft, s.verdict = s.verdict.issues, None, None   # …redraft
+```
+
+The loop terminates by construction: every pass either fills a state field or
+returns, and the only backward step (redraft) is bounded by `max_redrafts`. `.output`
+is inlined per call on purpose — a shared `result` local would pin its type to the
+first specialist's output and break generic inference at the next call site.
+
+**What the orchestrator pattern buys you:**
+
+| Concern | How L5 handles it |
+|---|---|
+| **Deterministic order** | `Orchestrator.run()`, in code — the model never decides what runs next. |
+| **State ownership** | The orchestrator is the *sole* holder and writer of `CaseState`; dumb workers can't corrupt it. |
+| **Feedback loop** | Compliance returns a *structured* `ComplianceVerdict`; the orchestrator redrafts with the issues, bounded by `max_redrafts`, then escalates. |
+| **Typed I/O** | The workflow takes a `CaseInput` and returns a `CaseResolution`; each step hands off a Pydantic model (`ResearchFindings`, `CustomerEmail`, `ComplianceVerdict`), so the result is *assembled deterministically from state* — not re-synthesized by a model that might contradict the steps it just ran. |
+| **Reliability** | Every model call goes through `reliable_run` (below). |
+| **Shared usage** | One `RunUsage` is threaded through `CaseState` and passed to every `agent.run(usage=…)`, so cost rolls up across all workers. |
+
+**The reliability layer — `reliable_run`.** Because the workers are dumb (no
+per-agent `retries=`), *the orchestrator owns all retry policy*, in one wrapper.
+Every specialist call goes through it:
+
+```python
+@retry(
+    retry=retry_if_exception_type(RETRYABLE),   # TimeoutError, ModelAPIError, httpx.TransportError
+    stop=stop_after_attempt(_RETRY_ATTEMPTS),
+    wait=wait_fixed(_RETRY_WAIT_SECONDS),
+    reraise=True,                                # reraise the last error if all attempts fail
+)
+async def reliable_run[T](agent: Agent[CaseDeps, T], prompt: str, *, deps, usage) -> AgentRunResult[T]:
+    return await agent.run(prompt, deps=deps, usage=usage,
+                           model_settings=ModelSettings(timeout=deps.retry.timeout))
+```
+
+- **Timeout** — per-request, via `ModelSettings(timeout=…)`; the HTTP client aborts a
+  hung call (no `asyncio.wait_for`). `httpx.TimeoutException` ⊂ `httpx.TransportError`,
+  so a timed-out call is retryable.
+- **Retries** — tenacity's `@retry` decorator: `_RETRY_ATTEMPTS` tries, a fixed pause
+  between them, then reraise. The `RetryPolicy` dataclass on the deps holds the two
+  knobs the workflow tunes: `timeout` and `max_redrafts`.
+
+This is deliberately **distinct from Pydantic AI's `retries=`** on an `Agent`, which
+retries when the *model* returns malformed output and should self-correct (a
+`ModelRetry`). The specialists here don't use it — they're dumb — so `reliable_run`
+is the workflow's single retry authority, papering over *transient infrastructure*
+faults (timeouts, 5xx, dropped sockets) that self-correction can't fix.
+
+> One subtlety, since the decorator bakes `wait_fixed(...)` at import time: the test
+> suite makes retries instant by mutating the decorator's live controller
+> (`reliable_run.retry.wait = wait_fixed(0)`), not the module constant.
 
 ### Cost & latency: what's realistic (p50/p95/p99)
 
@@ -468,12 +607,19 @@ pipelines into independent fan-out where you can; that is the only reliable leve
 ### Resiliency & self-healing
 
 More moving parts ⇒ more failure modes. A production L5 system needs most of the
-following (this teaching example implements the first two):
+following (this teaching example implements bounded retries and the per-step timeout
+in the fourth item, via `reliable_run` — see
+[How L5 is built](#how-l5-is-built-a-plain-async-orchestrator)):
 
-- **Bounded retries with backoff.** Pydantic AI's `retries=` feeds validation /
-  tool errors back so the model self-corrects (used here). Add exponential
-  backoff + jitter for *transient* external failures (429/503/timeouts). Cap
-  attempts — infinite retries turn a blip into an outage.
+- **Bounded retries.** The orchestrator owns retries in *one* place: `reliable_run`
+  wraps every specialist call in tenacity's `@retry` (capped attempts, a fixed pause
+  between them, reraise on exhaustion) for *transient infrastructure* failures
+  (429/503/timeouts) — infinite retries turn a blip into an outage. The workers are
+  dumb: they don't use Pydantic AI's per-agent `retries=` (model self-correction), so
+  `reliable_run` is the single retry authority. The compliance→redraft loop is a
+  second, *semantic* retry at the workflow level, bounded by `max_redrafts`.
+  (Production tip: swap the fixed wait for **exponential backoff + jitter** so
+  simultaneous retries don't stampede a recovering dependency.)
 - **Idempotency for side effects.** `issue_refund` must not double-refund when a
   step is retried. Attach an idempotency key (e.g. `ticket_id + charge_id`) so
   repeats are no-ops. This is the single most important safety property once
@@ -482,9 +628,12 @@ following (this teaching example implements the first two):
   sub-agent/model). After N consecutive failures, trip open and fail fast for a
   cooldown instead of piling latency onto a dead dependency; probe half-open to
   recover. (See `rag/v2/knowledge/bus` for a real breaker in this repo.)
-- **Timeouts & budgets at every layer.** Per-tool timeout, per-agent `max_turns`,
-  and a global token/cost/wall-clock budget for the whole case. Without a global
-  budget, one pathological run can dwarf a thousand normal ones.
+- **Timeouts & budgets at every layer.** A per-request timeout is implemented here
+  (`reliable_run` passes `ModelSettings(timeout=RetryPolicy.timeout)`, so the HTTP
+  client aborts a hung call and tenacity retries it). Still worth adding in
+  production: per-agent `max_turns` and a global token/cost/wall-clock budget for the
+  whole case. Without a global budget, one pathological run can dwarf a thousand
+  normal ones.
 - **Checkpointing / durable execution** for long-running work. Persist state after
   each completed stage so a crash resumes from the last checkpoint instead of
   re-paying for research + drafting. Pydantic AI integrates with **Temporal**
@@ -589,12 +738,14 @@ models: the system prompt that worked for a 5-turn run breaks at 15 turns becaus
 model's "attention" on the instructions fades as context grows. Test long runs, not
 just the happy path.
 
-**Shared context causes cross-contamination.** When sub-agents share a context
-(delegation via `usage=ctx.usage` passes the shared dependency pool), one agent's
-tool results pollute another's reasoning. The researcher's raw findings appear in the
-drafter's context even when the drafter only needs the summary. Isolate sub-agent
-contexts when roles genuinely conflict; pay the extra token cost for clean
-separation.
+**Shared context causes cross-contamination.** When sub-agents share one context
+window, one agent's tool results pollute another's reasoning — the researcher's raw
+tool output appears in the drafter's context even when the drafter only needs the
+summary. This repo's orchestrator avoids that: each worker runs as its own
+`agent.run` with a fresh message history, and information moves between them only
+through *typed* state (`ResearchFindings` → draft prompt), not a shared transcript. They share `deps` and the
+`RunUsage` accumulator, but not context. Isolated contexts + explicit hand-offs are the
+cleaner (if slightly more token-heavy) end of this trade-off.
 
 **Isolated context causes information loss.** The mirror problem: isolating agents
 too aggressively means the orchestrator must explicitly re-pack every piece of
@@ -671,10 +822,11 @@ failure mode, a new prompt to maintain, and a new thing to debug. Most "multi-ag
 designs in production are a Level 3 solution wearing a Level 5 costume. Start at the
 lowest level that works.
 
-**Prompt/version coupling across agents.** Five agent prompts that must stay mutually
-consistent — the orchestrator's delegation language must match each specialist's
-expected input format; the compliance agent's policy references must match the
-researcher's output schema. A model upgrade (new version, different tokenizer) can
+**Prompt/version coupling across agents.** The specialist prompts must stay mutually
+consistent — the drafter must understand the researcher's `ResearchFindings` schema;
+the compliance agent's policy references must match the researcher's output. (The
+code coordinator removes one coupling the naive design has: there is no orchestrator
+*prompt* whose "delegation language" must match each specialist's expected input.) A model upgrade (new version, different tokenizer) can
 silently break one prompt while leaving the others intact, and the failure only
 appears in production edge cases. Version all prompts together; regression-test them
 as a set.
@@ -1139,7 +1291,7 @@ eyeballing the final output. Each level here ships with a way to see inside.
 | L2 | the routing decision (which handler ran) + escalation | it prints `Classified as: …`; assert in `tests/test_l2_*` |
 | L3 | the full tool-call → tool-return → final sequence | `print_agent_trace()` (`utils.py`) |
 | L4 | which files it read, gateway checks, refund, + triage tier | `print_agent_trace()`; the `[triage · nano]` line |
-| L5 | delegation order, per-agent work, aggregated usage | delegation tool calls in `result.all_messages()`; `result.usage` |
+| L5 | node order, redraft/escalation, per-agent work, aggregated usage | the `[research]`/`[draft]`/`[compliance]`/`[orchestrator]` prints; `CaseState.redrafts`/`.escalated`; `CaseState.usage` |
 
 Three tools do most of the work:
 
@@ -1147,8 +1299,9 @@ Three tools do most of the work:
   and prints every tool call, tool return, and the final text in order. This is
   your first stop for "what did the agent actually do?" (L3–L5).
 - **`result.usage`** — `RunUsage(input_tokens, output_tokens, requests,
-  tool_calls)`. For L5, delegation rolls sub-agent usage into one total via
-  `usage=ctx.usage`, so you see the true cost of a whole case.
+  tool_calls)`. For L5 a single `RunUsage` is threaded through `CaseState` and
+  passed to every `agent.run(usage=…)`, so `state.usage` is the true cost of the
+  whole case.
 - **`capture_run_messages()`** — wrap a run to get the exact request/response
   history that led to a failure (e.g. the "Exceeded max output retries" you hit
   when a local model wraps JSON in prose). Best for debugging one bad run.
