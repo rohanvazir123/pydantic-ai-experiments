@@ -128,8 +128,30 @@ class IoWorker(Worker):
                     self.status[item.job_id] = JobStatus.CANCELLED
                     continue
                 self.status[item.job_id] = JobStatus.RUNNING
-                await item.process(self.writer)  # the job does its own work
+                try:
+                    await item.process(self.writer)  # the job does its own work
+                except Exception as exc:
+                    # Contain the failure to THIS job. A DB write can fail
+                    # (constraint violation, disconnect, timeout); without this
+                    # except the error would bubble out of run() and kill the
+                    # worker task -- shrinking the pool and potentially hanging
+                    # io_queue.join(). We record FAILED (visible via
+                    # get_job_status) and keep looping; retry/recovery policy is
+                    # the parent/orchestrator's call. `except Exception` (not bare
+                    # `except`) deliberately lets asyncio.CancelledError -- a
+                    # BaseException -- propagate so shutdown still cancels cleanly.
+                    self.status[item.job_id] = JobStatus.FAILED
+                    print(f"IO worker {self.worker_id}: job {item.job_id} failed: {exc!r}")
+                    continue
                 self.status[item.job_id] = JobStatus.DONE
+            except Exception as exc:
+                # Safety net around the WHOLE loop body: the tight except above
+                # only covers item.process(). Anything else that can raise --
+                # status bookkeeping, queue accounting -- must NOT kill the worker
+                # task either. Log and fall through to `finally`; the while loop
+                # then keeps consuming. CancelledError is a BaseException, so
+                # shutdown still cancels this task cleanly.
+                print(f"IO worker {self.worker_id}: unexpected loop error: {exc!r}")
             finally:
                 self.io_queue.task_done()
 
@@ -144,24 +166,86 @@ class IoWorkerPool(WorkerPool):
         num_workers: int = 5,
     ) -> None:
         super().__init__(num_workers)
-        self.engine = engine or make_engine()
-        self.writer = TelemetryWriter(self.engine)
+        #
+        # Workflow this pool wires up  (parent = orchestrator):
+        #
+        #   parent.insert_job(job)
+        #        │
+        #        ▼
+        #   io_queue ───► worker[0..N] ───► job.process(writer)
+        #  (shared input)  (async tasks)          │
+        #                                          └──► TelemetryWriter.write() ──► DB
+        #                                                 (asyncio.to_thread; off-loop)
+        #
+        # No result queue (unlike the CPU pool): an IO job's "result" is a row in
+        # the database, so the writer/DB IS the sink. The parent tracks progress
+        # via get_job_status and the outcome is the persisted row.
+        #
+        # __init__ reads as ordered steps; each helper owns one concern. Must run
+        # inside an event loop -- _start_workers uses asyncio.create_task.
+        self._init_queue(maxsize)
+        self._init_shared_state()
+        self._init_writer(engine)
+        self._start_workers()
+
+    def _init_queue(self, maxsize: int) -> None:
+        """The single asyncio queue: parent -> workers, with backpressure at
+        ``maxsize`` (``insert_job`` awaits when the queue is full)."""
         self.io_queue: asyncio.Queue = asyncio.Queue(maxsize)
+
+    def _init_shared_state(self) -> None:
+        """Job bookkeeping. Unlike the CPU pool, NO ``Manager`` is needed: asyncio
+        runs one process on one event-loop thread, so a plain dict/set is safe --
+        the only concurrency is cooperative (at ``await`` points), and this shared
+        state is never touched inside ``asyncio.to_thread`` (only the DB write is).
+
+        * ``_status``    job_id -> JobStatus  (workers write, parent reads on GET)
+        * ``_cancelled`` set of flagged job_ids (parent adds, workers check)
+        """
         self._status: dict[str, JobStatus] = {}
         self._cancelled: set[str] = set()
+
+    def _init_writer(self, engine: Engine | None) -> None:
+        """The SQLAlchemy sink shared by all workers: engine + writer. Swap the
+        engine URL for ``postgresql://...`` in prod; the pool/writer are unchanged.
+        """
+        self.engine = engine or make_engine()
+        self.writer = TelemetryWriter(self.engine)
+
+    def _start_workers(self) -> None:
+        """Build one ``IoWorker`` per slot and launch each as an asyncio task.
+
+        Every worker shares the SAME queue, writer, and bookkeeping -- only the
+        worker id differs. Requires a running event loop (``asyncio.create_task``).
+        """
         self.io_workers = [
             IoWorker(self.io_queue, i, self.writer, self._status, self._cancelled)
-            for i in range(num_workers)
+            for i in range(self.num_workers)
         ]
         self.workers = [asyncio.create_task(w.run()) for w in self.io_workers]
 
+    # -- Public API ---------------------------------------------------------
+    # Same shape as CpuWorkerPool: long-running work arrives over a REST submit
+    # endpoint. `POST /jobs` -> insert_job() returns a job_id immediately; the
+    # client/dashboard polls `GET /jobs/{id}` -> get_job_status() for progress;
+    # `DELETE /jobs/{id}` -> cancel_job(). The submitting request is long gone by
+    # the time the DB write finishes, so the parent is what remains to track
+    # outcomes and relay status back to the client/dashboard.
+
     async def insert_job(self, job: TelemetryData) -> None:
-        """Submit one job; mark ``QUEUED``; await if the queue is full."""
+        """Submit one job and mark it ``QUEUED``; await if the queue is full.
+
+        Backs `POST /jobs`: enqueue, then return the job_id to the caller at once
+        instead of waiting for the (long-running) DB write to complete.
+        """
         self._status[job.job_id] = JobStatus.QUEUED
         await self.io_queue.put(job)
 
     def cancel_job(self, job_id: str) -> bool:
-        """Lazily cancel a still-queued job (worker skips it when reached)."""
+        """Lazily cancel a still-queued job (a worker skips it when reached).
+
+        Backs `DELETE /jobs/{id}`.
+        """
         if self._status.get(job_id, JobStatus.UNKNOWN) != JobStatus.QUEUED:
             return False
         self._cancelled.add(job_id)
@@ -169,11 +253,31 @@ class IoWorkerPool(WorkerPool):
         return True
 
     def get_job_status(self, job_id: str) -> JobStatus:
+        """Current status of a job, or ``UNKNOWN`` if this pool never saw it.
+
+        Backs `GET /jobs/{id}`: the endpoint the client/dashboard polls to render
+        live progress (QUEUED -> RUNNING -> DONE / FAILED / CANCELLED).
+        """
         return self._status.get(job_id, JobStatus.UNKNOWN)
 
-    async def shutdown(self) -> None:
-        """Drain, then sentinel each worker, then await them (sentinels first)."""
+    async def join_tasks(self) -> None:
+        """Block until every submitted task has been processed.
+
+        The result barrier: after this returns, every write has landed in the DB,
+        so :meth:`collect_results` will see them all.
+        """
         await self.io_queue.join()
+
+    # collect_results() is inherited from WorkerPool: an IO job's "result" is
+    # simply whether its write succeeded (DONE) -- reported from _status. We do
+    # NOT read the persisted rows back; if telemetry landed, the job is DONE.
+
+    async def shutdown(self) -> None:
+        """Sentinel each worker, then await them (sentinels sent before the await).
+
+        Call :meth:`join_tasks` first if you need every task drained before
+        teardown; ``shutdown`` only stops the workers.
+        """
         for _ in range(self.num_workers):
             await self.io_queue.put(None)
         await asyncio.gather(*self.workers)
@@ -185,8 +289,11 @@ async def main() -> None:
         await pool.insert_job(
             TelemetryData(device_id=f"device_{i}", metric={"temp": 20 + i})
         )
+    await pool.join_tasks()             # barrier: all writes landed
+    outcomes = pool.collect_results()   # job_id -> DONE / FAILED (no DB read-back)
     await pool.shutdown()
-    print(f"wrote {count_rows(pool.engine)} rows via SQLAlchemy")
+    done = sum(1 for status in outcomes.values() if status == JobStatus.DONE)
+    print(f"{done}/{len(outcomes)} writes succeeded; {count_rows(pool.engine)} rows in DB")
 
 
 if __name__ == "__main__":

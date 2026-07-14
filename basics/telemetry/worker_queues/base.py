@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
@@ -42,6 +43,7 @@ class JobStatus(StrEnum):
     QUEUED = "queued"      # accepted, waiting in the queue
     RUNNING = "running"    # a worker has picked it up
     DONE = "done"          # processed successfully
+    FAILED = "failed"      # process() raised; recorded so the parent can react
     CANCELLED = "cancelled"  # skipped before processing (lazy cancel)
     UNKNOWN = "unknown"    # never seen by this pool
 
@@ -99,6 +101,11 @@ class WorkerPool(ABC):
     cleanly, sentinels before join), two execution models.
     """
 
+    # Populated by subclasses (job_id -> JobStatus). Declared here so the shared
+    # collect_results() can read it. CPU backs it with a Manager proxy, IO with a
+    # plain dict -- both are Mappings.
+    _status: Mapping[str, JobStatus]
+
     def __init__(self, num_workers: int) -> None:
         self.num_workers = num_workers
 
@@ -118,6 +125,27 @@ class WorkerPool(ABC):
     @abstractmethod
     def get_job_status(self, job_id: str) -> JobStatus:
         """Current :class:`JobStatus`, or ``UNKNOWN`` if never seen."""
+
+    @abstractmethod
+    def join_tasks(self) -> Any:
+        """Block until every submitted task has been processed.
+
+        Sync (CPU) or async (IO). The result barrier: after this returns, every
+        outcome is available to :meth:`collect_results`.
+        """
+
+    def collect_results(self) -> dict[str, JobStatus]:
+        """Return each job's OUTCOME (job_id -> JobStatus). Call after join_tasks().
+
+        The "result" of a fire-and-forget job is whether it succeeded, not its
+        payload. The payload already lives in its sink -- a DB row, a file, an HTTP
+        callback -- so we never read the sink back; if telemetry was persisted the
+        job is DONE, and that's the result. Concrete and shared: identical for
+        every pool, since both already maintain ``_status``. FAILED / stuck jobs
+        show up here too, so the orchestrator can reconcile and take corrective
+        action. Cheap (reads an in-memory map), so it stays synchronous.
+        """
+        return dict(self._status)
 
     @abstractmethod
     def shutdown(self) -> Any:

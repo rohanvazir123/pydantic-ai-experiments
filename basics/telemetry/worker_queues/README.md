@@ -145,7 +145,8 @@ queue. Lifecycle:
 
 ```python
 pool = CpuWorkerPool(num_workers=4)
-pool.insert_cpu_tasks(payloads)         # each job carries result_sink="file"|"http"
+for job in payloads:                    # each job carries result_sink="file"|"http"
+    pool.insert_job(job)
 pool.join_tasks()                       # wait for all work to finish
 results = pool.collect_results(len(payloads))
 stored = read_results(pool.result_path) # what the file sink persisted
