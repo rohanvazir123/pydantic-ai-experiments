@@ -102,6 +102,8 @@ class IoWorker(Worker):
     nothing and knows no SQL, mirroring ``CpuWorker`` calling ``job.process()``.
     """
 
+    task: asyncio.Task  # this worker's own run loop; set by start(), joined at shutdown
+
     def __init__(
         self,
         io_queue: asyncio.Queue,
@@ -115,6 +117,16 @@ class IoWorker(Worker):
         self.writer = writer
         self.status = status
         self.cancelled = cancelled
+
+    def start(self) -> None:
+        """Launch this worker's run loop as an asyncio task the worker owns.
+
+        Needs a running event loop, and there is no way to build a task without
+        also scheduling it -- which is exactly why this isn't in ``__init__``:
+        constructing an ``IoWorker`` would otherwise start it. ``self.task`` is
+        also the strong reference that keeps the loop from being GC'd mid-flight.
+        """
+        self.task = asyncio.create_task(self.run())
 
     async def run(self) -> None:
         while True:
@@ -165,36 +177,35 @@ class IoWorkerPool(WorkerPool):
         maxsize: int = 100,
         num_workers: int = 5,
     ) -> None:
+        # Config only -- nothing is built and nothing runs here. The four build
+        # steps below are sequenced by WorkerPool.start(), which reads these two.
+        self._maxsize = maxsize
+        self._engine = engine
         super().__init__(num_workers)
-        #
-        # Workflow this pool wires up  (parent = orchestrator):
-        #
-        #   parent.insert_job(job)
-        #        │
-        #        ▼
-        #   io_queue ───► worker[0..N] ───► job.process(writer)
-        #  (shared input)  (async tasks)          │
-        #                                          └──► TelemetryWriter.write() ──► DB
-        #                                                 (asyncio.to_thread; off-loop)
-        #
-        # No result queue (unlike the CPU pool): an IO job's "result" is a row in
-        # the database, so the writer/DB IS the sink. The parent tracks progress
-        # via get_job_status and the outcome is the persisted row.
-        #
-        # __init__ reads as ordered steps; each helper owns one concern. Must run
-        # inside an event loop -- _start_workers uses asyncio.create_task.
-        self._init_queue(maxsize)
-        self._init_shared_state()
-        self._init_writer(engine)
-        self._start_workers()
 
-    def _init_queue(self, maxsize: int) -> None:
-        """The single asyncio queue: parent -> workers, with backpressure at
+    # -- Build steps, run in order by WorkerPool.start() ---------------------
+    #
+    # Workflow this pool wires up  (parent = orchestrator):
+    #
+    #   parent.insert_job(job)
+    #        │
+    #        ▼
+    #   io_queue ───► worker[0..N] ───► job.process(writer)
+    #  (shared input)  (async tasks)          │
+    #                                          └──► TelemetryWriter.write() ──► DB
+    #                                                 (asyncio.to_thread; off-loop)
+    #
+    # No result queue (unlike the CPU pool): an IO job's "result" is a row in
+    # the database, so the writer/DB IS the sink. The parent tracks progress
+    # via get_job_status and the outcome is the persisted row.
+
+    def _init_queue(self) -> None:
+        """Step 1: the single asyncio queue: parent -> workers, with backpressure at
         ``maxsize`` (``insert_job`` awaits when the queue is full)."""
-        self.io_queue: asyncio.Queue = asyncio.Queue(maxsize)
+        self.io_queue: asyncio.Queue = asyncio.Queue(self._maxsize)
 
     def _init_shared_state(self) -> None:
-        """Job bookkeeping. Unlike the CPU pool, NO ``Manager`` is needed: asyncio
+        """Step 2: job bookkeeping. Unlike the CPU pool, NO ``Manager`` is needed: asyncio
         runs one process on one event-loop thread, so a plain dict/set is safe --
         the only concurrency is cooperative (at ``await`` points), and this shared
         state is never touched inside ``asyncio.to_thread`` (only the DB write is).
@@ -205,24 +216,30 @@ class IoWorkerPool(WorkerPool):
         self._status: dict[str, JobStatus] = {}
         self._cancelled: set[str] = set()
 
-    def _init_writer(self, engine: Engine | None) -> None:
-        """The SQLAlchemy sink shared by all workers: engine + writer. Swap the
-        engine URL for ``postgresql://...`` in prod; the pool/writer are unchanged.
+    def _init_sinks(self) -> None:
+        """Step 3: the SQLAlchemy sink shared by all workers: engine + writer.
+
+        Where the CPU pool builds a registry of destinations, this pool has exactly
+        one: an IO job's payload IS the row it persists, so the DB is the only place
+        a result can go. Swap the engine URL for ``postgresql://...`` in prod; the
+        pool/writer are unchanged.
         """
-        self.engine = engine or make_engine()
+        self.engine = self._engine or make_engine()
         self.writer = TelemetryWriter(self.engine)
 
-    def _start_workers(self) -> None:
-        """Build one ``IoWorker`` per slot and launch each as an asyncio task.
+    def _init_workers(self) -> None:
+        """Step 4: build one ``IoWorker`` per slot; each launches its own task.
 
         Every worker shares the SAME queue, writer, and bookkeeping -- only the
-        worker id differs. Requires a running event loop (``asyncio.create_task``).
+        worker id differs. Requires a running event loop: the workers' ``start()``
+        calls ``asyncio.create_task``.
         """
-        self.io_workers = [
+        self.workers = [
             IoWorker(self.io_queue, i, self.writer, self._status, self._cancelled)
             for i in range(self.num_workers)
         ]
-        self.workers = [asyncio.create_task(w.run()) for w in self.io_workers]
+        for worker in self.workers:
+            worker.start()  # the worker creates its own task; the pool never does
 
     # -- Public API ---------------------------------------------------------
     # Same shape as CpuWorkerPool: long-running work arrives over a REST submit
@@ -280,13 +297,14 @@ class IoWorkerPool(WorkerPool):
         """
         for _ in range(self.num_workers):
             await self.io_queue.put(None)
-        await asyncio.gather(*self.workers)
+        await asyncio.gather(*(worker.task for worker in self.workers))
 
 
 async def main() -> None:
 
-    # Ceate a pool of IO workers
+    # Ceate a pool of IO workers, then build it (queue, state, sink, workers)
     pool = IoWorkerPool(num_workers=3)
+    pool.start()
 
     # Submit multiple IO jobs to the pool. Each job is a TelemetryData instance
     for i in range(10):

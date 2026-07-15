@@ -1,4 +1,4 @@
-"""Tests for the event-driven flight-state machine (JD 3b).
+"""Tests for the event-driven flight-state machine.
 
 Run from the repo root with the project venv:
 

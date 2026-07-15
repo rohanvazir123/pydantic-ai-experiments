@@ -27,11 +27,24 @@ def test_in_order_submits_emit_immediately() -> None:
     assert seqs(resequencer) == [0, 1, 2, 3, 4]
 
 
-def test_out_of_order_submits_flush_once_gap_fills() -> None:
+def test_gap_fills_on_a_later_submit() -> None:
+    """A blocked device emits NOTHING and loses nothing; the frame that fills
+    the gap releases everything queued behind it, on its own submit.
+
+    `_emit_ready` never waits for that frame -- it returns immediately, leaving
+    the heap intact, and the next submit is what makes progress.
+    """
     resequencer = Resequencer()
-    for i in (2, 0, 3, 1):  # 2 and 3 arrive before their predecessors
-        resequencer.submit(frame(i))
+    resequencer.submit(frame(2))
+    resequencer.submit(frame(3))
+    assert resequencer.emitted == {}  # blocked on seq=0: withheld, not dropped
+
+    resequencer.submit(frame(0))
+    assert seqs(resequencer) == [0]  # 0 released; 2 and 3 still blocked on seq=1
+
+    resequencer.submit(frame(1))  # this submit releases 1, 2 and 3 together
     assert seqs(resequencer) == [0, 1, 2, 3]
+    assert resequencer.gaps == []  # nothing was ever declared lost
 
 
 def test_stale_frame_is_dropped_at_submit() -> None:
@@ -48,7 +61,7 @@ def test_stale_frame_is_dropped_at_submit() -> None:
 
 def test_duplicate_of_a_still_buffered_frame_is_emitted_once() -> None:
     """The case `seq < expected` can't catch: a dup that arrives while its twin
-    is still buffered. Both sit in the heap; the flush drain drops the loser.
+    is still buffered. Both sit in the heap; `_emit_ready` drops the loser.
     """
     resequencer = Resequencer()
     resequencer.submit(frame(0))  # emitted, expected -> 1
@@ -96,7 +109,7 @@ def test_permanently_missing_seq_forces_advance_once_buffer_fills() -> None:
     # seq=1 never arrives; 2..5 pile up in the buffer instead
     for i in (2, 3, 4, 5):
         resequencer.submit(frame(i))
-    # buffer exceeded max_buffer -> gap skipped, everything buffered flushes
+    # buffer exceeded max_buffer -> gap skipped, everything buffered released
     assert resequencer.gaps == [("drone-1", 1, 2)]
     assert seqs(resequencer) == [0, 2, 3, 4, 5]
 
@@ -119,6 +132,7 @@ async def test_worker_pool_resequences_despite_concurrent_out_of_order_completio
     """
     resequencer = Resequencer(max_buffer=25, max_delay=100.0)
     pool = ResequencingWorkerPool(num_workers=8, resequencer=resequencer)
+    pool.start()
     for i in range(20):
         await pool.insert_job(frame(i))
     await pool.join_tasks()

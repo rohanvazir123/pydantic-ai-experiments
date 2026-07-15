@@ -79,5 +79,8 @@ rag/v2/.deepeval/
 **/node_modules/
 **/.vite/
 
+# VS Code Code Runner scratch file (written when running a selection, not a file)
+**/tempCodeRunnerFile.py
+
 
 basics/telemetry/.prep

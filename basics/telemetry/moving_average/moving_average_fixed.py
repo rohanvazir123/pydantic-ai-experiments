@@ -1,7 +1,7 @@
 """Moving average of a streaming telemetry metric over the last N seconds.
 
-Reviewed, corrected version of the ``basics/telemetry/rolling_avg.py`` draft.
-The draft is kept unchanged for comparison; build on this file instead.
+Supersedes an earlier ``rolling_avg.py`` draft (removed). The corrections are
+listed because each is a design lesson, not just a bug fix -- see the README.
 
 What changed (see README for the full write-up):
 
@@ -75,14 +75,16 @@ class TelemetryRollingAverage:
         self,
         max_age_seconds: float,
         *,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
+        clock: Callable[[], float] | None = None,
+        ) -> None:
         if max_age_seconds <= 0:
             raise ValueError("max_age_seconds must be positive")
         self._max_age = max_age_seconds
-        self._clock = clock
         self._buffer: list[Sample] = []  # kept sorted ascending by timestamp
         self._running_sum = 0.0
+
+        # The clock is injectable for deterministic testing; default is monotonic.
+        self._clock: Callable[[], float] = clock or time.monotonic  # default monotonic clock
 
     def add(self, *samples: Sample, now: float | None = None) -> None:
         """Add one or more samples (convenience wrapper over :meth:`add_batch`).
@@ -103,6 +105,9 @@ class TelemetryRollingAverage:
         Precondition: ``sorted_batch`` is internally sorted. This is trusted (not
         re-verified) for throughput, matching the parameter name. ``now`` may be
         supplied to make eviction deterministic; otherwise the clock is read.
+        It is sorted by timestamp, not value, because the window is defined by time,
+        not by value. 
+        Calling with an empty batch is a valid "tick" that just refreshes the window.
         """
         batch = list(sorted_batch)
         if not batch:
@@ -111,16 +116,23 @@ class TelemetryRollingAverage:
             self._evict(self._clock() if now is None else now)
             return
 
+        # 1. Add new points to running stats BEFORE merging
         self._running_sum += math.fsum(s.value for s in batch)
         prev_last = self._buffer[-1].timestamp if self._buffer else None
+
+        # 2. Merge the batch into the buffer. The buffer is kept sorted ascending by
+        # timestamp. If the batch is in-order, this is just an O(k) extend.
+        #  If the batch overlaps existing data, Timsort merges the two sorted runs in O(N +
         self._buffer.extend(batch)
+
+        # 3. Evict expired elements and subtract them from running stats. 
+        # This is done  after the merge so that the eviction sees the full buffer, 
+        # including the new batch.
         if prev_last is not None and batch[0].timestamp < prev_last:
-            # The batch overlaps existing data → buffer is now two sorted runs.
-            # Timsort is adaptive: it detects the runs and merges them in O(N + k)
-            # (in C, in place). Sample is a NamedTuple, so it already orders by
-            # timestamp first — no key needed. In-order batches skip the sort and
-            # stay a pure O(k) append.
+            # O(N + k) merge path: the batch overlaps existing data, so we need to re-sort
             self._buffer.sort()
+
+        # Evict expired elements and subtract them from running stats. This is done after the merge so that the eviction sees the full buffer, including the new batch.
         self._evict(self._clock() if now is None else now)
 
     def get_moving_average(self, *, now: float | None = None) -> float:
@@ -166,6 +178,7 @@ class TelemetryRollingAverage:
 def _demo() -> None:
     """Feed a burst of readings and show the average shrinking as they age out."""
     clock_time = [1000.0]
+    # Passing a lambda clock allows us to control the time for testing.
     avg = TelemetryRollingAverage(max_age_seconds=5.0, clock=lambda: clock_time[0])
 
     for i in range(10):

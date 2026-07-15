@@ -1,4 +1,4 @@
-"""Flight-state machine (JD 3b) -- event-driven transition table + precise exceptions.
+"""Flight-state machine -- event-driven transition table + precise exceptions.
 
 Models a vehicle's flight lifecycle as a finite state machine. The prompt asks
 for a *robust* machine where *invalid transitions throw precise exceptions*.

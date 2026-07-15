@@ -50,8 +50,8 @@ it until a sentinel — so that shape lives in one place:
 | Base | Kind | Subclasses | Why this kind |
 |------|------|-----------|---------------|
 | `Job` | pydantic `BaseModel` | `ImageProcessingRequest`, `TelemetryData`, `TelemetryFrame` | a job is **data** — validated, serialisable, picklable across the process boundary; a compute job also **processes itself** via `process()` |
-| `Worker` | `ABC` | `CpuWorker`, `IoWorker`, `ResequencingWorker` | a worker is **behaviour** over non-serialisable runtime state (queues, connections) — not a model |
-| `WorkerPool` | `ABC` | `CpuWorkerPool`, `IoWorkerPool`, `ResequencingWorkerPool` | owns the queue + N workers; holds shared `num_workers`, declares the lifecycle contract |
+| `Worker` | `ABC` | `CpuWorker`, `IoWorker`, `ResequencingWorker` | a worker is **behaviour** over non-serialisable runtime state (queues, connections) — not a model; `start()` creates its own task/process |
+| `WorkerPool` | `ABC` | `CpuWorkerPool`, `IoWorkerPool`, `ResequencingWorkerPool` | owns the queue + N workers; `start()` is a **template method** sequencing the four build steps each pool fills in |
 
 `Job` (the merged base — formerly `WorkItem` + `Job`) carries an auto-generated
 `job_id` for tracking/cancellation plus an optional `type` label. A job
@@ -67,6 +67,35 @@ one thing the ABCs can't hide: the CPU side is **synchronous** (runs in child
 processes) and the IO side is **asynchronous** (coroutines on one loop), so
 `run` / `shutdown` (and `process`) are sync in the CPU subclasses and `async` in
 the IO subclasses — same contract, two colours.
+
+### Pool lifecycle: construction is inert, `start()` runs
+
+`__init__` only records config; `WorkerPool.start()` is a **template method**
+holding the one ordered sequence every pool follows, with each step abstract
+because the three share the shape but no mechanics:
+
+| Step | `CpuWorkerPool` | `IoWorkerPool` / `ResequencingWorkerPool` |
+|------|-----------------|--------------------------------------------|
+| `_init_queue` | `JoinableQueue` | `asyncio.Queue(maxsize)` (backpressure) |
+| `_init_shared_state` | `Manager` proxies (cross-process) | plain dict/set (one loop, one thread) |
+| `_init_sinks` | `file` / `http` registry, picked per job | the `TelemetryWriter` / `Resequencer` — one sink |
+| `_init_workers` | build N workers, `start()` each | same |
+
+Setup stays out of the constructor because every step has a runtime side effect
+— `_init_workers` spawns processes (CPU) and needs a running event loop (IO). A
+constructor calling overridable methods would let a half-built pool escape if a
+step raised, and it forces subclasses to set config *before* `super().__init__()`.
+It also pairs `start()` with the explicit `shutdown()` instead of hiding one half
+of the lifecycle.
+
+The same rule holds one level down: **the pool never creates a task or process.**
+`_init_workers` builds workers and calls `worker.start()`; each worker creates its
+own handle (`self.task` / `self.process`) and the pool joins it at shutdown. The
+handle can only be built from `self.run`, so it cannot exist before the worker
+does. The alternative — the pool creating it — would keep `run()`
+execution-agnostic, but that abstraction is unusable here: `IoWorker.run` is a
+coroutine awaiting an `asyncio.Queue`, and `CpuWorker` is built around
+spawn-picklable state, so neither is portable to the other execution model.
 
 ### Job lifecycle: `insert_job` / `cancel_job` / `get_job_status`
 
@@ -138,7 +167,7 @@ while leaving the originals unchanged for comparison.
   `HttpResponder` (POST back to a callback URL; stubbed as an outbox list).
 - **`CpuWorker`** — one worker process's consume loop; holds the sink registry
   and only spawn-picklable state, so its `run` method is a valid `Process` target.
-- **`CpuWorkerPool`** — owns the task/result queues, the sinks, and the processes.
+- **`CpuWorkerPool`** — owns the task/result queues, the sinks, and the workers.
 
 `CpuWorkerPool` starts one process per core (overridable), each running a
 `CpuWorker` that pulls `ImageProcessingRequest` payloads from a `JoinableQueue`,
@@ -147,6 +176,7 @@ queue. Lifecycle:
 
 ```python
 pool = CpuWorkerPool(num_workers=4)
+pool.start()                            # build queue, state, sinks, workers
 for job in payloads:                    # each job carries result_sink="file"|"http"
     pool.insert_job(job)
 pool.join_tasks()                       # wait for all work to finish
@@ -166,6 +196,7 @@ body.
 
 ```python
 pool = CpuWorkerPool()
+pool.start()                             # build on app startup
 
 @app.post("/jobs")                       # ImageProcessingRequest is the body
 def submit(job: ImageProcessingRequest) -> dict[str, str]:
@@ -199,11 +230,12 @@ Same shape as the CPU pool, over a SQLAlchemy sink:
   workers, plus the job-status/cancel bookkeeping.
 
 `IoWorkerPool` starts N `asyncio` tasks, each an `IoWorker` that consumes
-`TelemetryData` from an `asyncio.Queue` and persists it. Construction must happen
-inside a running event loop.
+`TelemetryData` from an `asyncio.Queue` and persists it. Construction is inert;
+`start()` is what runs, and it must be called inside a running event loop.
 
 ```python
 q = IoWorkerPool(num_workers=5)                       # in-memory SQLite by default
+q.start()                                             # needs a running event loop
 await q.insert_job(TelemetryData(device_id="d1", metric={"temp": 21}))
 await q.shutdown()                                    # drain, sentinel each, gather
 ```
@@ -245,7 +277,7 @@ Three details worth naming out loud:
   at 1 Hz sits on a gap for a minute before filling a 60-frame buffer), a time
   bound alone leaves *memory* unbounded. `close()` covers end-of-stream, where
   neither bound can fire because both are only tested from `submit()`.
-- **No dedupe index.** Duplicates are caught by the flush itself (`seq <
+- **No dedupe index.** Duplicates are caught by `_emit_ready` itself (`seq <
   expected` → drop), so no set mirrors the heap. Heap entries are
   `(seq, tiebreak, frame)`: without the `itertools.count()` tiebreak, a
   duplicate seq would compare the pydantic models and raise `TypeError`.

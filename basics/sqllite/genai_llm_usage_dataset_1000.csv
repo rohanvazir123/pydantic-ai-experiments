@@ -1,0 +1,1001 @@
+session_id,model_name,application_domain,task_type,prompt_length,total_tokens,temperature,top_p,rag_enabled,latency_sec,hallucination_flag,user_satisfaction,estimated_cost_usd,successful_response
+1,GPT-4o,Healthcare,Summarization,1319,2455,0.17,0.87,0,3.76,0,4,0.0236,1
+2,GPT-4o,Customer Support,Summarization,486,1425,0.76,0.51,0,2.36,1,5,0.0236,0
+3,Gemma 3,Retail,Classification,1439,1648,0.63,0.64,0,3.68,1,4,0.0139,0
+4,Gemma 3,Retail,Summarization,1662,2812,0.07,0.73,0,3.25,1,4,0.0374,0
+5,Gemma 3,Finance,Classification,1452,1678,0.1,0.83,0,8.04,0,4,0.0171,0
+6,Mistral Large,Education,Code Generation,737,1850,0.31,0.63,0,8.43,0,5,0.0091,0
+7,GPT-4o,Finance,Translation,1419,1504,0.84,0.84,0,8.55,0,5,0.0139,0
+8,Claude 3.7,Education,Code Generation,1804,2366,1.08,0.61,0,6.35,1,4,0.0365,0
+9,Llama 3.1,Coding,Summarization,1207,1413,0.64,0.79,1,4.53,0,5,0.0247,1
+10,Qwen 2.5,Healthcare,Code Generation,1632,2785,1.02,0.8,1,5.24,1,5,0.0061,0
+11,Qwen 2.5,Coding,Classification,1822,2732,0.81,0.63,1,7.48,0,4,0.0056,0
+12,Claude 3.7,Healthcare,Translation,2000,2333,0.75,0.59,0,9.82,1,4,0.0115,0
+13,GPT-4o,Healthcare,Code Generation,673,811,0.73,0.56,0,3.87,1,4,0.0099,0
+14,Claude 3.7,Customer Support,Translation,1005,1998,1.22,0.99,0,5.61,0,5,0.0099,0
+15,Mistral Large,Retail,RAG,876,1713,1.45,0.96,1,7.19,0,5,0.0235,0
+16,Llama 3.1,Healthcare,QA,257,291,0.37,0.53,0,0.69,0,4,0.0039,1
+17,Claude 3.7,Retail,RAG,1770,2894,0.5,0.76,0,4.58,1,4,0.0545,0
+18,Qwen 2.5,Healthcare,Code Generation,507,1252,1.18,0.9,1,2.32,0,5,0.013,1
+19,Llama 3.1,Legal,Summarization,1348,1877,1.48,0.55,0,5.03,1,4,0.0219,0
+20,Llama 3.1,Finance,RAG,580,1707,0.69,0.94,0,1.51,0,5,0.0332,1
+21,Mistral Large,Education,RAG,1004,1028,0.72,0.93,1,8.49,0,5,0.007,0
+22,Claude 3.7,Coding,Translation,1436,1844,1.44,1.0,0,6.33,1,4,0.0358,0
+23,Claude 3.7,Healthcare,Code Generation,134,1194,1.12,0.53,0,4.92,0,4,0.0064,1
+24,Claude 3.7,Education,Classification,1775,1962,0.35,0.56,0,9.36,0,4,0.0245,0
+25,GPT-4o,Healthcare,RAG,428,1384,1.0,0.66,1,2.81,0,4,0.0215,1
+26,Llama 3.1,Education,Classification,1282,1573,1.5,1.0,1,2.37,0,5,0.0281,1
+27,GPT-4o,Healthcare,Code Generation,333,565,0.66,0.77,1,2.98,0,5,0.0025,1
+28,GPT-4o,Healthcare,Code Generation,1143,1703,0.23,0.64,0,3.27,1,4,0.0111,0
+29,Mistral Large,Retail,QA,877,1227,1.24,0.52,1,3.9,0,5,0.0146,1
+30,Gemma 3,Education,QA,239,1390,0.11,0.94,1,7.55,0,4,0.006,0
+31,Llama 3.1,Customer Support,Summarization,1850,2186,0.54,0.84,1,7.71,1,5,0.0137,0
+32,Mistral Large,Customer Support,QA,1815,2381,0.62,0.59,0,9.68,1,3,0.0348,0
+33,Mistral Large,Education,Classification,1768,2254,0.71,0.6,1,9.57,1,3,0.0313,0
+34,Llama 3.1,Retail,Classification,1780,1856,0.1,0.89,1,5.16,1,4,0.0361,0
+35,Llama 3.1,Education,QA,88,1155,0.16,0.72,1,5.99,1,4,0.021,0
+36,Gemma 3,Retail,Classification,1461,2364,0.65,0.76,1,8.32,0,3,0.033,0
+37,Llama 3.1,Finance,RAG,1368,2056,1.27,0.86,1,4.25,1,4,0.0151,0
+38,Llama 3.1,Legal,Translation,1371,2513,1.41,0.84,1,8.96,1,4,0.0188,0
+39,Qwen 2.5,Coding,Translation,1252,1619,0.98,0.73,1,5.21,0,5,0.0115,0
+40,Mistral Large,Retail,QA,696,1123,0.14,0.98,0,2.9,1,4,0.0032,0
+41,GPT-4o,Customer Support,QA,942,1780,0.62,0.81,1,2.89,1,4,0.0246,0
+42,Mistral Large,Finance,RAG,1604,2765,0.64,0.59,0,9.68,1,3,0.0478,0
+43,Mistral Large,Legal,Classification,1377,2519,0.8,0.78,1,4.4,1,4,0.0123,0
+44,Llama 3.1,Education,Classification,1549,2131,0.37,0.82,0,8.11,1,4,0.0316,0
+45,Claude 3.7,Legal,RAG,664,1122,1.34,0.54,0,2.21,1,4,0.0105,0
+46,Mistral Large,Customer Support,RAG,137,1133,0.31,0.71,1,7.43,0,3,0.0094,0
+47,Mistral Large,Education,Code Generation,1112,1581,1.12,0.77,1,6.3,0,4,0.017,0
+48,GPT-4o,Coding,RAG,1400,2226,1.2,0.86,0,8.51,0,4,0.031,0
+49,Mistral Large,Education,RAG,287,1238,1.3,0.59,0,2.59,1,4,0.0194,0
+50,Qwen 2.5,Healthcare,QA,526,1005,1.25,0.74,1,6.7,0,5,0.0161,0
+51,Llama 3.1,Legal,Code Generation,1954,2943,0.37,0.92,0,7.49,0,5,0.0358,0
+52,Gemma 3,Retail,Code Generation,534,1191,1.15,0.58,0,5.6,0,4,0.0029,0
+53,Qwen 2.5,Retail,QA,1869,2097,1.44,0.7,0,8.11,0,5,0.0156,0
+54,Mistral Large,Customer Support,RAG,1640,1801,1.48,0.89,1,4.96,1,4,0.0147,0
+55,Qwen 2.5,Education,Translation,226,1137,0.65,0.68,0,7.44,1,3,0.013,0
+56,Mistral Large,Finance,RAG,1665,2187,1.38,0.89,1,5.91,1,5,0.0078,0
+57,Gemma 3,Education,Translation,1177,2195,0.92,0.69,0,1.9,1,4,0.0359,0
+58,Llama 3.1,Coding,RAG,1446,1960,1.32,0.78,0,6.04,0,5,0.0212,0
+59,Claude 3.7,Education,RAG,1332,2180,1.07,0.72,0,2.0,1,5,0.0164,0
+60,GPT-4o,Coding,Summarization,1143,2092,0.8,0.71,1,7.45,1,4,0.0137,0
+61,Claude 3.7,Customer Support,Translation,656,1119,0.18,0.77,0,6.97,0,5,0.0078,0
+62,Llama 3.1,Education,QA,1232,1619,0.42,0.55,1,3.25,0,4,0.0239,1
+63,Mistral Large,Education,Summarization,121,166,0.83,0.85,0,1.34,1,5,0.0017,0
+64,GPT-4o,Finance,Summarization,1987,3014,0.08,0.97,1,6.41,0,4,0.0402,0
+65,Mistral Large,Education,Translation,1671,2153,0.84,0.65,1,10.04,0,4,0.019,0
+66,Llama 3.1,Finance,Translation,888,1340,0.46,0.81,0,6.07,0,4,0.0046,0
+67,Qwen 2.5,Customer Support,RAG,163,249,0.23,0.7,1,5.78,1,4,0.0037,0
+68,Gemma 3,Customer Support,Summarization,155,410,1.03,0.96,1,6.54,0,4,0.0056,0
+69,Mistral Large,Education,Translation,156,430,0.09,0.9,1,5.04,1,4,0.0032,0
+70,Qwen 2.5,Customer Support,Translation,1115,1647,0.74,0.54,1,1.9,1,4,0.0101,0
+71,Gemma 3,Finance,Translation,1212,1590,1.43,1.0,0,6.96,1,4,0.0218,0
+72,Llama 3.1,Education,RAG,902,1604,0.95,0.75,1,2.04,1,4,0.0062,0
+73,Mistral Large,Customer Support,Translation,1430,1630,0.74,0.83,1,5.11,0,4,0.0127,0
+74,Mistral Large,Coding,RAG,1699,2103,1.48,0.83,0,6.56,1,4,0.0278,0
+75,Claude 3.7,Customer Support,Summarization,1566,2578,0.08,0.63,1,3.18,1,4,0.0503,0
+76,Llama 3.1,Legal,Code Generation,1463,1715,0.24,0.78,0,6.34,0,4,0.0071,0
+77,Claude 3.7,Retail,Code Generation,607,1562,0.76,0.64,0,7.47,1,4,0.0139,0
+78,Qwen 2.5,Education,Translation,1810,2869,0.2,0.53,1,8.49,1,4,0.0059,0
+79,Mistral Large,Education,Summarization,1197,1897,1.5,0.74,1,2.86,1,5,0.0223,0
+80,Mistral Large,Legal,Code Generation,1438,2109,0.36,0.69,0,8.67,1,4,0.031,0
+81,GPT-4o,Customer Support,RAG,1632,2680,1.23,0.99,0,6.1,0,5,0.0214,0
+82,Gemma 3,Retail,Code Generation,214,387,0.79,0.73,0,6.1,1,4,0.0075,0
+83,GPT-4o,Finance,Code Generation,824,1843,0.97,0.93,1,7.88,1,5,0.0049,0
+84,GPT-4o,Healthcare,Classification,1411,1636,1.38,1.0,0,7.79,1,4,0.0237,0
+85,Llama 3.1,Healthcare,Translation,1640,2819,0.08,0.68,1,5.61,0,5,0.0148,0
+86,Qwen 2.5,Healthcare,RAG,1793,2757,0.57,0.84,0,6.32,0,5,0.0283,0
+87,Gemma 3,Finance,RAG,1855,2743,0.43,0.77,1,3.09,1,5,0.028,0
+88,Gemma 3,Healthcare,Translation,1757,1821,0.72,0.62,1,6.86,1,5,0.0252,0
+89,Qwen 2.5,Finance,Translation,1781,2272,1.03,0.87,1,2.81,1,5,0.019,0
+90,Claude 3.7,Education,Code Generation,523,623,1.02,0.86,0,6.0,0,4,0.0062,0
+91,Gemma 3,Retail,Translation,279,569,0.14,0.65,0,6.38,0,5,0.0101,0
+92,GPT-4o,Finance,Summarization,1880,2593,0.41,0.58,1,9.68,1,4,0.027,0
+93,Mistral Large,Education,Code Generation,1771,2599,1.01,0.84,0,5.51,1,3,0.0303,0
+94,Claude 3.7,Education,Translation,1543,2041,1.01,0.79,0,8.54,1,4,0.0268,0
+95,Gemma 3,Legal,QA,463,721,0.97,0.82,1,4.4,1,4,0.0137,0
+96,Mistral Large,Retail,RAG,209,545,0.35,0.77,1,3.49,1,5,0.0075,0
+97,Qwen 2.5,Education,Translation,1933,2436,1.43,0.52,1,5.51,1,5,0.0092,0
+98,Qwen 2.5,Retail,QA,1856,2807,1.47,0.68,0,5.63,0,4,0.0163,0
+99,Llama 3.1,Education,Summarization,113,1268,1.18,0.62,0,1.32,0,4,0.0075,1
+100,Qwen 2.5,Customer Support,QA,1625,2751,1.35,0.5,0,8.93,0,4,0.0141,0
+101,Mistral Large,Retail,QA,279,655,0.02,0.89,0,2.4,1,4,0.0028,0
+102,Qwen 2.5,Customer Support,Code Generation,1537,2588,0.1,0.72,1,4.95,0,4,0.0338,1
+103,Mistral Large,Healthcare,QA,1077,1970,0.45,0.82,1,1.79,1,5,0.0213,0
+104,Mistral Large,Healthcare,Code Generation,669,1775,0.91,0.53,1,3.18,1,4,0.0197,0
+105,Mistral Large,Legal,RAG,244,1188,1.28,0.83,1,6.5,0,5,0.0112,0
+106,GPT-4o,Legal,QA,1504,2495,0.14,0.71,0,7.27,1,3,0.0423,0
+107,Mistral Large,Customer Support,Code Generation,1534,2395,1.11,0.91,0,6.46,1,4,0.0335,0
+108,Claude 3.7,Education,QA,115,1122,1.45,0.8,0,3.09,0,4,0.0044,1
+109,Gemma 3,Education,Classification,1571,1650,0.42,0.61,1,5.51,0,4,0.0242,0
+110,Mistral Large,Legal,RAG,22,104,0.27,0.57,0,5.35,0,4,0.0012,0
+111,Qwen 2.5,Healthcare,Classification,708,1046,0.24,0.66,0,3.62,0,4,0.0137,1
+112,Gemma 3,Coding,Code Generation,917,1986,0.99,0.74,0,4.79,1,4,0.0193,0
+113,Llama 3.1,Customer Support,Classification,1224,1259,0.73,0.83,0,2.08,1,4,0.0239,0
+114,Claude 3.7,Customer Support,Code Generation,602,1400,0.49,0.5,0,6.78,0,4,0.0086,0
+115,Claude 3.7,Legal,Translation,1661,2622,0.53,0.7,0,8.06,1,5,0.0459,0
+116,Qwen 2.5,Education,QA,838,1209,1.06,0.71,1,2.15,0,5,0.0159,1
+117,Llama 3.1,Healthcare,Translation,904,1559,1.27,0.62,1,5.92,0,5,0.0093,0
+118,Llama 3.1,Finance,Translation,1306,1628,0.17,0.75,1,8.9,1,3,0.0075,0
+119,Claude 3.7,Coding,Code Generation,323,1497,1.14,0.83,1,1.99,1,5,0.0151,0
+120,Gemma 3,Retail,QA,1289,2269,0.48,0.99,0,4.28,1,4,0.0169,0
+121,GPT-4o,Retail,Translation,730,1337,0.76,0.66,1,4.64,0,4,0.0235,1
+122,Mistral Large,Retail,Summarization,1048,2238,0.58,0.79,1,8.95,0,4,0.0174,0
+123,Qwen 2.5,Legal,RAG,1971,3024,0.09,0.55,0,9.68,1,4,0.0082,0
+124,GPT-4o,Customer Support,Code Generation,1083,1940,0.78,0.58,1,4.46,1,5,0.0276,0
+125,Claude 3.7,Customer Support,Summarization,1335,1871,0.5,0.66,1,6.22,1,4,0.0259,0
+126,Gemma 3,Retail,RAG,692,976,0.12,0.83,1,8.22,1,4,0.0184,0
+127,Llama 3.1,Finance,Classification,1327,2388,1.19,0.91,1,7.09,0,4,0.0204,0
+128,Claude 3.7,Customer Support,Code Generation,1950,2575,1.15,0.6,0,10.44,0,5,0.0098,0
+129,Claude 3.7,Customer Support,Summarization,1819,2154,0.79,0.83,1,9.31,0,4,0.0365,0
+130,Llama 3.1,Retail,Summarization,1486,2089,0.66,0.71,1,7.33,0,5,0.0337,0
+131,Gemma 3,Customer Support,RAG,643,1831,1.45,0.89,1,8.05,0,5,0.0189,0
+132,Claude 3.7,Healthcare,Code Generation,1039,1165,0.79,0.98,1,7.87,0,4,0.0207,0
+133,Mistral Large,Healthcare,Summarization,1742,2682,0.77,0.56,1,3.03,0,5,0.0125,1
+134,GPT-4o,Education,Summarization,1682,2730,0.68,0.67,1,2.51,0,5,0.0244,1
+135,Mistral Large,Coding,Summarization,67,368,0.48,0.55,0,5.86,1,3,0.0068,0
+136,Qwen 2.5,Retail,Translation,1564,2108,1.06,0.72,0,2.2,0,4,0.0099,1
+137,GPT-4o,Healthcare,RAG,876,1755,0.17,0.64,0,3.64,0,5,0.0232,1
+138,Claude 3.7,Legal,Summarization,1232,2131,0.8,0.82,1,6.23,0,4,0.0178,0
+139,Gemma 3,Education,Code Generation,1370,2352,1.0,0.76,1,4.73,0,4,0.0211,1
+140,Qwen 2.5,Finance,Code Generation,43,336,0.54,0.53,1,2.13,0,4,0.004,1
+141,Llama 3.1,Healthcare,Classification,961,1918,1.47,0.74,0,2.82,0,4,0.0108,1
+142,Gemma 3,Customer Support,QA,1921,2015,0.47,0.7,1,8.96,1,4,0.011,0
+143,Llama 3.1,Legal,Code Generation,1783,2703,0.98,0.64,1,8.66,1,5,0.0242,0
+144,Llama 3.1,Retail,Classification,1028,1209,0.55,0.9,1,3.57,0,5,0.0241,1
+145,GPT-4o,Coding,Classification,667,1028,0.15,0.66,1,3.34,1,5,0.0086,0
+146,Qwen 2.5,Finance,QA,1269,2120,1.5,0.64,0,9.43,0,4,0.0348,0
+147,Mistral Large,Retail,QA,302,805,1.27,0.84,0,4.0,0,5,0.0069,1
+148,Gemma 3,Coding,Classification,1249,2444,0.23,0.72,0,4.65,1,4,0.021,0
+149,Llama 3.1,Retail,Classification,521,1077,1.44,0.51,0,2.3,1,5,0.0158,0
+150,GPT-4o,Customer Support,Code Generation,1431,1804,1.37,0.75,1,2.95,0,5,0.0181,1
+151,Qwen 2.5,Coding,Summarization,1991,2625,1.27,0.66,1,5.4,0,5,0.0389,0
+152,Gemma 3,Legal,Translation,1635,2666,0.54,0.61,0,9.93,0,3,0.0319,0
+153,Gemma 3,Coding,QA,275,1133,0.92,0.54,1,2.96,1,5,0.0038,0
+154,GPT-4o,Retail,Summarization,931,1837,0.7,0.76,0,2.36,0,5,0.0324,1
+155,Claude 3.7,Education,Summarization,632,813,0.25,0.66,1,6.52,1,4,0.0109,0
+156,Claude 3.7,Education,Translation,1290,1660,0.45,0.77,0,5.73,0,5,0.0249,0
+157,Mistral Large,Coding,Translation,94,1285,1.24,0.51,0,0.67,1,5,0.0173,0
+158,Mistral Large,Legal,RAG,603,1551,0.96,0.65,1,2.86,1,4,0.0048,0
+159,Claude 3.7,Healthcare,Classification,961,1797,0.31,0.8,1,3.84,1,4,0.0156,0
+160,Mistral Large,Finance,Summarization,505,1119,0.7,0.63,0,2.77,0,5,0.0196,1
+161,Mistral Large,Healthcare,QA,1676,2750,0.49,0.79,1,4.73,0,4,0.049,1
+162,Qwen 2.5,Coding,RAG,1945,2068,0.59,0.73,0,4.51,1,4,0.0264,0
+163,Claude 3.7,Retail,Summarization,595,1440,0.81,0.92,1,4.3,1,4,0.0133,0
+164,Gemma 3,Retail,Classification,752,1035,0.83,0.54,0,5.07,1,5,0.0094,0
+165,Mistral Large,Retail,RAG,1556,1655,0.22,0.8,0,5.28,0,4,0.0132,0
+166,Gemma 3,Retail,Classification,315,1139,0.91,0.76,0,3.15,1,5,0.0174,0
+167,Mistral Large,Retail,Classification,1048,1102,1.24,0.77,1,7.04,1,4,0.0156,0
+168,Llama 3.1,Retail,Code Generation,1641,2127,1.35,0.94,1,7.16,1,4,0.0266,0
+169,GPT-4o,Legal,Classification,1486,2678,0.93,0.92,0,3.21,0,5,0.0107,1
+170,Qwen 2.5,Legal,Translation,867,1169,0.23,0.85,0,4.48,1,4,0.0141,0
+171,Llama 3.1,Education,Translation,781,1342,0.47,0.59,1,8.29,1,4,0.0073,0
+172,Qwen 2.5,Education,Classification,621,1642,0.34,0.99,0,3.3,1,4,0.0136,0
+173,Qwen 2.5,Healthcare,Classification,259,578,0.86,0.77,1,7.51,1,4,0.0041,0
+174,Claude 3.7,Coding,Translation,1902,3073,0.66,0.63,1,6.31,0,5,0.0137,0
+175,GPT-4o,Coding,Summarization,500,725,0.36,0.83,0,4.97,0,4,0.0108,1
+176,Gemma 3,Coding,QA,20,448,1.45,0.99,1,1.46,1,5,0.0032,0
+177,GPT-4o,Customer Support,RAG,1869,2744,1.15,0.83,0,4.35,0,5,0.0142,1
+178,Gemma 3,Education,RAG,1623,1661,0.74,0.97,0,9.73,1,3,0.0213,0
+179,Qwen 2.5,Legal,Code Generation,1323,1737,0.81,0.75,1,9.17,1,4,0.0138,0
+180,Mistral Large,Customer Support,RAG,536,915,1.08,0.51,0,3.5,1,5,0.0123,0
+181,Mistral Large,Finance,RAG,1065,1747,0.49,0.7,1,2.28,0,5,0.0037,1
+182,GPT-4o,Legal,Classification,1553,2309,0.4,0.66,1,6.68,0,5,0.0072,0
+183,Llama 3.1,Legal,Summarization,337,961,0.61,0.75,0,7.6,1,4,0.0057,0
+184,GPT-4o,Retail,RAG,941,1467,1.12,0.8,0,4.62,1,5,0.0187,0
+185,Claude 3.7,Legal,QA,1091,2283,1.06,0.54,0,5.96,0,4,0.0113,0
+186,Claude 3.7,Healthcare,Translation,1403,2351,0.31,0.79,0,2.66,1,4,0.0223,0
+187,Gemma 3,Coding,QA,956,1422,1.01,0.65,0,1.56,1,5,0.004,0
+188,Qwen 2.5,Coding,Code Generation,1118,1725,1.49,0.97,0,2.14,1,4,0.0273,0
+189,Claude 3.7,Finance,Code Generation,1983,2167,0.63,1.0,1,5.66,1,4,0.0301,0
+190,Mistral Large,Coding,Code Generation,1771,1798,0.52,0.59,0,6.6,0,5,0.0353,0
+191,Qwen 2.5,Customer Support,QA,1125,1462,0.64,0.69,1,3.4,1,4,0.0276,0
+192,Mistral Large,Retail,Code Generation,75,517,1.21,0.71,0,6.27,0,4,0.0066,0
+193,GPT-4o,Finance,Translation,1450,2575,1.31,0.62,0,2.36,1,4,0.0452,0
+194,Claude 3.7,Finance,RAG,602,1240,0.35,0.96,0,5.45,1,5,0.0245,0
+195,Qwen 2.5,Coding,RAG,625,1783,0.41,0.78,1,5.6,0,4,0.0348,0
+196,Llama 3.1,Education,Code Generation,1619,2015,0.79,0.85,1,5.41,1,5,0.0212,0
+197,Qwen 2.5,Healthcare,RAG,305,1120,1.21,0.96,0,4.97,1,4,0.0063,0
+198,GPT-4o,Finance,Translation,1744,2536,0.56,0.77,1,8.85,0,4,0.0326,0
+199,Qwen 2.5,Healthcare,Code Generation,1493,1544,1.01,0.61,1,3.7,1,4,0.0084,0
+200,Mistral Large,Legal,Translation,1554,2064,0.72,0.62,1,6.86,0,4,0.0329,0
+201,Gemma 3,Finance,Classification,1338,1559,0.54,0.63,1,5.87,1,5,0.0234,0
+202,Qwen 2.5,Legal,Classification,650,1204,0.62,0.78,0,2.74,0,5,0.0151,1
+203,Gemma 3,Customer Support,RAG,322,1469,0.29,0.62,1,5.05,0,5,0.021,0
+204,Claude 3.7,Coding,QA,1989,2295,1.09,0.87,0,6.28,1,4,0.0248,0
+205,GPT-4o,Coding,Summarization,1083,1947,0.05,0.92,0,8.93,0,4,0.026,0
+206,GPT-4o,Healthcare,Translation,28,80,0.33,0.73,1,0.71,1,4,0.001,0
+207,Llama 3.1,Finance,Translation,1489,1728,0.41,0.99,0,2.19,1,5,0.0198,0
+208,Qwen 2.5,Finance,Classification,1088,1939,0.38,0.68,1,7.76,0,4,0.0124,0
+209,GPT-4o,Coding,QA,1410,2260,1.24,0.54,0,9.7,0,4,0.027,0
+210,Qwen 2.5,Retail,RAG,1449,2550,0.26,0.75,0,5.4,1,5,0.0156,0
+211,Llama 3.1,Customer Support,Code Generation,565,1229,0.07,0.54,0,8.13,0,3,0.007,0
+212,Llama 3.1,Customer Support,Code Generation,1691,2818,0.6,0.54,1,3.58,0,4,0.044,1
+213,Claude 3.7,Retail,RAG,1493,1988,0.12,0.87,1,4.76,0,5,0.0162,1
+214,Mistral Large,Finance,Code Generation,1994,2481,1.16,0.51,1,4.82,1,4,0.047,0
+215,Qwen 2.5,Finance,Code Generation,1209,1397,0.99,0.54,0,6.54,0,4,0.0123,0
+216,GPT-4o,Finance,RAG,807,1564,0.48,0.55,1,1.25,1,5,0.006,0
+217,Gemma 3,Customer Support,RAG,929,2084,0.84,0.76,1,2.17,0,4,0.0266,1
+218,Gemma 3,Legal,Summarization,35,834,0.44,0.69,0,0.9,0,4,0.0057,1
+219,Mistral Large,Retail,Translation,139,674,0.25,0.64,1,2.71,0,5,0.0101,1
+220,Gemma 3,Legal,Code Generation,410,1208,0.69,0.57,1,0.77,1,5,0.0096,0
+221,Gemma 3,Education,Code Generation,1227,1890,0.2,0.66,1,9.12,0,4,0.0173,0
+222,GPT-4o,Retail,Summarization,1433,2027,0.95,0.98,1,8.09,1,4,0.0184,0
+223,Qwen 2.5,Healthcare,RAG,1222,1671,1.5,0.59,1,7.71,0,4,0.0121,0
+224,Mistral Large,Retail,RAG,1388,2180,0.75,0.82,1,3.82,0,4,0.0432,1
+225,GPT-4o,Customer Support,Summarization,1104,2223,0.76,0.96,1,6.98,0,4,0.041,0
+226,Llama 3.1,Retail,Code Generation,1356,2257,1.0,0.58,1,6.67,1,3,0.0085,0
+227,Claude 3.7,Finance,Classification,1072,2040,0.84,0.84,1,3.26,1,5,0.0257,0
+228,Llama 3.1,Retail,RAG,60,370,0.72,0.65,0,7.46,0,4,0.003,0
+229,GPT-4o,Customer Support,Classification,723,1357,0.71,0.72,0,6.54,1,3,0.0201,0
+230,Mistral Large,Finance,RAG,1337,2487,0.16,0.9,0,9.12,0,4,0.03,0
+231,Qwen 2.5,Finance,Summarization,1299,2239,0.28,0.82,0,5.19,0,5,0.0201,0
+232,Gemma 3,Coding,RAG,580,1349,1.13,0.9,0,1.41,0,5,0.0138,1
+233,Llama 3.1,Customer Support,Code Generation,1090,1822,1.45,0.66,0,4.59,1,4,0.0187,0
+234,Gemma 3,Coding,Summarization,1455,1716,1.2,0.96,1,6.62,0,4,0.007,0
+235,Qwen 2.5,Finance,Translation,1056,2072,0.58,0.8,0,6.0,1,4,0.03,0
+236,Llama 3.1,Customer Support,RAG,351,1106,0.73,0.57,0,3.09,1,5,0.0119,0
+237,GPT-4o,Customer Support,Summarization,1983,2912,0.84,0.83,1,5.87,1,4,0.0102,0
+238,Gemma 3,Customer Support,Translation,608,1753,0.05,0.61,1,3.21,1,4,0.0216,0
+239,Llama 3.1,Education,QA,1696,2586,1.49,0.77,0,8.22,1,3,0.0438,0
+240,Gemma 3,Customer Support,Code Generation,931,1380,0.39,0.93,0,2.04,0,5,0.0174,1
+241,Claude 3.7,Retail,Summarization,1259,1400,0.95,0.58,0,2.86,0,5,0.0162,1
+242,Qwen 2.5,Finance,Code Generation,672,1534,1.47,0.65,0,5.51,0,5,0.0305,0
+243,Qwen 2.5,Legal,RAG,1783,2805,0.2,0.57,1,4.94,0,4,0.0375,1
+244,Claude 3.7,Healthcare,Code Generation,935,1710,0.11,0.9,1,7.37,1,4,0.0184,0
+245,Llama 3.1,Legal,Classification,200,1314,1.1,0.73,0,5.63,1,4,0.0255,0
+246,Mistral Large,Healthcare,QA,671,790,1.24,0.67,1,5.55,1,3,0.0105,0
+247,Gemma 3,Healthcare,Code Generation,1913,2203,1.29,0.72,0,2.6,1,5,0.0164,0
+248,Llama 3.1,Legal,Code Generation,748,1579,0.38,0.69,0,8.18,0,4,0.0238,0
+249,Qwen 2.5,Education,QA,196,1279,1.06,0.5,0,4.16,0,5,0.0028,1
+250,Gemma 3,Finance,RAG,1771,2000,0.63,0.57,0,2.97,1,4,0.0172,0
+251,Llama 3.1,Legal,Classification,1594,2700,1.22,0.94,0,7.2,0,4,0.0351,0
+252,GPT-4o,Retail,Code Generation,1489,1686,0.32,0.87,0,9.24,1,4,0.0076,0
+253,Qwen 2.5,Retail,Classification,796,988,0.53,0.71,1,7.37,0,4,0.0127,0
+254,Mistral Large,Education,Code Generation,1605,2685,1.41,0.51,0,8.81,1,4,0.0145,0
+255,Claude 3.7,Healthcare,Classification,121,634,1.18,0.9,0,2.22,1,5,0.008,0
+256,GPT-4o,Healthcare,Translation,1922,3060,0.47,0.69,1,9.15,1,4,0.0481,0
+257,Mistral Large,Healthcare,Code Generation,148,1194,0.02,0.61,1,7.58,1,4,0.0115,0
+258,Qwen 2.5,Customer Support,Code Generation,1108,1446,0.81,0.58,0,2.24,0,5,0.0131,1
+259,Mistral Large,Retail,Translation,1404,1924,0.96,0.66,0,5.37,0,4,0.0189,0
+260,Gemma 3,Retail,Translation,122,423,0.46,0.87,0,6.13,0,5,0.0021,0
+261,Claude 3.7,Healthcare,Classification,1613,1693,1.23,0.63,0,5.12,1,4,0.0165,0
+262,Llama 3.1,Education,QA,1468,2511,1.46,0.81,0,5.9,1,5,0.0126,0
+263,Mistral Large,Finance,Summarization,1841,1886,0.86,0.86,0,4.28,0,4,0.0198,1
+264,Gemma 3,Education,QA,1917,2596,1.44,0.52,0,8.86,1,3,0.048,0
+265,GPT-4o,Legal,Classification,1180,2256,0.56,0.75,0,8.71,0,5,0.0433,0
+266,Qwen 2.5,Retail,Summarization,1594,2024,1.27,0.66,1,6.51,0,4,0.0326,0
+267,Llama 3.1,Retail,Classification,960,1288,0.55,0.99,0,9.18,0,3,0.0121,0
+268,Llama 3.1,Legal,RAG,1312,1961,1.26,0.94,1,9.26,0,3,0.0226,0
+269,Qwen 2.5,Education,RAG,1978,2472,0.09,1.0,0,8.22,0,5,0.0281,0
+270,Llama 3.1,Finance,Classification,1541,2723,0.13,0.55,0,3.17,1,4,0.0379,0
+271,Llama 3.1,Finance,Translation,544,1491,1.28,0.96,1,3.95,1,4,0.005,0
+272,Mistral Large,Education,RAG,233,1350,0.23,0.58,0,4.13,1,4,0.0214,0
+273,GPT-4o,Coding,Summarization,552,1012,1.28,0.55,0,7.19,1,5,0.008,0
+274,Claude 3.7,Coding,Translation,1993,2076,0.53,0.76,0,7.97,1,5,0.0361,0
+275,Llama 3.1,Finance,RAG,521,667,0.14,0.55,0,7.04,0,5,0.0131,0
+276,Qwen 2.5,Legal,Summarization,772,836,1.03,0.97,0,1.82,1,5,0.0046,0
+277,Qwen 2.5,Legal,RAG,198,321,1.36,0.91,1,3.03,0,4,0.004,1
+278,Claude 3.7,Retail,Translation,70,663,0.57,0.71,1,3.05,0,5,0.0031,1
+279,Llama 3.1,Coding,Translation,513,712,0.97,0.75,0,7.73,1,4,0.0032,0
+280,Claude 3.7,Retail,Classification,520,1522,0.95,0.9,1,7.05,1,4,0.0163,0
+281,Gemma 3,Customer Support,Translation,805,944,0.41,0.51,1,5.86,0,5,0.0099,0
+282,Mistral Large,Education,Summarization,486,955,1.46,0.55,0,5.93,1,4,0.0188,0
+283,Claude 3.7,Finance,RAG,370,1110,0.35,0.66,0,6.42,1,5,0.0135,0
+284,Claude 3.7,Finance,Summarization,1120,1180,0.46,0.75,0,2.3,0,5,0.0024,1
+285,Llama 3.1,Customer Support,QA,707,771,1.08,0.96,0,7.67,1,3,0.0113,0
+286,Llama 3.1,Coding,RAG,1743,2452,0.79,0.68,0,2.94,1,4,0.0109,0
+287,Gemma 3,Finance,Summarization,1631,2010,0.96,0.74,0,4.71,1,4,0.0306,0
+288,Llama 3.1,Coding,Translation,1502,2173,0.0,0.85,0,6.55,0,5,0.0422,0
+289,GPT-4o,Customer Support,Code Generation,223,897,1.41,0.57,1,6.29,0,4,0.0161,0
+290,GPT-4o,Coding,QA,1382,1913,0.96,0.94,0,5.41,1,5,0.0159,0
+291,Mistral Large,Customer Support,Translation,108,903,0.58,0.87,1,7.89,1,4,0.0079,0
+292,GPT-4o,Education,Summarization,1343,1404,1.14,0.61,1,5.4,0,4,0.0269,0
+293,Qwen 2.5,Finance,Translation,1828,2836,0.56,0.87,1,6.75,0,5,0.0277,0
+294,Gemma 3,Coding,Classification,1832,2986,0.65,0.53,1,5.07,0,5,0.0452,0
+295,Gemma 3,Customer Support,Code Generation,619,750,0.36,0.52,0,5.43,1,4,0.0073,0
+296,Mistral Large,Legal,RAG,1290,1477,0.9,0.6,1,2.01,0,5,0.006,1
+297,Gemma 3,Legal,RAG,1842,2643,0.99,0.55,1,6.75,0,4,0.0265,0
+298,Claude 3.7,Finance,Translation,549,1273,0.34,0.63,0,1.37,0,5,0.012,1
+299,Qwen 2.5,Healthcare,Translation,134,1129,1.26,0.91,0,3.63,1,4,0.0103,0
+300,Llama 3.1,Customer Support,Summarization,1179,2118,1.35,0.9,0,6.96,0,4,0.0418,0
+301,GPT-4o,Healthcare,RAG,268,816,0.06,0.54,0,5.86,0,4,0.0123,0
+302,Llama 3.1,Finance,Translation,1149,2239,0.6,0.66,0,3.79,1,5,0.009,0
+303,Mistral Large,Education,RAG,1214,1819,0.87,0.98,0,2.5,0,5,0.0325,1
+304,Mistral Large,Healthcare,RAG,1351,1665,0.73,0.8,1,2.18,1,5,0.0237,0
+305,Gemma 3,Education,Classification,1831,2613,1.32,0.85,1,2.87,1,4,0.0437,0
+306,Gemma 3,Education,Code Generation,1736,2371,0.74,0.85,0,3.14,0,5,0.0237,1
+307,Claude 3.7,Customer Support,Summarization,863,1940,0.91,0.54,1,4.72,1,5,0.0325,0
+308,GPT-4o,Finance,QA,144,558,0.47,0.75,0,1.44,0,5,0.0031,1
+309,Qwen 2.5,Healthcare,Summarization,944,1998,0.08,0.68,1,2.93,1,4,0.0372,0
+310,Qwen 2.5,Customer Support,Code Generation,772,1497,0.73,0.72,1,8.66,1,3,0.0271,0
+311,Mistral Large,Retail,QA,195,676,0.43,0.69,0,1.71,0,5,0.0046,1
+312,Gemma 3,Coding,Code Generation,1780,1817,1.17,0.88,0,2.49,0,4,0.0235,1
+313,Claude 3.7,Legal,Translation,1326,1792,0.41,0.95,1,8.5,1,4,0.0254,0
+314,Gemma 3,Education,Code Generation,219,850,0.01,1.0,1,8.01,1,4,0.0091,0
+315,GPT-4o,Customer Support,Translation,675,1002,1.29,0.63,0,6.59,1,4,0.0063,0
+316,Qwen 2.5,Healthcare,Translation,837,1388,0.99,0.84,1,6.87,1,5,0.0129,0
+317,Qwen 2.5,Retail,Summarization,1460,2214,1.49,0.91,1,4.7,0,5,0.0381,1
+318,Gemma 3,Legal,Classification,611,813,0.15,0.56,1,2.98,0,4,0.0049,1
+319,GPT-4o,Customer Support,Code Generation,771,936,0.39,0.65,0,7.8,1,4,0.0051,0
+320,Mistral Large,Finance,Classification,791,1221,0.79,0.71,0,7.98,0,4,0.0241,0
+321,Llama 3.1,Retail,Summarization,1776,1914,1.07,0.89,1,6.22,0,4,0.0133,0
+322,GPT-4o,Healthcare,Translation,1012,1858,1.18,0.89,1,2.47,1,4,0.0197,0
+323,Qwen 2.5,Education,Classification,418,446,1.1,0.98,0,7.68,0,4,0.0029,0
+324,Claude 3.7,Retail,Translation,274,904,0.15,0.75,0,2.93,0,5,0.0092,1
+325,Mistral Large,Healthcare,Summarization,701,1106,0.65,0.84,1,2.12,1,4,0.0203,0
+326,Mistral Large,Coding,Classification,469,1239,1.09,0.57,0,6.51,0,5,0.0201,0
+327,Mistral Large,Healthcare,Translation,1589,1707,0.8,0.52,0,9.94,0,4,0.0162,0
+328,Gemma 3,Retail,Translation,527,1408,0.71,0.58,1,6.28,0,5,0.0196,0
+329,Claude 3.7,Finance,Classification,1445,1698,0.21,0.92,1,2.82,0,5,0.0186,1
+330,Qwen 2.5,Legal,Classification,1712,1812,0.78,0.6,0,7.83,1,4,0.0333,0
+331,Qwen 2.5,Healthcare,Classification,490,694,0.0,0.84,0,7.89,1,4,0.0023,0
+332,Gemma 3,Education,Code Generation,1329,1553,0.35,0.99,0,4.17,1,5,0.0275,0
+333,Gemma 3,Legal,Translation,650,953,0.64,0.56,0,7.65,0,4,0.0048,0
+334,Mistral Large,Coding,RAG,559,1399,1.32,0.55,0,7.26,0,4,0.0143,0
+335,Mistral Large,Customer Support,Translation,1648,1994,0.63,0.94,0,3.56,0,4,0.0367,1
+336,Mistral Large,Legal,QA,1399,2408,0.66,0.81,0,8.03,0,5,0.0097,0
+337,GPT-4o,Legal,Code Generation,139,1222,0.39,0.66,1,5.87,0,4,0.0179,0
+338,GPT-4o,Coding,Summarization,1498,2661,0.37,0.67,0,7.35,1,5,0.0347,0
+339,GPT-4o,Retail,Summarization,1045,1721,1.27,0.93,1,8.29,0,4,0.0335,0
+340,Mistral Large,Education,QA,1137,2330,0.96,0.7,1,3.45,1,4,0.0406,0
+341,Qwen 2.5,Education,Translation,1028,1234,1.12,0.51,0,4.63,0,5,0.0239,1
+342,Claude 3.7,Retail,RAG,1161,1637,0.31,0.84,0,9.06,1,4,0.0131,0
+343,Gemma 3,Retail,Translation,1477,2196,0.99,0.86,0,2.94,0,4,0.0294,1
+344,GPT-4o,Customer Support,RAG,775,1014,1.05,0.52,1,2.45,0,4,0.0056,1
+345,Claude 3.7,Healthcare,RAG,451,566,0.69,0.89,1,6.35,0,5,0.0097,0
+346,Mistral Large,Customer Support,Translation,946,2052,0.99,0.98,0,2.43,1,5,0.0245,0
+347,Gemma 3,Retail,RAG,999,1231,1.39,0.89,0,8.55,0,4,0.0158,0
+348,Llama 3.1,Finance,RAG,867,1589,1.47,0.96,1,7.23,1,5,0.0161,0
+349,Qwen 2.5,Education,Code Generation,1243,1674,1.05,0.87,0,4.09,1,4,0.0249,0
+350,Qwen 2.5,Coding,RAG,281,1022,1.47,0.83,0,8.03,1,4,0.0128,0
+351,GPT-4o,Coding,QA,1390,2480,1.12,0.92,0,4.17,1,4,0.022,0
+352,Claude 3.7,Healthcare,Classification,419,566,0.4,0.89,0,8.4,1,4,0.0041,0
+353,Qwen 2.5,Education,Code Generation,1677,2183,0.68,0.81,1,7.57,0,4,0.0357,0
+354,Mistral Large,Customer Support,Summarization,1370,1416,0.07,0.69,0,5.16,1,5,0.008,0
+355,GPT-4o,Finance,Summarization,1876,2498,0.95,0.85,0,5.41,0,4,0.0492,0
+356,Gemma 3,Legal,Code Generation,1515,1864,0.77,0.69,0,5.44,1,4,0.0123,0
+357,GPT-4o,Customer Support,Code Generation,1929,2953,0.23,0.58,1,5.13,0,5,0.0351,0
+358,Llama 3.1,Finance,Code Generation,660,1792,0.79,0.98,1,5.09,0,5,0.0065,0
+359,Qwen 2.5,Retail,Translation,689,943,0.5,0.65,0,8.47,1,4,0.0095,0
+360,Claude 3.7,Customer Support,Classification,509,1054,1.44,0.84,1,3.34,0,5,0.0075,1
+361,Claude 3.7,Retail,QA,1063,2135,1.2,0.72,1,1.87,0,4,0.008,1
+362,Qwen 2.5,Customer Support,RAG,1293,1734,0.1,0.84,0,7.85,1,4,0.0254,0
+363,Llama 3.1,Customer Support,Classification,1334,2033,1.23,0.54,1,7.22,0,4,0.0067,0
+364,GPT-4o,Legal,Code Generation,1152,2095,0.11,0.91,1,8.75,1,4,0.0205,0
+365,Qwen 2.5,Education,Translation,252,1004,0.8,0.82,0,5.34,0,5,0.0039,0
+366,Mistral Large,Customer Support,Translation,187,527,0.42,0.96,1,3.41,0,5,0.0023,1
+367,GPT-4o,Healthcare,Translation,614,1767,1.44,0.57,0,6.25,1,5,0.008,0
+368,Claude 3.7,Finance,Summarization,1231,1684,0.59,0.77,1,2.4,0,5,0.0229,1
+369,Gemma 3,Coding,QA,386,1530,0.33,0.92,0,2.2,0,5,0.0182,1
+370,Gemma 3,Retail,QA,523,805,0.15,0.86,1,4.65,1,5,0.005,0
+371,Mistral Large,Finance,QA,1853,3031,0.29,0.74,0,5.08,1,4,0.0501,0
+372,Mistral Large,Legal,RAG,651,1407,0.37,0.61,1,6.78,1,3,0.0214,0
+373,Qwen 2.5,Coding,QA,744,1050,1.16,0.74,1,1.98,0,5,0.0058,1
+374,Claude 3.7,Retail,RAG,1499,1954,0.11,0.51,1,6.03,0,5,0.0233,0
+375,Gemma 3,Retail,QA,1349,2320,1.16,0.68,0,3.63,1,4,0.0084,0
+376,Claude 3.7,Coding,Summarization,1367,2300,0.36,0.98,0,9.57,0,3,0.028,0
+377,Qwen 2.5,Finance,Translation,1517,1665,1.1,0.97,0,2.41,1,4,0.0103,0
+378,Qwen 2.5,Customer Support,Classification,1869,2552,1.19,0.69,0,9.7,0,3,0.0496,0
+379,GPT-4o,Retail,Classification,1719,2487,1.11,0.79,1,6.8,1,4,0.0452,0
+380,Llama 3.1,Legal,Summarization,780,1787,1.46,0.61,1,4.34,1,5,0.0038,0
+381,Qwen 2.5,Finance,RAG,481,1242,0.12,0.82,0,2.45,0,5,0.0207,1
+382,Llama 3.1,Healthcare,Summarization,1671,2021,0.5,0.56,0,7.56,1,4,0.019,0
+383,Mistral Large,Retail,Translation,1184,1544,0.89,0.57,0,5.68,0,4,0.0081,0
+384,Mistral Large,Finance,Summarization,1315,1778,0.03,0.86,0,7.01,1,4,0.0353,0
+385,Mistral Large,Retail,Translation,1710,2073,0.62,0.57,1,6.88,0,5,0.0169,0
+386,Claude 3.7,Retail,QA,150,476,0.34,0.69,1,1.23,0,5,0.0025,1
+387,Qwen 2.5,Coding,RAG,1807,2931,1.18,0.75,0,3.38,1,5,0.0532,0
+388,Claude 3.7,Customer Support,Code Generation,1079,2086,0.63,0.94,0,6.99,1,5,0.0185,0
+389,GPT-4o,Education,Translation,1869,2866,1.14,0.85,1,3.3,0,5,0.0527,1
+390,Qwen 2.5,Customer Support,Classification,1805,2889,0.82,0.63,0,2.5,0,4,0.0398,1
+391,Gemma 3,Coding,RAG,847,1964,0.54,0.58,1,6.34,1,4,0.0169,0
+392,Gemma 3,Retail,Classification,1556,2721,0.31,0.78,1,6.49,0,4,0.0179,0
+393,GPT-4o,Finance,Translation,1595,2529,1.06,0.87,0,8.86,0,5,0.0483,0
+394,GPT-4o,Customer Support,Summarization,830,1646,1.18,0.9,0,6.03,0,5,0.0034,0
+395,Mistral Large,Retail,Code Generation,975,1158,1.39,0.72,1,1.92,0,5,0.0174,1
+396,Claude 3.7,Education,Summarization,1077,1996,0.43,0.98,1,1.99,0,4,0.0346,1
+397,Llama 3.1,Healthcare,Classification,78,834,1.18,0.76,0,5.75,0,4,0.0017,0
+398,Qwen 2.5,Customer Support,Translation,1606,1766,0.6,0.83,0,5.37,0,5,0.021,0
+399,Gemma 3,Finance,RAG,1883,2834,0.87,0.67,0,8.91,0,5,0.035,0
+400,Qwen 2.5,Legal,RAG,1046,2167,0.16,0.54,1,3.8,0,5,0.0268,1
+401,Mistral Large,Coding,Summarization,1163,1239,0.73,0.62,1,4.3,1,4,0.0082,0
+402,Qwen 2.5,Coding,Classification,1396,1955,1.05,0.9,0,5.16,1,4,0.0072,0
+403,Llama 3.1,Legal,Code Generation,165,559,0.83,0.59,1,2.85,0,5,0.008,1
+404,GPT-4o,Healthcare,QA,418,949,0.35,0.62,0,2.79,0,5,0.008,1
+405,Claude 3.7,Customer Support,Classification,1394,2174,1.43,0.75,1,1.99,0,5,0.0236,1
+406,Mistral Large,Retail,QA,1015,1297,0.27,0.88,0,5.46,1,3,0.0213,0
+407,GPT-4o,Coding,Summarization,1039,2120,0.52,0.93,0,7.55,1,4,0.0305,0
+408,Claude 3.7,Education,Classification,787,1930,0.87,0.66,0,5.96,1,4,0.0132,0
+409,Llama 3.1,Retail,Code Generation,386,1226,0.75,0.61,1,6.15,1,4,0.0064,0
+410,Llama 3.1,Legal,QA,478,899,1.22,0.86,1,7.07,1,3,0.0173,0
+411,GPT-4o,Legal,QA,371,1005,0.63,0.57,1,7.63,1,4,0.0175,0
+412,Claude 3.7,Customer Support,Classification,1424,2129,0.25,0.61,1,3.96,0,4,0.0181,1
+413,Mistral Large,Customer Support,Code Generation,714,1316,0.03,0.56,0,7.86,0,4,0.0186,0
+414,Mistral Large,Customer Support,QA,925,1635,1.33,0.69,0,3.59,0,5,0.0213,1
+415,Gemma 3,Coding,Translation,172,1001,0.24,0.61,1,2.89,1,4,0.01,0
+416,Qwen 2.5,Coding,QA,1076,1576,1.45,0.71,0,2.98,0,5,0.0298,1
+417,GPT-4o,Healthcare,Classification,441,514,0.25,0.55,0,1.25,1,5,0.0059,0
+418,Llama 3.1,Finance,Translation,1275,1801,0.23,0.83,0,8.7,1,4,0.018,0
+419,Gemma 3,Retail,RAG,1727,2703,0.26,0.52,1,5.14,1,5,0.0317,0
+420,Gemma 3,Legal,Translation,286,1378,1.45,0.85,1,1.94,1,5,0.016,0
+421,Llama 3.1,Education,Classification,475,1116,1.21,0.72,0,3.65,1,4,0.0127,0
+422,Claude 3.7,Finance,QA,970,1008,0.8,0.84,1,5.25,1,5,0.0165,0
+423,Mistral Large,Finance,Classification,1132,1486,0.56,0.71,0,5.99,1,4,0.0203,0
+424,GPT-4o,Finance,Summarization,172,1281,0.63,0.62,1,6.38,1,5,0.0121,0
+425,Claude 3.7,Healthcare,Summarization,603,1279,0.17,0.73,0,4.49,1,4,0.0037,0
+426,Gemma 3,Legal,Classification,219,423,0.42,0.56,0,3.89,0,4,0.0046,1
+427,GPT-4o,Education,RAG,1619,1803,1.2,1.0,1,5.84,0,5,0.0345,0
+428,Llama 3.1,Legal,RAG,156,201,0.81,0.59,1,7.38,1,3,0.0032,0
+429,Gemma 3,Finance,Code Generation,516,1504,1.11,0.52,0,4.44,0,4,0.029,1
+430,Qwen 2.5,Finance,QA,1501,2132,0.06,0.97,1,6.14,1,4,0.0383,0
+431,GPT-4o,Retail,Code Generation,493,1323,0.95,0.66,0,2.12,1,5,0.0029,0
+432,Qwen 2.5,Healthcare,QA,983,2026,1.03,0.58,0,7.44,0,4,0.0266,0
+433,Qwen 2.5,Customer Support,Classification,738,1234,0.97,0.85,1,7.3,0,4,0.0149,0
+434,Qwen 2.5,Legal,Translation,1659,1954,1.34,0.87,1,2.44,1,4,0.0053,0
+435,Claude 3.7,Finance,QA,613,1592,0.81,0.75,1,5.39,1,4,0.027,0
+436,Qwen 2.5,Finance,QA,1097,1118,0.23,0.65,1,3.63,1,5,0.0124,0
+437,Claude 3.7,Finance,Translation,1279,1687,1.29,0.89,1,3.66,0,5,0.0185,1
+438,GPT-4o,Legal,Summarization,589,874,0.48,0.82,0,1.8,0,4,0.0022,1
+439,GPT-4o,Healthcare,Summarization,212,332,0.05,0.82,1,3.5,1,4,0.0043,0
+440,Gemma 3,Customer Support,Code Generation,1352,2514,0.74,0.94,1,2.51,0,5,0.0453,1
+441,GPT-4o,Healthcare,Code Generation,129,308,1.24,0.63,1,0.68,0,5,0.0059,1
+442,GPT-4o,Customer Support,Code Generation,483,1646,0.8,0.59,0,4.91,0,5,0.0156,1
+443,Qwen 2.5,Finance,Translation,1190,1579,0.54,0.73,0,6.88,0,4,0.0175,0
+444,Qwen 2.5,Education,Translation,1238,2102,0.66,0.68,1,4.21,1,5,0.0205,0
+445,Qwen 2.5,Healthcare,Classification,502,1448,0.84,0.61,1,6.8,1,4,0.0132,0
+446,Qwen 2.5,Customer Support,Classification,1230,1704,0.02,0.57,1,8.68,0,4,0.0131,0
+447,Gemma 3,Education,Translation,1892,1989,0.83,0.78,0,9.79,0,4,0.0096,0
+448,Llama 3.1,Legal,Code Generation,521,699,0.35,0.91,0,1.57,1,5,0.0114,0
+449,Gemma 3,Education,RAG,1449,2649,0.86,0.95,0,6.65,1,4,0.0425,0
+450,Claude 3.7,Retail,Summarization,863,993,1.4,0.56,1,7.29,0,4,0.0027,0
+451,Gemma 3,Customer Support,RAG,679,1877,0.75,0.61,1,1.44,1,5,0.0113,0
+452,Qwen 2.5,Finance,Summarization,313,870,0.2,0.54,1,5.05,0,4,0.0096,0
+453,Gemma 3,Coding,Translation,994,1510,0.84,0.74,0,6.53,0,4,0.0241,0
+454,Gemma 3,Finance,Classification,193,918,0.17,0.71,1,3.29,0,5,0.0022,1
+455,Qwen 2.5,Customer Support,QA,1272,1770,1.23,0.9,0,6.65,1,4,0.0154,0
+456,Gemma 3,Legal,RAG,240,288,1.11,0.62,1,5.34,0,4,0.0047,0
+457,Mistral Large,Retail,Code Generation,56,365,0.5,0.87,1,1.92,1,5,0.0051,0
+458,Mistral Large,Coding,Classification,1088,2060,0.07,0.59,0,3.78,1,5,0.0044,0
+459,Qwen 2.5,Healthcare,Classification,1367,2178,1.28,0.83,1,8.65,0,4,0.0193,0
+460,Gemma 3,Legal,RAG,1002,1103,1.3,0.77,0,2.91,1,4,0.0127,0
+461,Gemma 3,Legal,QA,1534,2580,0.24,0.67,0,4.86,1,4,0.008,0
+462,Qwen 2.5,Retail,Code Generation,1943,2142,0.83,0.64,0,3.81,1,5,0.0244,0
+463,Llama 3.1,Retail,Translation,1415,2354,0.34,0.62,1,3.16,1,5,0.0135,0
+464,Llama 3.1,Education,QA,1410,1727,1.2,0.93,1,4.37,0,5,0.021,1
+465,Mistral Large,Education,RAG,1151,1823,0.8,0.86,0,3.08,0,5,0.0172,1
+466,Claude 3.7,Retail,Classification,1537,1941,1.4,0.95,0,9.4,1,3,0.0103,0
+467,Claude 3.7,Customer Support,Translation,1250,1432,0.85,0.62,1,3.57,0,5,0.0151,1
+468,Mistral Large,Customer Support,QA,970,1271,1.07,0.69,1,8.06,1,3,0.0077,0
+469,Mistral Large,Customer Support,Translation,1905,2060,0.4,0.71,0,8.37,0,4,0.0395,0
+470,Qwen 2.5,Education,RAG,1013,1118,1.03,0.93,1,8.39,1,4,0.0188,0
+471,Llama 3.1,Retail,Translation,1262,2206,1.41,0.79,0,5.96,0,4,0.0393,0
+472,Gemma 3,Legal,Summarization,820,1436,1.48,0.52,0,4.25,0,4,0.0257,1
+473,Llama 3.1,Customer Support,Translation,875,1820,0.44,0.96,1,6.68,0,4,0.02,0
+474,Qwen 2.5,Finance,RAG,1930,2001,1.34,0.77,1,5.68,1,4,0.0253,0
+475,Gemma 3,Healthcare,Translation,194,400,0.38,0.85,0,7.52,0,4,0.004,0
+476,Gemma 3,Retail,Code Generation,1458,2605,0.58,0.9,1,6.01,0,4,0.0412,0
+477,Mistral Large,Education,Code Generation,1776,2426,0.23,0.93,1,3.82,0,4,0.0384,1
+478,GPT-4o,Retail,RAG,380,1339,0.18,0.57,0,2.26,1,5,0.0147,0
+479,Claude 3.7,Coding,Translation,497,530,0.33,0.83,0,4.36,1,4,0.0063,0
+480,Claude 3.7,Education,Classification,1689,2006,1.24,0.52,0,3.47,1,5,0.0281,0
+481,Mistral Large,Coding,Translation,1894,3086,0.13,0.55,1,10.32,0,4,0.016,0
+482,GPT-4o,Education,RAG,747,905,1.4,0.55,1,3.47,1,5,0.0155,0
+483,Qwen 2.5,Coding,Translation,285,733,0.18,0.93,0,3.12,1,5,0.0029,0
+484,Claude 3.7,Education,Summarization,189,857,0.73,0.84,1,7.72,1,4,0.0106,0
+485,GPT-4o,Healthcare,QA,1268,1764,0.84,0.76,0,6.71,1,4,0.0346,0
+486,Qwen 2.5,Finance,QA,962,1075,0.94,0.56,1,8.02,1,4,0.013,0
+487,GPT-4o,Coding,Classification,1321,2378,0.3,0.64,1,8.01,1,4,0.0376,0
+488,Mistral Large,Legal,QA,709,1405,0.59,0.78,0,8.58,0,5,0.0261,0
+489,Claude 3.7,Education,Translation,1332,2199,0.2,0.58,1,5.46,1,5,0.0066,0
+490,GPT-4o,Education,RAG,1494,1649,1.02,0.78,1,2.21,1,5,0.0116,0
+491,GPT-4o,Education,RAG,1293,1944,0.8,0.58,0,6.54,0,5,0.0149,0
+492,GPT-4o,Customer Support,Summarization,187,1282,0.75,0.62,0,3.96,1,4,0.0052,0
+493,Claude 3.7,Education,Classification,1880,2596,0.14,0.75,0,8.78,0,5,0.0394,0
+494,Claude 3.7,Healthcare,QA,303,397,1.15,0.55,0,8.24,0,4,0.0059,0
+495,Qwen 2.5,Coding,Classification,646,1622,1.4,0.84,1,5.64,0,5,0.0063,0
+496,Mistral Large,Coding,QA,56,470,0.87,0.66,0,7.23,1,4,0.0054,0
+497,Llama 3.1,Coding,Classification,568,1699,0.22,0.64,0,1.03,0,5,0.0131,1
+498,Qwen 2.5,Healthcare,QA,1185,1308,0.37,0.54,1,6.46,1,4,0.0137,0
+499,Qwen 2.5,Customer Support,Translation,795,1454,0.08,0.71,1,2.59,1,4,0.0081,0
+500,Qwen 2.5,Coding,RAG,170,1149,1.46,0.88,0,4.04,0,4,0.0087,1
+501,Gemma 3,Customer Support,Classification,973,1795,0.35,0.61,1,8.13,1,3,0.0332,0
+502,Claude 3.7,Finance,Translation,938,1307,0.73,0.53,1,2.25,1,4,0.0108,0
+503,Llama 3.1,Retail,Summarization,220,1331,0.61,0.86,1,1.31,0,5,0.0168,1
+504,Qwen 2.5,Finance,Summarization,1132,2043,0.24,0.74,1,2.13,0,5,0.0167,1
+505,Mistral Large,Finance,Classification,1367,2335,1.0,0.87,0,7.46,1,4,0.0088,0
+506,Llama 3.1,Customer Support,Summarization,1967,2999,0.61,0.8,1,8.01,1,4,0.0093,0
+507,Claude 3.7,Legal,Summarization,1827,2774,0.87,0.88,0,8.8,0,4,0.025,0
+508,Claude 3.7,Retail,RAG,431,1156,1.02,0.66,1,5.19,1,5,0.0144,0
+509,Gemma 3,Customer Support,QA,1745,2911,0.19,0.65,0,5.26,0,5,0.0246,0
+510,Llama 3.1,Legal,Summarization,491,1292,0.65,0.8,1,5.69,1,4,0.0075,0
+511,Llama 3.1,Healthcare,QA,395,1005,0.83,0.92,0,3.5,1,5,0.0141,0
+512,Mistral Large,Customer Support,Code Generation,1337,1530,0.02,0.86,0,5.67,1,4,0.0253,0
+513,Claude 3.7,Healthcare,Translation,1247,2054,1.4,0.81,1,5.3,1,4,0.011,0
+514,Qwen 2.5,Education,QA,1030,1118,1.27,0.62,1,5.4,1,5,0.0137,0
+515,GPT-4o,Finance,RAG,1198,2276,0.72,0.85,1,2.81,1,4,0.041,0
+516,Mistral Large,Retail,RAG,1301,2024,1.11,0.98,0,2.44,1,5,0.0044,0
+517,Qwen 2.5,Education,Code Generation,1185,1548,1.1,0.71,1,9.17,1,3,0.0288,0
+518,Gemma 3,Legal,QA,1617,2234,0.85,0.53,0,5.91,0,5,0.0296,0
+519,GPT-4o,Retail,Summarization,269,852,0.76,0.93,1,2.7,0,5,0.0019,1
+520,GPT-4o,Education,QA,1873,2376,0.89,0.58,1,6.03,0,4,0.0389,0
+521,Qwen 2.5,Finance,Summarization,1991,2795,0.22,0.97,1,3.89,1,4,0.0277,0
+522,Mistral Large,Coding,Translation,1193,1556,1.1,0.67,0,6.7,0,4,0.0165,0
+523,Mistral Large,Coding,Classification,488,532,0.57,0.85,1,4.51,0,4,0.0087,1
+524,GPT-4o,Education,Code Generation,1979,2557,0.8,0.98,1,3.43,1,4,0.0174,0
+525,GPT-4o,Customer Support,QA,1206,1594,0.59,0.89,1,7.55,0,4,0.0035,0
+526,Claude 3.7,Healthcare,QA,34,634,0.62,0.76,0,5.59,1,4,0.0017,0
+527,Qwen 2.5,Customer Support,Code Generation,1932,2128,0.89,0.95,0,4.31,0,5,0.0092,1
+528,Qwen 2.5,Legal,Classification,1169,1792,1.2,0.59,1,2.53,0,5,0.0338,1
+529,GPT-4o,Legal,RAG,1585,1936,0.64,0.95,1,8.19,1,4,0.0135,0
+530,Claude 3.7,Legal,Summarization,691,853,1.49,0.63,1,7.4,0,4,0.016,0
+531,GPT-4o,Healthcare,Translation,1331,2255,0.74,0.57,0,7.86,0,5,0.0087,0
+532,Qwen 2.5,Education,RAG,1500,1597,0.38,0.72,0,9.07,0,4,0.0109,0
+533,GPT-4o,Retail,Summarization,1186,2033,0.01,0.85,1,7.7,1,5,0.0326,0
+534,Qwen 2.5,Coding,QA,16,718,0.58,0.84,1,6.3,0,5,0.0066,0
+535,Mistral Large,Coding,Summarization,758,1193,0.8,0.98,1,1.78,1,4,0.0032,0
+536,Llama 3.1,Finance,QA,622,815,1.04,0.95,1,5.9,1,5,0.0081,0
+537,Mistral Large,Healthcare,QA,405,1532,0.04,1.0,0,2.57,1,5,0.0168,0
+538,Claude 3.7,Finance,Code Generation,704,1795,0.08,0.89,0,1.41,0,5,0.0255,1
+539,Llama 3.1,Coding,Code Generation,1196,2181,0.35,0.54,0,7.43,1,5,0.0286,0
+540,GPT-4o,Healthcare,RAG,277,646,0.02,0.82,1,7.6,0,5,0.002,0
+541,Claude 3.7,Retail,Summarization,1228,2071,1.2,0.61,1,8.01,1,4,0.0405,0
+542,Mistral Large,Finance,Code Generation,668,817,1.25,0.9,1,7.0,0,4,0.0037,0
+543,Mistral Large,Customer Support,Summarization,767,991,0.83,0.72,0,8.38,0,5,0.0133,0
+544,Mistral Large,Coding,Summarization,42,914,1.32,0.54,1,0.31,0,5,0.0149,1
+545,Claude 3.7,Healthcare,Code Generation,432,529,0.21,0.64,0,4.25,0,5,0.0079,1
+546,Claude 3.7,Education,Translation,1702,1962,1.17,0.67,0,2.36,0,5,0.0384,1
+547,Mistral Large,Legal,Summarization,1049,1465,0.33,0.89,0,6.65,1,3,0.0069,0
+548,Mistral Large,Healthcare,QA,337,1247,1.01,0.52,0,5.65,1,4,0.0163,0
+549,Qwen 2.5,Legal,Translation,1526,2600,0.08,0.77,1,3.34,0,4,0.0471,1
+550,Qwen 2.5,Legal,Summarization,1197,1442,0.49,0.6,0,6.98,1,4,0.0054,0
+551,Llama 3.1,Legal,Classification,779,1095,1.34,0.54,1,5.74,0,4,0.0142,0
+552,GPT-4o,Education,Summarization,289,996,0.69,0.6,0,3.36,1,4,0.0144,0
+553,Qwen 2.5,Retail,Summarization,237,861,1.28,0.73,0,1.83,1,5,0.014,0
+554,Qwen 2.5,Legal,Code Generation,1193,2182,1.46,0.93,0,2.37,1,5,0.0153,0
+555,Mistral Large,Coding,Translation,1797,2672,0.37,0.66,0,6.97,0,5,0.0073,0
+556,GPT-4o,Coding,Code Generation,78,1112,0.64,0.7,1,6.61,0,4,0.0134,0
+557,Mistral Large,Customer Support,Translation,842,1844,1.42,0.57,0,3.56,0,5,0.0091,1
+558,Mistral Large,Coding,Code Generation,1540,1938,0.88,0.99,1,5.74,0,5,0.0168,0
+559,Claude 3.7,Retail,Translation,12,639,1.29,0.54,0,7.18,1,4,0.0044,0
+560,GPT-4o,Healthcare,RAG,1637,2711,0.31,0.84,0,7.09,1,5,0.0383,0
+561,GPT-4o,Coding,RAG,758,1061,0.7,0.52,0,4.01,0,5,0.0067,1
+562,Qwen 2.5,Legal,Classification,1520,2196,1.41,0.79,0,9.58,0,4,0.015,0
+563,Gemma 3,Legal,Translation,121,1230,0.1,0.67,1,4.14,0,5,0.0143,1
+564,Llama 3.1,Education,QA,763,1720,1.2,0.97,0,7.46,0,4,0.0155,0
+565,Mistral Large,Coding,Translation,233,1319,0.25,0.56,0,1.65,0,5,0.0032,1
+566,Llama 3.1,Customer Support,Translation,1918,2325,0.2,0.67,1,6.06,0,4,0.0411,0
+567,Gemma 3,Retail,Summarization,1330,2435,0.5,0.79,1,6.98,1,5,0.0244,0
+568,Gemma 3,Education,RAG,1849,2459,1.18,0.59,1,4.54,1,5,0.007,0
+569,Qwen 2.5,Customer Support,Summarization,1968,2347,0.25,0.96,0,8.21,1,4,0.034,0
+570,Qwen 2.5,Healthcare,Code Generation,340,893,0.36,0.52,1,3.09,0,4,0.0051,1
+571,Mistral Large,Customer Support,Summarization,659,927,1.47,0.57,1,4.52,0,5,0.0086,1
+572,Claude 3.7,Coding,Summarization,1951,2941,0.69,0.66,1,2.67,1,5,0.0572,0
+573,Gemma 3,Healthcare,RAG,1647,1749,0.85,0.95,1,5.71,0,4,0.0208,0
+574,Gemma 3,Finance,QA,1274,2372,1.26,0.72,0,2.51,0,4,0.0447,1
+575,Claude 3.7,Healthcare,Code Generation,181,599,0.81,0.72,1,5.66,0,4,0.0077,0
+576,Mistral Large,Customer Support,Translation,749,793,0.6,0.86,1,4.47,1,4,0.0066,0
+577,Mistral Large,Coding,RAG,189,800,0.32,0.94,1,6.22,1,4,0.0121,0
+578,Claude 3.7,Customer Support,RAG,295,1390,1.25,0.8,1,1.69,1,5,0.0044,0
+579,Llama 3.1,Customer Support,RAG,191,1374,0.01,0.82,1,2.57,0,5,0.0061,1
+580,GPT-4o,Finance,Classification,602,1767,0.83,0.52,1,7.4,1,4,0.0107,0
+581,Llama 3.1,Healthcare,QA,624,1011,1.43,0.92,1,4.67,1,4,0.0145,0
+582,Qwen 2.5,Legal,Code Generation,1576,2754,0.42,1.0,1,2.69,1,4,0.0183,0
+583,Qwen 2.5,Finance,Classification,1685,1824,0.18,0.76,0,6.79,1,4,0.0188,0
+584,GPT-4o,Retail,Summarization,344,957,0.08,0.68,0,5.59,1,4,0.0129,0
+585,Gemma 3,Education,Code Generation,1579,2246,0.94,0.88,1,6.84,0,5,0.0322,0
+586,Mistral Large,Legal,Classification,1439,1739,1.03,0.55,0,6.52,0,4,0.0152,0
+587,Claude 3.7,Customer Support,Translation,1896,3060,1.37,0.55,0,3.78,0,5,0.0519,1
+588,Mistral Large,Education,Classification,1469,1727,0.83,0.88,0,2.93,1,5,0.0322,0
+589,Llama 3.1,Finance,Code Generation,1425,2068,0.54,0.91,0,8.92,1,3,0.0345,0
+590,Mistral Large,Healthcare,Summarization,301,549,1.03,0.65,1,2.21,0,4,0.0088,1
+591,GPT-4o,Customer Support,QA,230,768,0.05,0.83,0,5.11,1,4,0.0057,0
+592,Qwen 2.5,Education,Translation,1612,2351,0.19,0.8,0,6.8,0,4,0.0109,0
+593,Claude 3.7,Finance,Code Generation,722,944,0.53,0.93,0,7.19,0,5,0.0149,0
+594,Mistral Large,Education,Code Generation,402,860,1.45,0.59,0,6.58,0,5,0.0149,0
+595,GPT-4o,Customer Support,Classification,1217,2105,0.28,0.84,1,2.56,1,4,0.0128,0
+596,Mistral Large,Healthcare,RAG,263,1424,0.7,0.76,1,4.4,1,5,0.005,0
+597,Mistral Large,Finance,QA,590,1744,0.69,0.87,0,6.3,1,4,0.0344,0
+598,Claude 3.7,Coding,Code Generation,1842,2868,1.26,0.74,0,7.8,0,4,0.0262,0
+599,Llama 3.1,Retail,RAG,184,336,0.18,0.7,0,5.85,0,4,0.0019,0
+600,Mistral Large,Legal,Translation,261,1010,0.35,0.71,1,4.42,1,4,0.013,0
+601,GPT-4o,Coding,QA,581,1073,0.22,0.73,1,1.88,1,5,0.0047,0
+602,GPT-4o,Coding,Translation,1710,2042,0.1,0.84,1,9.92,1,3,0.027,0
+603,Claude 3.7,Retail,QA,1581,2634,0.74,0.73,1,4.47,1,4,0.0216,0
+604,Mistral Large,Healthcare,QA,1960,2901,1.15,1.0,1,9.51,0,4,0.0255,0
+605,Mistral Large,Customer Support,QA,372,1274,0.83,0.93,1,3.03,0,4,0.019,1
+606,Mistral Large,Education,RAG,1175,2346,1.01,0.83,1,7.01,1,5,0.0261,0
+607,Gemma 3,Education,Code Generation,1220,1365,1.46,0.81,1,4.48,1,4,0.0038,0
+608,GPT-4o,Coding,Summarization,1205,1931,0.04,0.95,1,4.37,0,5,0.0182,1
+609,Gemma 3,Healthcare,RAG,517,771,0.35,0.66,1,1.51,0,5,0.0018,1
+610,Mistral Large,Retail,RAG,1357,2338,1.3,0.78,0,8.93,1,4,0.0462,0
+611,Gemma 3,Finance,Translation,670,1707,0.86,0.9,1,1.82,0,5,0.0269,1
+612,Claude 3.7,Legal,Summarization,623,1231,0.55,0.72,0,4.85,0,4,0.0091,1
+613,Mistral Large,Legal,Summarization,1289,1868,1.11,0.55,1,8.4,0,3,0.0307,0
+614,Gemma 3,Retail,Translation,721,1846,1.19,0.83,1,3.46,1,4,0.0175,0
+615,Mistral Large,Education,Code Generation,938,1394,1.01,0.77,1,8.24,0,4,0.0235,0
+616,Qwen 2.5,Coding,Classification,1101,1867,1.21,0.93,0,8.65,0,4,0.0118,0
+617,Llama 3.1,Education,Code Generation,1738,2602,0.65,0.66,0,8.85,0,4,0.0186,0
+618,Mistral Large,Legal,Code Generation,1241,1896,0.35,0.62,0,2.92,0,5,0.0229,1
+619,Qwen 2.5,Legal,QA,1864,3011,0.06,0.58,1,3.59,1,4,0.0522,0
+620,Mistral Large,Customer Support,Code Generation,123,887,1.29,0.54,1,5.05,0,5,0.0159,0
+621,GPT-4o,Customer Support,Classification,1735,2771,0.21,0.56,1,8.1,0,5,0.0174,0
+622,Gemma 3,Legal,RAG,684,1150,1.25,0.87,1,7.34,0,4,0.0059,0
+623,Gemma 3,Customer Support,Summarization,530,1667,1.29,0.53,1,5.02,0,4,0.0238,0
+624,Qwen 2.5,Coding,Classification,753,1263,0.71,0.68,0,3.54,0,4,0.0113,1
+625,Gemma 3,Education,QA,1859,1895,1.22,0.56,1,9.29,1,4,0.0172,0
+626,Mistral Large,Customer Support,QA,1927,2596,1.23,0.62,1,4.25,0,5,0.041,1
+627,GPT-4o,Customer Support,Summarization,571,1272,1.3,0.91,1,8.25,1,4,0.0226,0
+628,Llama 3.1,Coding,RAG,1440,1516,0.39,0.53,1,5.28,1,5,0.0205,0
+629,Claude 3.7,Coding,Code Generation,1630,2829,0.96,0.5,1,3.8,1,4,0.0137,0
+630,Llama 3.1,Coding,Translation,1572,2571,0.2,0.8,1,5.37,1,5,0.0113,0
+631,Claude 3.7,Finance,QA,1703,2528,0.49,0.64,0,2.99,1,5,0.048,0
+632,Llama 3.1,Healthcare,RAG,1951,2918,0.03,0.78,0,7.41,0,4,0.0427,0
+633,Mistral Large,Customer Support,RAG,1275,2456,0.64,0.63,0,2.49,1,4,0.0367,0
+634,Mistral Large,Customer Support,Summarization,1704,2313,1.01,0.56,1,7.9,0,5,0.0205,0
+635,Gemma 3,Education,Summarization,1238,1627,0.32,0.91,1,7.42,0,4,0.0075,0
+636,Qwen 2.5,Legal,Code Generation,1275,1316,0.68,0.62,0,6.34,1,4,0.0233,0
+637,Llama 3.1,Legal,Classification,444,659,1.07,0.85,0,6.5,1,4,0.0019,0
+638,Mistral Large,Coding,Classification,1251,1790,1.41,0.98,0,6.43,0,4,0.0159,0
+639,Mistral Large,Finance,QA,280,1331,1.45,0.78,0,5.08,1,4,0.0108,0
+640,Gemma 3,Coding,Classification,659,940,1.07,0.72,0,3.05,1,4,0.0183,0
+641,Mistral Large,Customer Support,Summarization,1906,2818,0.65,0.95,1,4.64,1,5,0.0216,0
+642,Mistral Large,Education,Summarization,1148,1472,1.28,0.83,0,7.86,0,4,0.0078,0
+643,Mistral Large,Legal,RAG,1455,2379,0.7,0.56,0,9.0,1,4,0.0351,0
+644,Claude 3.7,Customer Support,Classification,240,841,1.27,0.93,0,1.46,0,4,0.0042,1
+645,Mistral Large,Coding,QA,1163,2035,1.34,0.79,0,6.21,0,5,0.0131,0
+646,Gemma 3,Finance,QA,1827,2612,0.49,0.64,1,10.14,0,4,0.0499,0
+647,Mistral Large,Education,Code Generation,176,870,0.69,0.85,0,4.16,1,5,0.012,0
+648,Claude 3.7,Retail,RAG,1513,2194,1.36,0.9,1,3.1,0,5,0.0338,1
+649,Mistral Large,Education,Code Generation,199,261,0.6,0.59,0,7.98,1,5,0.0013,0
+650,Gemma 3,Retail,Summarization,1551,1839,1.43,0.58,1,4.47,1,4,0.0069,0
+651,Mistral Large,Coding,RAG,1012,1897,0.67,0.69,0,3.56,1,5,0.0248,0
+652,GPT-4o,Education,RAG,200,1234,0.06,0.67,0,4.07,0,5,0.0168,1
+653,GPT-4o,Retail,QA,905,1434,0.12,0.9,1,3.67,0,5,0.0105,1
+654,Claude 3.7,Healthcare,Translation,1888,3072,0.07,0.55,1,5.87,0,5,0.0258,0
+655,Gemma 3,Education,Translation,43,155,0.17,0.83,1,1.65,0,4,0.0028,1
+656,Claude 3.7,Education,Code Generation,1492,1895,0.68,0.84,1,6.93,1,4,0.0065,0
+657,Qwen 2.5,Coding,Translation,227,1224,0.65,0.51,0,3.56,0,5,0.0114,1
+658,Llama 3.1,Healthcare,QA,1496,2135,0.73,0.81,1,9.67,1,3,0.0095,0
+659,Claude 3.7,Finance,QA,1435,2347,1.46,0.93,0,3.63,0,5,0.0409,1
+660,Mistral Large,Legal,QA,626,958,1.15,0.57,0,4.27,0,5,0.0096,1
+661,Qwen 2.5,Legal,RAG,1770,2473,0.67,0.62,0,4.71,1,3,0.033,0
+662,Qwen 2.5,Retail,Code Generation,1747,2765,0.74,0.79,0,8.09,1,4,0.0311,0
+663,Qwen 2.5,Legal,RAG,1863,3063,1.23,0.74,1,8.1,0,4,0.0096,0
+664,Gemma 3,Legal,Summarization,249,599,0.74,0.97,0,3.22,1,4,0.0033,0
+665,Mistral Large,Customer Support,Code Generation,1049,1669,0.33,0.95,0,4.16,1,5,0.0151,0
+666,Mistral Large,Finance,Summarization,1346,1944,1.1,0.9,0,8.12,0,4,0.0069,0
+667,GPT-4o,Education,Classification,418,918,0.23,0.75,1,6.91,1,4,0.0026,0
+668,GPT-4o,Retail,Summarization,741,1452,1.02,0.59,0,7.83,0,4,0.019,0
+669,Claude 3.7,Coding,QA,1006,1335,0.39,0.67,1,4.23,0,5,0.0237,1
+670,GPT-4o,Finance,Code Generation,1456,1684,0.08,0.97,0,8.25,0,5,0.0046,0
+671,Llama 3.1,Coding,Classification,251,1307,1.31,0.96,1,1.74,1,5,0.0231,0
+672,Gemma 3,Retail,Summarization,695,1217,1.23,0.56,0,2.64,1,5,0.0128,0
+673,Mistral Large,Legal,RAG,184,1288,0.4,0.86,0,3.67,0,5,0.0079,1
+674,Claude 3.7,Healthcare,QA,1849,2775,0.69,0.93,0,8.71,1,3,0.006,0
+675,Claude 3.7,Healthcare,Code Generation,702,797,0.47,0.99,1,2.36,0,5,0.0108,1
+676,Gemma 3,Education,QA,1470,2623,1.2,0.94,1,9.62,1,4,0.0393,0
+677,Claude 3.7,Coding,RAG,1703,2143,0.42,0.76,1,9.51,1,4,0.0284,0
+678,Qwen 2.5,Coding,Code Generation,1438,1630,0.52,0.91,1,7.06,0,4,0.0131,0
+679,GPT-4o,Healthcare,Translation,1811,2898,0.19,1.0,1,4.68,0,4,0.039,1
+680,Claude 3.7,Education,QA,1223,1365,0.39,0.92,0,4.1,1,5,0.0091,0
+681,Claude 3.7,Retail,Code Generation,107,821,1.13,0.97,1,3.83,0,5,0.0135,1
+682,Qwen 2.5,Retail,Code Generation,1841,2473,1.41,0.83,1,9.09,0,4,0.0399,0
+683,Mistral Large,Customer Support,RAG,296,1055,1.07,0.76,0,2.5,1,4,0.0049,0
+684,Claude 3.7,Retail,Translation,177,356,0.14,0.71,1,1.44,0,5,0.0041,1
+685,Llama 3.1,Finance,Translation,1605,2627,0.59,0.63,1,6.1,1,5,0.025,0
+686,Claude 3.7,Education,QA,270,1222,0.73,0.73,0,8.09,0,4,0.0189,0
+687,Gemma 3,Education,Classification,1242,2332,1.28,0.56,0,4.64,1,4,0.0203,0
+688,Qwen 2.5,Legal,QA,1005,1649,0.04,0.57,0,7.57,1,5,0.0097,0
+689,Mistral Large,Legal,Code Generation,260,1438,0.82,0.53,1,0.87,1,5,0.0116,0
+690,GPT-4o,Customer Support,Translation,1717,2656,0.91,0.88,1,6.28,1,4,0.0401,0
+691,Llama 3.1,Coding,QA,1370,2297,0.94,0.69,0,8.93,1,4,0.0313,0
+692,GPT-4o,Retail,Translation,1181,1595,0.95,0.89,0,4.09,0,5,0.0187,1
+693,Qwen 2.5,Customer Support,Translation,397,980,1.13,0.75,0,0.84,0,5,0.0063,1
+694,GPT-4o,Customer Support,Translation,919,986,0.13,0.77,1,3.85,0,4,0.0052,1
+695,Llama 3.1,Education,RAG,659,973,0.57,0.55,1,8.67,0,4,0.0154,0
+696,Mistral Large,Education,Classification,1399,2029,0.25,0.81,0,4.49,0,4,0.0157,1
+697,GPT-4o,Education,QA,779,1808,1.41,0.95,0,1.58,0,5,0.02,1
+698,Qwen 2.5,Healthcare,Summarization,661,719,0.7,0.7,0,4.8,1,4,0.0139,0
+699,Llama 3.1,Education,Translation,1572,1763,0.83,0.89,1,4.54,1,5,0.0194,0
+700,Claude 3.7,Education,Code Generation,354,376,1.17,0.77,0,3.95,1,5,0.0073,0
+701,Llama 3.1,Retail,Translation,2000,2798,0.25,0.53,1,9.89,1,5,0.048,0
+702,Qwen 2.5,Retail,Classification,586,1415,0.07,0.87,0,5.32,1,5,0.024,0
+703,Gemma 3,Finance,Code Generation,1808,2363,0.65,0.81,1,9.93,1,5,0.0348,0
+704,GPT-4o,Coding,Summarization,668,692,0.51,0.73,0,5.71,0,5,0.0014,0
+705,Qwen 2.5,Legal,Code Generation,856,1034,0.83,0.85,0,5.08,1,4,0.0187,0
+706,GPT-4o,Healthcare,RAG,262,644,0.53,0.91,1,6.98,1,5,0.0107,0
+707,Qwen 2.5,Education,Code Generation,768,1520,1.4,0.72,1,2.89,0,4,0.0254,1
+708,Qwen 2.5,Legal,QA,462,910,0.35,0.75,1,3.61,1,4,0.0179,0
+709,Llama 3.1,Education,Translation,1791,1944,0.42,0.75,0,3.77,0,5,0.03,1
+710,Mistral Large,Healthcare,RAG,1762,2873,0.34,0.76,0,8.5,0,4,0.0409,0
+711,Mistral Large,Legal,Classification,1322,2175,1.01,0.83,1,8.51,1,4,0.031,0
+712,Llama 3.1,Education,QA,1069,2179,1.14,0.94,1,3.29,1,4,0.0046,0
+713,GPT-4o,Coding,Code Generation,1812,2343,0.86,0.51,0,8.22,1,3,0.0186,0
+714,Gemma 3,Customer Support,QA,208,734,0.04,0.72,1,0.65,1,4,0.0046,0
+715,GPT-4o,Healthcare,RAG,1692,2626,0.5,0.9,0,9.67,1,4,0.0093,0
+716,GPT-4o,Healthcare,Code Generation,651,783,1.34,0.85,1,7.12,0,4,0.0104,0
+717,Claude 3.7,Healthcare,RAG,124,621,0.84,0.65,1,3.33,0,5,0.01,1
+718,Llama 3.1,Healthcare,QA,796,869,0.7,0.71,1,6.03,0,4,0.0069,0
+719,Qwen 2.5,Retail,RAG,35,1097,0.89,0.53,0,6.4,0,4,0.0105,0
+720,Gemma 3,Retail,Translation,390,1460,0.36,0.9,1,1.16,1,5,0.0227,0
+721,Llama 3.1,Healthcare,Summarization,1598,1634,0.22,0.73,1,6.9,1,4,0.0226,0
+722,GPT-4o,Education,Summarization,1048,1478,1.23,0.78,0,1.94,1,5,0.0083,0
+723,Mistral Large,Customer Support,QA,1377,2010,0.71,0.85,1,5.57,1,4,0.0099,0
+724,Gemma 3,Customer Support,Code Generation,1025,1481,0.33,0.5,1,3.22,0,4,0.0225,1
+725,Llama 3.1,Education,RAG,779,950,0.31,0.59,0,8.89,1,4,0.0114,0
+726,Gemma 3,Coding,Summarization,408,833,0.95,0.96,0,3.52,0,4,0.0049,1
+727,Mistral Large,Coding,QA,705,932,1.27,0.62,1,2.61,0,4,0.0132,1
+728,Mistral Large,Coding,QA,703,1802,1.4,0.65,0,2.95,1,5,0.036,0
+729,Qwen 2.5,Finance,QA,252,1038,0.22,0.96,1,6.72,0,4,0.0101,0
+730,Llama 3.1,Customer Support,Translation,1572,2098,0.92,0.59,1,6.34,0,4,0.0342,0
+731,Qwen 2.5,Customer Support,Translation,1993,2355,0.88,0.74,0,8.36,1,4,0.0366,0
+732,Qwen 2.5,Customer Support,Translation,776,1809,0.75,0.73,1,3.68,1,4,0.0225,0
+733,Claude 3.7,Finance,Classification,1340,1807,0.05,0.61,1,3.46,0,4,0.0325,1
+734,Claude 3.7,Education,RAG,531,1022,0.83,0.57,1,1.52,1,5,0.0106,0
+735,Gemma 3,Coding,QA,933,1736,0.7,0.7,1,7.64,1,3,0.0173,0
+736,GPT-4o,Retail,Summarization,745,1231,1.35,0.65,1,5.05,0,4,0.004,0
+737,Qwen 2.5,Retail,Classification,693,995,0.29,0.66,0,3.43,1,5,0.0155,0
+738,Llama 3.1,Customer Support,RAG,27,71,1.16,0.64,1,2.94,1,4,0.0008,0
+739,Llama 3.1,Legal,Code Generation,476,1193,0.34,0.87,1,4.5,1,5,0.0091,0
+740,Mistral Large,Customer Support,Code Generation,865,1147,0.31,0.72,0,5.64,1,4,0.0175,0
+741,GPT-4o,Finance,Summarization,1718,2405,0.53,0.61,1,5.67,1,4,0.0294,0
+742,Mistral Large,Finance,RAG,1961,2399,1.49,0.78,1,8.88,1,5,0.0075,0
+743,GPT-4o,Customer Support,Code Generation,232,603,0.49,0.98,0,5.47,1,4,0.0072,0
+744,GPT-4o,Legal,QA,1245,1686,0.73,0.59,1,2.3,1,4,0.0234,0
+745,Mistral Large,Legal,Code Generation,764,1105,0.78,0.59,1,7.86,1,5,0.0048,0
+746,Llama 3.1,Retail,Translation,150,1055,0.58,0.95,1,2.0,0,5,0.0147,1
+747,GPT-4o,Customer Support,RAG,1933,2366,0.47,0.6,1,8.21,1,3,0.0108,0
+748,Gemma 3,Coding,RAG,1248,2215,1.21,0.76,1,8.86,1,4,0.0338,0
+749,Mistral Large,Legal,RAG,720,1250,1.05,0.86,1,3.42,0,4,0.0164,1
+750,Gemma 3,Coding,QA,1875,2218,0.99,0.85,0,3.29,0,4,0.0295,1
+751,Gemma 3,Legal,RAG,1439,2214,1.09,0.95,0,9.09,1,3,0.0086,0
+752,Llama 3.1,Legal,QA,347,1147,0.38,0.75,1,4.24,0,4,0.0105,1
+753,Llama 3.1,Coding,RAG,31,995,0.38,0.85,1,1.3,1,4,0.0118,0
+754,Mistral Large,Finance,QA,297,679,0.71,0.64,0,1.83,0,4,0.0079,1
+755,Claude 3.7,Finance,RAG,1385,1848,1.15,0.84,0,3.13,1,5,0.0334,0
+756,GPT-4o,Customer Support,RAG,1436,2087,0.07,0.82,1,6.07,0,4,0.0266,0
+757,Gemma 3,Customer Support,Summarization,1581,1633,0.3,0.62,0,9.26,0,4,0.0323,0
+758,Gemma 3,Education,Translation,1402,1512,1.0,0.61,0,8.83,0,4,0.006,0
+759,Llama 3.1,Healthcare,RAG,1293,1788,0.28,0.6,0,6.04,1,4,0.0151,0
+760,Mistral Large,Education,Translation,1349,2124,0.47,0.69,1,5.46,0,4,0.0381,0
+761,Qwen 2.5,Legal,Code Generation,1033,1247,1.47,0.55,1,5.67,0,5,0.0245,0
+762,Claude 3.7,Legal,RAG,1903,2061,1.46,0.85,1,5.17,1,4,0.0267,0
+763,Gemma 3,Finance,Code Generation,1056,1119,0.96,0.62,0,6.1,0,5,0.0203,0
+764,Qwen 2.5,Healthcare,Summarization,887,1514,1.14,0.81,1,1.78,1,4,0.0133,0
+765,GPT-4o,Retail,RAG,1901,2490,1.09,0.99,0,6.04,1,4,0.0403,0
+766,Qwen 2.5,Finance,Code Generation,1337,1853,1.22,0.88,1,3.66,1,4,0.0055,0
+767,Mistral Large,Healthcare,Summarization,1435,2360,1.08,0.8,0,4.97,1,4,0.0075,0
+768,Llama 3.1,Retail,QA,116,1260,0.95,0.57,0,1.94,0,5,0.0237,1
+769,Claude 3.7,Legal,Code Generation,882,1263,1.09,0.66,1,6.93,0,4,0.0094,0
+770,Claude 3.7,Retail,Code Generation,422,1215,0.41,0.89,1,1.35,1,4,0.0121,0
+771,Gemma 3,Retail,Translation,897,1792,1.14,0.91,1,7.51,0,5,0.0281,0
+772,GPT-4o,Education,Summarization,322,922,0.83,0.59,1,3.57,1,4,0.0119,0
+773,Mistral Large,Coding,Classification,1474,2500,0.7,0.58,1,3.52,0,4,0.0237,1
+774,Llama 3.1,Customer Support,RAG,796,1070,0.73,0.82,0,5.78,1,4,0.013,0
+775,Qwen 2.5,Finance,Summarization,1970,2108,0.38,0.96,1,8.3,1,4,0.0394,0
+776,Llama 3.1,Education,Summarization,988,1543,0.05,0.91,0,6.36,0,5,0.0293,0
+777,GPT-4o,Retail,Summarization,1243,2050,0.87,0.83,0,3.01,0,5,0.0257,1
+778,Qwen 2.5,Customer Support,QA,1804,2454,0.63,0.91,1,4.43,1,5,0.0381,0
+779,Gemma 3,Healthcare,Summarization,233,682,0.95,0.89,1,3.18,0,5,0.0062,1
+780,Gemma 3,Finance,Code Generation,1681,2291,0.74,0.55,1,8.34,1,4,0.0116,0
+781,Llama 3.1,Education,RAG,285,685,0.3,0.59,0,7.95,1,3,0.0106,0
+782,GPT-4o,Education,QA,912,1532,0.94,0.81,0,8.11,0,4,0.0065,0
+783,Claude 3.7,Customer Support,QA,1209,1773,0.35,0.74,0,7.64,0,5,0.0038,0
+784,Gemma 3,Education,Code Generation,208,1197,0.32,0.9,1,3.39,1,5,0.0154,0
+785,Gemma 3,Customer Support,QA,1833,2628,0.51,0.66,1,4.36,1,4,0.0514,0
+786,Qwen 2.5,Customer Support,Summarization,16,287,0.69,0.85,0,5.88,0,5,0.002,0
+787,Gemma 3,Healthcare,Code Generation,764,790,0.68,0.84,0,7.94,1,5,0.0152,0
+788,GPT-4o,Education,RAG,747,1759,1.31,0.98,0,6.87,1,4,0.0229,0
+789,Claude 3.7,Retail,Code Generation,1933,2554,1.4,0.97,1,10.31,0,4,0.0378,0
+790,Claude 3.7,Finance,Summarization,1043,1976,0.05,0.75,0,2.18,1,5,0.0211,0
+791,Mistral Large,Customer Support,Classification,443,522,0.26,0.97,1,6.21,0,4,0.0098,0
+792,Qwen 2.5,Education,Summarization,461,1575,1.08,0.83,0,8.2,0,4,0.0171,0
+793,Mistral Large,Customer Support,Summarization,1918,2719,0.86,0.96,1,3.1,1,5,0.0439,0
+794,Gemma 3,Legal,Translation,467,724,0.39,0.65,0,1.65,1,5,0.0031,0
+795,Llama 3.1,Retail,Code Generation,1519,2193,0.0,0.53,1,6.28,1,5,0.0359,0
+796,Llama 3.1,Legal,Code Generation,1242,1558,0.89,0.55,1,1.82,1,5,0.0114,0
+797,Gemma 3,Customer Support,Code Generation,943,1595,0.22,0.64,1,7.21,0,4,0.023,0
+798,Qwen 2.5,Customer Support,Summarization,1185,1887,0.72,0.91,0,5.54,1,4,0.0281,0
+799,Llama 3.1,Healthcare,Translation,1444,2076,1.1,0.96,1,8.06,1,5,0.0288,0
+800,Qwen 2.5,Finance,Code Generation,813,980,0.51,0.84,1,8.94,1,4,0.007,0
+801,Mistral Large,Coding,RAG,1763,2720,0.82,0.55,1,4.93,0,5,0.0337,1
+802,Qwen 2.5,Customer Support,Summarization,606,1367,1.35,0.6,0,7.23,0,5,0.0169,0
+803,GPT-4o,Healthcare,Translation,781,1529,1.43,0.71,0,7.74,0,5,0.008,0
+804,Gemma 3,Coding,Translation,1341,1430,0.51,0.72,0,3.04,1,4,0.0131,0
+805,Gemma 3,Healthcare,QA,1964,2766,0.26,0.87,1,8.71,0,4,0.0381,0
+806,Qwen 2.5,Coding,QA,248,1441,0.12,0.74,0,5.73,0,5,0.0153,0
+807,Qwen 2.5,Customer Support,Translation,1636,2826,0.89,0.69,1,10.04,1,3,0.0222,0
+808,Qwen 2.5,Healthcare,Summarization,388,1470,0.61,0.85,0,3.76,1,5,0.0172,0
+809,GPT-4o,Finance,Translation,1987,3143,0.99,0.56,0,9.41,0,4,0.0241,0
+810,Claude 3.7,Finance,RAG,432,707,0.98,0.54,0,2.74,0,5,0.006,1
+811,Claude 3.7,Education,Translation,1945,2251,0.99,0.62,1,2.99,1,5,0.0327,0
+812,Llama 3.1,Finance,Translation,1112,1207,0.77,0.84,0,6.76,0,4,0.0089,0
+813,Llama 3.1,Legal,RAG,1140,2286,0.32,0.68,0,2.63,1,4,0.0203,0
+814,Qwen 2.5,Coding,Code Generation,180,344,1.42,0.84,0,7.76,0,4,0.0024,0
+815,Mistral Large,Healthcare,Translation,404,738,1.07,0.78,1,5.76,0,4,0.0119,0
+816,Gemma 3,Customer Support,Classification,516,1210,0.12,0.56,0,1.7,1,5,0.0103,0
+817,GPT-4o,Finance,Translation,309,1104,1.3,0.61,0,0.66,1,5,0.0178,0
+818,Claude 3.7,Healthcare,QA,1501,2692,1.31,0.79,1,8.37,0,5,0.0321,0
+819,Qwen 2.5,Finance,Code Generation,359,640,0.48,0.88,1,2.06,1,4,0.0092,0
+820,Gemma 3,Customer Support,RAG,268,1144,0.21,0.78,0,2.62,1,5,0.0061,0
+821,Gemma 3,Customer Support,QA,1038,1236,0.43,0.98,1,5.56,0,5,0.0115,0
+822,Mistral Large,Customer Support,QA,1309,1502,0.12,0.86,0,9.21,0,4,0.018,0
+823,Claude 3.7,Coding,QA,1980,3019,1.42,0.84,1,9.95,0,4,0.0603,0
+824,Qwen 2.5,Coding,Translation,840,1954,0.02,0.6,1,7.73,0,5,0.0125,0
+825,Gemma 3,Healthcare,RAG,1410,1583,0.91,0.8,0,9.49,0,4,0.007,0
+826,Llama 3.1,Healthcare,Code Generation,1024,1638,0.57,0.69,0,2.36,0,4,0.0119,1
+827,Mistral Large,Education,Classification,1302,2321,0.85,0.61,1,4.21,0,4,0.0049,1
+828,GPT-4o,Retail,Translation,734,772,0.16,0.67,1,6.75,1,3,0.0084,0
+829,Gemma 3,Legal,Summarization,1850,2333,0.23,0.56,1,6.31,0,4,0.0204,0
+830,Gemma 3,Customer Support,Code Generation,1108,1414,1.22,0.55,0,5.01,1,4,0.0139,0
+831,Mistral Large,Coding,Classification,416,500,0.17,0.64,1,1.76,1,4,0.0028,0
+832,Mistral Large,Finance,QA,253,1091,0.63,0.78,1,6.75,0,4,0.0203,0
+833,Claude 3.7,Coding,QA,1971,2097,0.16,0.51,0,3.88,0,5,0.0171,1
+834,Gemma 3,Customer Support,QA,899,1231,0.72,0.64,0,1.97,1,5,0.0066,0
+835,Qwen 2.5,Coding,Translation,1779,2769,0.4,0.85,0,7.62,1,4,0.0459,0
+836,Llama 3.1,Finance,RAG,1261,1527,0.27,1.0,0,6.39,0,4,0.0041,0
+837,GPT-4o,Retail,RAG,46,539,0.92,0.55,1,0.65,1,4,0.0052,0
+838,GPT-4o,Healthcare,QA,1328,1853,0.08,0.56,1,4.7,1,4,0.0053,0
+839,Gemma 3,Education,QA,1362,1760,1.12,0.61,1,5.58,0,4,0.0191,0
+840,Claude 3.7,Retail,Translation,208,966,1.0,0.84,1,6.47,0,5,0.0082,0
+841,GPT-4o,Retail,Code Generation,771,1058,0.36,0.64,0,5.72,0,5,0.0136,0
+842,Llama 3.1,Retail,Code Generation,1684,2321,0.29,0.85,1,9.52,0,4,0.046,0
+843,Mistral Large,Healthcare,RAG,324,1093,0.07,0.6,1,4.9,1,4,0.0163,0
+844,GPT-4o,Customer Support,Code Generation,868,1152,0.79,0.98,1,7.45,0,4,0.0221,0
+845,Mistral Large,Legal,Translation,399,1315,1.11,0.7,0,6.04,0,5,0.0117,0
+846,Gemma 3,Customer Support,Summarization,566,1617,0.31,0.5,1,5.37,0,5,0.0185,0
+847,Gemma 3,Finance,Classification,616,1233,1.06,0.78,0,2.3,0,4,0.0058,1
+848,Gemma 3,Education,QA,1798,1820,1.19,0.82,0,4.39,0,5,0.0244,1
+849,GPT-4o,Customer Support,Classification,1948,2632,1.06,0.77,1,8.27,1,5,0.0349,0
+850,Qwen 2.5,Coding,Translation,459,1261,1.1,0.64,0,2.77,0,5,0.0084,1
+851,Mistral Large,Education,Summarization,1138,1476,0.31,0.72,1,4.15,0,4,0.0223,1
+852,Qwen 2.5,Education,QA,1857,3043,0.72,0.75,0,6.1,0,4,0.046,0
+853,Qwen 2.5,Legal,QA,645,958,0.24,0.59,0,4.08,0,4,0.0061,1
+854,Qwen 2.5,Healthcare,Summarization,1493,2299,0.79,0.86,1,8.37,0,3,0.0388,0
+855,Qwen 2.5,Healthcare,Summarization,518,755,1.16,0.63,0,8.17,0,4,0.0126,0
+856,Claude 3.7,Coding,Classification,295,994,0.72,0.78,1,4.03,0,5,0.0064,1
+857,GPT-4o,Finance,QA,1295,2362,0.82,0.51,0,2.17,1,5,0.0224,0
+858,Llama 3.1,Healthcare,Classification,474,724,0.64,0.57,1,5.9,0,4,0.0144,0
+859,Claude 3.7,Finance,Code Generation,741,1070,0.11,0.67,0,3.94,0,4,0.0124,1
+860,Gemma 3,Education,Code Generation,880,1112,0.23,0.83,1,3.65,1,4,0.0122,0
+861,Mistral Large,Customer Support,QA,1645,2320,0.11,0.5,0,9.53,0,3,0.0233,0
+862,Gemma 3,Legal,RAG,241,522,0.87,0.98,1,2.67,0,4,0.0047,1
+863,Claude 3.7,Retail,RAG,995,1518,1.04,0.71,0,7.63,1,4,0.018,0
+864,GPT-4o,Education,Translation,1100,1298,0.8,0.62,0,2.23,1,4,0.0027,0
+865,Claude 3.7,Legal,Summarization,980,1285,1.44,0.96,1,1.89,1,4,0.0059,0
+866,GPT-4o,Coding,QA,441,514,1.24,0.53,1,1.83,0,5,0.005,1
+867,GPT-4o,Healthcare,Translation,1367,1687,0.87,0.74,0,6.54,0,4,0.0058,0
+868,Qwen 2.5,Coding,QA,1712,2694,1.22,0.57,1,3.76,0,4,0.0217,1
+869,Mistral Large,Retail,Code Generation,597,639,0.17,0.53,0,5.96,0,4,0.0062,0
+870,Mistral Large,Finance,Code Generation,1708,2049,0.39,0.79,1,4.72,0,4,0.0075,1
+871,Mistral Large,Finance,QA,443,1440,0.6,0.53,1,3.81,0,4,0.0195,1
+872,GPT-4o,Finance,Classification,1655,2417,0.56,0.71,0,4.37,0,5,0.0417,1
+873,Llama 3.1,Education,QA,343,1492,0.81,0.53,0,5.29,1,4,0.0279,0
+874,Gemma 3,Customer Support,Classification,1177,1841,0.85,0.78,0,7.84,0,4,0.0139,0
+875,Claude 3.7,Healthcare,Translation,1973,2192,0.6,0.6,0,8.53,1,4,0.0398,0
+876,GPT-4o,Coding,QA,1663,2277,1.16,0.51,0,8.49,1,3,0.0325,0
+877,Qwen 2.5,Retail,Classification,1961,3008,1.08,0.94,0,8.95,0,4,0.0455,0
+878,Claude 3.7,Healthcare,Summarization,926,1739,1.18,0.67,0,4.17,1,4,0.0347,0
+879,GPT-4o,Legal,QA,1171,2311,0.94,0.75,1,7.94,0,5,0.0378,0
+880,Mistral Large,Education,RAG,941,1684,0.47,0.97,1,2.64,1,4,0.0088,0
+881,Mistral Large,Customer Support,Translation,534,635,1.14,0.72,1,8.08,0,4,0.0045,0
+882,Gemma 3,Coding,QA,1888,2078,1.02,0.72,1,6.56,1,4,0.0231,0
+883,Mistral Large,Customer Support,QA,1281,1516,1.47,0.53,0,7.97,0,4,0.0073,0
+884,GPT-4o,Finance,Code Generation,466,1581,0.58,0.73,1,1.51,1,5,0.0164,0
+885,Claude 3.7,Legal,Summarization,231,924,1.38,0.96,1,6.48,0,4,0.0075,0
+886,GPT-4o,Retail,RAG,1448,1766,1.11,0.56,1,5.56,0,5,0.0137,0
+887,Qwen 2.5,Legal,Classification,137,267,1.4,0.68,0,3.73,1,4,0.0006,0
+888,Mistral Large,Retail,Summarization,526,1156,0.95,0.54,0,1.4,1,5,0.0117,0
+889,Mistral Large,Legal,RAG,1381,2009,1.34,0.59,1,2.35,1,4,0.0166,0
+890,Llama 3.1,Healthcare,Code Generation,1106,1146,1.03,0.58,1,7.02,1,4,0.0207,0
+891,Mistral Large,Customer Support,Classification,1377,1705,0.87,0.57,0,7.1,1,5,0.0321,0
+892,Claude 3.7,Healthcare,QA,242,519,1.19,0.84,1,2.55,0,5,0.007,1
+893,Qwen 2.5,Retail,QA,457,919,1.12,0.59,1,6.2,0,4,0.0176,0
+894,Claude 3.7,Legal,Translation,768,1721,1.22,0.51,1,8.15,0,4,0.0143,0
+895,Mistral Large,Education,Code Generation,1576,2728,0.5,0.96,0,5.75,1,4,0.0321,0
+896,Mistral Large,Healthcare,RAG,1420,1652,1.02,0.82,0,7.45,0,4,0.0038,0
+897,Mistral Large,Retail,RAG,1545,2158,1.13,0.96,0,2.91,1,5,0.0125,0
+898,Llama 3.1,Retail,Classification,244,1074,0.29,0.73,1,1.48,1,4,0.0094,0
+899,GPT-4o,Healthcare,Summarization,558,586,1.32,0.63,0,7.44,1,5,0.0055,0
+900,Llama 3.1,Retail,RAG,1628,1997,0.56,0.91,1,8.63,1,5,0.0397,0
+901,Gemma 3,Retail,Summarization,404,1223,0.92,0.7,0,1.11,1,5,0.0063,0
+902,Gemma 3,Finance,QA,905,1457,0.35,0.86,1,2.32,0,5,0.0071,1
+903,Mistral Large,Healthcare,Code Generation,201,1334,0.04,0.51,0,6.46,0,5,0.0046,0
+904,Llama 3.1,Retail,Summarization,1513,2023,0.2,0.73,0,7.02,1,4,0.0121,0
+905,Qwen 2.5,Retail,QA,1497,1686,1.17,0.89,1,8.08,0,5,0.0224,0
+906,Gemma 3,Customer Support,Summarization,237,626,0.69,0.8,1,1.33,1,4,0.0068,0
+907,Gemma 3,Coding,RAG,810,1260,0.15,0.9,0,4.44,1,5,0.011,0
+908,Claude 3.7,Retail,Translation,1665,2387,0.24,0.65,0,9.33,0,5,0.0256,0
+909,Llama 3.1,Finance,Classification,20,1137,0.24,0.87,0,7.45,0,3,0.0127,0
+910,GPT-4o,Education,Code Generation,245,813,1.35,0.51,0,1.59,0,4,0.0045,1
+911,Qwen 2.5,Education,RAG,1139,1554,0.98,0.73,1,7.93,1,4,0.0086,0
+912,Qwen 2.5,Education,Classification,220,1127,0.88,0.88,1,2.91,0,5,0.0108,1
+913,Claude 3.7,Education,Translation,1285,1436,0.16,0.69,1,3.36,1,4,0.0259,0
+914,Mistral Large,Customer Support,Summarization,849,930,0.44,0.91,1,6.29,1,4,0.0154,0
+915,Qwen 2.5,Education,Summarization,742,1012,0.37,0.61,1,4.03,0,4,0.0146,1
+916,GPT-4o,Retail,Classification,963,1563,0.85,0.66,1,3.22,0,5,0.018,1
+917,Llama 3.1,Healthcare,RAG,1476,2387,0.91,0.94,1,8.75,0,4,0.0185,0
+918,GPT-4o,Education,QA,1031,1720,0.07,0.64,0,2.42,1,5,0.0108,0
+919,Claude 3.7,Retail,QA,1328,1616,1.17,0.79,1,1.9,1,5,0.0149,0
+920,GPT-4o,Retail,Classification,700,1282,0.97,0.53,1,1.82,1,4,0.0105,0
+921,GPT-4o,Healthcare,Summarization,1021,1289,0.92,0.7,1,6.91,1,5,0.0243,0
+922,Gemma 3,Customer Support,Translation,107,475,1.24,0.57,0,8.08,1,3,0.0071,0
+923,Gemma 3,Coding,Translation,20,138,1.4,0.93,0,2.25,0,5,0.0005,1
+924,Claude 3.7,Customer Support,RAG,1631,1896,1.22,0.63,1,3.57,0,4,0.0332,1
+925,Llama 3.1,Healthcare,Classification,1314,1908,0.67,0.56,1,5.96,1,4,0.0289,0
+926,Llama 3.1,Healthcare,Code Generation,1579,1758,0.44,0.54,0,6.53,0,4,0.0192,0
+927,Gemma 3,Coding,RAG,452,1552,0.7,0.69,0,4.57,1,4,0.0119,0
+928,Claude 3.7,Finance,RAG,1352,2161,0.23,0.75,1,9.02,0,5,0.0381,0
+929,Llama 3.1,Healthcare,RAG,394,1358,0.1,0.71,0,6.05,0,5,0.0209,0
+930,Mistral Large,Finance,Summarization,393,655,0.4,0.74,1,4.83,1,5,0.0023,0
+931,Mistral Large,Finance,Classification,822,1042,0.75,0.75,1,1.64,1,4,0.0093,0
+932,GPT-4o,Finance,QA,397,640,0.6,0.8,1,4.83,1,5,0.0087,0
+933,Mistral Large,Legal,RAG,118,601,1.34,0.79,1,2.21,0,5,0.0088,1
+934,Gemma 3,Coding,Translation,217,587,0.33,0.91,0,5.87,1,5,0.0048,0
+935,Llama 3.1,Finance,Classification,599,1107,1.1,0.55,1,4.87,1,4,0.0158,0
+936,GPT-4o,Finance,Code Generation,1852,1914,0.68,0.98,1,7.71,1,3,0.0129,0
+937,GPT-4o,Retail,Code Generation,1567,2093,1.28,0.8,1,9.72,0,4,0.0059,0
+938,Mistral Large,Legal,Code Generation,605,829,1.25,0.76,0,2.26,0,4,0.0126,1
+939,Gemma 3,Retail,Code Generation,728,775,1.48,0.63,1,4.9,1,5,0.0058,0
+940,Qwen 2.5,Finance,Classification,1765,2087,1.3,0.92,0,6.18,1,5,0.0363,0
+941,Mistral Large,Coding,QA,1029,1471,0.05,0.79,1,6.91,1,4,0.0081,0
+942,Gemma 3,Legal,Translation,1987,2550,0.41,0.81,0,6.93,1,5,0.0211,0
+943,Gemma 3,Education,QA,864,1771,1.42,0.64,0,2.77,1,5,0.0216,0
+944,Gemma 3,Healthcare,Classification,1995,3158,0.01,0.96,1,3.84,0,5,0.0236,1
+945,Qwen 2.5,Customer Support,QA,41,1061,0.68,0.61,0,6.69,0,4,0.0103,0
+946,Mistral Large,Retail,QA,112,686,0.38,0.68,0,2.55,0,4,0.0104,1
+947,Gemma 3,Education,Translation,605,1442,0.33,0.74,1,3.72,1,5,0.0054,0
+948,Gemma 3,Education,QA,646,1178,0.26,0.72,0,7.84,0,4,0.0141,0
+949,Gemma 3,Retail,Code Generation,618,834,0.85,0.81,1,5.23,1,4,0.0083,0
+950,Mistral Large,Healthcare,Summarization,1469,1545,0.54,0.68,1,5.68,1,5,0.0038,0
+951,GPT-4o,Customer Support,RAG,1269,2401,1.36,0.89,0,6.31,1,5,0.0427,0
+952,Qwen 2.5,Healthcare,Classification,267,460,0.6,0.5,0,6.83,1,3,0.0078,0
+953,Qwen 2.5,Coding,QA,1227,1495,0.15,0.65,0,5.49,1,5,0.0211,0
+954,Llama 3.1,Education,Code Generation,1446,1923,0.31,0.57,0,7.78,1,5,0.026,0
+955,GPT-4o,Retail,QA,646,803,1.08,0.97,0,7.29,0,3,0.0103,0
+956,Mistral Large,Finance,Summarization,516,649,0.31,0.74,1,7.34,1,5,0.0048,0
+957,Llama 3.1,Customer Support,Code Generation,1733,2638,1.27,0.63,0,7.15,1,3,0.0063,0
+958,Claude 3.7,Legal,Classification,1356,2359,0.36,0.76,1,7.35,0,4,0.0331,0
+959,GPT-4o,Retail,RAG,1377,2267,0.41,0.69,1,8.16,1,3,0.0161,0
+960,Qwen 2.5,Legal,Classification,32,778,0.87,0.52,0,5.31,1,5,0.0081,0
+961,Qwen 2.5,Finance,Classification,28,1123,1.47,0.68,1,6.91,0,4,0.0035,0
+962,Qwen 2.5,Legal,RAG,1353,1993,1.08,0.67,1,7.47,0,5,0.0064,0
+963,Claude 3.7,Retail,RAG,1981,2664,0.71,0.83,0,7.17,1,4,0.0332,0
+964,Llama 3.1,Customer Support,Code Generation,148,1190,0.07,0.93,0,1.63,0,5,0.0126,1
+965,GPT-4o,Customer Support,Code Generation,1639,1790,0.35,0.95,1,3.61,1,4,0.0117,0
+966,Llama 3.1,Coding,Translation,159,836,0.66,0.69,0,5.32,0,4,0.0084,0
+967,Claude 3.7,Customer Support,Summarization,1149,1581,0.3,0.63,0,5.05,1,5,0.0155,0
+968,Mistral Large,Retail,Translation,186,493,0.87,0.81,0,5.65,0,5,0.0042,0
+969,Gemma 3,Education,Translation,1780,2224,0.11,0.59,0,8.12,1,4,0.0234,0
+970,Claude 3.7,Education,QA,1852,2017,0.84,0.57,1,3.04,1,5,0.0087,0
+971,Qwen 2.5,Education,QA,251,864,0.75,0.53,0,4.73,0,5,0.0056,1
+972,GPT-4o,Retail,RAG,1796,2633,1.31,0.98,1,3.03,0,5,0.0311,1
+973,GPT-4o,Finance,Summarization,1928,2482,1.38,0.63,1,2.84,1,4,0.0446,0
+974,Claude 3.7,Coding,QA,1130,2160,1.23,0.66,0,7.52,0,4,0.0412,0
+975,GPT-4o,Legal,Translation,718,1003,1.47,0.97,1,5.76,0,4,0.0028,0
+976,Llama 3.1,Retail,Translation,471,604,0.98,0.72,0,3.16,0,4,0.0097,1
+977,Mistral Large,Coding,RAG,1771,2583,0.57,0.84,0,2.55,1,5,0.0375,0
+978,Llama 3.1,Finance,QA,1135,1551,0.21,0.72,1,8.62,1,4,0.0287,0
+979,Llama 3.1,Legal,Summarization,1215,1746,0.02,0.71,0,7.59,0,5,0.0059,0
+980,GPT-4o,Coding,QA,588,873,0.07,0.67,1,6.05,0,5,0.0093,0
+981,Claude 3.7,Education,Code Generation,166,1094,0.38,0.77,0,4.27,1,5,0.0207,0
+982,Claude 3.7,Legal,Classification,510,1239,0.79,0.63,0,6.28,0,5,0.0182,0
+983,Llama 3.1,Healthcare,Summarization,170,1322,0.31,0.57,1,8.02,0,4,0.0115,0
+984,Gemma 3,Customer Support,QA,1440,1529,0.66,0.88,1,9.43,0,4,0.0192,0
+985,Llama 3.1,Coding,RAG,132,1061,0.42,0.8,1,4.23,1,4,0.0061,0
+986,Claude 3.7,Finance,QA,1100,1808,0.08,0.65,0,5.8,1,5,0.0331,0
+987,Qwen 2.5,Education,Translation,708,1861,1.09,0.81,0,7.84,0,4,0.0279,0
+988,Llama 3.1,Finance,QA,959,1759,0.64,0.86,0,7.4,1,4,0.0349,0
+989,Gemma 3,Education,Classification,584,1295,1.2,0.98,1,1.6,0,5,0.0035,1
+990,Gemma 3,Customer Support,Summarization,1360,2008,0.38,0.83,0,7.92,0,4,0.0156,0
+991,GPT-4o,Education,Translation,918,2077,0.69,0.72,1,4.99,1,4,0.0063,0
+992,Llama 3.1,Customer Support,Translation,1139,2172,0.47,0.53,1,3.03,1,4,0.029,0
+993,Qwen 2.5,Education,Classification,1353,1458,0.07,0.56,1,2.19,1,5,0.0089,0
+994,GPT-4o,Retail,QA,43,779,1.02,0.93,0,3.01,0,4,0.0087,1
+995,Gemma 3,Retail,Classification,495,1388,0.31,0.79,0,7.29,1,5,0.0064,0
+996,Llama 3.1,Retail,QA,696,1044,1.46,0.95,0,3.99,1,4,0.0076,0
+997,Qwen 2.5,Finance,RAG,227,1022,0.91,0.9,0,4.47,1,5,0.0026,0
+998,Claude 3.7,Customer Support,QA,1571,2694,1.5,0.54,1,2.77,0,5,0.0465,1
+999,Llama 3.1,Customer Support,Classification,1253,2451,0.71,0.76,0,5.21,1,4,0.0157,0
+1000,Claude 3.7,Healthcare,Classification,482,1341,0.68,0.87,1,1.7,0,5,0.0112,1
