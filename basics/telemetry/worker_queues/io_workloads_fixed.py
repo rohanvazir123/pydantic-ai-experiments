@@ -284,14 +284,24 @@ class IoWorkerPool(WorkerPool):
 
 
 async def main() -> None:
+
+    # Ceate a pool of IO workers
     pool = IoWorkerPool(num_workers=3)
+
+    # Submit multiple IO jobs to the pool. Each job is a TelemetryData instance
     for i in range(10):
         await pool.insert_job(
             TelemetryData(device_id=f"device_{i}", metric={"temp": 20 + i})
         )
-    await pool.join_tasks()             # barrier: all writes landed
-    outcomes = pool.collect_results()   # job_id -> DONE / FAILED (no DB read-back)
+
+    # Wait for all jobs to finish (the DB writes to land) before shutdown. 
+    await pool.join_tasks()
+
+    # Shutdown the pool cleanly (sentinels + await workers)
     await pool.shutdown()
+
+    # Check how many jobs ran successfully
+    outcomes = pool.collect_results()
     done = sum(1 for status in outcomes.values() if status == JobStatus.DONE)
     print(f"{done}/{len(outcomes)} writes succeeded; {count_rows(pool.engine)} rows in DB")
 
