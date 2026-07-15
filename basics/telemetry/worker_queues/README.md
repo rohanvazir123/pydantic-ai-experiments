@@ -13,6 +13,7 @@ kind of work:
 - [Files](#files)
 - [CPU-bound Pool](#cpu-bound-pool)
 - [IO-bound Pool](#io-bound-pool)
+- [Resequencing Pool](#resequencing-pool)
 - [Running the Demos](#running-the-demos)
 - [Running the Tests](#running-the-tests)
 
@@ -25,6 +26,7 @@ kind of work:
 | `cpu_workloads_fixed.py` | Reviewed, corrected `multiprocessing` worker pool. |
 | `io_workloads.py` | Original IO draft (kept for reference; do not build on it). |
 | `io_workloads_fixed.py` | Reviewed `asyncio` pool with a **SQLAlchemy** (in-memory SQLite) sink. |
+| `resequencer.py` | Out-of-order telemetry resequencing: same `asyncio` pool, sink swapped for a bounded per-device min-heap. |
 
 Tests live in `basics/telemetry/tests/` (see [Running the Tests](#running-the-tests)).
 
@@ -47,9 +49,9 @@ it until a sentinel — so that shape lives in one place:
 
 | Base | Kind | Subclasses | Why this kind |
 |------|------|-----------|---------------|
-| `Job` | pydantic `BaseModel` | `ImageProcessingRequest`, `TelemetryData` | a job is **data** — validated, serialisable, picklable across the process boundary; a compute job also **processes itself** via `process()` |
-| `Worker` | `ABC` | `CpuWorker`, `IoWorker` | a worker is **behaviour** over non-serialisable runtime state (queues, connections) — not a model |
-| `WorkerPool` | `ABC` | `CpuWorkerPool`, `IoWorkerPool` | owns the queue + N workers; holds shared `num_workers`, declares the lifecycle contract |
+| `Job` | pydantic `BaseModel` | `ImageProcessingRequest`, `TelemetryData`, `TelemetryFrame` | a job is **data** — validated, serialisable, picklable across the process boundary; a compute job also **processes itself** via `process()` |
+| `Worker` | `ABC` | `CpuWorker`, `IoWorker`, `ResequencingWorker` | a worker is **behaviour** over non-serialisable runtime state (queues, connections) — not a model |
+| `WorkerPool` | `ABC` | `CpuWorkerPool`, `IoWorkerPool`, `ResequencingWorkerPool` | owns the queue + N workers; holds shared `num_workers`, declares the lifecycle contract |
 
 `Job` (the merged base — formerly `WorkItem` + `Job`) carries an auto-generated
 `job_id` for tracking/cancellation plus an optional `type` label. A job
@@ -218,11 +220,50 @@ become genuine N-way write concurrency, bounded by the connection pool. Rule of
 thumb: size workers to the store's real write concurrency, and never run more
 than the connection pool allows.
 
+## Resequencing Pool
+
+`resequencer.py` answers the other half of the worker-pool question: *ensuring
+out-of-order data is resequenced correctly*. The key insight is that ordering
+breaks on the **completion** side, not arrival — with N concurrent workers and
+variable per-frame latency, worker A can start seq=5 before worker B finishes
+seq=4 and still finish first. So frames arrive in order and still come out
+scrambled.
+
+Same shape as the IO pool, over the same `base.py` bases — `TelemetryFrame(Job)`
+→ `ResequencingWorker(Worker)` → `ResequencingWorkerPool(WorkerPool)`. The only
+swap is the sink: **`Resequencer` sits exactly where `TelemetryWriter` sits**,
+the infrastructure the worker owns and hands to `frame.process(...)`. Per device
+it keeps only an `expected` counter, a min-heap of early arrivals, and the time
+its gap stalled.
+
+Three details worth naming out loud:
+
+- **Two bounds, not one.** A gap is presumed lost once *either* `max_buffer`
+  (frames withheld) or `max_delay` (time withheld) trips — then the heap drains
+  in seq order, stepping over each gap and recording it. They fail in opposite
+  directions: a size bound alone leaves ordering *latency* unbounded (a device
+  at 1 Hz sits on a gap for a minute before filling a 60-frame buffer), a time
+  bound alone leaves *memory* unbounded. `close()` covers end-of-stream, where
+  neither bound can fire because both are only tested from `submit()`.
+- **No dedupe index.** Duplicates are caught by the flush itself (`seq <
+  expected` → drop), so no set mirrors the heap. Heap entries are
+  `(seq, tiebreak, frame)`: without the `itertools.count()` tiebreak, a
+  duplicate seq would compare the pydantic models and raise `TypeError`.
+- **Shard, don't lock.** One `Resequencer` serialises every device through one
+  event loop, but nothing couples one device to another — all state is keyed by
+  device, so hashing `device_id` to a resequencer/process/Kafka partition scales
+  it out. That's the partition-key model: ordering holds only *within* a
+  partition, which is all per-device ordering needs.
+
+The header comment carries the full step-by-step plus the known limits; the
+inline comments reference those step numbers.
+
 ## Running the Demos
 
 ```bash
 python cpu_workloads_fixed.py          # process pool, processes 20 images
 python io_workloads_fixed.py           # asyncio pool, writes 10 rows via SQLAlchemy
+python resequencer.py                  # 30 frames, seq=15 lost -> one recorded gap
 ```
 
 ## Running the Tests
