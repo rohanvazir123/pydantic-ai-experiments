@@ -132,6 +132,7 @@ async def test_worker_pool_resequences_despite_concurrent_out_of_order_completio
     """
     resequencer = Resequencer(max_buffer=25, max_delay=100.0)
     pool = ResequencingWorkerPool(num_workers=8, resequencer=resequencer)
+    pool.start()
     for i in range(20):
         await pool.insert_job(frame(i))
     await pool.join_tasks()

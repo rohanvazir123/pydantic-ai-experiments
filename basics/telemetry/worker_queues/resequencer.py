@@ -236,6 +236,8 @@ class ResequencingWorker(Worker):
     heaps or sequence numbers, mirroring ``IoWorker`` passing its writer.
     """
 
+    task: asyncio.Task  # this worker's own run loop; set by start(), joined at shutdown
+
     def __init__(
         self,
         in_queue: asyncio.Queue,
@@ -249,6 +251,14 @@ class ResequencingWorker(Worker):
         self.resequencer = resequencer
         self.status = status
         self.cancelled = cancelled
+
+    def start(self) -> None:
+        """Launch this worker's run loop as an asyncio task the worker owns.
+
+        As in ``IoWorker``: needs a running event loop, and creating the task also
+        schedules it -- hence not in ``__init__``.
+        """
+        self.task = asyncio.create_task(self.run())
 
     async def run(self) -> None:
         while True:
@@ -294,34 +304,33 @@ class ResequencingWorkerPool(WorkerPool):
         maxsize: int = 100,
         num_workers: int = 4,
     ) -> None:
+        # Config only -- nothing is built and nothing runs here. The four build
+        # steps below are sequenced by WorkerPool.start(), which reads these two.
+        self._maxsize = maxsize
+        self._resequencer = resequencer
         super().__init__(num_workers)
-        #
-        #   parent.insert_job(frame)
-        #        │
-        #        ▼
-        #   in_queue ───► worker[0..N] ───► frame.process(resequencer)
-        #  (arrival order) (async tasks;            │
-        #                   REORDER completion)     └──► Resequencer.submit()
-        #                                                  │
-        #                                                  └──► emitted[device]
-        #                                                        (strict seq order)
-        #
-        # No result queue (as with the IO pool): a frame's "result" is its place
-        # in the emitted sequence, so the Resequencer IS the sink.
-        #
-        # Ordered steps, one concern each. Must run inside an event loop --
-        # _start_workers uses asyncio.create_task.
-        self._init_queue(maxsize)
-        self._init_shared_state()
-        self._init_resequencer(resequencer)
-        self._start_workers()
 
-    def _init_queue(self, maxsize: int) -> None:
-        """Parent -> workers, with backpressure at ``maxsize``."""
-        self.in_queue: asyncio.Queue = asyncio.Queue(maxsize)
+    # -- Build steps, run in order by WorkerPool.start() ---------------------
+    #
+    #   parent.insert_job(frame)
+    #        │
+    #        ▼
+    #   in_queue ───► worker[0..N] ───► frame.process(resequencer)
+    #  (arrival order) (async tasks;            │
+    #                   REORDER completion)     └──► Resequencer.submit()
+    #                                                  │
+    #                                                  └──► emitted[device]
+    #                                                        (strict seq order)
+    #
+    # No result queue (as with the IO pool): a frame's "result" is its place
+    # in the emitted sequence, so the Resequencer IS the sink.
+
+    def _init_queue(self) -> None:
+        """Step 1: parent -> workers, with backpressure at ``maxsize``."""
+        self.in_queue: asyncio.Queue = asyncio.Queue(self._maxsize)
 
     def _init_shared_state(self) -> None:
-        """Job bookkeeping. As in ``IoWorkerPool``, no ``Manager`` needed: one
+        """Step 2: job bookkeeping. As in ``IoWorkerPool``, no ``Manager`` needed: one
         process on one event-loop thread, so a plain dict/set is safe.
 
         * ``_status``    job_id -> JobStatus  (workers write, parent reads)
@@ -330,21 +339,24 @@ class ResequencingWorkerPool(WorkerPool):
         self._status: dict[str, JobStatus] = {}
         self._cancelled: set[str] = set()
 
-    def _init_resequencer(self, resequencer: Resequencer | None) -> None:
-        """The sink shared by all workers; the caller sizes its bounds."""
-        self.resequencer = resequencer or Resequencer()
+    def _init_sinks(self) -> None:
+        """Step 3: the Resequencer is this pool's single sink -- a frame's payload
+        is its place in the emitted sequence. The caller sizes its bounds.
+        """
+        self.resequencer = self._resequencer or Resequencer()
 
-    def _start_workers(self) -> None:
-        """One worker per slot, each an asyncio task.
+    def _init_workers(self) -> None:
+        """Step 4: one worker per slot; each launches its own task.
 
         All share the SAME queue, resequencer and bookkeeping -- only the id
         differs. Requires a running event loop.
         """
-        self.reseq_workers = [
+        self.workers = [
             ResequencingWorker(self.in_queue, i, self.resequencer, self._status, self._cancelled)
             for i in range(self.num_workers)
         ]
-        self.workers = [asyncio.create_task(w.run()) for w in self.reseq_workers]
+        for worker in self.workers:
+            worker.start()  # the worker creates its own task; the pool never does
 
     # -- Public API ---------------------------------------------------------
     # Same shape as IoWorkerPool, so the same REST mapping: `POST /frames` ->
@@ -388,7 +400,7 @@ class ResequencingWorkerPool(WorkerPool):
         """
         for _ in range(self.num_workers):
             await self.in_queue.put(None)
-        await asyncio.gather(*self.workers)
+        await asyncio.gather(*(worker.task for worker in self.workers))
         self.resequencer.close()
 
 
@@ -400,6 +412,7 @@ async def main() -> None:
     # jitter never trips it) and below the 14 frames trailing seq=15 (so that
     # gap is given up on mid-stream rather than at close()).
     pool = ResequencingWorkerPool(num_workers=4, resequencer=Resequencer(max_buffer=10))
+    pool.start()
     for i in range(30):
         if i == 15:
             continue

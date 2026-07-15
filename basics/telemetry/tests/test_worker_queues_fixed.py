@@ -46,6 +46,7 @@ def test_pool_processes_all_tasks_and_shuts_down() -> None:
     before joining, so ``worker.join()`` returns instead of hanging.
     """
     pool = cpu.CpuWorkerPool(num_workers=2)
+    pool.start()
     payloads = [
         cpu.ImageProcessingRequest(image_id=f"img_{i}", image_data=b"x" * i)
         for i in range(8)
@@ -59,7 +60,7 @@ def test_pool_processes_all_tasks_and_shuts_down() -> None:
     assert {r.image_id for r in results} == {f"img_{i}" for i in range(8)}
     by_id = {r.image_id: r.size_bytes for r in results}
     assert by_id["img_5"] == 5
-    assert all(not p.is_alive() for p in pool.processes)
+    assert all(not w.process.is_alive() for w in pool.workers)
 
 
 class DoublingRequest(cpu.ImageProcessingRequest):
@@ -80,6 +81,7 @@ class DoublingRequest(cpu.ImageProcessingRequest):
 def test_pool_dispatches_to_job_process() -> None:
     """The pool runs each job's own process(); a subclass overrides the behaviour."""
     pool = cpu.CpuWorkerPool(num_workers=1)
+    pool.start()
     pool.insert_cpu_tasks([DoublingRequest(image_id="d", image_data=b"abc")])
     pool.join_tasks()
     results = pool.collect_results(1)
@@ -91,6 +93,7 @@ def test_pool_dispatches_to_job_process() -> None:
 def test_file_sink_persists_results() -> None:
     """Jobs routed to the ``file`` sink are readable back from disk."""
     pool = cpu.CpuWorkerPool(num_workers=2)
+    pool.start()
     payloads = [
         cpu.ImageProcessingRequest(image_id=f"img_{i}", image_data=b"x" * i, result_sink="file")
         for i in range(6)
@@ -108,6 +111,7 @@ def test_file_sink_persists_results() -> None:
 def test_http_sink_receives_results() -> None:
     """Jobs routed to the ``http`` sink land in the outbox, not the file."""
     pool = cpu.CpuWorkerPool(num_workers=2)
+    pool.start()
     payloads = [
         cpu.ImageProcessingRequest(image_id=f"img_{i}", image_data=b"x", result_sink="http")
         for i in range(4)
@@ -127,6 +131,7 @@ def test_http_sink_receives_results() -> None:
 def test_pool_skips_invalid_payload_without_crashing() -> None:
     """A non-request payload is skipped (not crashing on attribute access)."""
     pool = cpu.CpuWorkerPool(num_workers=1)
+    pool.start()
     pool.task_queue.put("not-a-request")  # invalid item
     pool.insert_cpu_tasks([cpu.ImageProcessingRequest(image_id="ok", image_data=b"hi")])
     pool.join_tasks()
@@ -141,6 +146,7 @@ def test_pool_skips_invalid_payload_without_crashing() -> None:
 def test_cpu_job_status_reaches_done() -> None:
     """Each submitted job is tracked QUEUED -> ... -> DONE across processes."""
     pool = cpu.CpuWorkerPool(num_workers=2)
+    pool.start()
     jobs = [
         cpu.ImageProcessingRequest(image_id=f"j{i}", image_data=b"x") for i in range(4)
     ]
@@ -158,6 +164,7 @@ def test_cpu_job_status_reaches_done() -> None:
 def test_cpu_cancel_unknown_or_completed_returns_false() -> None:
     """A finished or unknown job can't be cancelled."""
     pool = cpu.CpuWorkerPool(num_workers=1)
+    pool.start()
     job = cpu.ImageProcessingRequest(image_id="ok", image_data=b"hi")
     pool.insert_job(job)
     pool.join_tasks()
@@ -204,6 +211,7 @@ async def test_concurrent_writes_all_persist() -> None:
 async def test_all_tasks_are_persisted() -> None:
     """Every inserted telemetry item is written and the pool shuts down."""
     q = io_mod.IoWorkerPool(maxsize=50, num_workers=3)
+    q.start()
     for i in range(20):
         await q.insert_job(
             io_mod.TelemetryData(device_id=f"device_{i}", metric={"temp": 20 + i})
@@ -211,13 +219,14 @@ async def test_all_tasks_are_persisted() -> None:
     await q.shutdown()
 
     assert io_mod.count_rows(q.engine) == 20
-    assert all(w.done() for w in q.workers)
+    assert all(w.task.done() for w in q.workers)
 
 
 @pytest.mark.asyncio
 async def test_invalid_item_is_skipped() -> None:
     """An invalid queue item is skipped without breaking the join/shutdown."""
     q = io_mod.IoWorkerPool(num_workers=1)
+    q.start()
     await q.io_queue.put("not-telemetry")  # invalid, should be skipped
     await q.insert_job(io_mod.TelemetryData(device_id="ok", metric={"t": 1}))
     await q.shutdown()
@@ -234,6 +243,7 @@ async def test_insert_respects_backpressure() -> None:
     ``await put`` rather than a ``put_nowait`` that would raise ``QueueFull``.
     """
     q = io_mod.IoWorkerPool(maxsize=1, num_workers=0)
+    q.start()
     await q.insert_job(io_mod.TelemetryData(device_id="d", metric={"t": 1}))
     assert q.io_queue.full()
     assert q.workers == []
@@ -243,6 +253,7 @@ async def test_insert_respects_backpressure() -> None:
 async def test_io_job_status_reaches_done() -> None:
     """A submitted job ends up DONE once the workers drain and shut down."""
     q = io_mod.IoWorkerPool(num_workers=2)
+    q.start()
     job = io_mod.TelemetryData(device_id="d", metric={"t": 1})
     await q.insert_job(job)
     await q.shutdown()
@@ -254,6 +265,7 @@ async def test_io_job_status_reaches_done() -> None:
 async def test_io_cancel_pending_job() -> None:
     """With no workers draining, a QUEUED job can be cancelled deterministically."""
     q = io_mod.IoWorkerPool(maxsize=10, num_workers=0)
+    q.start()
     job = io_mod.TelemetryData(device_id="d", metric={"t": 1})
 
     await q.insert_job(job)

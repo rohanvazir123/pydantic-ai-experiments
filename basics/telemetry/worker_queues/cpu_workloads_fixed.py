@@ -140,6 +140,8 @@ class CpuWorker(Worker):
     valid ``Process`` target under ``spawn``.
     """
 
+    process: Process  # this worker's own child process; set by start(), joined at shutdown
+
     def __init__(
         self,
         task_queue: JoinableQueue,
@@ -161,6 +163,19 @@ class CpuWorker(Worker):
         # so status/cancellation are visible across processes.
         self.status = status
         self.cancelled = cancelled
+
+    def start(self) -> None:
+        """Launch this worker's run loop in its own child process.
+
+        The handle is bound to ``self`` only AFTER ``process.start()``: under
+        ``spawn`` that call pickles the target ``self.run`` -- and therefore
+        ``self`` -- into the child, so assigning first would ship the child a
+        stale copy of its own Process object. Building the Process is inert;
+        starting it is the side effect, which is why this isn't in ``__init__``.
+        """
+        process = Process(target=self.run)
+        process.start()
+        self.process = process
 
     def run(self) -> None:
         """Pull jobs until a ``None`` sentinel; balance every get with a done."""
@@ -221,6 +236,7 @@ class CpuWorkerPool(WorkerPool):
     just holds one pool and calls its methods, e.g.::
 
         pool = CpuWorkerPool()
+        pool.start()                  # build queue/state/sinks/workers (on startup)
 
         @app.post("/jobs")            # body IS the pydantic Job
         def submit(job: ImageProcessingRequest) -> dict[str, str]:
@@ -242,34 +258,31 @@ class CpuWorkerPool(WorkerPool):
     """
 
     def __init__(self, num_workers: int | None = None) -> None:
-        # Default to one worker per core; overridable for tests.
+        # Default to one worker per core; overridable for tests. Config only --
+        # nothing is built and nothing runs here; that's WorkerPool.start().
         super().__init__(num_workers or multiprocessing.cpu_count())
-        #
-        # Workflow this pool wires up  (parent = orchestrator):
-        #
-        #   parent.insert_job(job)
-        #        │
-        #        ▼
-        #   task_queue ───► worker[0..N] ───► job.process(sinks)
-        #  (shared input)    (child procs)          │
-        #                                           ├──► status[job_id] = DONE/FAILED
-        #                                           │        (the OUTCOME; collect_results reads it)
-        #                                           │
-        #                                           └──► sinks[result_sink].emit()   (the PAYLOAD)
-        #                                                     ├─► FileWriter  → disk    (durable; later GET)
-        #                                                     └─► HttpResponder → webhook (push to caller)
-        #
-        # No result queue: the payload goes to its sink, the outcome goes to
-        # status. The parent never has payloads pushed back to it.
-        #
-        # __init__ reads as four ordered steps; each helper owns one concern.
-        self._init_queue()
-        self._init_shared_state()
-        self._init_sinks()
-        self._start_workers()
+
+    # -- Build steps, run in order by WorkerPool.start() ---------------------
+    #
+    # Workflow this pool wires up  (parent = orchestrator):
+    #
+    #   parent.insert_job(job)
+    #        │
+    #        ▼
+    #   task_queue ───► worker[0..N] ───► job.process(sinks)
+    #  (shared input)    (child procs)          │
+    #                                           ├──► status[job_id] = DONE/FAILED
+    #                                           │        (the OUTCOME; collect_results reads it)
+    #                                           │
+    #                                           └──► sinks[result_sink].emit()   (the PAYLOAD)
+    #                                                     ├─► FileWriter  → disk    (durable; later GET)
+    #                                                     └─► HttpResponder → webhook (push to caller)
+    #
+    # No result queue: the payload goes to its sink, the outcome goes to
+    # status. The parent never has payloads pushed back to it.
 
     def _init_queue(self) -> None:
-        """Wire the parent to the children with the task queue.
+        """Step 1: wire the parent to the children with the task queue.
 
         ``task_queue`` carries jobs parent -> workers. A ``JoinableQueue`` so
         ``join_tasks()`` can block until every ``put()`` has a matching
@@ -278,7 +291,7 @@ class CpuWorkerPool(WorkerPool):
         self.task_queue: JoinableQueue = JoinableQueue()
 
     def _init_shared_state(self) -> None:
-        """Create the cross-process job bookkeeping via a ``Manager``.
+        """Step 2: create the cross-process job bookkeeping via a ``Manager``.
 
         The Manager proxies are SHARED STATE BETWEEN PROCESSES -- conceptually
         like inter-process shared memory: every process (parent + all workers)
@@ -297,7 +310,7 @@ class CpuWorkerPool(WorkerPool):
         self._cancelled = self._manager.dict()
 
     def _init_sinks(self) -> None:
-        """Build the result-destination registry shared across worker processes.
+        """Step 3: build the result-destination registry shared across worker processes.
 
         Each sink needs Manager-backed state so it's picklable to the children and
         its writes are visible to the parent: the file sink takes a Manager lock
@@ -313,8 +326,8 @@ class CpuWorkerPool(WorkerPool):
             "http": HttpResponder(self.http_outbox),
         }
 
-    def _start_workers(self) -> None:
-        """Build one ``CpuWorker`` per slot and launch it in its own process.
+    def _init_workers(self) -> None:
+        """Step 4: build one ``CpuWorker`` per slot; each launches its own process.
 
         Each worker is its own object; only spawn-picklable worker state crosses
         to the child (the task queue, the sinks, an int id, the manager proxies).
@@ -333,11 +346,10 @@ class CpuWorkerPool(WorkerPool):
             )
             for i in range(self.num_workers)
         ]
-        self.processes = [Process(target=worker.run) for worker in self.workers]
 
         print(f"Starting {self.num_workers} CPU worker processes.")
-        for process in self.processes:
-            process.start()
+        for worker in self.workers:
+            worker.start()  # the worker creates its own process; the pool never does
 
     # -- Public API ---------------------------------------------------------
     # These methods exist because the work is LONG-RUNNING and arrives over a
@@ -390,13 +402,14 @@ class CpuWorkerPool(WorkerPool):
         """
         for _ in range(self.num_workers):
             self.task_queue.put(None)
-        for process in self.processes:
-            process.join()
+        for worker in self.workers:
+            worker.process.join()
         self._manager.shutdown()  # tear down the bookkeeping manager process
 
 
 if __name__ == "__main__":
     pool = CpuWorkerPool(num_workers=4)
+    pool.start()  # build the queue, state, sinks, and workers
 
     # Even ids persist to the file sink; odd ids are "sent back" over the http sink.
     payloads = [

@@ -1,4 +1,4 @@
-# Flight State Machine (JD 3b)
+# Flight State Machine
 
 A finite state machine for a vehicle's flight lifecycle
 (`PREFLIGHT → TAXI → TAKEOFF → CRUISE → LANDING → …`) where **invalid transitions
@@ -10,14 +10,14 @@ design, not about wiring up a library.
 | File | Purpose |
 |------|---------|
 | `flight_state_machine.py` | Hand-rolled: transition table, guards, precise exceptions, demo. |
-| `flight_state_machine_lib.py` | Alternate using the `python-statemachine` library (`StateChart`). |
+| `payment.py` | A second, unrelated FSM in the same style. |
 | `../tests/test_flight_state_machine.py` | Pytest suite for the hand-rolled version (no services). |
 
 ## Two implementations
 
-The hand-rolled version is the interview answer (the exercise says *implement*).
-`flight_state_machine_lib.py` shows the same graph via `python-statemachine` for
-contrast. Two things it taught us, both real interview talking points:
+The hand-rolled version is the one to build on. An earlier variant (since
+removed) expressed the same graph via `python-statemachine` for contrast. Two
+things that comparison taught us:
 
 - **`StateChart` follows SCXML semantics** — an event with no enabled transition
   is *silently discarded* by default, which violates "throw precise exceptions".
@@ -27,12 +27,6 @@ contrast. Two things it taught us, both real interview talking points:
   distinguishes them (`InvalidTransition` vs `GuardRejected`). That's the trade:
   much less code, but coarser errors — and it also validates the graph at
   class-definition time (trap states raise `InvalidDefinition`).
-
-Run it with the dependency (not part of the repo's deps):
-
-```bash
-uv run --with python-statemachine basics/telemetry/state_machine/flight_state_machine_lib.py
-```
 
 ## How It Works
 
@@ -130,7 +124,7 @@ is the exception.
 
 For a small, flat FSM where clear errors matter, hand-rolled wins. Cross into
 hierarchy, persistence, or a large graph and the library pulls ahead. Knowing
-*when* each is right is the interview answer — not picking a permanent winner.
+*when* each is right is the point — not picking a permanent winner.
 
 **Where the hand-rolled version wins:**
 

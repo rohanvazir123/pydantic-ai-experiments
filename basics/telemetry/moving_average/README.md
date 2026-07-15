@@ -18,16 +18,14 @@ O(1); the window sum is memoised and only samples that age out are subtracted.
 
 | File | Purpose |
 |------|---------|
-| `../rolling_avg.py` | Original draft (kept for reference; do not build on it). |
-| `moving_average_fixed.py` | Reviewed, corrected, documented implementation. |
-| `test_moving_average_fixed.py` | Pytest suite (fake clock, no `sleep`, no services). |
+| `moving_average_fixed.py` | The implementation — reviewed, corrected, documented. |
+| `../tests/test_moving_average_fixed.py` | Pytest suite (fake clock, no `sleep`, no services). |
 
-The original draft lives one level up at `basics/telemetry/rolling_avg.py` and is
-left untouched for comparison.
+## Why this file reads as a correction
 
-## Why the fixed file exists
-
-The draft was close but had real bugs, all corrected here:
+It supersedes an earlier `rolling_avg.py` draft (since removed). The bugs it
+fixed are kept on the record here, because each one is a design lesson that the
+[telemetry architecture notes](../README.md) build on:
 
 1. **Stale reads when the metric goes quiet.** The draft only evicted expired
    points inside `add_batch`. If no new data arrived, `get_moving_average` kept
