@@ -245,7 +245,7 @@ Three details worth naming out loud:
   at 1 Hz sits on a gap for a minute before filling a 60-frame buffer), a time
   bound alone leaves *memory* unbounded. `close()` covers end-of-stream, where
   neither bound can fire because both are only tested from `submit()`.
-- **No dedupe index.** Duplicates are caught by the flush itself (`seq <
+- **No dedupe index.** Duplicates are caught by `_emit_ready` itself (`seq <
   expected` → drop), so no set mirrors the heap. Heap entries are
   `(seq, tiebreak, frame)`: without the `itertools.count()` tiebreak, a
   duplicate seq would compare the pydantic models and raise `TypeError`.
