@@ -134,4 +134,13 @@ module = [
     "slowapi.*",
     "whisper.*",
 ]
+
+[tool.ruff.lint]
+# Add B (Bugbear), SIM (Simplicity), and ARG (Unused arguments) for deeper auto-fixes
+select = ["E", "F", "W", "I", "B", "SIM", "ARG"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Prevent Ruff from automatically fixing or deleting unused imports in your init files
+"__init__.py" = ["F401"]
+
 ignore_missing_imports = true

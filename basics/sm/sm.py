@@ -1,9 +1,9 @@
-from dataclasses import dataclass, field
-from typing import Callable, Protocol
-from enum import Enum, StrEnum
-from itertools import Iterable
-
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from itertools import Iterable
+from typing import Protocol
 
 type Action[C] = Callable[[C], None]
 type GuardRail[C] = Callable[[C], None]
@@ -21,7 +21,9 @@ class StateMachine[S: StrEnum, E: StrEnum, C]:
     current_state: S = None
 
     def add_transition(self, from_state: S, event: E, to_state: S, \
-            action: Action[C] = None, guard_rails: list[GuardRail[C]] = []) -> None:
+            action: Action[C] = None, guard_rails: list[GuardRail[C]] | None = None) -> None:
+        if guard_rails is None:
+            guard_rails = []
         self.transitions[from_state][event] = (to_state, guard_rails, action)
 
     def set_initial_state(self, state):
@@ -30,7 +32,7 @@ class StateMachine[S: StrEnum, E: StrEnum, C]:
             self.current_state = state
         else:
             raise ValueError(f"State {state} is not a valid state.")
-        
+
     def _next_transition(self, event: E) -> tuple[S, Action[C], list[GuardRail]]:
         # Get the next state and action based on the current state and event
         try:
@@ -42,9 +44,9 @@ class StateMachine[S: StrEnum, E: StrEnum, C]:
         except KeyError:
             raise InvalidStateTransitionError(f"No transition defined for state \
                 {self.current_state} on event {event}.")
-        
+
     def handle_event(self, ctx: C, event: E) -> None:
-   
+
         try:
              # Get the next transition
             new_state, action, guard_rails = self._next_transition(event)
@@ -72,7 +74,6 @@ def basic_test():
         PROCESSING = "PROCESSING"
         AUTHORIZED = "Authorized"
         CAPTURED = "Captured"
-        PROCESSING = "Processing"
         COMPLETED = "Completed"
         FAILED = "Failed"
         CANCELLED = "Cancelled"
@@ -92,26 +93,26 @@ def basic_test():
         account_id : str
         account_balance: float
         txn_amount: float
-        txn_id  = field(init=False) 
+        txn_id  = field(init=False)
         audit : list[str] = field(default_factory=list)
 
         def __post_init__(self):
             self.txn_id = str(uuid.uuid4())
-        
+
         def print_audit_log(self):
             print("Audit Log:")
             for entry in self.audit:
                 print(entry)
 
     class InvalidPaymentAccountBalance(Exception):
-        pass   
+        pass
 
 
     class InvalidPaymentTransaction(Exception):
         pass
 
     class InvalidPaymentAccount(Exception):
-        pass   
+        pass
 
 
     class PaymentAction:
@@ -128,7 +129,7 @@ def basic_test():
         def refund(self, ctx: PaymentCtx) -> None:
             ctx.audit.append(f"{ctx.txn_id}: Payment refunded")
 
-        def cancel(self, ctx: PaymentCtx) -> None:    
+        def cancel(self, ctx: PaymentCtx) -> None:
             ctx.audit.append(f"{ctx.txn_id}: Payment cancelled")
 
         def complete(self, ctx: PaymentCtx) -> None:
@@ -147,7 +148,7 @@ def basic_test():
         # Use ctx to determine account balance valid
         if  ctx.account_balance <= 1000:
             raise InvalidPaymentAccountBalance
-    
+
     def is_payment_transaction_valid(ctx: PaymentCtx) -> None:
         # Use ctx to check txn validity
         if ctx.txn_amount <= 0 or ctx.txn_amount > 10000:
@@ -165,24 +166,24 @@ def basic_test():
     # Create a StateMachine instance with the defined states and events
     sm = StateMachine[PaymentState, PaymentEvent, PaymentCtx]()
 
-    payment_action = PaymentAction() 
+    payment_action = PaymentAction()
 
     # Add transitions for the state machine
 
     # PROCESSING -> Authorized (Happy Path)
     sm.add_transition(
-        PaymentState.PROCESSING, 
-        PaymentEvent.AUTHORIZE, 
-        PaymentState.AUTHORIZED, 
+        PaymentState.PROCESSING,
+        PaymentEvent.AUTHORIZE,
+        PaymentState.AUTHORIZED,
         payment_action.authorize,
         payment_validators_for(["account", "balance"])
     )
 
     # Authorized -> Captured (Happy Path)
     sm.add_transition(
-        PaymentState.AUTHORIZED, 
-        PaymentEvent.CAPTURE, 
-        PaymentState.CAPTURED, 
+        PaymentState.AUTHORIZED,
+        PaymentEvent.CAPTURE,
+        PaymentState.CAPTURED,
         payment_action.capture,
         payment_validators_for
 
@@ -190,7 +191,7 @@ def basic_test():
 
     #  PROCESSING -> Failed (Failure Path)
     sm.add_transition(
-        PaymentState.PROCESSING, 
+        PaymentState.PROCESSING,
         PaymentEvent.AUTHORIZE,
         PaymentState.FAILED,
         payment_action.fail
@@ -198,7 +199,7 @@ def basic_test():
 
     #  Authorize -> Failed (Failure Path)
     sm.add_transition(
-        PaymentState.AUTHORIZED, 
+        PaymentState.AUTHORIZED,
         PaymentEvent.CAPTURE,
         PaymentState.FAILED,
         payment_action.fail
@@ -207,32 +208,32 @@ def basic_test():
 
     # Captured -> Refunded (Failure Path)
     sm.add_transition(
-        PaymentState.CAPTURED, 
-        PaymentEvent.REFUND, 
+        PaymentState.CAPTURED,
+        PaymentEvent.REFUND,
         PaymentState.REFUNDED,
         payment_action.refund
     )
 
     # Captured -> Cancelled (Failure Path)
     sm.add_transition(
-        PaymentState.CAPTURED, 
-        PaymentEvent.CANCEL, 
-        PaymentState.CANCELLED, 
+        PaymentState.CAPTURED,
+        PaymentEvent.CANCEL,
+        PaymentState.CANCELLED,
         payment_action.cancel
     )
 
     # Captured -> Completed (Happy Path)
     sm.add_transition(
-        PaymentState.CAPTURED, 
-        PaymentEvent.COMPLETE, 
-        PaymentState.COMPLETED, 
+        PaymentState.CAPTURED,
+        PaymentEvent.COMPLETE,
+        PaymentState.COMPLETED,
         payment_action.complete
     )
 
     # Captured -> Failed (Failure Path)
     sm.add_transition(
-        PaymentState.CAPTURED, 
-        PaymentEvent.FAIL, 
+        PaymentState.CAPTURED,
+        PaymentEvent.FAIL,
         PaymentState.FAILED,
         payment_action.fail
     )
@@ -250,10 +251,10 @@ def basic_test():
     sm.set_initial_state(PaymentState.COMPLETED)
     try:
         sm.handle_event(ctx, PaymentEvent.REFUND)  # Invalid transition from COMPLETED
-    except InvalidStateTransitionError as e:        
+    except InvalidStateTransitionError as e:
         print(f"Caught an error during transition: {e}")
     finally:
-        ctx11.print_audit_log()   
+        ctx11.print_audit_log()
 
     # Test failure path transitions
     ctx2 = PaymentCtx(txn_id="6789", usera_id="Angelica Boli")
@@ -287,7 +288,7 @@ def basic_test():
     sm.set_initial_state(PaymentState.PROCESSING)
     sm.handle_event(ctx3, PaymentEvent.AUTHORIZE)
     sm.handle_event(ctx3, PaymentEvent.CAPTURE)
-    sm.handle_event(ctx3, PaymentEvent.CANCEL)    
+    sm.handle_event(ctx3, PaymentEvent.CANCEL)
     ctx3.print_audit_log()
 
 
