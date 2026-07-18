@@ -6,27 +6,6 @@ from typing import Protocol
 from datetime import datetime
 from fp_data import *
 
-class AirspaceRegistry(Protocol):
-    """Interface for fetching real-time, dynamic airspace rules."""
-
-    def get_active_restrictions(
-        self, 
-        bounding_area: List[Waypoint], 
-        start: datetime, 
-        end: datetime
-    ) -> List[AirspaceRestriction]:
-        ...
-
-class RouteValidator:
-    """Interface for processing the geometric and temporal intersection logic."""
-    
-    def validate(
-        self, 
-        route: FlightRoute, 
-        restrictions: List[AirspaceRestriction]
-    ) -> ValidationResult:
-        ...
-
 
 class ActiveFlightRepository(Protocol):
     """Infrastructure interface to query active or pending flights."""
