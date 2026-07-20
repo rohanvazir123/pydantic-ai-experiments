@@ -1,81 +1,7 @@
-'''
-You said: Flight Planner API: 
-Design the class structure and clean API interfaces 
-for a flight planning system that validates routes based on airspace restrictions.
-'''
-
-'''
-You have identified the core operational components: an orchestrator, 
-a data structure for the route, a repository for the rules, 
-and a validation engine.
-
-Where your design can improve is by decoupling 
-your data models from your business logic and 
-introducing proper abstractions for external infrastructure. 
-
-In a clean API design, 
-AerialRoute and AirspaceRules should be passive data models (or configurations), 
-while the validator and planner handle the execution.
-Here is a breakdown of how to refine your classes, 
-followed by a clean, production-ready API design.
-
-Structural Refinements
-Separate Data from Logic: 
-Keep FlightRoute (your AerialRoute) 
-purely as a data structure containing waypoints, altitudes, and times.
-
-Abstract the Rule Sources: Airspace restrictions change constantly. 
-Instead of a static AirspaceRules class, 
-use an AirspaceRegistry or AirspaceProvider interface that can fetch dynamic restrictions based on time and geometry.
-Inversion of Control: The FlightPlanner shouldn't tightly couple to a single validator. 
-Inject a validator interface so you can easily swap or chain different rules (e.g., weather validation, fuel validation).
-
-classDiagram
-    class FlightPlanner {
-        -IAirspaceRegistry registry
-        -IRouteValidator validator
-        +planRoute(RouteRequest request) FlightPlan
-    }
-    class IAirspaceRegistry {
-        <<interface>>
-        +getRestrictions(Geometry area, DateTime time) List~AirspaceRestriction~
-    }
-    class IRouteValidator {
-        <<interface>>
-        +validate(FlightRoute route, List~AirspaceRestriction~ restrictions) ValidationResult
-    }
-    class FlightRoute {
-        +List~Waypoint~ waypoints
-        +String aircraftType
-    }
-    class AirspaceRestriction {
-        +String id
-        +RestrictionType type
-        +Geometry boundary
-        +AltitudeRange altitudeLimits
-    }
-    
-    FlightPlanner --> IAirspaceRegistry
-    FlightPlanner --> IRouteValidator
-    IRouteValidator ..> FlightRoute
-    IRouteValidator ..> AirspaceRestriction
-
-
-'''
-
 import uuid
 
-@dataclass(frozen=True)
-class RouteRequest:
-    proposed_waypoints: List[Waypoint]
-    aircraft_type: str
-
-@dataclass(frozen=True)
-class FlightPlan:
-    plan_id: str
-    route: FlightRoute
-    is_approved: bool
-    validation_errors: List[str]
+from fp_data import *
+from fp_service import *
 
 class FlightPlanner:
     def __init__(self, registry: AirspaceRegistry, validator: RouteValidator, notification_service : NotificationService):
@@ -97,7 +23,7 @@ class FlightPlanner:
         end_time = route.waypoints[-1].eta
         
         # 3. Fetch applicable geo/temporal restrictions from infrastructure
-        relevant_restrictions = self._registry.get_active_restrictions(
+        relevant_restrictions : list[AirspaceRestriction] = self._registry.get_active_restrictions(
             bounding_area=route.waypoints, 
             start=start_time, 
             end=end_time
@@ -167,14 +93,3 @@ class FlightPlanner:
                 )
 
 
-
-class RouteRerouter(ABC):
-    """Responsible for calculating alternate trajectories if validation fails."""
-    
-    @abstractmethod
-    def suggest_alternative(
-        self, 
-        original_route: FlightRoute, 
-        violations: List[AirspaceRestriction]
-    ) -> FlightRoute:
-        pass

@@ -1,5 +1,4 @@
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from collections.abc import Iterable
@@ -7,6 +6,8 @@ from collections.abc import Iterable
 type Action[C] = Callable[[C], None]
 type GuardRail[C] = Callable[[C], None]
 type Transition[S, E, C] = dict[ tuple[S, E], tuple[S, Action[C]], GuardRail[C] ]
+        
+from typing import Iterable, Callable
 
 class InvalidStateTransitionError(Exception):
     pass
@@ -139,30 +140,55 @@ def basic_test():
         def complete(self, ctx: PaymentCtx) -> None:
             ctx.audit.append(f"{ctx.txn_id}: Payment completed")
 
-    # Payment validators
-    def is_account_valid(ctx: PaymentCtx) -> None:
-        # Use ctx to determine is account is valid
-        if not ctx.account_valid:
-            raise InvalidPaymentAccount
+    class PaymentValidators:
+        """Namespace container for pure payment validation rules."""
 
-    def is_account_balance_valid(ctx: PaymentCtx) -> None:
-        # Use ctx to determine account balance valid
-        if  ctx.account_balance <= 1000:
-            raise InvalidPaymentAccountBalance
+        @staticmethod
+        def is_account_valid(ctx: PaymentCtx) -> None:
+            if not ctx.account_valid:
+                raise InvalidPaymentAccount()
 
-    def is_payment_transaction_valid(ctx: PaymentCtx) -> None:
-        # Use ctx to check txn validity
-        if ctx.txn_amount <= 0 or ctx.txn_amount > 10000:
-            raise InvalidPaymentTransaction
+        @staticmethod
+        def is_account_balance_valid(ctx: PaymentCtx) -> None:
+            if ctx.account_balance <= 1000:
+                raise InvalidPaymentAccountBalance()
 
-    PAYMENT_VALIDATORS: dict[str, GuardRail[PaymentCtx]] = {
-        "account": is_account_valid,
-        "balance": is_account_balance_valid,
-        "transaction": is_payment_transaction_valid,
-    }
+        @staticmethod
+        def is_payment_transaction_valid(ctx: PaymentCtx) -> None:
+            if ctx.txn_amount <= 0 or ctx.txn_amount > 10000:
+                raise InvalidPaymentTransaction()
 
-    def payment_validators_for(names: Iterable[str]) -> list[GuardRail[PaymentCtx]]:
-        return [PAYMENT_VALIDATORS[n] for n in names]
+   
+    class PaymentValidators:
+        GuardRail = Callable[[PaymentCtx], None]
+
+        @staticmethod
+        def is_account_valid(ctx: PaymentCtx) -> None:
+            if not ctx.account_valid:
+                raise InvalidPaymentAccount()
+
+        @staticmethod
+        def is_account_balance_valid(ctx: PaymentCtx) -> None:
+            if ctx.account_balance <= 1000:
+                raise InvalidPaymentAccountBalance()
+
+        @staticmethod
+        def is_payment_transaction_valid(ctx: PaymentCtx) -> None:
+            if ctx.txn_amount <= 0 or ctx.txn_amount > 10000:
+                raise InvalidPaymentTransaction()
+
+        # Simple dictionary mapping strings to the functions above
+        REGISTRY: dict[str, GuardRail] = {
+            "account": is_account_valid,
+            "balance": is_account_balance_valid,
+            "transaction": is_payment_transaction_valid,
+        }
+        
+        @staticmethod
+        def get_validators_for(names: Iterable[str]) -> list[GuardRail]:
+            # Access the registry directly using the class name
+            return [PaymentValidators.REGISTRY[name] for name in names]
+
 
     # Create a StateMachine instance with the defined states and events
     sm = StateMachine[PaymentState, PaymentEvent, PaymentCtx](default_failed_state=PaymentState.FAILED)
@@ -177,7 +203,7 @@ def basic_test():
         PaymentEvent.AUTHORIZE,
         PaymentState.AUTHORIZED,
         payment_action.authorize,
-        payment_validators_for(["account", "balance"])
+        PaymentValidators.payment_validators_for(["account", "balance"])
     )
 
     # Authorized -> Captured (Happy Path)
@@ -186,7 +212,7 @@ def basic_test():
         PaymentEvent.CAPTURE,
         PaymentState.CAPTURED,
         payment_action.capture,
-        payment_validators_for(["transaction"])
+        PaymentValidators.payment_validators_for(["transaction"])
 
     )
 

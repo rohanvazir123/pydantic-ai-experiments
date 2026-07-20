@@ -1,29 +1,8 @@
 from abc import ABC, abstractmethod
 
-class AirspaceRegistry(ABC):
-    """Interface for fetching real-time, dynamic airspace rules."""
-    
-    @abstractmethod
-    def get_active_restrictions(
-        self, 
-        bounding_area: List[Waypoint], 
-        start: datetime, 
-        end: datetime
-    ) -> List[AirspaceRestriction]:
-        pass
+from datetime import datetime
+from fp_data import *
 
-class RouteValidator(ABC):
-    """Interface for processing the geometric and temporal intersection logic."""
-    
-    @abstractmethod
-    def validate(
-        self, 
-        route: FlightRoute, 
-        restrictions: List[AirspaceRestriction]
-    ) -> ValidationResult:
-        pass
-
-from abc import ABC, abstractmethod
 
 class ActiveFlightRepository(ABC):
     """Infrastructure interface to query active or pending flights."""

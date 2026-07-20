@@ -1,10 +1,12 @@
 '''To implement a distributed Token Bucket rate limiter in Python and Redis without using Lua scripts, you must handle the classic "read-modify-write" race condition. Without Lua, the standard approach is to use a Redis transaction (MULTI/EXEC) with optimistic locking (WATCH). This ensures that if another application instance modifies the client's bucket while your code is calculating tokens, the transaction safely aborts and retries. [1, 2, 3, 4]
 Core Implementation
-The following complete, thread-safe, and distributed token bucket implementation utilizes redis-py with a WATCH block to handle concurrency safely:
+The following complete, thread-safe, and distributed token bucket implementation 
+utilizes redis-py with a WATCH block to handle concurrency safely:
 '''
 
 '''
-Rate Limiter: Implement a thread-safe distributed rate limiter (e.g., token bucket) that can handle millions of incoming requests from ground contro
+Rate Limiter: Implement a thread-safe distributed rate limiter (e.g., token bucket) 
+that can handle millions of incoming requests from ground contro
 '''
 
 import time
