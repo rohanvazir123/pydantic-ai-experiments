@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Async embedder with L1 in-process cache, timeout, and exponential backoff.
 
 L1 cache: bounded dict per worker process (max 1000 entries, FIFO eviction).

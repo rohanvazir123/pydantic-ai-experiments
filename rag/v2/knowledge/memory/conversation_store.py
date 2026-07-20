@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Tier 2 episodic memory — conversation and message CRUD.
 
 Server-side conversation history: client sends only session_id;

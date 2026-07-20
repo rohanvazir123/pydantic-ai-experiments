@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """IR retrieval metrics — ported from rag/tests/retrieval/test_retrieval_metrics.py."""
 
 import math

@@ -1,0 +1,7 @@
+services:
+  debug:
+    build: .
+    ports:
+      - "9229:9229"
+    volumes:
+      - ./app.js:/app/app.js

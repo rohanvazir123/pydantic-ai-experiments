@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Purge the default corpus and clear all caches for a forced full re-ingestion.
 
 Run via:  make purge-corpus   (followed automatically by make seed)

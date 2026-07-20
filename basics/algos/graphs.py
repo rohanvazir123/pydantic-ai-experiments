@@ -26,7 +26,7 @@ WHITE, BLACK = range(2)
 def search_maze(
     maze: list[list[int]], start: Coordinates, end: Coordinates
 ) -> list[Coordinates]:
-    def search_maze_helper(curr: Coordinates):
+    def search_maze_helper(curr: Coordinates) -> bool:
         if not (
             0 <= curr.x < len(maze)
             and 0 <= curr.y < len(maze[curr.x])
@@ -42,12 +42,8 @@ def search_maze(
 
         x, y = curr.x, curr.y
         if any(
-            (
-                search_maze_helper(Coordinates(x - 1, y)),
-                search_maze_helper(Coordinates(x + 1, y)),
-                search_maze_helper(Coordinates(x, y + 1)),
-                search_maze_helper(Coordinates(x, y - 1)),
-            )
+            search_maze_helper(Coordinates(x + dx, y + dy))
+            for dx, dy in ((-1, 0), (1, 0), (0, 1), (0, -1))
         ):
             return True
 
@@ -58,11 +54,12 @@ def search_maze(
     path: list[Coordinates] = []
     search_maze_helper(start)
     return path
-  
-def print_path(path: list[Coordinates]):
+
+
+def print_path(path: list[Coordinates]) -> None:
     for c in path:
         print(f"({c.x}, {c.y})", end=" ")
-    print() 
+    print()
 
 
 if __name__ == "__main__":

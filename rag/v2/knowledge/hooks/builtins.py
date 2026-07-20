@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Built-in placeholder hooks registered at app startup.
 
 All are no-ops until their real implementations are added. They are

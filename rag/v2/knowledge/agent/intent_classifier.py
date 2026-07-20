@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Intent classifier — determines query intent before retrieval.
 
 Runs after validation (V1-V6), before the cache check and hybrid search.

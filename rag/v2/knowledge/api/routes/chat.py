@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Chat routes — blocking and SSE streaming.
 
 POST /v1/chat         → ConfidenceAwarePipeline.run()  (blocking, full 3-gate)

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Unit tests for knowledge.store.vector and knowledge.store.graph.
 
 No live database required — asyncpg pool is mocked at the boundary.

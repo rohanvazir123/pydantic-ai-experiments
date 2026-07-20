@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { PrivateRoute } from '@/components/PrivateRoute'

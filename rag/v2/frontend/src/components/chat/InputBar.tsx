@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 
 import { useState, useRef, type KeyboardEvent } from 'react'
 import { Send, Loader2 } from 'lucide-react'

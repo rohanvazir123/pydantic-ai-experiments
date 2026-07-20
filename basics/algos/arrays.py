@@ -49,11 +49,9 @@ If last characters of both sequences do not match (or A[m-1] != B[n-1]) then
 L(A[0..m-1], B[0..n-1]) = MAX ( L(A[0..m-2], B[0..n-1]), L(A[0..m-1], B[0..n-2]) )
 """
 
-
 def find_len_longest_common_subsequence(A: list[int], B: list[int]) -> list[list[int]]:
     print(" find_len_longest_common_subsequence")
     print(f"A {A} B {B}")
-    # Note the initializations carefully
 
     # Length of arrays
     m = len(A)
@@ -101,7 +99,8 @@ def longest_common_subsequence(A: list[int], B: list[int], L: list[list[int]]) -
 The Longest Increasing Subsequence (LIS) problem is to find the length of the longest subsequence of a given sequence 
 such that all elements of the subsequence are sorted in increasing order. 
 For example, the length of LIS for {10, 22, 9, 33, 21, 50, 41, 60, 80} is 6 and LIS is {10, 22, 33, 50, 60, 80}. 
-If we closely observe the problem then we can convert this problem to longest Common Subsequence Problem. 
+If we closely observe the problem then we can convert 
+this problem to longest Common Subsequence Problem. 
 Firstly we will create another array of unique elements of original array and sort it. 
 Now the longest increasing subsequence of our array must be present as a subsequence in our sorted array. 
 That’s why our problem is now reduced to finding the common subsequence between the two 
@@ -344,19 +343,6 @@ class Solution:
 
 from typing import List, Tuple
 
-
-def buy_and_sell_stock(stock_prices: List[float]) -> Tuple[float, List[float]]:
-    max_profit = 0.0
-    min_buy_price_so_far = float("inf")
-    max_profit_per_day = [0.0] * len(stock_prices)
-    for i, price_today in enumerate(stock_prices):
-        min_buy_price_so_far = min(price_today, min_buy_price_so_far)
-        max_profit_if_sold_today = price_today - min_buy_price_so_far
-        max_profit = max(max_profit_if_sold_today, max_profit)
-        max_profit_per_day[i] = max_profit
-    return max_profit, max_profit_per_day
-
-
 # Partition array into elements
 # less than left and greater than right
 def partition_array(l: List[int], left: int, right: int):
@@ -372,6 +358,17 @@ def partition_array(l: List[int], left: int, right: int):
             end -= 1
     return l
 
+
+def buy_and_sell_stock(stock_prices: List[float]) -> Tuple[float, List[float]]:
+    max_profit = 0.0
+    min_buy_price_so_far = float("inf")
+    max_profit_per_day = [0.0] * len(stock_prices)
+    for i, price_today in enumerate(stock_prices):
+        min_buy_price_so_far = min(price_today, min_buy_price_so_far)
+        max_profit_if_sold_today = price_today - min_buy_price_so_far
+        max_profit = max(max_profit_if_sold_today, max_profit)
+        max_profit_per_day[i] = max_profit
+    return max_profit, max_profit_per_day
 
 # Buy and sell stock twice
 def buy_and_sell_stock_twice(stock_prices: List[float]) -> float:

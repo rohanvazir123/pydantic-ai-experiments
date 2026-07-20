@@ -12,6 +12,7 @@ Every component of an NL2SQL pipeline consumes tokens. At scale, token cost is o
 - [Caching — The Highest-ROI Cost Reduction](#caching--the-highest-roi-cost-reduction)
 - [Fast Mode — Explicit Cost vs Accuracy Trade-offs](#fast-mode--explicit-cost-vs-accuracy-trade-offs)
 - [Cost Monitoring and Alerting](#cost-monitoring-and-alerting)
+- [Rate Limiting — TPM/RPM as a Throughput Constraint](#rate-limiting--tpmrpm-as-a-throughput-constraint)
 - [Cost Optimisation Checklist](#cost-optimisation-checklist)
 
 ---
@@ -495,6 +496,102 @@ Alert: retry rate > 15%
 Alert: cache hit rate drops > 20pp week-over-week
   Cause: schema change invalidating cache, or query distribution shift
 ```
+
+---
+
+## Rate Limiting — TPM/RPM as a Throughput Constraint
+
+Token **cost** ($ per token) and token **throughput** (tokens processed per minute) are separate constraints. A system can be well within its monthly cost budget and still get `429`'d by the LLM provider because it burst past the account's TPM (tokens-per-minute) or RPM (requests-per-minute) limit. Cost dashboards do not catch this — you need TPM/RPM tracked as their own metric.
+
+### Provider limit tiers (illustrative — GPT-4o style tiering)
+
+| Tier | RPM | TPM |
+|------|-----|-----|
+| Tier 1 | 500 | 30,000 |
+| Tier 2 | 5,000 | 450,000 |
+| Tier 3 | 5,000 | 800,000 |
+| Tier 5 | 10,000 | 2,000,000 |
+
+At ~5,000 tokens/query (4,850 input + 150 output, from Stage 4 above), a Tier 2 account (450K TPM) saturates at roughly 90 queries/minute. A workload sized at "10,000 queries/day" sounds nowhere near that — but a burst of 100+ queries landing in the same 60-second window (a dashboard refresh storm, a batch job, a traffic spike) will 429 well before the daily average would suggest any problem.
+
+### Metrics to track (in addition to cost)
+
+```python
+daily_cost_metrics["tokens_per_minute_peak"] = max_over_windows(
+    tokens_used, window="1m"
+)
+daily_cost_metrics["requests_per_minute_peak"] = max_over_windows(
+    request_count, window="1m"
+)
+daily_cost_metrics["rate_limit_headroom_pct"] = (
+    tokens_per_minute_peak / provider_tpm_limit
+)
+daily_cost_metrics["rate_limit_429_count"] = count(
+    responses.status == 429
+)
+```
+
+`rate_limit_headroom_pct` is the one that matters operationally — it tells you how close to the ceiling you are before a single traffic spike pushes you over.
+
+### Alert thresholds
+
+```
+Alert: rate_limit_headroom_pct > 80% for 5 consecutive minutes
+  Cause: traffic burst approaching the provider's TPM ceiling
+  Action: engage backpressure (queue/delay) before 429s start cascading
+
+Alert: rate_limit_429_count > 0 in the last hour
+  Cause: provider-side throttling occurred
+  Action: confirm retry-with-backoff absorbed it without a user-visible failure;
+          if 429s are recurring, this is a capacity problem, not a bug
+```
+
+### Client-side token-bucket limiter (proactive, not reactive)
+
+Waiting for a 429 and then backing off is reactive — by the time it arrives, the request has already failed. A token-bucket limiter sized to the provider's TPM enforces the ceiling client-side, so requests queue smoothly instead of bursting into throttling:
+
+```python
+class TokenBucketLimiter:
+    def __init__(self, tpm_limit: int, refill_interval_s: float = 1.0) -> None:
+        self.capacity = tpm_limit
+        self.tokens = tpm_limit
+        self.refill_per_tick = tpm_limit / (60 / refill_interval_s)
+
+    async def acquire(self, estimated_tokens: int) -> None:
+        while self.tokens < estimated_tokens:
+            await asyncio.sleep(0.1)
+            self.tokens = min(self.capacity, self.tokens + self.refill_per_tick)
+        self.tokens -= estimated_tokens
+```
+
+Estimate `estimated_tokens` from the assembled prompt (schema context + few-shot + query) before the call, not after — the bucket has to gate admission, not just record usage.
+
+### Retries compound TPM pressure
+
+A retry triggered by a 429 re-spends tokens against the *same* one-minute window that just got throttled. Retrying immediately without backoff makes the throttle worse, not better. Exponential backoff with jitter is necessary but not sufficient on its own — the token-bucket limiter above prevents most 429s from happening in the first place, which is strictly better than handling them well after the fact.
+
+### Scaling past a single key's TPM ceiling
+
+At high volume, the account's TPM ceiling — not cost — becomes the hard limit on throughput. Options, in order of operational complexity:
+1. **Multiple API keys behind a router**, load-balanced by remaining headroom per key (not round-robin — round-robin bursts a key that's already near its ceiling)
+2. **Multi-provider fallback** — route overflow to a secondary model/vendor when the primary is saturated (accuracy/consistency trade-off, but keeps the system available)
+3. **Negotiated enterprise throughput** — dedicated capacity agreements once traffic consistently exceeds standard tiers
+
+This is a distinct scaling axis from model routing (Lever 1 above) — model routing reduces *cost per query*, TPM sharding increases *available throughput*. A system can need both simultaneously: cheap enough per query, but still capacity-constrained in aggregate.
+
+### Self-hosted LLMs — no quota-based 429, but the same physical ceiling
+
+Everything above assumes a hosted provider (OpenAI, Anthropic) enforcing TPM/RPM as an account-level billing quota. Self-hosted inference (vLLM, TGI, Triton, Ollama) has no such quota — there's no contract to enforce — but it does have a real physical ceiling: GPU memory for KV-cache, max batch size, max concurrent sequences.
+
+The failure mode is different, not absent:
+
+- **Hosted:** exceed the quota → immediate `429`, request rejected, latency unaffected.
+- **Self-hosted:** exceed capacity → most serving frameworks queue the request via continuous batching rather than reject it. There's no error — instead, p99 latency quietly climbs as the queue grows. Some deployments do surface an explicit `429`/`503`, but only if something in front of the model (an API gateway, a configured max-concurrency limit) is enforcing one; the inference server itself usually won't on its own.
+
+Practical implications:
+- Size the token-bucket limiter against **measured tokens/sec throughput of the GPU fleet** (batch_size × tokens/sec/sequence, benchmarked empirically), not a vendor-published TPM number — there isn't one.
+- Alert on **queue depth** and **time-in-queue**, not `rate_limit_429_count` — for a self-hosted deployment that metric may stay at zero even while the system is saturated and users are timing out.
+- If you need a hard backpressure signal (fail fast instead of degrade silently), you have to add it yourself — e.g. reject at the gateway once queue depth exceeds a threshold, rather than relying on the inference server to do it.
 
 ### Cost attribution
 

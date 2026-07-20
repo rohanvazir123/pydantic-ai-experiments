@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Unit tests for Phase 8 — API schemas, middleware, quota.
 
 No live services or FastAPI test client required — tests cover

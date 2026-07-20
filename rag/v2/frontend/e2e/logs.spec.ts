@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 import { test, expect } from '@playwright/test'
 
 async function login(page: any) {

@@ -12,7 +12,7 @@ import asyncio
 import math
 
 import pytest
-from moving_average_fixed import Sample, TelemetryRollingAverage
+from moving_average import Sample, TelemetryRollingAverage
 
 
 class FakeClock:
@@ -127,7 +127,7 @@ def test_rejects_nonpositive_window() -> None:
 def test_single_loop_concurrent_adds_need_no_lock() -> None:
     """8 coroutines x 1000 adds on one asyncio loop; no lost updates, no lock.
 
-    Each ``add`` is synchronous (no ``await`` inside), so the single event loop
+    Each ``add_batch`` is synchronous (no ``await`` inside), so the single event loop
     serialises them even though the coroutines interleave at the ``sleep(0)``
     yield points — this is exactly why the structure needs no ``threading.Lock``
     under asyncio. (Sharing across OS threads is out of contract; guard
@@ -137,7 +137,7 @@ def test_single_loop_concurrent_adds_need_no_lock() -> None:
 
     async def worker() -> None:
         for _ in range(1000):
-            avg.add(Sample(0.0, 1.0))
+            avg.add_batch([Sample(0.0, 1.0)])
             await asyncio.sleep(0)  # yield → let other coroutines interleave
 
     async def main() -> None:

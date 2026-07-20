@@ -1,0 +1,7 @@
+services:
+  debug:
+    build: .
+    ports:
+      - "9229:9229"
+    volumes:
+      - ./p4.js:/app/p4.js

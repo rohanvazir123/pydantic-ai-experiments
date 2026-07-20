@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Central Pydantic-settings configuration for the knowledge module.
 
 All tunables live here. Every module imports Settings (or the cached

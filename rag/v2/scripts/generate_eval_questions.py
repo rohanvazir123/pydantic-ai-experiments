@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Generate an evaluation testset for the RAG v2 retrieval pipeline.
 
 Pulls chunks from the database, asks the configured LLM to produce diverse

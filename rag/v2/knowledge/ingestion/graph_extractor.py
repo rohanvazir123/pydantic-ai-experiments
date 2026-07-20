@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """docling-graph knowledge graph extractor.
 
 Runs docling-graph run_pipeline() inside asyncio.to_thread (sync LLM I/O).

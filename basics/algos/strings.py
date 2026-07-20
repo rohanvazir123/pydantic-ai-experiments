@@ -51,6 +51,36 @@ def count_unique_chars(s):
   print('\n')
   for i in range(0, 256):
     print(chr(i))
+
+
+# Leetcode #3
+# Longest Substring Without Repeating Characters
+# Given a string s, find the length of the longest substring without repeating characters.
+class Solution:
+    def lengthOfLongestSubstring(self, s: str) -> int:
+
+        dups = set()
+        left,right, max_len = 0, 0, 0
+        while right < len(s):
+
+            # If this char already exists, remove s[left]
+            # and move fwd until s[right] is no longer in the set
+              # for example a b c d e c y  y
+              # left = 0, right = 5
+              # new set will lose 3 chars - a, b, c, 
+              # because they are no longer relevant to the substring starting at left=3, right=5
+            while s[right] in dups:
+                dups.remove(s[left])
+                left += 1
+
+            max_len = max(right-left+1, max_len)
+
+            # start another substring
+            dups.add(s[right])
+
+            right += 1
+
+        return max_len
       
 if __name__ == '__main__':
   print("main")

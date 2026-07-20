@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Background pruning jobs for Tier 2 (episodic) and Tier 3 (semantic/user) memory.
 
 All jobs run via APScheduler in the FastAPI lifespan.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Unit tests for the retrieval pipeline.
 
 No external services required — CrossEncoder and stores are mocked.

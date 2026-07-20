@@ -21,6 +21,8 @@
   - [Threshold Calibration Workflow](#threshold-calibration-workflow)
 - [Model Tiering](#model-tiering)
   - [Tier Definitions](#tier-definitions)
+  - [Encoder Roles — Bi-Encoder vs. Cross-Encoder](#encoder-roles--bi-encoder-vs-cross-encoder)
+  - [LLM-as-Judge (Citation Faithfulness)](#llm-as-judge-citation-faithfulness)
   - [Routing Logic (`knowledge/agent/model_router.py`)](#routing-logic-knowledgeagentmodel_routerpy)
   - [Configuration (`settings.py` additions)](#configuration-settingspy-additions)
   - [Observability](#observability)
@@ -408,9 +410,33 @@ All tiers default to local Ollama models. Cloud model IDs are listed for referen
 
 | Tier | Local model (default) | Cloud model (opt-in) | Use cases |
 |------|----------------------|----------------------|-----------|
-| `nano` | `qwen2.5:0.5b` | `claude-haiku-4-5` | Input classification, intent detection, faithfulness/relevance evaluation, content policy check |
-| `small` | `llama3.2:3b` | `claude-sonnet-4-6` | Standard RAG chat, document Q&A, summarisation, KG entity extraction (simple ontologies) |
-| `large` | `llama3.1:70b` (q4) | `claude-opus-4-8` | Multi-hop reasoning, complex analysis, KG extraction on dense domains |
+| `nano` | `qwen2.5:0.5b` | `claude-haiku-4-5` | Routing/intent classification, content policy check, LLM-judge first pass on citation faithfulness |
+| `small` | `llama3.2:3b` | `claude-sonnet-4-6` | **Default tier** — standard RAG chat, document Q&A, summarisation, KG entity extraction (simple ontologies), LLM-judge escalation target |
+| `large` | `llama3.1:70b` (q4) | `claude-opus-4-8` | Multi-hop reasoning, long/dense context windows, complex analysis, KG extraction on dense domains |
+
+These three tiers cover **generation** — every LLM call in the pipeline (routing, chat, summarisation, judging) is one of nano/small/large. Retrieval quality itself does not depend on these tiers at all; it depends on the two encoder models below, which are separate from the LLM tiers and never swapped by the router.
+
+#### Encoder Roles — Bi-Encoder vs. Cross-Encoder
+
+Retrieval uses two distinct encoder architectures, not LLMs, at two different stages of the pipeline:
+
+| Role | Type | Default model | Where it runs | Used for |
+|------|------|---------------|----------------|----------|
+| Embedding | **Bi-encoder** | `nomic-embed-text` (768-dim) | Ollama | Ingestion — embeds every chunk once at write time. Retrieval — embeds the query once per request. |
+| Reranker | **Cross-encoder** | `BAAI/bge-reranker-base` | Local, via `sentence-transformers` (not Ollama) | Retrieval only — re-scores the top-K candidates returned by hybrid search. |
+
+**Why both exist, not just one:**
+- A bi-encoder encodes the query and each chunk **independently** into the same 768-dim space. That independence is what makes the pgvector HNSW index possible — chunk vectors are precomputed once at ingestion and the ANN index scans them in `O(log n)`. This is the only architecture that scales to millions of chunks; a cross-encoder cannot be indexed because it has no per-item vector to index.
+- A cross-encoder scores a `(query, chunk)` pair **jointly** — the query and chunk attend to each other inside the model — which is far more accurate but must run once per pair at query time. It cannot be precomputed and cannot scale to a full corpus scan.
+- The pipeline gets both properties by using the bi-encoder for first-pass ANN retrieval over the whole corpus (ingestion-time embedding via `nomic-embed-text`, indexed by HNSW), then handing only the small `top-K` candidate set to the cross-encoder for accurate re-scoring (`CrossEncoder rerank` step — see [Retrieval Pipeline](#retrieval-pipeline) above). Swapping either model is independent — see `docs/LOCAL_LLM_GUIDE.md` §11 for embedding-model alternatives (`bge-m3`, `mxbai-embed-large`) by GPU tier.
+
+#### LLM-as-Judge (Citation Faithfulness)
+
+The judge is **not** a separate model — it's the `nano`/`small` LLM tiers used in an evaluation role instead of a generation role. Full mechanics (prompt, verdict schema, escalation, gate logic) live in [Layer 3 — Judge Gate](#layer-3--judge-gate-knowledgeagentjudgepy) above; summary for the tiering table:
+
+- Runs on `nano` by default (cheapest tier, since it only classifies `supported`/`partial`/`unsupported`, not generates prose).
+- Escalates to `small` when the nano verdict's own `confidence < 0.5` — one retry, not a chain.
+- Independent of the citation-gate check in Layer 2: Layer 2 is deterministic string matching against `[chunk_id]` anchors; the Layer 3 judge is a semantic check that the answer's *claims* are actually supported by the context, which catches well-formatted but hallucinated citations that Layer 2 alone would miss.
 
 #### Routing Logic (`knowledge/agent/model_router.py`)
 

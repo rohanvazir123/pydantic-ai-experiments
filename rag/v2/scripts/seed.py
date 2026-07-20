@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Dev bootstrap seed script.
 
 Run via:  make seed   (or: uv run python scripts/seed.py)

@@ -102,6 +102,7 @@
 - [REDIS_STREAMS.md](design/REDIS_STREAMS.md) — Message bus, async workers, DLQ
 - [CACHING.md](design/CACHING.md) — L1/L2/L3 cache layers, TTLs, invalidation
 - [RETRIEVAL.md](design/RETRIEVAL.md) — Hybrid search, RRF, confidence pipeline, model tiering
+- [SYSTEM_DESIGN_CONSTRAINTS.md](design/SYSTEM_DESIGN_CONSTRAINTS.md) — Load model, SLAs, cost model, scalability by corpus size
 - [RELIABILITY.md](design/RELIABILITY.md) — Query validation, guardrails, error handling, retry
 - [SECURITY.md](design/SECURITY.md) — JWT/JWE/RBAC, memory architecture
 - [DEPLOYMENT.md](design/DEPLOYMENT.md) — Docker Compose, packaging, cloud, SaaS model
@@ -2691,7 +2692,7 @@ L0 is silently skipped if `sessionStorage` is full (no error thrown, falls throu
 | Document | What it covers |
 |----------|---------------|
 | [design/ARCHITECTURE_PROPOSAL.md](design/ARCHITECTURE_PROPOSAL.md) | Goals, multi-corpus design |
-| [design/SYSTEM_DESIGN_CONSTRAINTS.md](design/SYSTEM_DESIGN_CONSTRAINTS.md) | Load model, SLAs, token budgets, cost model, circuit breakers |
+| [design/SYSTEM_DESIGN_CONSTRAINTS.md](design/SYSTEM_DESIGN_CONSTRAINTS.md) | Load model, SLAs, token budgets, cost model, circuit breakers, scalability by corpus size |
 | [design/MODULE_LAYOUT.md](design/MODULE_LAYOUT.md) | Full `knowledge/` package tree with per-subpackage guide |
 
 **Subsystem Deep-Dives**
@@ -2701,7 +2702,7 @@ L0 is silently skipped if `sessionStorage` is full (no error thrown, falls throu
 | [design/INGESTION.md](design/INGESTION.md) | Ingestion pipeline, KG extraction, AGE store, ontology API |
 | [design/REDIS_STREAMS.md](design/REDIS_STREAMS.md) | Message bus, async worker lifecycle, DLQ, job status |
 | [design/CACHING.md](design/CACHING.md) | L1/L2/L3 cache layers, TTLs, invalidation guide |
-| [design/RETRIEVAL.md](design/RETRIEVAL.md) | Hybrid search, RRF, reranking, confidence-aware pipeline, model tiering |
+| [design/RETRIEVAL.md](design/RETRIEVAL.md) | Hybrid search, RRF, reranking, confidence-aware pipeline, model tiering (LLM tiers, bi-/cross-encoder, LLM-as-judge) |
 | [design/RELIABILITY.md](design/RELIABILITY.md) | Query validation, guardrails, error handling, retry strategy |
 | [design/SECURITY.md](design/SECURITY.md) | JWT/JWE/RBAC, memory architecture |
 | [design/DEPLOYMENT.md](design/DEPLOYMENT.md) | Docker Compose, packaging, cloud deployment, SaaS model |

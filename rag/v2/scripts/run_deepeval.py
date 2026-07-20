@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """DeepEval RAG evaluation runner.
 
 Evaluates the full RAG pipeline against predefined test cases using five

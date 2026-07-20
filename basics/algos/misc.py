@@ -255,3 +255,9 @@ def perm_list(list_of_str, str_to_append):
   for s in list_of_str:
     for c in str_to_append:
       pass
+
+# reverse iterate array in chunks of size n
+l = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+n = 3
+for i in range(len(l), 0, -n):
+  print(l[max(0, i-n):i]) 

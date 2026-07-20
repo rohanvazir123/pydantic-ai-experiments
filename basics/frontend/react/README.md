@@ -80,6 +80,7 @@ Two files, read in order:
 |------|------|------|
 | [react.md](react.md) | Day 3 | Components, props, state, effects, routing, Zustand, production patterns |
 | [hooks.md](hooks.md) | Day 4 | Every standard hook — signature, purpose, typed example |
+| [sandbox/message-bubble](sandbox/message-bubble) | Day 3 | Standalone, runnable copy of a real component (props, optional props, destructuring) — also loads into [codesandbox.io](https://codesandbox.io/p/sandbox) |
 
 ---
 

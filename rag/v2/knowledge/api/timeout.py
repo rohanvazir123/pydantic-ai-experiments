@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Per-stage timeout budget for a single API request.
 
 Each stage carves a sub-deadline from the remaining parent budget.

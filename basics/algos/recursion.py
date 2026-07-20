@@ -72,9 +72,9 @@ def test_tower_hanoi(n):
 
 if __name__ == '__main__':
     A = "pram"
-    pramada_1(A, 0, len(A))
+    x(A, 0, len(A))
     print('print start to end:')
-    pramada_2(A, 0, len(A))
+    x(A, 0, len(A))
     
     A1 = [2, 3, 1, 1, 4]
     A2 = [3, 2, 1, 0, 4]

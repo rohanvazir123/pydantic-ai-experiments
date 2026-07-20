@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Tier 1 working memory — context assembly and token-budget trimming.
 
 Assembles the LLM context from all five memory tiers:

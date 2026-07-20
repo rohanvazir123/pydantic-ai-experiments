@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Integration tests for PostgresHybridStore.
 
 Tests the full DB layer: documents, chunks, vector search, text search,

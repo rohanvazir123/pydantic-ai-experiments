@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Unit tests for Phase 6 — agent, judge, cost_guard, pipeline.
 
 No live LLM or services required. Pydantic AI agents are mocked at the

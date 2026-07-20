@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'

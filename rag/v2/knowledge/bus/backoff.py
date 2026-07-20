@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Exponential backoff with partial jitter.
 
 Note on naming: the design doc uses the term "full jitter" but this

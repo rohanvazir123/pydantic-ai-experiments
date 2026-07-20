@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Docling document converter — two converters, one per format family.
 
 Architecture anchor: mirrors rag/ingestion/pipeline.py._get_pdf_converter()

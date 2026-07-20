@@ -1,0 +1,20 @@
+## Temporal workflow
+
+A production-ready Temporal Python SDK application requires both a Workflow (orchestration logic) and an Activity (business/I/O logic). The example below covers the core pillars: standard activities, asynchronous waiting (durable timers), 
+
+Signals (external triggers), Queries (state inspection), and Updates (input/output)
+
+### 1. Define Activities (activities.py)
+
+Activities are isolated from the Temporal event loop and handle non-deterministic actions like network I/O, database access, or file system operations.
+
+### 2. Define the Workflow (workflows.py)
+
+Workflows represent your long-running, resilient state machine. They must remain entirely deterministic (no random numbers, no local time, no direct I/O)
+
+### 3. Run the Worker (worker.py)
+
+Workers poll the Temporal Server to pick up and execute queued Workflow/Activity tasks.
+
+### 4. Trigger the Workflow (execute_client.py)
+The Temporal Client handles programmatically starting executions and interacting with them.

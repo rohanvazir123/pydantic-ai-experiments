@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Cost circuit breaker — fires at PRE_LLM hook before every agent.run() call.
 
 Two levels:

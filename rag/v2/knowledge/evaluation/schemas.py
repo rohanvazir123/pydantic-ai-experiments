@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Evaluation Pydantic models — EvalRun, EvalResult, GoldSample."""
 
 from datetime import UTC, datetime

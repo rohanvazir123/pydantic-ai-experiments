@@ -99,6 +99,19 @@ Key points:
 - `React.FC` is no longer the recommended pattern. Just write a plain typed function.
 - Component names must start with an uppercase letter so JSX can distinguish them from HTML tags.
 
+**What's actually happening under the hood:** React itself doesn't destructure anything. Every component receives exactly one argument: a single props object. `<MessageBubble message={msg} debugMode={debug} />` calls `MessageBubble({ message: msg, debugMode: debug })` — one object, one argument.
+
+The destructuring in `{ message, debugMode = false }: Props` is just parameter-list shorthand for pulling fields off that same object. It's identical to writing it out longhand:
+
+```tsx
+export function MessageBubble(props: Props) {
+  const { message, debugMode = false } = props
+  // use `message` and `debugMode` directly from here on
+}
+```
+
+The longhand version makes it obvious that `: Props` types the whole incoming object, and that destructuring is just a local convenience for not writing `props.message` everywhere. Both forms compile to the same thing — prefer the shorthand in real code, but reach for the longhand mentally whenever the shorthand is confusing.
+
 ---
 
 ### useState: state vs derived values

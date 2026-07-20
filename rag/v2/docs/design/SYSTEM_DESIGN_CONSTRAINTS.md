@@ -7,6 +7,11 @@
 - [Retrieval — Token Budget](#retrieval--token-budget)
 - [Ingestion — SLA](#ingestion--sla)
 - [Ingestion — Token Budget](#ingestion--token-budget)
+- [Scalability — Corpus Size](#scalability--corpus-size)
+  - [Why This Is a System-Wide Number, Not Per-Tenant](#why-this-is-a-system-wide-number-not-per-tenant)
+  - [Storage & Memory by Scale](#storage--memory-by-scale)
+  - [Ingestion Throughput by Scale](#ingestion-throughput-by-scale)
+  - [Retrieval Latency by Scale](#retrieval-latency-by-scale)
 - [Total System Cost Summary](#total-system-cost-summary-10-k-dau-standard-config)
 - [Budget Controls & Cost Circuit Breakers](#budget-controls--cost-circuit-breakers)
 
@@ -196,6 +201,54 @@ Scales linearly: 100-page PDF ≈ 10× above figures.
 | **Total ingestion** | **$1.38** | **$41.40** |
 
 Ingestion cost is ~3% of retrieval cost and is dominated by graph extraction. Disable graph extraction (`enable_graph_extraction=False` per corpus) on corpora where KG traversal is not needed.
+
+---
+
+#### Scalability — Corpus Size
+
+Everything above (Load Model, SLAs, token budgets) is derived from the 10 K DAU / 100–500 docs-per-day *query and ingestion rate*. This section covers the orthogonal axis: what changes as the **total number of chunks already stored** grows, independent of query rate.
+
+##### Why This Is a System-Wide Number, Not Per-Tenant
+
+`chunks_embedding_hnsw` (`schema/001_initial_schema.sql`) is **one HNSW graph shared by every tenant and corpus** — there is no per-tenant or per-corpus index. Isolation is enforced at query time by Row-Level Security (`SET LOCAL app.tenant_id`, `schema/002_corpus_tenant.sql`) plus a `WHERE corpus_id = $2` predicate in `semantic_search()` (`knowledge/store/vector.py`), not by the index structure itself. Two consequences:
+
+- The chunk-count tiers below are the **sum across every tenant and corpus in one Postgres instance**, not one customer's corpus. A platform with 1,000 tenants at 10K chunks each is already at the 10M row.
+- HNSW graph traversal is not filter-aware — it finds nearest neighbours in the *whole* graph, then the `corpus_id`/RLS predicate discards non-matching rows. A small corpus living inside a large shared table can under-recall if too few of the true top-K neighbours happen to belong to that corpus. `OVERFETCH_FACTOR = 3` (`knowledge/store/vector.py`) — fetching `k × 3` candidates before RRF/rerank — is the current mitigation. As system-wide row count grows relative to any one corpus, re-validate recall per corpus with `tests/retrieval` (Hit Rate/MRR/NDCG) before assuming `OVERFETCH_FACTOR = 3` is still enough; raising it or the `hnsw.ef_search` runtime parameter are the levers, at a latency cost.
+- True isolation (a dedicated index or dedicated Postgres instance per large tenant) is not implemented today. It's the escape hatch to reach for if one tenant's corpus alone approaches the 1M–10M rows below — declarative table partitioning by `tenant_id` with a per-partition HNSW index, or moving that tenant to its own instance.
+
+##### Storage & Memory by Scale
+
+Planning estimates, not measured benchmarks — validate with a load test before sizing production hardware. Baseline: `nomic-embed-text` (768-dim, 3,072 B/vector raw), HNSW at the schema default (`m=16, ef_construction=64`), ~65 chunks per 10-page document (`docs/design/SYSTEM_DESIGN_CONSTRAINTS.md` Ingestion Token Budget baseline).
+
+| Chunks (system-wide) | ~Documents | Data + HNSW + GIN storage (~10 KB/chunk) | RAM to keep vectors + HNSW graph resident (~8 KB/chunk) | Postgres sizing (rule of thumb) |
+|---|---|---|---|---|
+| 10K | ~150 | ~100 MB | ~80 MB | Any managed instance, 4 GB RAM — dev / single small tenant |
+| 100K | ~1,500 | ~1 GB | ~800 MB | 8 GB RAM (e.g. `db.t4g.medium`) |
+| 1M | ~15,000 | ~10 GB | ~8 GB | 16 GB RAM (e.g. `db.r6g.large`) + read replica for retrieval-worker traffic |
+| 10M | ~150,000 | ~100 GB | ~80 GB | 64 GB+ RAM (e.g. `db.r6g.2xlarge`), multiple read replicas, or partition per-tenant (see above) |
+
+The RAM column is the one that matters for latency: pgvector HNSW search is fast only while the graph stays in `shared_buffers`/OS page cache. Once it spills to disk, each hop in the graph traversal becomes a random I/O, and search latency degrades sharply — this is a step-function failure, not a gradual one. Provision RAM ahead of the storage column, not behind it.
+
+`m` and `ef_construction` are fixed at `16` / `64` across every HNSW index in the schema (`001`, `002`, `003`, `008`) regardless of table size. That default is adequate through roughly the 1M-row tier; beyond it, recall typically needs `ef_construction` raised (e.g. to 128) and query-time `hnsw.ef_search` raised for the 10M tier — at the cost of slower index builds and slightly higher per-query latency. Changing these is a recall/latency trade-off to validate against `tests/retrieval` metrics, not a settings change to make speculatively.
+
+**HNSW rebuild cost also grows with scale.** `DATASTORE.md` already calls for `REINDEX INDEX CONCURRENTLY chunks_embedding_hnsw` after any operation deletes > 20% of a corpus. At the 10M-chunk tier, a full rebuild can run for hours; schedule it during low-traffic windows and expect degraded `pgvector_search` latency (the retrieval circuit breaker, `docs/RAGV2_DESIGN.md` §Circuit Breakers) for the duration.
+
+##### Ingestion Throughput by Scale
+
+The documented embedding baseline is 65 chunks in < 5 s P95 on one GPU worker (Ingestion — SLA, above) — roughly 13 chunks/s sustained, but the end-to-end pipeline (Docling parse + chunk + embed + optional graph extraction) is throughput-capped at the documented **100–500 docs/day** per worker, i.e. ~6,500–32,500 chunks/day. That rate is constant regardless of how many chunks already exist — corpus size doesn't slow down ingesting new documents. It does determine how long a cold bulk load takes:
+
+| Target chunks | Time to reach it at 500 docs/day (32,500 chunks/day) sustained |
+|---|---|
+| 10K | < 1 day |
+| 100K | ~3 days |
+| 1M | ~31 days |
+| 10M | ~308 days — steady-state throughput alone is not viable |
+
+A one-time bulk backfill toward the 1M–10M tier needs horizontal scale-out of `ingest-worker`, not just time: scale toward its documented max (2–20 pods, HPA on `knowledge:ingest` stream depth — `docs/design/DEPLOYMENT.md` Scaling Rules) with multiple GPU-backed embedding workers running in parallel. Reaching 10M chunks in, say, a week requires roughly 40–50× the single-worker throughput above — plan the GPU fleet for the backfill window, then scale back down to the steady-state floor once caught up.
+
+##### Retrieval Latency by Scale
+
+Because HNSW search is `O(log n)`, the documented P95 hybrid-retrieval budget (< 120 ms, Retrieval — SLA above) should hold in principle across all four tiers — algorithmic complexity is not the bottleneck at these sizes. The two things that *do* degrade with scale are the RAM-residency cliff (Storage & Memory, above) and filtered-recall on a shared index disproportionately affecting small corpora inside a large system-wide table (Why This Is a System-Wide Number, above). Re-validate P95 retrieval latency and per-corpus recall empirically at each tier via `tests/retrieval` — this table is a planning starting point, not a guarantee.
 
 ---
 

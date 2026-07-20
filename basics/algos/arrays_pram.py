@@ -112,28 +112,7 @@ def longest_subarray_non_repeating(s: str) -> Tuple[int, List[int]]:
     return global_max_len, global_max_subarray
 
 
-# Leetcode #3
-# Longest Substring Without Repeating Characters
-# Given a string s, find the length of the longest substring without repeating characters.
-class Solution:
-    def lengthOfLongestSubstring(self, s: str) -> int:
-        if not s:
-            return 0
-        global_max_len = 0
-        local_max_len = 0
-        substr_list = []
-        for e in s:
-            if e not in substr_list:
-                local_max_len += 1
-                substr_list.append(e)
-            else:
-                global_max_len = max(local_max_len, global_max_len)
-                repeat_index = substr_list.index(e)
-                substr_list = substr_list[repeat_index + 1 :]
-                substr_list.append(e)
-                local_max_len = len(substr_list)
-        global_max_len = max(local_max_len, global_max_len)
-        return global_max_len
+        
 
 
 def convert(s: str, numRows: int) -> str:

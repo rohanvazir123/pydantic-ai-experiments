@@ -10,5 +10,5 @@ import sys
 from pathlib import Path
 
 _TELEMETRY = Path(__file__).resolve().parent.parent  # basics/telemetry
-for _src in ("rate_limiter", "moving_average", "worker_queues", "state_machine"):
+for _src in ("rate_limiter", "moving_average", "worker_queues"):
     sys.path.insert(0, str(_TELEMETRY / _src))

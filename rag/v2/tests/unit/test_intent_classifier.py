@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Unit tests for knowledge.agent.intent_classifier.
 
 No live LLM or services required — the pydantic-ai agent is mocked at the

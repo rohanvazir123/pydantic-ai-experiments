@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Entity shadow index for Apache AGE entities.
 
 AGE does not support tsvector GIN or pgvector HNSW indexes — every CONTAINS

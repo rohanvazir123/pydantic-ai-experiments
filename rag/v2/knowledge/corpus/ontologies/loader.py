@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Ontology template loader with LRU cache.
 
 Loads a Python file from the ontologies directory and returns the root

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Memory routes — conversations (Tier 2) and user memories (Tier 3)."""
 
 import uuid

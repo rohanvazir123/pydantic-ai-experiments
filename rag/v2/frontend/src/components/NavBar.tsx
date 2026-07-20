@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { MessageSquare, Upload, Brain, Terminal, LogOut, Trash2 } from 'lucide-react'

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """Per-tenant rate limiting and budget enforcement.
 
 Redis counters are the fast-path guard; PostgreSQL token_usage is the audit trail.

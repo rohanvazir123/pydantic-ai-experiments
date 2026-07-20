@@ -21,7 +21,7 @@ kind of work:
 
 | File | Purpose |
 |------|---------|
-| `base.py` | Shared abstractions both pools inherit: `Job` (self-processing), `Worker`, `WorkerPool` (pydantic). |
+| `worker_pool_base.py` | Shared abstractions both pools inherit: `Job` (self-processing), `Worker`, `WorkerPool` (pydantic). |
 | `cpu_workloads.py` | Original CPU draft (kept for reference; do not build on it). |
 | `cpu_workloads_fixed.py` | Reviewed, corrected `multiprocessing` worker pool. |
 | `io_workloads.py` | Original IO draft (kept for reference; do not build on it). |
@@ -42,7 +42,7 @@ telemetry. (In-memory SQLite specifics: `StaticPool` + `check_same_thread=False`
 so the `asyncio.to_thread` worker threads share one DB, and a `threading.Lock`
 serialises writes — both drop away under Postgres.)
 
-### Shared abstractions (`base.py`)
+### Shared abstractions (`worker_pool_base.py`)
 
 Both pools have the same shape — a typed message on a queue, N workers consuming
 it until a sentinel — so that shape lives in one place:
@@ -261,7 +261,7 @@ variable per-frame latency, worker A can start seq=5 before worker B finishes
 seq=4 and still finish first. So frames arrive in order and still come out
 scrambled.
 
-Same shape as the IO pool, over the same `base.py` bases — `TelemetryFrame(Job)`
+Same shape as the IO pool, over the same `worker_pool_base.py` bases — `TelemetryFrame(Job)`
 → `ResequencingWorker(Worker)` → `ResequencingWorkerPool(WorkerPool)`. The only
 swap is the sink: **`Resequencer` sits exactly where `TelemetryWriter` sits**,
 the infrastructure the worker owns and hands to `frame.process(...)`. Per device

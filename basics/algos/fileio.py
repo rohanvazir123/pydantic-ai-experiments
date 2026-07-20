@@ -12,29 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys, pprint
+import csv, sys, pprint
+from typing import Generator
 
-def parse_file(filename: str) -> dict:
-  kv_map = {}
-  with open(filename, "r") as f:
-    while True:
-      line = f.readline()
-      if not line: 
-        break
-      k, v = line.strip().rsplit(":", 1)
-      kv_map[k] = v
-  return kv_map
+
+import csv
+from typing import Generator
+
+def parse_file_in_batches(
+    filename: str, 
+    batch_size: int, 
+    separator: str = ",", 
+    filter: str = "MEDIUM"
+) -> Generator[list[list[str]], None, None]:  # Fixed type hint
+    batch: list[list[str]] = []
+    with open(filename, "r", newline="") as f:
+        reader = csv.reader(f, delimiter=separator)
+        for row in reader:
+            if not row:
+                continue
+            if filter and row[0].upper() != filter:
+                continue
+            
+            # Cleans row and skips first 4 columns
+            cleaned_row = [x.strip() for i, x in enumerate(row) if i not in (0, 1, 2, 3)]
+            batch.append(cleaned_row)
+            
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+                
+    if batch:
+        yield batch  # Correct ending
+
 
 if __name__ == "__main__":
-  if len(sys.argv) > 1:
-    kv_map = parse_file(sys.argv[1])
-    # dict.items returns tuple
-    # pprint.pprint(list(kv_map.items()))
-    print("this should print a list of tuples with each tuple being a key, value pair, they are sorted by keys")
-    pprint.pprint(sorted(kv_map.items()))
-    print("this should print only sorted keys")
-    # new_kv_map = { k:kv_map[k] for k in sorted(kv_map) if 'hello' in k }
-    new_kv_map = { k:kv_map[k] for k in sorted(kv_map) }
-    print("this should print sorted dict")
-    pprint.pprint(new_kv_map)
-      
+  if len(sys.argv) < 2:
+    print("Usage: python fileio.py <filename>")
+    sys.exit(1)
+  filename = sys.argv[1]
+  for i, batch in enumerate(parse_file_in_batches(filename, batch_size=100, separator=',', filter='MEDIUM')):
+    print(f"Batch {i}:", "size: ", len(batch), end=" ")
+    pprint.pprint(batch, indent=4, width=80)
+

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+# See LICENSE file in the project root for details.
+
 """LLM-as-judge — Layer 3 gate in the confidence-aware pipeline.
 
 Evaluates the generated answer against retrieved context WITHOUT seeing

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vikrant Potnis. Licensed under CC BY-NC 4.0.
+// See LICENSE file in the project root for details.
+
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login, tryRestoreSession } from '@/lib/auth'

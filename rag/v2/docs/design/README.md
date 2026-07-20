@@ -18,12 +18,12 @@ Detailed design docs split out from [../RAGV2_DESIGN.md](../RAGV2_DESIGN.md). St
 | Document | What it covers |
 |----------|---------------|
 | [ARCHITECTURE_PROPOSAL.md](ARCHITECTURE_PROPOSAL.md) | Goals and multi-corpus design |
-| [SYSTEM_DESIGN_CONSTRAINTS.md](SYSTEM_DESIGN_CONSTRAINTS.md) | Load model, SLAs, token budgets, cost model, circuit breakers |
+| [SYSTEM_DESIGN_CONSTRAINTS.md](SYSTEM_DESIGN_CONSTRAINTS.md) | Load model, SLAs, token budgets, cost model, circuit breakers, scalability by corpus size (10K–10M chunks) |
 | [MODULE_LAYOUT.md](MODULE_LAYOUT.md) | Full `knowledge/` package tree with per-subpackage guide |
 | [INGESTION.md](INGESTION.md) | Ingestion pipeline, Docling-graph parallel paths, KG extraction, AGE store design, ontology API |
 | [REDIS_STREAMS.md](REDIS_STREAMS.md) | Message bus design, async worker lifecycle, DLQ, job status, why search stays sync |
 | [CACHING.md](CACHING.md) | L1 in-process LRU, L2 Redis, L3 pgvector semantic cache — TTLs, invalidation, hit rate targets |
-| [RETRIEVAL.md](RETRIEVAL.md) | Hybrid search, RRF fusion, CrossEncoder reranking, confidence scoring, confidence-aware pipeline, model tiering |
+| [RETRIEVAL.md](RETRIEVAL.md) | Hybrid search, RRF fusion, confidence scoring, confidence-aware pipeline, model tiering (nano/small/large LLM tiers, bi-encoder vs. cross-encoder, LLM-as-judge) |
 | [RELIABILITY.md](RELIABILITY.md) | V1–V6 query validation, hook system, guardrail architecture, error handling, retry & resilience |
 | [SECURITY.md](SECURITY.md) | JWT RS256 auth, JWE payload encryption, HTTPS/TLS, RBAC, audit log, memory architecture |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker Compose local dev, packaging, cloud production deployment, SaaS model, log storage |
